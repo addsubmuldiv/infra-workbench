@@ -6,6 +6,7 @@ import './themes.css';
 import './journey.css';
 import {JourneyArt} from './JourneyArt';
 import {PrecisionCompare} from './PrecisionCompare';
+import {FileBrowser} from './FileBrowser';
 import type {TerminalRequest} from './TerminalDock';
 import {pageFromHash,hostSelectionPage,type Page} from './navigation';
 const TerminalDock=React.lazy(()=>import('./TerminalDock').then(module=>({default:module.TerminalDock})));
@@ -24,7 +25,7 @@ type SudoSettings = {enabled:boolean;password_saved:boolean;password_in_memory:b
 type Host = {id:string; target:string; user:string|null; port:number|null; manual:boolean; auth:string; sudo?:SudoSettings; snapshot:{status:string; fresh:boolean; collected_at:number|null; error?:string; error_stage?:string; system?:SystemMetrics|null; devices:Device[]}};
 type Rule = {id:string; host_id:string; devices:string[]; minimum_gib:number; port:number; status?:string};
 type Event = {id:number; created:number; host:string; message:string; notify?:boolean};
-type State = {hosts:Host[]; rules:Rule[]; reservations:Reservation[]; events:Event[]; server_time:number};
+type State = {hosts:Host[]; rules:Rule[]; reservations:Reservation[]; reservation_modes?:string[]; events:Event[]; server_time:number};
 const gib=(n:number|null|undefined)=>n==null?'—':(n/1024**3).toFixed(1);
 const clock=(n:number)=>new Date(n*1000).toLocaleTimeString('zh-CN',{hour12:false});
 const displayId=(d:Device|undefined)=>d?.display_id??d?.id??'已失效';
@@ -48,16 +49,17 @@ function App(){
   const [preferences,setPreferences]=useState(()=>loadPreferences(browserStorage()));
   const [hostSearch,setHostSearch]=useState('');
   const [sudoHost,setSudoHost]=useState<Host|null>(null);
+  const [fileHost,setFileHost]=useState<Host|null>(null);
   const [terminalRequest,setTerminalRequest]=useState<TerminalRequest|null>(null);
   const [precisionMounted,setPrecisionMounted]=useState(()=>pageFromHash(location.hash)==='precision');
   const [page,setPage]=useState<Page>(()=>pageFromHash(location.hash)),[filter,setFilter]=useState('全部'),[count,setCount]=useState(1),[minimum,setMinimum]=useState(16),[clear,setClear]=useState(true);
   const [adding,setAdding]=useState(false),[detail,setDetail]=useState<{host:string;device:string}|null>(null),[selected,setSelected]=useState<Record<string,string[]>>({});
   const [notice,setNotice]=useState(''),[error,setError]=useState(''),[notify,setNotify]=useState(false),[busy,setBusy]=useState(''),[port,setPort]=useState(29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
-  const lastEvent=useRef<number|null>(null),notifyRef=useRef(false),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),terminalMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
+  const lastEvent=useRef<number|null>(null),notifyRef=useRef(false),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
   const navigate=(next:Page)=>{
     setPage(next);if(next==='precision')setPrecisionMounted(true);
     setDetail(null);setCheck(null);
-    if(themeMenu.current)themeMenu.current.open=false;if(terminalMenu.current)terminalMenu.current.open=false;
+    if(themeMenu.current)themeMenu.current.open=false;
     if(location.hash!=='#'+next&&!(next==='overview'&&!location.hash))location.hash=next;
     if(next!==page)window.scrollTo({top:0});
   };
@@ -66,8 +68,8 @@ function App(){
     window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync);
   },[]);
   useEffect(()=>{
-    const outside=(event:PointerEvent)=>{for(const menu of [themeMenu.current,terminalMenu.current])if(menu?.open&&!menu.contains(event.target as Node))menu.open=false};
-    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')for(const menu of [themeMenu.current,terminalMenu.current])if(menu)menu.open=false};
+    const outside=(event:PointerEvent)=>{for(const menu of [themeMenu.current])if(menu?.open&&!menu.contains(event.target as Node))menu.open=false};
+    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')for(const menu of [themeMenu.current])if(menu)menu.open=false};
     document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
     return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape)};
   },[]);
@@ -103,7 +105,6 @@ function App(){
     if(direct){setFilter('全部');if(mobileHosts.current)mobileHosts.current.open=false;window.scrollTo({top:0})}
     navigate(hostSelectionPage(page,direct));
   };
-  const openTerminal=(host:Host)=>{if(terminalMenu.current)terminalMenu.current.open=false;setTerminalRequest({id:crypto.randomUUID(),host})};
 
   const resourceBody=(h:Host)=>({host_id:h.id,devices:selected[h.id]||[],minimum_gib:minimum,port});
   const inspect=(host:Host,d:Device)=>{setDetail({host:host.id,device:d.id});setCheck(null)};
@@ -134,7 +135,7 @@ function App(){
       <div className="header-tools"><span className="live"><i/>10s 实时采集</span>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>主题</span></summary><div className="theme-options"><h3>选择界面主题</h3><p>主题偏好自动保存在本机</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{t.name}</strong><small>{t.mode==='light'?'亮色':'暗色'} · {t.description}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
-        {scope.length===1||!state.hosts.length?<button className="ssh-open" title={scope[0]?'连接 '+scope[0].target:'请先添加机器'} onClick={()=>{if(scope[0])openTerminal(scope[0]);else setNotice('请先添加机器')}}><Terminal size={15}/><span>SSH 终端</span></button>:<details className="global-ssh-menu" ref={terminalMenu}><summary className="ssh-open"><Terminal size={15}/><span>SSH 终端</span><ChevronRight size={12}/></summary><div className="global-ssh-targets" role="menu" aria-label="选择 SSH 目标机器"><strong>选择要连接的机器</strong><small>{scope.length?'当前选择了多台机器，请指定连接目标':'未选择机器，请从已连接机器中选择'}</small>{(scope.length?scope:state.hosts).map(host=><button key={host.id} role="menuitem" onClick={()=>openTerminal(host)}><Server size={15}/><span>{host.target}<small>{host.user||'使用 SSH 配置账号'}</small></span><ChevronRight size={13}/></button>)}</div></details>}<button className={'icon-button '+(notify?'teal':'')} aria-label="开启浏览器通知" onClick={enableNotifications}><Bell size={18}/></button><span className="avatar small">本</span>
+        <button className={'icon-button '+(notify?'teal':'')} aria-label="开启浏览器通知" onClick={enableNotifications}><Bell size={18}/></button><span className="avatar small">本</span>
       </div></header>
     {preferences.theme==='frieren'&&<JourneyArt/>}
     <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='connections'?'CONNECTIONS':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':'RESOURCE GUARD'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?'跨机器读取训练日志，自动提取指标并按真实步数对齐。':page==='watch'?'关注准备使用的设备，在资源变化时收到提醒。':page==='reservations'?'预约指定设备，等它们连续空闲后收到提醒。':page==='settings'?'管理邮件通知与发件邮箱。':`正在查看 ${scope.length} 台机器 · 从左侧列表选择你关注的资源`}</p></div><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button></div>
@@ -147,7 +148,7 @@ function App(){
     {(page==='overview'||page==='connections')&&<div className="two-columns"><div className="machines"><div className="section-heading"><h2>设备详情<span>{shown.length} 台机器</span></h2><div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
       {shown.length===0&&<div className="empty"><Server size={32}/><h3>{state.hosts.length===0?'连接第一台机器':scope.length===0?'选择要查看的机器':'没有符合设备类型的机器'}</h3><p>{state.hosts.length===0?'从本机 SSH 配置选择，或输入主机和账号密码。':'在机器列表中点击名称单选，或勾选多台机器。'}</p>{state.hosts.length===0?<button className="primary" onClick={()=>setAdding(true)}><Plus size={16}/>添加机器</button>:<button className="secondary" onClick={()=>{selectHosts(null);setFilter('全部')}}>显示全部机器</button>}</div>}
       {shown.map(host=>{const snapshot=host.snapshot,ids=selected[host.id]||[];return <section className="machine" key={host.id} aria-label={'机器详情 '+host.target}>
-        <div className="machine-heading"><span className="machine-icon"><Server size={20}/></span><div className="machine-name"><h3>{host.target}<Badge tone={snapshot.fresh?'green':'amber'}>{snapshot.fresh?'在线':snapshot.status==='error'?'采集失败':snapshot.status==='connecting'?'连接中':'数据过期'}</Badge></h3><p>{machineSummary(snapshot.devices)} <span>·</span> SSH {host.auth==='password_session'?'密码会话':'免密连接'}</p></div><button className="ssh-open" aria-label={'打开 '+host.target+' 终端'} onClick={()=>setTerminalRequest({id:crypto.randomUUID(),host})}><Terminal size={15}/><span>终端</span></button><button className={'sudo-button '+(host.sudo?.enabled?'enabled':'')} title={host.sudo?.message||'设置 sudo 进程详情'} aria-label={host.target+' sudo 设置'} onClick={()=>setSudoHost(host)}><ShieldCheck size={15}/><span>sudo</span></button><button className="icon-button" aria-label={'刷新 '+host.target} disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}><RefreshCw size={16} className={busy===host.id?'spin':''}/></button><button className="icon-button" aria-label={'移除 '+host.target} onClick={()=>act('remove',()=>api('/hosts/'+host.id,'DELETE'))}><Trash2 size={15}/></button></div>
+        <div className="machine-heading"><span className="machine-icon"><Server size={20}/></span><div className="machine-name"><h3>{host.target}<Badge tone={snapshot.fresh?'green':'amber'}>{snapshot.fresh?'在线':snapshot.status==='error'?'采集失败':snapshot.status==='connecting'?'连接中':'数据过期'}</Badge></h3><p>{machineSummary(snapshot.devices)} <span>·</span> SSH {host.auth==='password_session'?'密码会话':'免密连接'}</p></div><button className="ssh-open" aria-label={'浏览 '+host.target+' 文件'} onClick={()=>setFileHost(host)}><Database size={15}/><span>文件</span></button><button className="ssh-open" aria-label={'打开 '+host.target+' 终端'} onClick={()=>setTerminalRequest({id:crypto.randomUUID(),host})}><Terminal size={15}/><span>终端</span></button><button className={'sudo-button '+(host.sudo?.enabled?'enabled':'')} title={host.sudo?.message||'设置 sudo 进程详情'} aria-label={host.target+' sudo 设置'} onClick={()=>setSudoHost(host)}><ShieldCheck size={15}/><span>sudo</span></button><button className="icon-button" aria-label={'刷新 '+host.target} disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}><RefreshCw size={16} className={busy===host.id?'spin':''}/></button><button className="icon-button" aria-label={'移除 '+host.target} onClick={()=>act('remove',()=>api('/hosts/'+host.id,'DELETE'))}><Trash2 size={15}/></button></div>
         {host.sudo?.enabled&&!['ready','pending'].includes(host.sudo.status)&&<div className="sudo-alert"><ShieldCheck size={14}/><span>{host.sudo.message}</span><button className="text-button" onClick={()=>setSudoHost(host)}>设置</button></div>}
         <SystemSummary system={snapshot.system} fresh={snapshot.fresh}/>
         {snapshot.error&&<div className="connection-error"><p>{snapshot.error_stage==='parse'?'SSH 已连接 · 设备信息解析失败：':snapshot.error_stage==='probe'?'SSH 已连接 · 远端采集失败：':''}{snapshot.error}</p>{snapshot.error_stage==='connection'?<button className="text-button" onClick={()=>setAdding(true)}>检查连接凭据 <ArrowUpRight size={13}/></button>:<button className="text-button" disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}>重试采集 <RefreshCw size={13}/></button>}</div>}
@@ -173,7 +174,8 @@ function App(){
     <React.Suspense fallback={null}>{terminalRequest&&<TerminalDock request={terminalRequest} hosts={state.hosts}/>}</React.Suspense>
     {notice&&<div role="status" className="toast"><Check size={17}/>{notice}<button className="icon-button" aria-label="关闭提示" onClick={()=>setNotice('')}><X size={15}/></button></div>}
     {adding&&<AddMachine close={()=>setAdding(false)} connected={async(message,hostId)=>{if(hostId)setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,hostId])]}));setNotice(message);setAdding(false);await load()}}/>}
-    {reservationDraft&&<ReservationDialog hosts={state.hosts} draft={reservationDraft} close={()=>setReservationDraft(null)} openSettings={()=>{setReservationDraft(null);navigate('settings')}} save={async(body)=>{await api('/reservations','POST',body);await load();setNotice('预约已保存；所选设备连续空闲后会提醒一次。');navigate('reservations')}}/>}
+    {reservationDraft&&<ReservationDialog countEnabled={state.reservation_modes?.includes('count')} hosts={state.hosts} draft={reservationDraft} close={()=>setReservationDraft(null)} openSettings={()=>{setReservationDraft(null);navigate('settings')}} save={async(body)=>{await api('/reservations','POST',body);await load();setNotice('预约已保存；所选设备连续空闲后会提醒一次。');navigate('reservations')}}/>}
+    {fileHost&&<FileBrowser host={fileHost} hosts={state.hosts} close={()=>setFileHost(null)}/>}
     {sudoHost&&<SudoModal key={sudoHost.id} host={sudoHost} close={()=>setSudoHost(null)} updated={async()=>{await load()}}/>}
     {detail&&<div className="drawer-shade" onClick={()=>{setDetail(null);setCheck(null)}}><section className="drawer" onClick={e=>e.stopPropagation()}><div className="drawer-heading"><div className="eyebrow">DEVICE INSPECTOR</div><button className="icon-button" aria-label="关闭设备详情" onClick={()=>{setDetail(null);setCheck(null)}}><X size={20}/></button></div><h2>{detailHost?.target}</h2><p className="subtle">{detailDevice?.kind} {detailDevice?displayId(detailDevice):''} · {detailDevice?.name}{detailDevice?.physical_id!=null&&` · 卡 ${detailDevice.card_id} / 芯片 ${detailDevice.chip_id}`}</p>{detailDevice&&<><div className="detail-metrics"><div>剩余显存<strong>{gib(detailDevice.memory_free)} <small>GiB</small></strong></div><div>计算利用率<strong>{detailDevice.utilization??'—'}<small>%</small></strong></div></div><h3>计算进程 <Badge>{detailDevice.processes.length}</Badge></h3>{!detailDevice.processes_known?<div className="error-banner">进程信息无法完整读取，不能确认空闲。</div>:detailDevice.processes.length===0?<p className="subtle">采集工具未报告可见计算进程。</p>:detailDevice.processes.map(p=><ProcessDetails key={p.pid} process={p} onCopy={text=>navigator.clipboard.writeText(text).then(()=>setNotice("已复制")).catch(()=>setNotice("复制失败，可手动选择文本复制"))}/>)}<button className="secondary wide" onClick={()=>toggle(detail.host,detail.device)}><Check size={15}/>{(selected[detail.host]||[]).includes(detail.device)?'取消选择此设备':'选择此设备'}</button></>}{check&&<div className={'check-result '+(check.status==='PASS'?'pass':'')}><h3><ShieldCheck size={18}/>检查结果：{check.status}</h3>{check.reasons.map((r,i)=><p key={i}>{r}</p>)}</div>}<div className="drawer-note">数据来自最近一次采集。进程不可见时会明确标记，检查结果不构成资源预留。</div></section></div>}
   </div>;
@@ -217,7 +219,7 @@ function SudoModal({host,close,updated}:{host:Host;close:()=>void;updated:()=>Pr
   useEffect(()=>{let active=true;api('/hosts/'+host.id+'/sudo').then(value=>{if(active){setSettings(value);setEnabled(value.enabled);setRemember(value.password_saved);setReady(true)}}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[host.id]);
   const save=async(e:React.FormEvent)=>{
     e.preventDefault();setPending(true);setError('');setMessage('');
-    try{const value=await api('/hosts/'+host.id+'/sudo','POST',{enabled,password:password||null,remember,install_helper:install});setSettings(value);setRemember(value.password_saved);setInstall(false);setMessage(enabled?'已保存并验证，下一次采集会补齐进程详情。':'已关闭 sudo 采集，普通监控继续运行。');await updated()}
+    try{const value=await api('/hosts/'+host.id+'/sudo','POST',{enabled,password:password||null,remember,install_helper:install});setSettings(value);setRemember(value.password_saved);setInstall(false);await updated();close()}
     catch(e){setError(e instanceof Error?e.message:String(e))}finally{setPassword('');setPending(false)}
   };
   const forget=async()=>{

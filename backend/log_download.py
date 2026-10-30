@@ -94,7 +94,7 @@ async def open_download(ssh,host,source):
             with contextlib.suppress(asyncio.CancelledError,Exception): await error_task
 
 
-async def original_log_response(ssh,host,path,request:Request):
+async def original_log_response(ssh,host,path,request:Request,label='日志'):
     target=tempfile.TemporaryFile(mode='w+b')
     try:
         async def transfer():
@@ -112,7 +112,7 @@ async def original_log_response(ssh,host,path,request:Request):
         if isinstance(exc,TimeoutError): message='日志下载超时，请重试或使用 SSH 文件工具下载'
         elif isinstance(exc,ValueError): message=str(exc)
         else: message='日志下载失败，请检查 SSH 连接、远端路径和读取权限'
-        raise HTTPException(400,message) from None
+        raise HTTPException(400,message.replace('日志',label)) from None
     async def body():
         try:
             while block:=await asyncio.to_thread(target.read,128*1024): yield block

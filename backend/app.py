@@ -8,12 +8,13 @@ import uuid
 from functools import wraps
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
@@ -23,6 +24,7 @@ from .credentials import WindowsCredentialStore
 from .sudo import SudoService
 from .terminal import register_terminal_routes
 from .log_routes import register_log_routes
+from .file_routes import register_file_routes
 from .reservations import ReservationBook
 from .mail import MailService, register_mail_routes
 
@@ -59,7 +61,10 @@ class RuleRequest(CheckRequest):
 class ReservationRequest(BaseModel):
     host_id: str
     email_notify: bool = False
-    devices: list[str] = Field(min_length=1, max_length=64)
+    mode: Literal['fixed', 'count'] = 'fixed'
+    devices: list[str] = Field(default_factory=list, max_length=64)
+    required_count: int | None = Field(default=None, ge=1, le=64)
+    kind: Literal['GPU', 'NPU'] | None = None
     wait_seconds: int = Field(default=120, ge=0, le=86400)
     minimum_gib: float = Field(default=1, ge=0, le=100000, allow_inf_nan=False)
 
@@ -69,6 +74,14 @@ class ReservationRequest(BaseModel):
         if len(set(value)) != len(value):
             raise ValueError('设备不能重复')
         return value
+
+    @model_validator(mode='after')
+    def valid_selection(self):
+        if self.mode == 'fixed' and not self.devices:
+            raise ValueError('请选择设备')
+        if self.mode == 'count' and (self.required_count is None or self.devices):
+            raise ValueError('按数量预约请填写设备数量，不指定设备编号')
+        return self
 
 
 class ReservationUpdate(BaseModel):
@@ -285,7 +298,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             fresh = snap.get('status') == 'online' and now-(snap.get('collected_at') or 0) <= 30
             status = ('active' if all(i in device_ids for i in rule['devices']) else 'needs_selection') if fresh else 'pending'
             visible_rules.append(dict(rule, status=status))
-        return dict(hosts=items, rules=visible_rules, reservations=reservations.view(now), events=store.events(), server_time=now)
+        return dict(hosts=items, rules=visible_rules, reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
     @app.post('/api/connect')
     @serialize_connections
@@ -418,11 +431,19 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             if snap.get('status') != 'online' or not 0 <= time.time()-(snap.get('collected_at') or 0) <= 30:
                 raise HTTPException(409, '请先成功刷新机器，再选择设备预约')
             by_id = {device['id']: device for device in snap.get('devices', [])}
+            kind = body.kind
+            if body.mode == 'count':
+                kinds = {device['kind'] for device in by_id.values()}
+                if kind is None and len(kinds) == 1:
+                    kind = next(iter(kinds))
+                if kind is None or sum(device['kind'] == kind for device in by_id.values()) < body.required_count:
+                    raise HTTPException(422, '请选择设备类型，预约数量不能超过机器的设备总数')
             if any(device_id not in by_id for device_id in body.devices):
                 raise HTTPException(422, '所选设备已变化，请重新选择')
             try:
                 return reservations.add(host, [by_id[device_id] for device_id in body.devices],
-                                        body.wait_seconds, body.minimum_gib, email_notify=body.email_notify)
+                                        body.wait_seconds, body.minimum_gib, mode=body.mode,
+                                        required_count=body.required_count, kind=kind, email_notify=body.email_notify)
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from None
 
@@ -441,6 +462,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         return {'ok': True}
 
     register_log_routes(app,ssh,store,find)
+    register_file_routes(app,ssh,find)
     dist = Path(frontend_dist) if frontend_dist is not None else ROOT/'frontend'/'dist'
     if dist.exists():
         app.mount('/', StaticFiles(directory=dist, html=True), name='web')
