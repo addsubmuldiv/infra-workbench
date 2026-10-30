@@ -3,7 +3,9 @@ param(
     [switch]$CheckOnly,
     [switch]$InstallPython,
     [switch]$RebuildFrontend,
-    [switch]$Repair
+    [switch]$Repair,
+    [switch]$NoBrowser,
+    [switch]$Console
 )
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
@@ -55,9 +57,12 @@ try {
         } finally { Pop-Location }
     }
     if (-not (Test-Path -LiteralPath 'frontend\dist\index.html')) { throw 'Frontend build is missing. Run install.cmd -RebuildFrontend with Node.js installed.' }
-    Write-Host 'Installation complete. Next time, double-click start.cmd.' -ForegroundColor Green
+    Write-Host 'Installation complete. Next time, double-click the Run launcher.' -ForegroundColor Green
     if (-not $NoLaunch) {
-        & (Join-Path $PSScriptRoot 'start.ps1')
+        $launcher = if ($Console) { 'start.ps1' } else { 'background.ps1' }
+        $launchArguments = @{}
+        if ($NoBrowser) { $launchArguments.NoBrowser = $true }
+        & (Join-Path $PSScriptRoot $launcher) @launchArguments
         exit $LASTEXITCODE
     }
     exit 0

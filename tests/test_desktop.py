@@ -131,9 +131,12 @@ def test_background_launcher_quotes_unicode_paths_and_hides_window(tmp_path):
     (fixture/'background.ps1').write_bytes((root/'background.ps1').read_bytes())
     (fixture/'scripts'/'windows-common.ps1').write_text('''
 function Test-Installed { return $true }
+function Get-WorkbenchHealth { return $true }
+function Test-WorkbenchTrayReady { return $true }
 function Start-Process {
-    param($FilePath,$ArgumentList,$WorkingDirectory,$WindowStyle)
-    @{file=$FilePath; arguments=$ArgumentList; directory=$WorkingDirectory; style=$WindowStyle} | ConvertTo-Json -Compress
+    param($FilePath,$ArgumentList,$WorkingDirectory,$WindowStyle,[switch]$PassThru)
+    Write-Host (@{file=$FilePath; arguments=$ArgumentList; directory=$WorkingDirectory; style=$WindowStyle} | ConvertTo-Json -Compress)
+    return [pscustomobject]@{HasExited=$false;ExitCode=0}
 }
 ''',encoding='utf-8-sig')
     result=subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(fixture/'background.ps1'),'-NoBrowser'],capture_output=True)

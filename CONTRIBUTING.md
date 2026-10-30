@@ -15,13 +15,14 @@ npm.cmd run build
 Pop-Location
 ```
 
-`frontend/dist` 随仓库分发，目的是让普通使用者无须安装 Node.js。修改前端后必须重新构建并提交构建结果；不要只提交源码而保留旧页面。开发时可运行 `npm.cmd run dev`，生产入口仍为根目录 `start.cmd`。
+`frontend/dist` 随仓库分发，目的是让普通使用者无须安装 Node.js。修改前端后必须重新构建并提交构建结果；不要只提交源码而保留旧页面。开发时可运行 `npm.cmd run dev`。普通使用者双击根目录的 `运行.cmd` 完成安装和托盘启动；`start.cmd` 保留为控制台排障入口。
 
 验证部署脚本：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckOnly
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-windows.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-background.ps1
 ```
 
 部署脚本测试使用临时目录和模拟命令，覆盖安装重试、成功标记、重复安装、依赖变化和退出码；不修改真实主机、不启动正式服务、不安装系统 Python。
@@ -39,6 +40,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-windows.p
 | `backend/assets` | 托盘图标和可编辑 SVG 源文件 |
 | `frontend/src` | 页面、主题与浏览器偏好 |
 | `install.ps1` / `start.ps1` | Windows 安装及运行入口 |
+| `运行.cmd` | 双击后自动安装并启动托盘，后续使用同一入口 |
 | `background.cmd` / `background.ps1` | Windows 托盘后台运行入口 |
 | `scripts/windows-common.ps1` | 安装、启动共用环境检查 |
 
@@ -71,8 +73,9 @@ GitHub 仓库：[addsubmuldiv/infra-workbench](https://github.com/addsubmuldiv/i
 ```powershell
 git clone https://github.com/addsubmuldiv/infra-workbench.git
 cd infra-workbench
-.\install.cmd
 ```
+
+克隆完成后，在资源管理器中打开项目目录，双击 **`运行.cmd`**。
 
 维护者提交并通过检查后推送：
 

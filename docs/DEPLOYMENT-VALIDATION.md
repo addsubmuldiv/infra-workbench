@@ -16,3 +16,15 @@
 - 即使误把 data 提交到 Git，也会拒绝生成分享包。
 
 这些检查不代表已在一台没有 Python 的干净 Windows 电脑上完成实机安装。WinGet 下载 Python、首次联网下载 pip 依赖、企业代理与证书环境仍需在接收者环境验证。没有为测试安装系统 Python、改变 SSH 配置、接触真实密码或重启正式服务。
+
+## 双击安装并启动更新
+
+`运行.cmd` 是统一入口。首次安装、重复运行、依赖变化、安装失败重试、中文和空格路径、只安装与控制台选项、跨 PowerShell 模块路径兼容性及发布包保护，共 20 项部署检查通过。托盘启动等待就绪、就绪后打开浏览器、失败时非零退出、HTTP 健康但托盘未就绪时禁止误报成功，共 4 项独立检查通过。
+
+本机额外实际执行了 `install.ps1 -NoLaunch -InstallPython`，在项目内新建 `.venv`，从包源下载并安装依赖，`pip check` 通过。系统已有 Python，因此没有触发 WinGet 安装 Python。
+
+随后实际执行 `运行.cmd -NoBrowser`，安装环境被直接复用，无须再次下载依赖；托盘启动入口等待健康检查后返回成功。原有服务和托盘继续使用，机器记录数量前后均为 8，没有停止正在运行的服务。默认打开浏览器的时机由隔离测试覆盖，真实启动检查使用 NoBrowser 以免额外打开用户浏览器窗口。
+
+CMD 入口将模块路径重置限制在自己的进程环境中，避免继承 PowerShell 7 模块导致 Windows PowerShell 5.1 缺少 Get-FileHash 等命令；不修改用户或系统环境变量。外来 Utility 模块的回归用例在修复前失败、修复后通过。
+
+网页服务会早于托盘初始化，因此启动器还确认工作台窗口对应的托盘图标已注册。本机实测 HTTP 与实际托盘检查均为 True。检查使用固定窗口类和图标 ID，通过 NIM_MODIFY 且不设置任何有效成员标志取得确认，不改写图标、提示或回调；相关结构语义见 [Microsoft NOTIFYICONDATAW 文档](https://learn.microsoft.com/windows/win32/api/shellapi/ns-shellapi-notifyicondataw)。现有旧托盘也可复用，无需为此次安装验证停止监控服务。

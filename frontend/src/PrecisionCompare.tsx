@@ -1,6 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {Activity,ArrowUp,Check,Download,FileText,FolderOpen,LoaderCircle,RefreshCw,Save,Trash2,X} from 'lucide-react';
 import './precision.css';
+import {downloadOriginalLog} from './logDownload';
 
 type Host={id:string;target:string};
 type Location={host_id:string;path:string};
@@ -65,6 +66,14 @@ export function PrecisionCompare({hosts}:{hosts:Host[]}){
     if(!draft.name.trim())throw new Error('请给这个对比配置起一个名称');
     const value:Config=await api('/configs','POST',draft);setDraft(value);setConfigs(await api('/configs'));setNotice('对比配置已保存，下次选择后重新读取日志即可。');
   });
+  const downloadLog=(side:'baseline'|'candidate')=>execute('download-'+side,async()=>{
+    const file=await downloadOriginalLog(draft[side]);
+    const url=URL.createObjectURL(file.blob),link=document.createElement('a');
+    link.href=url;link.download=(side==='baseline'?'基准-':'待验证-')+file.filename;
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    setNotice((side==='baseline'?'基准':'待验证')+'原始日志已交给浏览器下载：'+link.download);
+  });
   const exportCSV=()=>{
     if(!result)return;
     const rows=['metric,step,baseline,candidate,difference,absolute_error'];
@@ -82,6 +91,7 @@ export function PrecisionCompare({hosts}:{hosts:Host[]}){
       <div className="precision-card-title"><span className="precision-letter">{side==='baseline'?'A':'B'}</span><div><h2>{side==='baseline'?'基准日志':'待验证日志'}</h2><p>{side==='baseline'?'例如 GPU 训练结果':'例如 NPU 训练结果'}</p></div><FileText size={19}/></div>
       <label className="precision-label">机器<select aria-label={side==='baseline'?'基准机器':'待验证机器'} disabled={!!busy} value={draft[side].host_id} onChange={e=>setLocation(side,{host_id:e.target.value})}><option value="">选择已连接的机器</option>{hosts.map(h=><option key={h.id} value={h.id}>{h.target}</option>)}{draft[side].host_id&&!hosts.some(h=>h.id===draft[side].host_id)&&<option value={draft[side].host_id}>此机器已移除，请重新选择</option>}</select></label>
       <label className="precision-label">远端日志路径<div className="precision-path"><input aria-label={side==='baseline'?'基准日志路径':'待验证日志路径'} placeholder="/workspace/train.log 或 ~/logs/train.jsonl" disabled={!!busy} value={draft[side].path} onChange={e=>setLocation(side,{path:e.target.value})}/><button type="button" className="secondary" aria-label={side==='baseline'?'浏览基准日志':'浏览待验证日志'} disabled={!!busy||!draft[side].host_id} onClick={()=>execute('browse',()=>browse(side,draft[side].path||'~'))}><FolderOpen size={15}/></button></div></label>
+      <div className="precision-download-row"><button type="button" className="secondary" aria-label={side==='baseline'?'下载基准原始日志':'下载待验证原始日志'} disabled={!!busy||!draft[side].host_id||!draft[side].path} title="下载开始时的完整文件内容，不受指标筛选和对比范围影响" onClick={()=>downloadLog(side)}>{busy==='download-'+side?<LoaderCircle size={14} className="spin"/>:<Download size={14}/ >}{busy==='download-'+side?'正在下载…':'下载原始日志'}</button><small>无需先解析，保留完整原文</small></div>
       {s?<div className="precision-extracted"><div className="precision-extraction-heading"><Check size={14}/>{s.demo?'示例数据 · 非真实服务器':'已识别 JSON 训练日志'}<span>{s.total_lines-s.skipped_lines} 条指标记录</span></div>
         <label className="precision-label">训练轨迹<select aria-label={side==='baseline'?'基准训练轨迹':'待验证训练轨迹'} disabled={!!busy} value={group?.key||''} onChange={e=>update({[side+'_group']:e.target.value||null})}><option value="">请选择 rank / 训练段</option>{s.groups.map(g=><option key={g.key} value={g.key}>{'rank '+g.rank+' · 第 '+g.segment+' 段 · step '+g.start+'–'+g.end+' · '+g.count+' 条'+(g.duplicates?' · '+g.duplicates+' 条重复':'')}</option>)}</select></label>
         {s.groups.length>1&&<p className="precision-warning">发现多个 rank 或 step 回退，请明确选择训练轨迹。</p>}

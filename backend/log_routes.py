@@ -5,11 +5,12 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-from fastapi import HTTPException
+from fastapi import HTTPException,Request
 from pydantic import BaseModel,Field,field_validator
 
 from .log_compare import compare_logs
 from .log_reader import MAX_RECORDS,parse_lines
+from .log_download import original_log_response
 
 
 class LogLocation(BaseModel):
@@ -51,6 +52,7 @@ def register_log_routes(app,ssh,store,find):
     source=(Path(__file__).parent/'log_reader.py').read_text(encoding='utf-8')
     snapshots=OrderedDict()
     semaphore=asyncio.Semaphore(2)
+    download_slots=asyncio.Semaphore(2)
     jobs=store.load('log_comparisons',[])
 
     def prune():
@@ -99,6 +101,12 @@ def register_log_routes(app,ssh,store,find):
     @app.post('/api/logs/browse')
     async def browse(location:LogLocation):
         return await remote(location,'browse')
+
+    @app.post('/api/logs/download')
+    async def download(location:LogLocation,request:Request):
+        host=find(location.host_id)
+        async with download_slots:
+            return await original_log_response(ssh,host,location.path,request)
 
     @app.post('/api/logs/compare')
     async def compare(body:CompareRequest):

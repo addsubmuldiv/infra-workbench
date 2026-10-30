@@ -36,6 +36,17 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $fixture 'frontend\dist') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $root 'install.ps1') -Destination $fixture
     Copy-Item -LiteralPath (Join-Path $root 'start.ps1') -Destination $fixture
+    $runLauncher = -join @([char]0x8FD0, [char]0x884C, '.cmd')
+    Copy-Item -LiteralPath (Join-Path $root $runLauncher) -Destination $fixture
+    Copy-Item -LiteralPath (Join-Path $root 'install.cmd') -Destination $fixture
+    Copy-Item -LiteralPath (Join-Path $root 'background.cmd') -Destination $fixture
+    $fakeBackground = @'
+param([switch]$NoBrowser)
+Add-Content -LiteralPath (Join-Path $PSScriptRoot 'commands.log') -Value 'tray-launch'
+if ($NoBrowser) { Add-Content -LiteralPath (Join-Path $PSScriptRoot 'commands.log') -Value 'no-browser' }
+Write-Host 'Fixture tray is ready.'
+'@
+    Set-Content -LiteralPath (Join-Path $fixture 'background.ps1') -Value $fakeBackground -Encoding ASCII
     Set-Content -LiteralPath (Join-Path $fixture 'frontend\dist\index.html') -Value '<html>test</html>'
     Set-Content -LiteralPath (Join-Path $fixture 'requirements.txt') -Value 'test-package==1'
     # Simulate external Python/pip only; run the actual installer and startup scripts.
@@ -100,7 +111,44 @@ function Test-PortAvailable { return $false }
     Run-Fixture
     Assert-True ($runExit -eq 0 -and (Test-Path -LiteralPath $stamp)) 'Dependency conflict recovery failed.'
     Pass 'a repaired dependency check can complete installation'
+    $before = Count-Pip
+    Run-Fixture -Arguments @()
+    Assert-True ($runExit -eq 0 -and $runOutput.Contains('Fixture tray is ready.') -and (Count-Pip) -eq $before) ('Default install must start the tray without reinstalling: ' + $runOutput)
+    Pass 'one command installs and launches the tray by default'
+    Run-Fixture -Arguments @('-NoBrowser')
+    Assert-True ($runExit -eq 0 -and (Get-Content -LiteralPath (Join-Path $fixture 'commands.log')) -contains 'no-browser') 'NoBrowser must reach the tray launcher.'
+    Pass 'one-command install can start without opening the browser'
     Set-Content -LiteralPath (Join-Path $fixture 'healthy') -Value 'ready'
+    $trayBefore = @((Get-Content -LiteralPath (Join-Path $fixture 'commands.log')) | Where-Object { $_ -eq 'tray-launch' }).Count
+    Run-Fixture -Arguments @('-Console', '-NoBrowser')
+    $trayAfter = @((Get-Content -LiteralPath (Join-Path $fixture 'commands.log')) | Where-Object { $_ -eq 'tray-launch' }).Count
+    Assert-True ($runExit -eq 0 -and $runOutput.Contains('already running') -and $trayBefore -eq $trayAfter) 'Console mode must use start.ps1 instead of launching the tray.'
+    Pass 'console mode remains available explicitly'
+    $before = Count-Pip
+    $cmdOutput = & cmd.exe /d /c ('call "' + (Join-Path $fixture $runLauncher) + '" -NoLaunch') 2>&1
+    Assert-True ($LASTEXITCODE -eq 0 -and (Count-Pip) -eq $before) ('Double-click CMD entry failed: ' + ($cmdOutput | Out-String))
+    Pass 'the actual CMD entry works in a Unicode and space path'
+    $savedModulePath = $env:PSModulePath
+    $savedPreference = $ErrorActionPreference
+    $incompatibleModules = Join-Path $fixture 'foreign-modules'
+    $utilityModule = Join-Path $incompatibleModules 'Microsoft.PowerShell.Utility'
+    New-Item -ItemType Directory -Force -Path $utilityModule | Out-Null
+    $utilityDll = Join-Path $PSHOME 'Microsoft.PowerShell.Commands.Utility.dll'
+    # Model a Core Utility module that declares Get-FileHash as a cmdlet,
+    # although the Windows PowerShell DLL implements it in a separate script.
+    $utilityManifest = "@{ModuleVersion='99.0.0';NestedModules=@('$utilityDll');CmdletsToExport=@('*','Get-FileHash');FunctionsToExport=@()}"
+    Set-Content -LiteralPath (Join-Path $utilityModule 'Microsoft.PowerShell.Utility.psd1') -Value $utilityManifest -Encoding ASCII
+    try {
+        $env:PSModulePath = $incompatibleModules
+        $ErrorActionPreference = 'Continue'
+        $cmdOutput = & cmd.exe /d /c ('call "' + (Join-Path $fixture $runLauncher) + '" -NoLaunch < nul') 2>&1
+        $cmdExit = $LASTEXITCODE
+    } finally {
+        $env:PSModulePath = $savedModulePath
+        $ErrorActionPreference = $savedPreference
+    }
+    Assert-True ($cmdExit -eq 0 -and (Count-Pip) -eq $before) ('CMD must work with an incompatible inherited module path: '+($cmdOutput | Out-String))
+    Pass 'CMD launcher recovers from an incompatible inherited PowerShell module path'
     $before = Count-Pip
     Run-Fixture -Script 'start.ps1' -Arguments @('-NoBrowser')
     Assert-True ($runExit -eq 0 -and (Count-Pip) -eq $before -and $runOutput.Contains('already running')) 'Existing service must be reused without installation.'
@@ -129,7 +177,7 @@ function Test-PortAvailable { return $false }
     New-Item -ItemType Directory -Path (Join-Path $fixture 'data') -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $fixture 'data\private-test.txt') -Value 'synthetic-private-data'
     Invoke-Checked git.exe @('-C', $fixture, 'init', '-b', 'main', '--quiet')
-    Invoke-Checked git.exe @('-C', $fixture, 'add', '--', 'install.cmd', 'install.ps1', 'start.cmd', 'start.ps1', 'scripts', 'frontend/dist/index.html', 'README.md', 'docs')
+    Invoke-Checked git.exe @('-C', $fixture, 'add', '--', $runLauncher, 'install.cmd', 'install.ps1', 'start.cmd', 'start.ps1', 'background.cmd', 'background.ps1', 'scripts', 'frontend/dist/index.html', 'README.md', 'docs')
     Invoke-Checked git.exe @('-C', $fixture, '-c', 'user.name=Installer Test', '-c', 'user.email=installer-test@example.invalid', 'commit', '--quiet', '-m', 'Test fixture')
     Run-Fixture -Script 'scripts/release-windows.ps1' -Arguments @()
     Assert-True ($runExit -eq 0) ('Release generation failed: ' + $runOutput)
@@ -138,6 +186,7 @@ function Test-PortAvailable { return $false }
     try {
         $names = @($archive.Entries | ForEach-Object { $_.FullName })
         Assert-True ($names -contains 'infra-workbench/install.cmd') 'Release is missing the installer.'
+        Assert-True ($names -contains ('infra-workbench/'+$runLauncher)) 'Release is missing the double-click entry.'
         Assert-True (-not ($names -match '/(data|\.venv|\.git)/')) 'Untracked private/generated files leaked into the release.'
     } finally { $archive.Dispose() }
     Pass 'Git release contains the installer and excludes untracked private data'

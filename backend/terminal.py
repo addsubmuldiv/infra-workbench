@@ -51,8 +51,13 @@ class NativeTerminal:
         executable = shutil.which(args[0])
         if not executable:
             raise ValueError('找不到 Windows OpenSSH 客户端')
+        # ssh.exe sends TERM to the remote PTY. Launchers may inherit TERM=dumb,
+        # which disables clear, readline redraw and colors despite using xterm.js.
+        environment = dict(os.environ)
+        environment['TERM'] = 'xterm-256color'
+        environment_block = '\0'.join(f'{key}={value}' for key,value in sorted(environment.items(),key=lambda item:item[0].upper()))+'\0\0'
         self.pty = PTY(cols, rows, backend=Backend.ConPTY)
-        if not self.pty.spawn(executable, cmdline=' '+subprocess.list2cmdline(args[1:])):
+        if not self.pty.spawn(executable, cmdline=' '+subprocess.list2cmdline(args[1:]), env=environment_block):
             raise ValueError('无法创建 Windows 终端')
         self.kernel = ctypes.WinDLL('kernel32', use_last_error=True)
         self.kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
@@ -177,7 +182,10 @@ class TerminalManager:
                     kind=message.get('type')
                     if kind=='input':
                         data=message.get('data')
-                        if not isinstance(data,str) or len(data)>16384: raise ValueError('单次终端输入过长')
+                        if not isinstance(data,str): raise ValueError('终端输入格式无效')
+                        if len(data)>16384:
+                            await websocket.send_json(dict(type='warning',message='本次输入过长，未发送到远端；连接已保留，请分段粘贴'))
+                            continue
                         await channel.write(data)
                     elif kind=='resize': await channel.resize(*dimensions(message))
                     elif kind=='ack':

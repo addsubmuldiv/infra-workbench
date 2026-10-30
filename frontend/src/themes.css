@@ -261,3 +261,15 @@ header{background:var(--panel);border-color:var(--line);position:sticky;top:0;z-
 .ssh-open{display:flex;align-items:center;gap:7px;font-size:11px;background:var(--accent-bg);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);border-radius:6px;padding:7px 10px;white-space:nowrap}
 .ssh-open:hover{background:color-mix(in srgb,var(--accent) 15%,var(--panel))}
 @media(max-width:650px){.ssh-open{padding:6px}.ssh-open span{display:none}}
+.precision-cache[hidden]{display:none}
+.global-ssh-menu{position:relative}
+.global-ssh-menu summary{list-style:none;cursor:pointer}
+.global-ssh-menu summary::-webkit-details-marker{display:none}
+.global-ssh-menu summary>svg:last-child{transform:rotate(90deg);margin-left:2px}
+.global-ssh-targets{position:absolute;top:calc(100% + 10px);right:0;width:270px;max-height:360px;overflow-y:auto;z-index:60;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px;box-shadow:var(--shadow)}
+.global-ssh-targets>strong{display:block;font-size:12px;padding:5px 7px;color:var(--text)}
+.global-ssh-targets>small{display:block;color:var(--muted);font-size:10px;line-height:1.6;padding:1px 7px 8px}
+.global-ssh-targets>button{width:100%;display:flex;align-items:center;gap:10px;padding:9px 8px;border:0;background:transparent;color:var(--text);text-align:left;border-radius:6px}
+.global-ssh-targets>button:hover{background:var(--hover)}
+.global-ssh-targets button>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.global-ssh-targets button small{display:block;font-size:9px;color:var(--muted);margin-top:3px}

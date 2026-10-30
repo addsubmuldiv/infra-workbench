@@ -12,11 +12,13 @@
 
 ## 首次安装
 
-拿到仓库或 ZIP，完整保留目录结构，双击根目录的 `install.cmd`。
+拿到仓库或 ZIP，完整保留目录结构，双击根目录的 **`运行.cmd`**。无需打开终端或手工输入命令，首次安装和后续启动都使用这一个入口。
 
-脚本会依次检查系统和 OpenSSH、寻找 Python、创建 `.venv`、安装 `requirements.txt` 中的固定版本依赖、检查依赖，再启动本地服务并打开浏览器。没有 Python 时，CMD 入口会尝试用 WinGet 的 `Python.Python.3.12` 包以当前用户身份安装，不修改全局 PowerShell 执行策略。[WinGet 参数说明](https://learn.microsoft.com/windows/package-manager/winget/install)
+脚本会依次检查系统和 OpenSSH、寻找 Python、创建 `.venv`、安装 `requirements.txt` 中的固定版本依赖、检查依赖，再启动系统托盘。确认本地服务就绪后打开浏览器，安装窗口自动关闭；程序继续在后台监控。没有 Python 时，CMD 入口会尝试用 WinGet 的 `Python.Python.3.12` 包以当前用户身份安装，不修改全局 PowerShell 执行策略。[WinGet 参数说明](https://learn.microsoft.com/windows/package-manager/winget/install)
 
 安装失败时窗口保留错误。解决网络或依赖问题后，再次运行即可。只有全部依赖检查通过才会写入安装成功标记，已有虚拟环境不代表安装成功。
+
+重复双击会复用完整的安装环境，依赖文件变化时才重新安装依赖。已有托盘和本地服务会被复用，不会启动第二套监控或清空机器、规则。`install.cmd` 是等效的兼容入口。
 
 只安装、不启动：
 
@@ -34,9 +36,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckOnly
 
 ## 日常启动与连接
 
-双击 `start.cmd`。已有本地服务时复用，不重复启动。新启动时只监听 `127.0.0.1:8765`，不要改成 `0.0.0.0` 给其他人共享。
+双击 **`运行.cmd`**，直接打开界面并保持托盘运行。新启动时只监听 `127.0.0.1:8765`，不要改成 `0.0.0.0` 给其他人共享。
 
 `start.cmd` 用于控制台模式，保持启动窗口运行，按 Ctrl+C 停止服务。
+
+需要在安装后进入控制台，可使用 `install.cmd -Console`；只希望后台启动但暂不打开页面，可使用 `install.cmd -NoBrowser`。这些参数供排障和自动化使用，日常双击即可。
 
 日常后台使用推荐双击 **background.cmd**：系统托盘提供桌面通知、打开工作台、通知开关及可选的登录启动。关闭网页后继续监控，无需浏览器通知权限。登录启动默认关闭，在托盘右键菜单中手动勾选。详细说明见 [系统托盘与后台监控](BACKGROUND.md)。
 

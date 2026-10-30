@@ -9,8 +9,10 @@ try {
     if ($files -match '(^|/)(data|\.venv|node_modules|__pycache__|\.git)(/|$)|(^|/)\.env($|\.)|\.(pem|key|db|sqlite)$|(^|/)id_(rsa|ed25519)') {
         throw 'Sensitive or generated local files are tracked. Remove them from Git before releasing.'
     }
-    foreach ($required in @('install.cmd', 'install.ps1', 'start.cmd', 'scripts/windows-common.ps1', 'frontend/dist/index.html', 'README.md', 'docs/WINDOWS.md')) {
-        if ($files -notcontains $required) { throw "Required release file is not committed: $required" }
+    $runLauncher = -join @([char]0x8FD0, [char]0x884C, '.cmd')
+    foreach ($required in @($runLauncher, 'install.cmd', 'install.ps1', 'background.cmd', 'background.ps1', 'start.cmd', 'scripts/windows-common.ps1', 'frontend/dist/index.html', 'README.md', 'docs/WINDOWS.md')) {
+        & git cat-file -e ('HEAD:'+$required) 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "Required release file is not committed: $required" }
     }
     $dirty = @(git status --porcelain --untracked-files=no)
     if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect Git state.' }

@@ -74,6 +74,33 @@ def test_web_terminal_requires_same_origin_single_use_ticket_and_closes_only_its
         assert not app.state.terminals.active
 
 
+def test_oversized_input_is_rejected_without_ending_the_session(tmp_path):
+    app=create_app(tmp_path,start_poll=False)
+    app.state.hosts.append(dict(id='one',target='example',auth='key'))
+    class Channel:
+        def __init__(self): self.queue=asyncio.Queue(); self.closed=False
+        async def read(self): return await self.queue.get()
+        async def write(self,data): await self.queue.put(data)
+        async def resize(self,*size): pass
+        async def close(self): self.closed=True
+    channel=Channel()
+    async def open_channel(*args): return channel
+    app.state.terminals.open_channel=open_channel
+    with TestClient(app) as client:
+        ticket=client.post('/api/hosts/one/terminal-ticket',headers={'X-IWB':'1'}).json()['ticket']
+        with client.websocket_connect('/api/terminal/one',subprotocols=['iwb-terminal',ticket],headers={'Origin':'http://testserver'}) as socket:
+            socket.send_json(dict(type='resize',cols=100,rows=24))
+            assert socket.receive_json()['type']=='ready'
+            socket.send_json(dict(type='input',data='x'*17000))
+            assert socket.receive_json()['type']=='warning'
+            assert not channel.closed
+            socket.send_json(dict(type='input',data='still-connected'))
+            assert socket.receive_json()==dict(type='output',data='still-connected')
+            socket.send_json(dict(type='close'))
+            assert socket.receive_json()['type']=='exit'
+        assert channel.closed
+
+
 @pytest.mark.skipif(os.name!='nt',reason='Windows native PTY')
 def test_native_pty_roundtrip_resize_and_close_uses_only_its_own_process():
     async def scenario():
@@ -114,6 +141,29 @@ def test_native_pty_preserves_argument_boundaries_without_duplicating_executable
         try:
             await asyncio.wait_for(receive(),10)
             assert "['literal space']" in output
+        finally: await term.close()
+    asyncio.run(scenario())
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Windows native PTY')
+def test_native_pty_advertises_xterm_without_changing_parent_environment(monkeypatch):
+    monkeypatch.setenv('TERM','dumb')
+    monkeypatch.setenv('IWB_PTY_TEST','preserved value')
+    async def scenario():
+        code="import os; print('ENV:'+os.environ.get('TERM','')+'|'+os.environ.get('IWB_PTY_TEST',''),flush=True)"
+        term=await NativeTerminal.spawn([sys.executable,'-u','-c',code],100,24)
+        output=''
+        async def receive():
+            nonlocal output
+            while 'ENV:' not in output:
+                chunk=await term.read()
+                if not chunk: raise AssertionError(repr(output))
+                output+=chunk
+                if '\x1b[6n' in chunk: await term.write('\x1b[1;1R')
+        try:
+            await asyncio.wait_for(receive(),10)
+            assert 'ENV:xterm-256color|preserved value' in output
+            assert os.environ['TERM']=='dumb'
         finally: await term.close()
     asyncio.run(scenario())
 

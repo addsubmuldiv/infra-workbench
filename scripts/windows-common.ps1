@@ -65,6 +65,53 @@ function Get-WorkbenchHealth {
     return $false
 }
 
+function Test-WorkbenchTrayReady {
+    # HTTP starts before notification registration. Confirm that the app's actual
+    # tray icon exists too, including when reusing an older running checkout.
+    if (-not ('InfraWorkbench.TrayProbe' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace InfraWorkbench {
+    public static class TrayProbe {
+        [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+        private struct IconData {
+            public uint Size;
+            public IntPtr Window;
+            public uint Id, Flags, Callback;
+            public IntPtr Icon;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string Tip;
+            public uint State, StateMask;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst=256)] public string Info;
+            public uint Timeout;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst=64)] public string Title;
+            public uint InfoFlags;
+            public Guid Guid;
+            public IntPtr BalloonIcon;
+        }
+        [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string className, string title);
+        [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool Shell_NotifyIcon(uint message, ref IconData data);
+        public static bool IsReady() {
+            IntPtr window = FindWindow("InfraWorkbenchTray", "Infra Workbench");
+            if (window == IntPtr.Zero) return false;
+            IconData data = new IconData();
+            data.Size = (uint)Marshal.SizeOf(typeof(IconData));
+            data.Window = window;
+            data.Id = 1;
+            // NIM_MODIFY with no valid-member flags: acknowledge an existing
+            // icon without altering its image, callback, tooltip or messages.
+            return Shell_NotifyIcon(1, ref data);
+        }
+    }
+}
+'@ | Out-Null
+    }
+    return [InfraWorkbench.TrayProbe]::IsReady()
+}
+
 function Test-PortAvailable {
     $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 8765)
     try { $listener.Start(); return $true } catch { return $false } finally { $listener.Stop() }
