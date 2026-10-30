@@ -1,0 +1,52 @@
+[data-theme="frieren"]{
+  color-scheme:light;--bg:#f3f5ee;--panel:#fffefb;--panel2:#f5f5f0;--sidebar:#fafbf6;
+  --text:#38473e;--muted:#748074;--line:#dde4d7;--accent:#5c7755;--accent-bg:#eaf0e3;
+  --green:#42765c;--amber:#956a2c;--warning-bg:#faf0dd;--danger:#b25759;--danger-bg:#faeeee;
+  --input:#fffefb;--hover:#edf1e7;--shadow:0 12px 38px #56674617;--brand:#52694a;
+}
+[data-theme="frieren"] body{background:radial-gradient(ellipse at 100% 12%,#e9e3f080,transparent 55%),radial-gradient(ellipse at 40% 100%,#e3ebd8b0,transparent 65%),var(--bg)}
+[data-theme="frieren"] .shell,[data-theme="frieren"] main{background:transparent}
+[data-theme="frieren"] main{position:relative;isolation:isolate}
+[data-theme="frieren"] .content{position:relative;z-index:1;width:100%;margin:0 auto}
+[data-theme="frieren"] .sidebar{background:linear-gradient(165deg,#fcfcf8,#f0f4e9);border-right-color:#dce4d4}
+[data-theme="frieren"] .brand-icon{border-radius:14px 5px 14px 5px;background:#e9efdf}
+[data-theme="frieren"] header{background:#fafbf6f5}
+[data-theme="frieren"] .eyebrow{color:#819171;letter-spacing:2.6px}
+[data-theme="frieren"] .machine,[data-theme="frieren"] .stats,[data-theme="frieren"] .finder{border-radius:12px;box-shadow:0 8px 28px #53664812}
+/* Only the panel fill is translucent; text and controls keep their full opacity. */
+[data-theme="frieren"] .machine,[data-theme="frieren"] .stats,[data-theme="frieren"] .finder,
+[data-theme="frieren"] .empty,[data-theme="frieren"] .events,[data-theme="frieren"] .rule-row,
+[data-theme="frieren"] .mobile-hosts{background:rgba(255,254,251,.62)}
+[data-theme="frieren"] .machine-heading{background:linear-gradient(100deg,#fcfdf82b,#f8f5fc33)}
+[data-theme="frieren"] .system-summary,[data-theme="frieren"] .machine-footer,
+[data-theme="frieren"] .device-table th,[data-theme="frieren"] .sudo-alert{background:#f5f5f02b}
+[data-theme="frieren"] .device-table tbody tr:hover{background:#f8fbf080}
+[data-theme="frieren"] .device-table td{color:#273d30}
+[data-theme="frieren"] .device-table .numeric,[data-theme="frieren"] .process-summary strong{font-weight:500}
+[data-theme="frieren"] .primary{border-radius:9px 4px 9px 4px}
+[data-theme="frieren"] .theme-options{max-height:calc(100vh - 110px);overflow-y:auto}
+.journey-art{display:none}
+[data-theme="frieren"] .journey-art{display:flex;flex-direction:column;align-items:center;width:228px;position:fixed;right:6px;bottom:30px;z-index:0;text-align:center;isolation:isolate;pointer-events:none;user-select:none}
+.journey-caption>span{font-size:8px;letter-spacing:3px;color:#929a84}
+.journey-caption h2{font-family:"Noto Serif SC","Songti SC",SimSun,serif;font-size:24px;letter-spacing:7px;font-weight:400;color:#65785a;margin:14px 0 10px}
+.journey-caption p{font-size:10px;color:#8c9485;letter-spacing:1px}
+.journey-portraits{width:100%;height:405px;position:relative;overflow:hidden;pointer-events:none;user-select:none}
+.journey-orbit{position:absolute;inset:65px 13px 26px;border:1px solid #d5dfc9;border-radius:50% 50% 9px 9px;background:linear-gradient(160deg,#e8eddf90,#eee8f2a0)}
+.journey-orbit:after{content:"";position:absolute;inset:9px;border:1px solid #fafbf3;border-radius:inherit}
+.journey-character{position:absolute;overflow:hidden;pointer-events:none}
+.journey-character img{display:block;position:absolute;left:50%;transform:translateX(-50%);width:auto;max-width:none;object-fit:contain;filter:drop-shadow(0 10px 5px #52604712)}
+.journey-frieren{left:-14px;top:18px;width:148px;height:340px;z-index:1}
+.journey-frieren img{height:340px}
+.journey-fern{right:-18px;top:65px;width:156px;height:340px;z-index:2}
+.journey-fern img{height:340px}
+.journey-flower{position:absolute;font-size:24px;color:#b5a6c3;z-index:3}
+.flower-one{right:28px;top:28px}.flower-two{left:20px;bottom:37px;color:#98a985;font-size:20px}
+.journey-names{display:flex;justify-content:center;gap:24px;align-items:center;margin-top:12px;color:#627754;font-size:12px;letter-spacing:3px}
+.journey-names span:last-child{color:#857292}
+.journey-names small{display:block;font-size:7px;letter-spacing:2px;margin-top:7px;opacity:.75}
+.journey-names i{font-style:normal;color:#b4bcaa;font-size:15px}
+.journey-credit{font-size:8px;color:#92998c;text-decoration:none;margin-top:22px;letter-spacing:.6px}
+/* Artwork stays outside document flow at every size; data cards paint above it. */
+@media(min-width:1800px){[data-theme="frieren"] .journey-art{right:22px;width:270px}.journey-portraits{height:465px}.journey-frieren{left:-2px;width:160px;height:395px}.journey-frieren img{height:395px}.journey-fern{right:-2px;width:170px;height:395px}.journey-fern img{height:395px}}
+@media(width < 800px){[data-theme="frieren"] .journey-art{width:200px;right:0;bottom:14px}.journey-caption h2{font-size:20px;margin:12px 0 7px}.journey-portraits{height:245px;width:200px}.journey-frieren{top:0;left:-5px;width:115px;height:245px}.journey-frieren img{height:245px}.journey-fern{top:0;right:-5px;width:115px;height:245px}.journey-fern img{height:245px}.journey-orbit{inset:25px 14px 0}.journey-flower{display:none}.journey-names{margin-top:9px}.journey-credit{margin-top:14px}.journey-caption p{display:none}}
+@media(max-height:720px) and (min-width:800px){.journey-portraits{height:310px}.journey-frieren{height:270px;top:0}.journey-frieren img{height:270px}.journey-fern{height:270px;top:36px}.journey-fern img{height:270px}.journey-caption h2{font-size:20px;margin:10px 0}.journey-credit{margin-top:12px}[data-theme="frieren"] .journey-art{bottom:14px}}

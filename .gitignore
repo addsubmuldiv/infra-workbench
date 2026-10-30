@@ -1,0 +1,26 @@
+.venv/
+data/
+frontend/node_modules/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+release/
+work/
+# Local validation notes include private machine names; share generic docs instead.
+VALIDATION.md
