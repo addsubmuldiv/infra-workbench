@@ -18,8 +18,35 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0,str(ROOT))
 URL = 'http://127.0.0.1:8765/'
+APP_ID = 'InfraWorkbench.Desktop'
 DATA = Path(os.environ.get('IWB_DATA', str(ROOT/'data')))
 OPENER = build_opener(ProxyHandler({}))  # Never send local process data through a proxy.
+
+
+def register_notification_identity(registry=None,shell=None,shortcut=None):
+    """Give Windows a stable per-user app identity instead of pythonw.exe's."""
+    if registry is None:
+        import winreg as registry
+    if shell is None:
+        shell=ctypes.WinDLL('shell32',use_last_error=True)
+    from ctypes import wintypes as w
+    icon=(ROOT/'backend'/'assets'/'workbench.png').resolve()
+    if not icon.is_file():
+        raise RuntimeError('无法加载通知应用图标，请检查 backend/assets/workbench.png')
+    key=r'Software\Classes\AppUserModelId'+'\\'+APP_ID
+    with registry.CreateKey(registry.HKEY_CURRENT_USER,key) as entry:
+        registry.SetValueEx(entry,'DisplayName',0,registry.REG_SZ,'Infra Workbench')
+        registry.SetValueEx(entry,'IconUri',0,registry.REG_SZ,str(icon))
+    if shortcut is None:
+        from backend.notification_identity import ensure_shortcut
+        shortcut=ensure_shortcut
+    shortcut(ROOT,APP_ID)
+    set_identity=shell.SetCurrentProcessExplicitAppUserModelID
+    set_identity.argtypes=[w.LPCWSTR]
+    set_identity.restype=ctypes.c_long
+    if set_identity(APP_ID)<0:
+        raise RuntimeError('无法设置 Windows 通知应用身份')
+    return APP_ID
 
 
 def get_api(path):
@@ -129,6 +156,7 @@ class ServiceHost:
 
 
 def run_tray(service,settings,startup,open_browser,smoke_test=False):
+    register_notification_identity()
     from ctypes import wintypes as w
     user=ctypes.WinDLL('user32',use_last_error=True)
     shell=ctypes.WinDLL('shell32',use_last_error=True)
@@ -178,14 +206,19 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
                         user.GetSystemMetrics(49),user.GetSystemMetrics(50),0x10)
     if not icon:
         raise RuntimeError('无法加载工作台图标，请检查 backend/assets/workbench.ico')
+    notification_icon=user.LoadImageW(None,str(ROOT/'backend'/'assets'/'workbench.ico'),1,
+                                     user.GetSystemMetrics(11),user.GetSystemMetrics(12),0x10)
+    if not notification_icon:
+        user.DestroyIcon(icon)
+        raise RuntimeError('无法加载通知图标，请检查 backend/assets/workbench.ico')
     icon_data=Notification(size=ctypes.sizeof(Notification),id=1,flags=7,callback=WM_TRAY,
-                           icon=icon,tip='Infra Workbench · 后台监控')
+                           icon=icon,tip='Infra Workbench · 后台监控',balloonIcon=notification_icon)
 
     def notify(title,text):
         icon_data.flags=0x10
         icon_data.title=title[:63]
         icon_data.info=text[:255]
-        icon_data.infoFlags=1
+        icon_data.infoFlags=0x04|0x20  # NIIF_USER | NIIF_LARGE_ICON
         if not shell.Shell_NotifyIconW(1,ctypes.byref(icon_data)):
             raise RuntimeError('Windows 未接受桌面通知请求')
         receipt['notification_accepted']=True
@@ -282,6 +315,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
     finally:
         stop.set();worker.join(timeout=4)
         shell.Shell_NotifyIconW(2,ctypes.byref(icon_data))
+        user.DestroyIcon(notification_icon)
         user.DestroyIcon(icon)
         receipt['icon_removed']=True
     return receipt

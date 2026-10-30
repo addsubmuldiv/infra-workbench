@@ -35,3 +35,5 @@
 移动、升级到另一目录或删除项目之前，先从旧版本托盘取消开机启动。新目录安装后可重新勾选。直接删除项目不会自动清除启动项，也不会清除 Windows 凭据管理器里的 sudo 密码。
 
 托盘错误日志保存在 `data/desktop.log`，最多保留两份各约 256 KB。运行后台入口后没有图标时，用 start.cmd 检查服务能否启动，并检查此日志。
+
+通知使用独立的 `InfraWorkbench.Desktop` 应用身份，显示名称和图标取自工作台本身。首次启动会注册当前用户的 `HKCU\Software\Classes\AppUserModelId\InfraWorkbench.Desktop`，并建立「开始菜单 → Infra Workbench」应用快捷方式，绑定相同的 AppUserModelID，让 Windows 能解析友好名称与图标。不会修改 Python 或其他程序的身份，也不会因此启用开机启动。更新前已经显示的旧通知不会被改写；退出旧托盘并重新运行 background.cmd 后，新通知使用新身份。卸载时可一并删除这份开始菜单快捷方式。

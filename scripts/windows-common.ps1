@@ -13,7 +13,7 @@ function Test-ProjectPython {
     param([string]$FilePath)
     if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) { return $false }
     try {
-        & $FilePath -c 'import sys; import fastapi, uvicorn, asyncssh; sys.exit(0 if sys.version_info >= (3,11) else 1)' 2>$null
+        & $FilePath -c 'import sys; import fastapi, uvicorn, asyncssh, websockets, winpty; sys.exit(0 if sys.version_info >= (3,11) else 1)' 2>$null
         return $LASTEXITCODE -eq 0
     } catch { return $false }
 }

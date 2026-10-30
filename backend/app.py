@@ -21,6 +21,7 @@ from .ssh import SSHService
 from .store import Store
 from .credentials import WindowsCredentialStore
 from .sudo import SudoService
+from .terminal import register_terminal_routes
 from .log_routes import register_log_routes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -206,12 +207,14 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        await app.state.terminals.close_host()
         await ssh.close()
         store.db.close()
 
     app = FastAPI(title='Infra Workbench', lifespan=lifespan)
     app.state.hosts, app.state.ssh = hosts, ssh
     app.state.sudo = sudo
+    register_terminal_routes(app,hosts,ssh)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.middleware('http')
@@ -283,6 +286,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     @serialize_connections
     async def remove(host_id: str):
         host = find(host_id)
+        await app.state.terminals.close_host(host_id)
         async with locks.setdefault(host_id, asyncio.Lock()):
             try:
                 await sudo.forget(host)

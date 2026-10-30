@@ -10,6 +10,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.desktop import EventCursor, startup_command, DesktopSettings, ServiceHost, Startup
 
 
+def test_notification_identity_uses_workbench_name_icon_and_only_its_own_user_key():
+    from backend.desktop import register_notification_identity, APP_ID
+    class Registry:
+        HKEY_CURRENT_USER=object()
+        REG_SZ=1
+        values={}
+        def CreateKey(self,root,key):
+            assert root is self.HKEY_CURRENT_USER
+            assert key==r'Software\Classes\AppUserModelId'+'\\'+APP_ID
+            return self
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        def SetValueEx(self,key,name,reserved,kind,value):
+            assert kind==self.REG_SZ
+            self.values[name]=value
+    class SetIdentity:
+        def __call__(self,app_id):
+            assert app_id==APP_ID
+            return 0
+    class Shell:
+        SetCurrentProcessExplicitAppUserModelID=SetIdentity()
+    registry=Registry()
+    shortcuts=[]
+    assert register_notification_identity(registry,Shell(),lambda root,app_id:shortcuts.append((root,app_id)))==APP_ID
+    assert shortcuts[0][1]==APP_ID
+    assert registry.values['DisplayName']=='Infra Workbench'
+    assert registry.values['IconUri'].endswith('workbench.png')
+    assert Path(registry.values['IconUri']).is_file()
+
+
 def test_custom_icon_contains_native_tray_and_high_dpi_sizes():
     raw=(Path(__file__).resolve().parents[1]/'backend'/'assets'/'workbench.ico').read_bytes()
     reserved,kind,count=struct.unpack_from('<HHH',raw)
