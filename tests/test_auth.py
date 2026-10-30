@@ -35,6 +35,10 @@ def test_password_login_then_provision_and_verify_key(tmp_path, reject_key):
                 proc.stdout.write(done.stdout)
                 proc.stderr.write(done.stderr)
                 proc.exit(done.returncode)
+            elif proc.command == 'iwb-test-stdin':
+                supplied = await proc.stdin.read()
+                proc.stdout.write('iwb-stdin-ok' if supplied=='synthetic-sudo-test\n' else 'invalid-input')
+                proc.exit(0 if supplied=='synthetic-sudo-test\n' else 1)
             else:
                 proc.stdout.write('iwb-connected\n')
                 proc.exit(0)
@@ -73,6 +77,8 @@ def test_password_login_then_provision_and_verify_key(tmp_path, reject_key):
             config = await service.effective(host)
             code, out, err = await service.run_bound(host, 'printf iwb-connected', None, config)
             assert code == 0 and 'iwb-connected' in out, err
+            code, out, err = await service.run_bound(host, 'iwb-test-stdin', 'synthetic-sudo-test\n', config)
+            assert code == 0 and out=='iwb-stdin-ok', err
         finally:
             await service.close()
             listener.close()

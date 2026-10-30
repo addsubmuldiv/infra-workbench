@@ -35,11 +35,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-windows.p
 | `backend/core.py` | GPU/NPU 解析和资源判断 |
 | `backend/remote_probe.py` | 远端只读采集 CPU、内存、设备、进程和端口 |
 | `backend/store.py` | SQLite 中的主机、规则和事件 |
+| `backend/desktop.py` | Windows 系统托盘、桌面通知及当前用户登录启动 |
+| `backend/assets` | 托盘图标和可编辑 SVG 源文件 |
 | `frontend/src` | 页面、主题与浏览器偏好 |
 | `install.ps1` / `start.ps1` | Windows 安装及运行入口 |
+| `background.cmd` / `background.ps1` | Windows 托盘后台运行入口 |
 | `scripts/windows-common.ps1` | 安装、启动共用环境检查 |
 
-进程权限增强相关代码可能随主分支继续开发；本次部署改动不启用任何机器的 sudo，也不改服务器设置。
+sudo 权限由使用者按机器自行启用；安装和后台启动入口不会自动开启任何机器的 sudo，也不会自动启用登录启动。
 
 ## 提交与分享
 
@@ -63,10 +66,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release-window
 
 ## 远程仓库
 
-本地仓库可以先独立使用。确定托管地址后由维护者关联远程仓库：
+GitHub 仓库：[addsubmuldiv/infra-workbench](https://github.com/addsubmuldiv/infra-workbench)。当前按私有仓库分发，克隆需要已获访问权限的 GitHub 身份。
 
 ```powershell
-git remote add origin <仓库地址>
+git clone https://github.com/addsubmuldiv/infra-workbench.git
+cd infra-workbench
+.\install.cmd
+```
+
+维护者提交并通过检查后推送：
+
+```powershell
 git push -u origin main
 ```
 
