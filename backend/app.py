@@ -58,6 +58,7 @@ class RuleRequest(CheckRequest):
 
 class ReservationRequest(BaseModel):
     host_id: str
+    email_notify: bool = False
     devices: list[str] = Field(min_length=1, max_length=64)
     wait_seconds: int = Field(default=120, ge=0, le=86400)
     minimum_gib: float = Field(default=1, ge=0, le=100000, allow_inf_nan=False)
@@ -409,6 +410,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @app.post('/api/reservations')
     async def add_reservation(body: ReservationRequest):
+        if body.email_notify and not mail.view()['reservation_available']:
+            raise HTTPException(409, '请先在设置中启用邮件通知，并保存完整邮箱配置和授权码')
         async with locks.setdefault(body.host_id, asyncio.Lock()):
             host = find(body.host_id)
             snap = snapshots.get(host['id'], {})
@@ -419,7 +422,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 raise HTTPException(422, '所选设备已变化，请重新选择')
             try:
                 return reservations.add(host, [by_id[device_id] for device_id in body.devices],
-                                        body.wait_seconds, body.minimum_gib)
+                                        body.wait_seconds, body.minimum_gib, email_notify=body.email_notify)
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from None
 

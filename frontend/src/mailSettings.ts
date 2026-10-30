@@ -1,6 +1,6 @@
 export type MailResult={status:'pending'|'sending'|'sent'|'failed'|'skipped';error:string;updated:number};
 export type MailConfig={enabled:boolean;host:string;port:number;security:'ssl'|'starttls';username:string;sender:string;recipients:string[]};
-export type MailView=MailConfig&{password_saved:boolean;has_password:boolean;can_remember:boolean;credential_error:string;last_test:MailResult|null;last_delivery:MailResult|null};
+export type MailView=MailConfig&{password_saved:boolean;has_password:boolean;reservation_available:boolean;can_remember:boolean;credential_error:string;last_test:MailResult|null;last_delivery:MailResult|null};
 export const defaultMailConfig:MailConfig={enabled:false,host:'',port:465,security:'ssl',username:'',sender:'',recipients:[]};
 export function recipientList(value:string):string[]{return [...new Set(value.split(/[,;，；\s]+/).map(value=>value.trim()).filter(Boolean))]}
 export async function mailRequest<T>(path='',method='GET',body?:unknown,request:typeof fetch=fetch):Promise<T>{

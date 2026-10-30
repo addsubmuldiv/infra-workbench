@@ -131,7 +131,9 @@ class MailService:
         except Exception:
             valid_saved, available, error = False, False, '无法读取已保存的授权码，请重新输入或检查系统凭据管理器'
         last = self.store.db.execute('SELECT status,error,updated FROM mail_outbox ORDER BY updated DESC LIMIT 1').fetchone()
-        return dict(self.config, password_saved=valid_saved, has_password=available,
+        ready = bool(self.config['enabled'] and self.config['host'] and self.config['sender']
+                     and self.config['recipients'] and available)
+        return dict(self.config, password_saved=valid_saved, has_password=available, reservation_available=ready,
                     can_remember=self.vault.supported, credential_error=error, last_test=self.last_test,
                     last_delivery=dict(status=last[0], error=last[1], updated=last[2]) if last else None)
 
@@ -165,9 +167,9 @@ class MailService:
         return self.view()
 
     def prepare(self, reservation):
-        if not self.config['enabled']:
+        if not reservation.get('email_notify', False) or not self.config['enabled']:
             return None
-        return dict(id=reservation['id'], revision=self.config['revision'], target=reservation['target'],
+        return dict(id=reservation['id'], email_notify=True, revision=self.config['revision'], target=reservation['target'],
                     labels=reservation['labels'], wait_seconds=reservation['wait_seconds'],
                     minimum_gib=reservation['minimum_gib'], notified_at=reservation['notified_at'])
 
@@ -214,7 +216,8 @@ class MailService:
             item_id, created, raw = row
             payload = json.loads(raw)
             config = copy.deepcopy(self.config)
-            error = ('邮件通知已关闭或配置已变更，本次提醒未发邮件' if not config['enabled'] or payload['revision'] != config['revision']
+            error = ('预约未选择邮箱通知，本次提醒未发邮件' if not payload.get('email_notify', False)
+                     else '邮件通知已关闭或配置已变更，本次提醒未发邮件' if not config['enabled'] or payload['revision'] != config['revision']
                      else '提醒已超过 2 分钟，未补发过期邮件' if not 0 <= time.time()-created <= 120 else '')
             status = 'skipped' if error else 'sending'
             # Persist the attempt before network I/O; an ambiguous send is never retried automatically.

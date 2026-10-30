@@ -23,14 +23,14 @@ class ReservationBook:
                 item.update(status='unknown', idle_since=None, last_observed=None)
         self.store.save('reservations', self.items)
 
-    def add(self, host, devices, wait_seconds, minimum_gib, now=None):
+    def add(self, host, devices, wait_seconds, minimum_gib, now=None, *, email_notify=False):
         active = [item for item in self.items if item['status'] != 'ready']
         ids = [device['id'] for device in devices]
         if any(item['host_id'] == host['id'] and set(item['devices']) == set(ids) for item in active):
             raise ValueError('这些设备已经有预约，请在卡预约页面修改或取消')
         if len(active) >= 100:
             raise ValueError('最多同时保留 100 条等待中的预约')
-        item = dict(id=uuid.uuid4().hex, host_id=host['id'], target=host['target'], devices=ids,
+        item = dict(id=uuid.uuid4().hex, host_id=host['id'], target=host['target'], devices=ids, email_notify=email_notify,
                     labels=[device.get('display_id', device['id']) for device in devices],
                     identities={device['id']: device_identity(device) for device in devices},
                     wait_seconds=wait_seconds, minimum_gib=minimum_gib,

@@ -39,12 +39,12 @@ def setup(tmp_path):
     return store, vault, mail
 
 
-def complete(store, mail, *, item_id=None):
+def complete(store, mail, *, email_notify=True):
     book = ReservationBook(store, mail)
     device = dict(id='0', uuid='test-gpu', kind='GPU', name='Test', health='OK', memory_free=8*1024**3,
                   processes_known=True, processes=[], utilization=0)
     host = dict(id='host', target='test-server')
-    item = book.add(host, [device], 0, 1)
+    item = book.add(host, [device], 0, 1, email_notify=email_notify)
     now = time.time()
     book.observe('host', dict(status='online', collected_at=now, devices=[device]), now)
     return book, item
@@ -130,8 +130,59 @@ def test_reservation_completion_queues_once_and_restarts_do_not_replay_sent_emai
     restarted.sender = lambda *args: pytest.fail('sent email replayed')
     assert asyncio.run(restarted.dispatch_one()) is False
     assert store.load('reservations', [])[0]['id'] == item['id']
+    assert ReservationBook(store, restarted).items[0]['email_notify'] is True
     assert SECRET not in str(store.db.execute('SELECT * FROM mail_outbox').fetchall())
     store.db.close()
+
+
+def test_default_and_legacy_reservations_only_emit_desktop_events(tmp_path):
+    store, _, mail = setup(tmp_path)
+    book, _ = complete(store, mail, email_notify=False)
+    assert book.items[0]['status'] == 'ready'
+    assert len(store.events()) == 1 and store.events()[0]['notify']
+    assert book.view()[0]['email'] is None
+    # Stored reservations from older versions have no notification preference.
+    book.items[0].pop('email_notify')
+    book.items[0].update(status='waiting', idle_since=None, notified_at=None)
+    store.save('reservations', book.items)
+    restored = ReservationBook(store, mail)
+    device = dict(id='0', uuid='test-gpu', kind='GPU', name='Test', health='OK', memory_free=8*1024**3,
+                  processes_known=True, processes=[], utilization=0)
+    now = time.time()
+    restored.observe('host', dict(status='online', collected_at=now, devices=[device]), now)
+    assert restored.items[0]['status'] == 'ready'
+    assert asyncio.run(mail.dispatch_one()) is False
+    assert store.db.execute('SELECT count(*) FROM mail_outbox').fetchone()[0] == 0
+    store.db.close()
+
+
+def test_booking_api_requires_usable_mail_only_for_opted_in_reservations(tmp_path):
+    vault = Vault()
+    app = create_app(tmp_path, start_poll=False, email_credential_store=vault)
+    app.state.hosts.append(dict(id='host', target='test-server', auth='key'))
+    async def run(*args, **kwargs):
+        raw = dict(kind='GPU', metrics=dict(code=0, out='0, gpu-0, Test GPU, 24576, 0, 0, 35'),
+                   processes=dict(code=0, out=''), users=dict(code=0, out=''), ports=dict(code=0, out=''))
+        return 0, 'IWB_JSON:'+json.dumps(raw), ''
+    app.state.ssh.run = run
+    headers = {'X-IWB':'1'}
+    body = dict(host_id='host', devices=['0'])
+    with TestClient(app) as client:
+        client.post('/api/hosts/host/refresh', headers=headers)
+        assert not client.get('/api/settings/mail').json()['reservation_available']
+        assert client.post('/api/reservations', headers=headers, json=dict(body, email_notify=True)).status_code == 409
+        default = client.post('/api/reservations', headers=headers, json=body)
+        assert default.status_code == 200 and default.json()['email_notify'] is False
+        client.delete('/api/reservations/'+default.json()['id'], headers=headers)
+        app.state.mail.configure(config())
+        assert client.get('/api/settings/mail').json()['reservation_available']
+        opted = client.post('/api/reservations', headers=headers, json=dict(body, email_notify=True))
+        assert opted.status_code == 200 and opted.json()['email_notify'] is True
+        client.delete('/api/reservations/'+opted.json()['id'], headers=headers)
+        vault.values.clear()
+        assert not client.get('/api/settings/mail').json()['reservation_available']
+        assert client.post('/api/reservations', headers=headers, json=dict(body, email_notify=True)).status_code == 409
+        assert client.post('/api/reservations', headers=headers, json=body).status_code == 200
 
 
 def test_disabled_mail_never_queues_and_later_enable_does_not_replay_old_reminders(tmp_path):
@@ -143,7 +194,7 @@ def test_disabled_mail_never_queues_and_later_enable_does_not_replay_old_reminde
     store.db.close()
 
 
-@pytest.mark.parametrize('reason', ['expired', 'changed_settings', 'forgot_password', 'deleted', 'interrupted'])
+@pytest.mark.parametrize('reason', ['expired', 'changed_settings', 'forgot_password', 'deleted', 'interrupted', 'legacy_not_opted_in'])
 def test_stale_changed_deleted_or_ambiguous_mail_is_never_automatically_resent(tmp_path, reason):
     store, vault, mail = setup(tmp_path)
     book, item = complete(store, mail)
@@ -159,6 +210,10 @@ def test_stale_changed_deleted_or_ambiguous_mail_is_never_automatically_resent(t
         store.db.execute("UPDATE mail_outbox SET status='sending'")
         store.db.commit()
         mail = MailService(store, vault)
+    elif reason == 'legacy_not_opted_in':
+        payload = json.loads(store.db.execute('SELECT payload FROM mail_outbox').fetchone()[0])
+        payload.pop('email_notify')
+        store.db.execute('UPDATE mail_outbox SET payload=?', (json.dumps(payload),))
     store.db.commit()
     mail.sender = lambda *args: pytest.fail('should not send this email')
     asyncio.run(mail.dispatch_one())
