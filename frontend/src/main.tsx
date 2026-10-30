@@ -10,6 +10,7 @@ import type {TerminalRequest} from './TerminalDock';
 import {pageFromHash,hostSelectionPage,type Page} from './navigation';
 const TerminalDock=React.lazy(()=>import('./TerminalDock').then(module=>({default:module.TerminalDock})));
 import {THEMES, browserStorage, loadPreferences, savePreferences, scopedHosts, toggleHost} from './preferences';
+import {shouldNotify} from './notifications';
 const bootPreferences=loadPreferences(browserStorage());
 document.documentElement.dataset.theme=bootPreferences.theme;
 
@@ -19,7 +20,7 @@ type SystemMetrics = {cpu_percent:number|null;cpu_cores:number|null;memory:{memo
 type SudoSettings = {enabled:boolean;password_saved:boolean;password_in_memory:boolean;can_remember:boolean;status:string;message:string};
 type Host = {id:string; target:string; user:string|null; port:number|null; manual:boolean; auth:string; sudo?:SudoSettings; snapshot:{status:string; fresh:boolean; collected_at:number|null; error?:string; error_stage?:string; system?:SystemMetrics|null; devices:Device[]}};
 type Rule = {id:string; host_id:string; devices:string[]; minimum_gib:number; port:number; status?:string};
-type Event = {id:number; created:number; host:string; message:string};
+type Event = {id:number; created:number; host:string; message:string; notify?:boolean};
 type State = {hosts:Host[]; rules:Rule[]; events:Event[]; server_time:number};
 const gib=(n:number|null|undefined)=>n==null?'—':(n/1024**3).toFixed(1);
 const clock=(n:number)=>new Date(n*1000).toLocaleTimeString('zh-CN',{hour12:false});
@@ -70,7 +71,7 @@ function App(){
     try{
       const next:State=await api('/state');setState(next);setError('');
       if(lastEvent.current!==null&&notifyRef.current&&'Notification' in window&&Notification.permission==='granted')
-        for(const event of [...next.events].reverse())if(event.id>lastEvent.current)new Notification('Infra Workbench',{body:event.message,tag:String(event.id)});
+        for(const event of [...next.events].reverse())if(event.id>lastEvent.current&&shouldNotify(event))new Notification('Infra Workbench',{body:event.message,tag:String(event.id)});
       lastEvent.current=next.events[0]?.id??lastEvent.current??0;
     }catch{setError('本地服务未连接，请检查启动窗口。')}
   };

@@ -2,6 +2,7 @@ import json
 import sqlite3
 import time
 from pathlib import Path
+from .notifications import should_notify
 
 
 class Store:
@@ -28,4 +29,6 @@ class Store:
     def events(self):
         self.db.execute('DELETE FROM events WHERE created<?', (time.time()-7*86400,))
         self.db.commit()
-        return [dict(zip(('id', 'created', 'host', 'message'), row)) for row in self.db.execute('SELECT id,created,host,message FROM events ORDER BY id DESC LIMIT 100')]
+        events = [dict(zip(('id', 'created', 'host', 'message'), row)) for row in self.db.execute('SELECT id,created,host,message FROM events ORDER BY id DESC LIMIT 100')]
+        now = time.time()
+        return [dict(event, notify=should_notify(event, now)) for event in events]

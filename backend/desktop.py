@@ -17,6 +17,7 @@ import webbrowser
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0,str(ROOT))
+from backend.notifications import should_notify
 URL = 'http://127.0.0.1:8765/'
 APP_ID = 'InfraWorkbench.Desktop'
 DATA = Path(os.environ.get('IWB_DATA', str(ROOT/'data')))
@@ -65,7 +66,7 @@ class EventCursor:
             return []
         fresh = sorted((event for event in events if event['id']>self.last),key=lambda event:event['id'])
         self.last = max(self.last,newest)
-        return fresh
+        return [event for event in fresh if should_notify(event)]
 
 
 class DesktopSettings:
@@ -282,20 +283,17 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
     receipt['icon_created']=True
 
     def monitor():
-        cursor=EventCursor();failures=0
+        cursor=EventCursor()
         while not stop.is_set():
             try:
                 events=cursor.consume(get_api('state').get('events',[]))
-                if failures>=3:
-                    messages.put(('监控服务已恢复','Infra Workbench 已重新连接本地监控服务。'))
-                failures=0
                 if events:
                     text=events[0]['message'] if len(events)==1 else '\n'.join(e['message'] for e in events[:3])+(f'\n另有 {len(events)-3} 条变化' if len(events)>3 else '')
                     messages.put(('Infra Workbench · 资源变化',text))
             except Exception:
-                failures+=1
-                if failures==3:
-                    messages.put(('后台监控已断开','本地服务没有响应。请打开工作台检查；退出托盘后可重新运行 background.cmd。'))
+                # Transient local-service/SSH failures remain visible in the UI.
+                # They must not accumulate disconnect/reconnect desktop alerts.
+                pass
             if not messages.empty(): user.PostMessageW(hwnd,WM_DELIVER,0,0)
             stop.wait(2)
     worker=threading.Thread(target=monitor,name='iwb-notifications',daemon=True)
