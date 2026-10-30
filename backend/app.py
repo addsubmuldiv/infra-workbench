@@ -23,6 +23,7 @@ from .credentials import WindowsCredentialStore
 from .sudo import SudoService
 from .terminal import register_terminal_routes
 from .log_routes import register_log_routes
+from .reservations import ReservationBook
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,6 +55,24 @@ class RuleRequest(CheckRequest):
     pass
 
 
+class ReservationRequest(BaseModel):
+    host_id: str
+    devices: list[str] = Field(min_length=1, max_length=64)
+    wait_seconds: int = Field(default=120, ge=0, le=86400)
+    minimum_gib: float = Field(default=1, ge=0, le=100000, allow_inf_nan=False)
+
+    @field_validator('devices')
+    @classmethod
+    def unique_devices(cls, value):
+        if len(set(value)) != len(value):
+            raise ValueError('设备不能重复')
+        return value
+
+
+class ReservationUpdate(BaseModel):
+    wait_seconds: int = Field(ge=0, le=86400)
+
+
 class SudoRequest(BaseModel):
     enabled: bool
     password: SecretStr | None = None
@@ -82,6 +101,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     sudo = SudoService(ssh, credential_store if credential_store is not None else WindowsCredentialStore())
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
+    reservations = ReservationBook(store)
     snapshots, locks = {}, {}
     tracker = TransitionTracker()
     invalid_rules = set()
@@ -144,6 +164,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 snap = dict(host_id=host_id, status='online', collected_at=time.time(), devices=devices,
                             ports=parse_ports(raw['ports']), system=raw.get('system'), error=None, error_stage=None)
                 snapshots[host_id] = snap
+                reservations.observe(host_id, snap)
                 if previous.get('status') == 'error':
                     store.event(host_id, host['target']+'：采集已恢复')
                 for rule in [r for r in rules if r['host_id'] == host_id]:
@@ -172,6 +193,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 message = str(exc)[:1000] or '连接或采集超时'
                 snapshots[host_id] = dict(previous, host_id=host_id, status='error', error=message, error_stage=stage,
                                          devices=previous.get('devices', []), collected_at=previous.get('collected_at'))
+                reservations.observe(host_id, snapshots[host_id])
                 for rule in rules:
                     if rule['host_id'] == host_id:
                         tracker.reset(rule['id'])
@@ -253,7 +275,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             fresh = snap.get('status') == 'online' and now-(snap.get('collected_at') or 0) <= 30
             status = ('active' if all(i in device_ids for i in rule['devices']) else 'needs_selection') if fresh else 'pending'
             visible_rules.append(dict(rule, status=status))
-        return dict(hosts=items, rules=visible_rules, events=store.events(), server_time=now)
+        return dict(hosts=items, rules=visible_rules, reservations=reservations.view(now), events=store.events(), server_time=now)
 
     @app.post('/api/connect')
     @serialize_connections
@@ -294,6 +316,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 raise HTTPException(400, str(exc)) from None
             hosts.remove(host)
         rules[:] = [r for r in rules if r['host_id'] != host_id]
+        reservations.remove_host(host_id)
         conn = ssh.sessions.pop(host_id, None)
         if conn:
             conn.close()
@@ -373,6 +396,36 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         rules[:] = [r for r in rules if r['id'] != rule_id]
         tracker.reset(rule_id)
         store.save('rules', rules)
+        return {'ok': True}
+
+    @app.post('/api/reservations')
+    async def add_reservation(body: ReservationRequest):
+        async with locks.setdefault(body.host_id, asyncio.Lock()):
+            host = find(body.host_id)
+            snap = snapshots.get(host['id'], {})
+            if snap.get('status') != 'online' or not 0 <= time.time()-(snap.get('collected_at') or 0) <= 30:
+                raise HTTPException(409, '请先成功刷新机器，再选择设备预约')
+            by_id = {device['id']: device for device in snap.get('devices', [])}
+            if any(device_id not in by_id for device_id in body.devices):
+                raise HTTPException(422, '所选设备已变化，请重新选择')
+            try:
+                return reservations.add(host, [by_id[device_id] for device_id in body.devices],
+                                        body.wait_seconds, body.minimum_gib)
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from None
+
+    @app.patch('/api/reservations/{reservation_id}')
+    async def update_reservation(reservation_id: str, body: ReservationUpdate):
+        try:
+            return reservations.update(reservation_id, body.wait_seconds)
+        except KeyError:
+            raise HTTPException(404, '找不到预约') from None
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.delete('/api/reservations/{reservation_id}')
+    async def remove_reservation(reservation_id: str):
+        reservations.remove(reservation_id)
         return {'ok': True}
 
     register_log_routes(app,ssh,store,find)

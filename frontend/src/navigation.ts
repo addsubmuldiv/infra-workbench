@@ -1,5 +1,5 @@
-export type Page='overview'|'connections'|'watch'|'precision';
-const pages:Page[]=['overview','connections','watch','precision'];
+export type Page='overview'|'connections'|'watch'|'precision'|'reservations';
+const pages:Page[]=['overview','connections','watch','precision','reservations'];
 export function pageFromHash(hash:string):Page{
   const page=hash.replace(/^#/,'') as Page;
   return pages.includes(page)?page:'overview';

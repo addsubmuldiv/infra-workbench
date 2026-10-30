@@ -26,6 +26,14 @@ class Store:
         self.db.execute('DELETE FROM events WHERE created<?', (time.time()-7*86400,))
         self.db.commit()
 
+    def save_with_events(self, key, value, events, now):
+        with self.db:
+            self.db.execute('INSERT OR REPLACE INTO config VALUES (?,?)',
+                            (key, json.dumps(value, ensure_ascii=False)))
+            self.db.executemany('INSERT INTO events(created,host,message) VALUES (?,?,?)',
+                                [(now, host, message) for host, message in events])
+            self.db.execute('DELETE FROM events WHERE created<?', (now-7*86400,))
+
     def events(self):
         self.db.execute('DELETE FROM events WHERE created<?', (time.time()-7*86400,))
         self.db.commit()
