@@ -5,6 +5,7 @@ import './style.css';
 import './themes.css';
 import './journey.css';
 import {JourneyArt} from './JourneyArt';
+import {PrecisionCompare} from './PrecisionCompare';
 import {THEMES, browserStorage, loadPreferences, savePreferences, scopedHosts, toggleHost} from './preferences';
 const bootPreferences=loadPreferences(browserStorage());
 document.documentElement.dataset.theme=bootPreferences.theme;
@@ -39,7 +40,7 @@ function App(){
   const [preferences,setPreferences]=useState(()=>loadPreferences(browserStorage()));
   const [hostSearch,setHostSearch]=useState('');
   const [sudoHost,setSudoHost]=useState<Host|null>(null);
-  const [page,setPage]=useState('overview'),[filter,setFilter]=useState('全部'),[count,setCount]=useState(1),[minimum,setMinimum]=useState(16),[clear,setClear]=useState(true);
+  const [page,setPage]=useState(()=>location.hash==='#precision'?'precision':'overview'),[filter,setFilter]=useState('全部'),[count,setCount]=useState(1),[minimum,setMinimum]=useState(16),[clear,setClear]=useState(true);
   const [adding,setAdding]=useState(false),[detail,setDetail]=useState<{host:string;device:string}|null>(null),[selected,setSelected]=useState<Record<string,string[]>>({});
   const [notice,setNotice]=useState(''),[error,setError]=useState(''),[notify,setNotify]=useState(false),[busy,setBusy]=useState(''),[port,setPort]=useState(29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
   const lastEvent=useRef<number|null>(null),notifyRef=useRef(false),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null);
@@ -73,6 +74,7 @@ function App(){
   const selectHosts=(ids:string[]|null)=>setPreferences(old=>({...old,hostIds:ids}));
   const resourceBody=(h:Host)=>({host_id:h.id,devices:selected[h.id]||[],minimum_gib:minimum,port});
   const inspect=(host:Host,d:Device)=>{setDetail({host:host.id,device:d.id});setCheck(null)};
+  const pageTitle=page==='overview'?'算力总览':page==='connections'?'机器连接':page==='precision'?'训练精度对比':'资源监控';
   const hostList=<div className="host-picker">
     <div className="host-picker-heading"><span>机器列表</span><span>{scope.length} / {state.hosts.length}</span></div>
     <div className="host-search"><Search size={14}/><input aria-label="搜索机器列表" placeholder="搜索机器…" value={hostSearch} onChange={e=>setHostSearch(e.target.value)}/></div>
@@ -90,24 +92,25 @@ function App(){
   return <div className="shell">
     <aside className="sidebar"><div className="brand"><span className="brand-icon"><Cpu size={23}/></span><div>Infra<span>WORKBENCH</span></div></div>
       <div className="workspace"><span className="avatar">本</span><div>本地工作空间<small>Personal workspace</small></div></div>
-      <div className="nav-label">工作台</div><nav>{[["overview","算力总览",LayoutGrid],["connections","机器连接",Server],["watch","资源监控",Radio]].map(([key,label,Icon])=><button key={String(key)} className={page===key?'active':''} onClick={()=>setPage(String(key))}><Icon size={18}/>{String(label)}{key==='connections'&&<span className="nav-count">{state.hosts.length}</span>}{key==='watch'&&state.rules.length>0&&<span className="nav-count">{state.rules.length}</span>}</button>)}</nav>
+      <div className="nav-label">工作台</div><nav>{[["overview","算力总览",LayoutGrid],["connections","机器连接",Server],["watch","资源监控",Radio],["precision","精度对比",Activity]].map(([key,label,Icon])=><button key={String(key)} className={page===key?'active':''} onClick={()=>setPage(String(key))}><Icon size={18}/>{String(label)}{key==='connections'&&<span className="nav-count">{state.hosts.length}</span>}{key==='watch'&&state.rules.length>0&&<span className="nav-count">{state.rules.length}</span>}</button>)}</nav>
       <div className="sidebar-hosts">{hostList}</div>
       <div className="sidebar-bottom"><div className="agent"><i/>本地服务{error?'未连接':'已连接'}<small>SSH · 无需远端 Agent</small></div><div className="version">Infra Workbench <span>v0.1</span></div></div>
     </aside>
-    <main><header><div className="breadcrumb">工作空间 <ChevronRight size={13}/>{page==='overview'?'算力总览':page==='connections'?'机器连接':'资源监控'}</div>
+    <main><header><div className="breadcrumb">工作空间 <ChevronRight size={13}/>{pageTitle}</div>
       <div className="header-tools"><span className="live"><i/>10s 实时采集</span>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>主题</span></summary><div className="theme-options"><h3>选择界面主题</h3><p>主题偏好自动保存在本机</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{t.name}</strong><small>{t.mode==='light'?'亮色':'暗色'} · {t.description}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
         <button className={'icon-button '+(notify?'teal':'')} aria-label="开启浏览器通知" onClick={enableNotifications}><Bell size={18}/></button><span className="avatar small">本</span>
       </div></header>
     {preferences.theme==='frieren'&&<JourneyArt/>}
-    <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='overview'?'OVERVIEW':page==='connections'?'CONNECTIONS':'RESOURCE GUARD'}</div><h1>{page==='overview'?'算力总览':page==='connections'?'机器连接':'资源监控'}<span className="heading-dot"/></h1><p>{page==='watch'?'关注准备使用的设备，在资源变化时收到提醒。':`正在查看 ${scope.length} 台机器 · 从左侧列表选择你关注的资源`}</p></div><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button></div>
+    <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='connections'?'CONNECTIONS':'RESOURCE GUARD'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?'跨机器读取训练日志，自动提取指标并按真实步数对齐。':page==='watch'?'关注准备使用的设备，在资源变化时收到提醒。':`正在查看 ${scope.length} 台机器 · 从左侧列表选择你关注的资源`}</p></div><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button></div>
     <details className="mobile-hosts"><summary><Server size={15}/>选择机器 · {scope.length} / {state.hosts.length}</summary>{hostList}</details>
     {error&&<div className="error-banner">{error}</div>}
+    {page==='precision'&&<PrecisionCompare hosts={state.hosts}/>}
     {page==='overview'&&<><div className="stats"><div><span>所选机器<Server size={16}/></span><strong>{online}<small>/ {scope.length}</small></strong><p><i className="dot"/>在线 / 已选择</p></div><div><span>加速设备<Cpu size={16}/></span><strong>{devices.length}<small>个设备</small></strong><p>{devices.filter(d=>d.kind==='NPU').length} NPU <b>·</b> {devices.filter(d=>d.kind==='GPU').length} GPU</p></div><div><span>满足筛选条件<ShieldCheck size={16}/></span><strong className="teal">{candidates.length}<small>台机器</small></strong><p>至少 {count} 个设备 · 每个 ≥ {minimum} GiB</p></div><div><span>监控中的规则<Radio size={16}/></span><strong>{state.rules.length}<small>条</small></strong><p>占用变化与资源恢复提醒</p></div></div>
       <section className="finder"><div className="finder-label"><Search size={18}/><div>寻找训练资源<small>仅在所选机器内匹配</small></div></div><label>需要设备数<select aria-label="需要设备数" value={count} onChange={e=>setCount(+e.target.value)}>{Array.from({length:Math.max(8,count,...scope.map(h=>h.snapshot.devices.length))},(_,i)=>i+1).map(i=><option key={i} value={i}>{i} 个</option>)}</select></label><label>剩余显存<div className="input-unit"><input aria-label="每个设备剩余显存" type="number" min="0" max="100000" value={minimum} onChange={e=>setMinimum(Math.max(0,+e.target.value))}/><span>GiB</span></div></label><label className="checkbox-label"><input type="checkbox" checked={clear} onChange={e=>setClear(e.target.checked)}/>无可见计算进程</label><div className="match-count"><strong>{candidates.length}</strong> 台匹配<ArrowUpRight size={17}/></div></section>
     </>}
-    {page!=='watch'&&<div className="two-columns"><div className="machines"><div className="section-heading"><h2>设备详情<span>{shown.length} 台机器</span></h2><div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
+    {(page==='overview'||page==='connections')&&<div className="two-columns"><div className="machines"><div className="section-heading"><h2>设备详情<span>{shown.length} 台机器</span></h2><div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
       {shown.length===0&&<div className="empty"><Server size={32}/><h3>{state.hosts.length===0?'连接第一台机器':scope.length===0?'选择要查看的机器':'没有符合设备类型的机器'}</h3><p>{state.hosts.length===0?'从本机 SSH 配置选择，或输入主机和账号密码。':'在机器列表中点击名称单选，或勾选多台机器。'}</p>{state.hosts.length===0?<button className="primary" onClick={()=>setAdding(true)}><Plus size={16}/>添加机器</button>:<button className="secondary" onClick={()=>{selectHosts(null);setFilter('全部')}}>显示全部机器</button>}</div>}
       {shown.map(host=>{const snapshot=host.snapshot,ids=selected[host.id]||[];return <section className="machine" key={host.id} aria-label={'机器详情 '+host.target}>
         <div className="machine-heading"><span className="machine-icon"><Server size={20}/></span><div className="machine-name"><h3>{host.target}<Badge tone={snapshot.fresh?'green':'amber'}>{snapshot.fresh?'在线':snapshot.status==='error'?'采集失败':snapshot.status==='connecting'?'连接中':'数据过期'}</Badge></h3><p>{machineSummary(snapshot.devices)} <span>·</span> SSH {host.auth==='password_session'?'密码会话':'免密连接'}</p></div><button className={'sudo-button '+(host.sudo?.enabled?'enabled':'')} title={host.sudo?.message||'设置 sudo 进程详情'} aria-label={host.target+' sudo 设置'} onClick={()=>setSudoHost(host)}><ShieldCheck size={15}/><span>sudo</span></button><button className="icon-button" aria-label={'刷新 '+host.target} disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}><RefreshCw size={16} className={busy===host.id?'spin':''}/></button><button className="icon-button" aria-label={'移除 '+host.target} onClick={()=>act('remove',()=>api('/hosts/'+host.id,'DELETE'))}><Trash2 size={15}/></button></div>

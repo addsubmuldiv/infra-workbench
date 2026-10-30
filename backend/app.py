@@ -21,6 +21,7 @@ from .ssh import SSHService
 from .store import Store
 from .credentials import WindowsCredentialStore
 from .sudo import SudoService
+from .log_routes import register_log_routes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,7 +74,7 @@ def parse_ports(result):
     return ports
 
 
-def create_app(data=None, start_poll=True, credential_store=None):
+def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None):
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
@@ -370,7 +371,8 @@ def create_app(data=None, start_poll=True, credential_store=None):
         store.save('rules', rules)
         return {'ok': True}
 
-    dist = ROOT/'frontend'/'dist'
+    register_log_routes(app,ssh,store,find)
+    dist = Path(frontend_dist) if frontend_dist is not None else ROOT/'frontend'/'dist'
     if dist.exists():
         app.mount('/', StaticFiles(directory=dist, html=True), name='web')
     return app
