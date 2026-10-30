@@ -3,6 +3,7 @@ import {Bell,CalendarClock,Check,Clock3,Plus,Trash2,X} from 'lucide-react';
 import {browserStorage} from './preferences';
 import {countdown,loadWaitMinutes,saveWaitMinutes,waitSeconds,type Reservation,type ReservationHost} from './reservations';
 import './reservations.css';
+import {mailStatusText} from './mailSettings';
 
 type CreateBody={host_id:string;devices:string[];wait_seconds:number;minimum_gib:number};
 export type ReservationDraft={hostId?:string;devices?:string[];minimum?:number};
@@ -52,6 +53,7 @@ function ReservationRow({item,update,remove}:{item:Reservation;update:(id:string
   return <article className={'reservation-row '+item.status}><div className="reservation-row-top"><span className="reservation-symbol">{item.status==='ready'?<Check size={20}/>:<CalendarClock size={20}/>}</span><div><h3>{item.target}</h3><p>设备 {item.labels.join(', ')} · 每设备剩余 ≥ {item.minimum_gib} GiB</p></div><span className={'reservation-status '+item.status}>{labels[item.status]}</span><button className="icon-button" aria-label={(item.status==='ready'?'删除预约记录 ':'取消预约 ')+item.target+' 设备 '+item.labels.join(', ')} disabled={busy} onClick={()=>act(()=>remove(item.id))}><Trash2 size={16}/></button></div>
     {item.status==='settling'&&<div className="reservation-progress"><div><span>已连续空闲 {countdown(item.idle_seconds)}</span><strong>还需 {countdown(item.remaining_seconds)}</strong></div><progress max={Math.max(1,item.wait_seconds)} value={item.idle_seconds}/></div>}
     <div className="reservation-row-bottom">{item.status==='ready'?<span>{item.notified_at?new Date(item.notified_at*1000).toLocaleString('zh-CN'):''} 已提醒 · 当前占用请查看设备列表</span>:<><span>连续空闲 {item.wait_seconds/60} 分钟后提醒</span><button className="text-button" disabled={busy} onClick={()=>{setMinutes(String(item.wait_seconds/60));setEditing(!editing)}}>修改等待时间</button></>}</div>
+    {item.email&&<div className={'reservation-email '+item.email.status}>{mailStatusText[item.email.status]}{item.email.error&&<small>{item.email.error}</small>}</div>}
     {editing&&<form className="reservation-edit" onSubmit={event=>{event.preventDefault();void act(async()=>{if(minutes.trim()==='')throw new Error('请填写等待时间');await update(item.id,waitSeconds(Number(minutes)));setEditing(false)})}}><label>等待时间<input aria-label={'修改 '+item.target+' 预约等待分钟'} type="number" min="0" max="1440" step="any" required disabled={busy} value={minutes} onChange={event=>setMinutes(event.target.value)}/>分钟</label><button className="secondary" disabled={busy}>保存并重新计时</button><button type="button" className="text-button" disabled={busy} onClick={()=>setEditing(false)}>取消</button></form>}
     {error&&<p className="reservation-error" role="alert">{error}</p>}
   </article>;

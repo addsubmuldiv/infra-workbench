@@ -13,8 +13,9 @@ def device_identity(device):
 
 
 class ReservationBook:
-    def __init__(self, store):
+    def __init__(self, store, mail=None):
         self.store = store
+        self.mail = mail
         self.items = store.load('reservations', [])
         # Time while the collector was stopped cannot count as observed idle time.
         for item in self.items:
@@ -50,10 +51,15 @@ class ReservationBook:
         return copy.deepcopy(item)
 
     def remove(self, item_id):
+        with self.store.db:
+            self.store.db.execute("UPDATE mail_outbox SET status='skipped',error='预约记录已删除' WHERE id=? AND status='pending'", (item_id,))
         self.items[:] = [item for item in self.items if item['id'] != item_id]
         self.store.save('reservations', self.items)
 
     def remove_host(self, host_id):
+        with self.store.db:
+            self.store.db.executemany("UPDATE mail_outbox SET status='skipped',error='机器已移除' WHERE id=? AND status='pending'",
+                                      [(item['id'],) for item in self.items if item['host_id'] == host_id])
         self.items[:] = [item for item in self.items if item['host_id'] != host_id]
         self.store.save('reservations', self.items)
 
@@ -61,6 +67,7 @@ class ReservationBook:
         now = time.time() if now is None else now
         before = copy.deepcopy(self.items)
         events = []
+        mail = []
         by_id = {device['id']: device for device in snapshot.get('devices', [])}
         collected = snapshot.get('collected_at')
         fresh = (snapshot.get('status') == 'online' and collected is not None
@@ -91,10 +98,14 @@ class ReservationBook:
                 minutes = f"{item['wait_seconds']/60:g}"
                 events.append((host_id, item['target']+' · 设备 '+', '.join(item['labels'])
                                +f'：预约的设备已连续空闲 {minutes} 分钟，可以使用。启动前请再检查。'))
+                if self.mail:
+                    payload = self.mail.prepare(item)
+                    if payload:
+                        mail.append(payload)
         if self.items != before:
             try:
                 # Completing a reminder and recording its event commit together.
-                self.store.save_with_events('reservations', self.items, events, now)
+                self.store.save_with_events('reservations', self.items, events, now, mail)
             except Exception:
                 self.items[:] = before
                 raise
@@ -102,7 +113,9 @@ class ReservationBook:
     def view(self, now=None):
         now = time.time() if now is None else now
         result = copy.deepcopy(self.items)
+        mail_statuses = self.store.mail_statuses()
         for item in result:
+            item['email'] = mail_statuses.get(item['id'])
             if (item['status'] not in ('ready', 'needs_selection') and item['last_observed'] is not None
                     and not 0 <= now-item['last_observed'] <= MAX_SAMPLE_GAP):
                 item.update(status='unknown', idle_since=None)

@@ -1,4 +1,5 @@
-export type Reservation={id:string;host_id:string;target:string;devices:string[];labels:string[];wait_seconds:number;minimum_gib:number;status:'waiting'|'settling'|'unknown'|'needs_selection'|'ready';idle_seconds:number;remaining_seconds:number;notified_at:number|null};
+import type {MailResult} from './mailSettings';
+export type Reservation={id:string;host_id:string;target:string;devices:string[];labels:string[];wait_seconds:number;minimum_gib:number;status:'waiting'|'settling'|'unknown'|'needs_selection'|'ready';idle_seconds:number;remaining_seconds:number;notified_at:number|null;email?:MailResult|null};
 export type ReservationHost={id:string;target:string;snapshot:{fresh:boolean;devices:{id:string;display_id?:string;kind:string;name:string;processes:unknown[];processes_known:boolean}[]}};
 const WAIT_KEY='infra-workbench:reservation-wait-minutes';
 export function waitSeconds(minutes:number):number{

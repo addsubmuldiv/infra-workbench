@@ -24,6 +24,7 @@ from .sudo import SudoService
 from .terminal import register_terminal_routes
 from .log_routes import register_log_routes
 from .reservations import ReservationBook
+from .mail import MailService, register_mail_routes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,14 +95,15 @@ def parse_ports(result):
     return ports
 
 
-def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None):
+def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None):
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
     sudo = SudoService(ssh, credential_store if credential_store is not None else WindowsCredentialStore())
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
-    reservations = ReservationBook(store)
+    mail = MailService(store, email_credential_store if email_credential_store is not None else WindowsCredentialStore('InfraWorkbench/mail/'))
+    reservations = ReservationBook(store, mail)
     snapshots, locks = {}, {}
     tracker = TransitionTracker()
     invalid_rules = set()
@@ -224,7 +226,12 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     @asynccontextmanager
     async def lifespan(app):
         task = asyncio.create_task(poll()) if start_poll else None
+        mail_task = asyncio.create_task(mail.run()) if start_poll else None
         yield
+        if mail_task:
+            mail_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await mail_task
         if task:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -236,6 +243,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     app = FastAPI(title='Infra Workbench', lifespan=lifespan)
     app.state.hosts, app.state.ssh = hosts, ssh
     app.state.sudo = sudo
+    app.state.mail = mail
+    register_mail_routes(app, mail)
     register_terminal_routes(app,hosts,ssh)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 

@@ -11,6 +11,7 @@ class Store:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.execute('CREATE TABLE IF NOT EXISTS config (id TEXT PRIMARY KEY, value TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created REAL, host TEXT, message TEXT)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS mail_outbox (id TEXT PRIMARY KEY, created REAL, payload TEXT, status TEXT, error TEXT, updated REAL)')
         self.db.commit()
 
     def load(self, key, default):
@@ -26,13 +27,19 @@ class Store:
         self.db.execute('DELETE FROM events WHERE created<?', (time.time()-7*86400,))
         self.db.commit()
 
-    def save_with_events(self, key, value, events, now):
+    def save_with_events(self, key, value, events, now, mail=()):
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO config VALUES (?,?)',
                             (key, json.dumps(value, ensure_ascii=False)))
             self.db.executemany('INSERT INTO events(created,host,message) VALUES (?,?,?)',
                                 [(now, host, message) for host, message in events])
             self.db.execute('DELETE FROM events WHERE created<?', (now-7*86400,))
+            self.db.executemany('INSERT OR IGNORE INTO mail_outbox VALUES (?,?,?,\'pending\',\'\',?)',
+                                [(item['id'], now, json.dumps(item, ensure_ascii=False), now) for item in mail])
+
+    def mail_statuses(self):
+        return {row[0]:dict(status=row[1], error=row[2], updated=row[3])
+                for row in self.db.execute('SELECT id,status,error,updated FROM mail_outbox')}
 
     def events(self):
         self.db.execute('DELETE FROM events WHERE created<?', (time.time()-7*86400,))
