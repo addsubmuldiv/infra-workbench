@@ -18,3 +18,15 @@ test('original download preserves raw bytes and Unicode filename, sends only loc
 test('failed downloads surface an error instead of downloading JSON as a log',async()=>{
   await assert.rejects(downloadOriginalLog({host_id:'npu',path:'/missing'},async()=>new Response(JSON.stringify({detail:'没有读取权限'}),{status:400,headers:{'Content-Type':'application/json'}})),/没有读取权限/);
 });
+
+test('aborting a download stops response buffering and preserves the abort error',async()=>{
+  const controller=new AbortController();let entered;
+  const started=new Promise(resolve=>{entered=resolve});
+  const download=downloadOriginalLog({host_id:'server',path:'/large.bin'},async(url,options)=>{
+    assert.equal(options.signal,controller.signal);
+    return {ok:true,headers:new Headers(),blob:()=>new Promise((resolve,reject)=>{
+      options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true});entered();
+    })};
+  },'/api/files/download',controller.signal);
+  await started;controller.abort();await assert.rejects(download,{name:'AbortError'});
+});

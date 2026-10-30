@@ -1,5 +1,5 @@
-export async function downloadOriginalLog(location:{host_id:string;path:string},fetcher:typeof fetch=fetch,endpoint='/api/logs/download'):Promise<{blob:Blob;filename:string}>{
-  const response=await fetcher(endpoint,{method:'POST',headers:{'Content-Type':'application/json','X-IWB':'1'},body:JSON.stringify(location)});
+export async function downloadOriginalLog(location:{host_id:string;path:string},fetcher:typeof fetch=fetch,endpoint='/api/logs/download',signal?:AbortSignal):Promise<{blob:Blob;filename:string}>{
+  const response=await fetcher(endpoint,{method:'POST',headers:{'Content-Type':'application/json','X-IWB':'1'},body:JSON.stringify(location),signal});
   if(!response.ok){
     let message='日志下载失败，请检查连接和文件路径';
     try{const data=await response.json();if(typeof data.detail==='string')message=data.detail}catch{}

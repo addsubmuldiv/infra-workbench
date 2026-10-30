@@ -9,7 +9,7 @@ import {fitFileWindow,moveFileWindow,type WindowFrame} from './fileWindow';
 
 type Host={id:string;target:string};
 const size=(n:number|null)=>n==null?'—':n<1024?n+' B':n<1024**2?(n/1024).toFixed(1)+' KiB':n<1024**3?(n/1024**2).toFixed(1)+' MiB':(n/1024**3).toFixed(1)+' GiB';
-export function FileBrowser({host,hosts,close}:{host:Host;hosts:Host[];close:()=>void}){
+export function FileBrowser({host,hosts,close,requestId=host.id}:{host:Host;hosts:Host[];close:()=>void;requestId?:string}){
   const [selected,setSelected]=useState(host.id);
   const [locked,setLocked]=useState(false);
   const [minimized,setMinimized]=useState(false);
@@ -32,6 +32,12 @@ export function FileBrowser({host,hosts,close}:{host:Host;hosts:Host[];close:()=
   const toggleMinimized=()=>{if(minimized)setFrame(old=>fitFileWindow(old,viewport()));setMinimized(!minimized)};
   const editorClose=useRef<((after?:()=>void)=>void)|null>(null);
   const leave=(after:()=>void)=>{if(locked)return;if(editorClose.current)editorClose.current(after);else after()};
+  const handledRequest=useRef(requestId);
+  useEffect(()=>{
+    if(handledRequest.current===requestId||locked)return;
+    handledRequest.current=requestId;
+    if(host.id!==selected)leave(()=>setSelected(host.id));
+  },[requestId,locked]);
   const current=hosts.find(item=>item.id===selected)||host;
   return <div className="file-workspace"><section role="dialog" aria-modal="false" aria-labelledby="file-title" className={'file-browser floating '+(minimized?'minimized':'')} style={{left:frame.x,top:frame.y,width:minimized?'min(320px, calc(100vw - 16px))':frame.width,height:minimized?56:frame.height}} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
     <header className="file-header" onPointerDown={event=>startGesture(event,'move')}><div tabIndex={0} aria-label="移动文件窗口，方向键调整位置" onKeyDown={event=>{if(event.target!==event.currentTarget)return;const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>moveFileWindow(old,...offset,viewport(),minimized))}}}><h2 id="file-title"><FolderOpen size={19}/>服务器文件{minimized&&<small>{current.target}</small>}</h2>{!minimized&&<p>拖动标题栏移动窗口；右下角调整大小，可同时操作 SSH 终端。</p>}</div>{!minimized&&<select aria-label="文件浏览目标机器" value={current.id} disabled={locked} onChange={e=>leave(()=>setSelected(e.target.value))}>{hosts.map(item=><option key={item.id} value={item.id}>{item.target}</option>)}</select>}<button className="icon-button" aria-label={minimized?'恢复文件窗口':'最小化文件窗口'} title={minimized?'恢复文件窗口':'最小化（保留目录和编辑状态）'} onClick={toggleMinimized}>{minimized?<PanelTopOpen size={18}/>:<Minus size={18}/>}</button><button className="icon-button" aria-label="关闭文件浏览" disabled={locked} onClick={()=>leave(close)}><X size={20}/></button></header>
@@ -50,14 +56,14 @@ function BrowserBody({host,onBusy,editorClose}:{host:Host;onBusy:(busy:boolean)=
   useEffect(()=>{let active=true;fetch('/api/files/capabilities').then(response=>response.ok?response.json():null).then(data=>{if(active)setSupported(data?.editing===true)}).catch(()=>{});return()=>{active=false}},[]);
   useEffect(()=>{onBusy(operationBusy||editorBusy);return()=>onBusy(false)},[operationBusy,editorBusy]);
   const [menu,setMenu]=useState<{entry:RemoteEntry;x:number;y:number}|null>(null);
-  const mounted=useRef(true),epoch=useRef(0),menuRef=useRef<HTMLDivElement>(null);
+  const mounted=useRef(true),epoch=useRef(0),menuRef=useRef<HTMLDivElement>(null),downloadRequest=useRef<AbortController|null>(null);
   const openRoot=async(value:string)=>{
     const request=++epoch.current;setLoading(new Set(['root']));setError('');setMenu(null);
     try{const data=await listDirectory(host.id,value);if(mounted.current&&request===epoch.current){setRoot(data);setPath(data.path);setPages({[data.path]:data});setOpened(new Set([data.path]));setErrors({})}}
     catch(e){if(mounted.current&&request===epoch.current)setError(e instanceof Error?e.message:String(e))}
     finally{if(mounted.current&&request===epoch.current)setLoading(new Set())}
   };
-  useEffect(()=>{mounted.current=true;void openRoot('~');return()=>{mounted.current=false;epoch.current++}},[]);
+  useEffect(()=>{mounted.current=true;void openRoot('~');return()=>{mounted.current=false;epoch.current++;downloadRequest.current?.abort()}},[]);
   useEffect(()=>{
     if(!menu)return;
     const outside=(e:PointerEvent)=>{if(!menuRef.current?.contains(e.target as Node))setMenu(null)};
@@ -75,22 +81,23 @@ function BrowserBody({host,onBusy,editorClose}:{host:Host;onBusy:(busy:boolean)=
   };
   const toggle=(entry:RemoteEntry)=>{if(!entry.accessible)return;setMenu(null);setOpened(old=>{const next=new Set(old);if(next.has(entry.path))next.delete(entry.path);else next.add(entry.path);return next});if(!pages[entry.path])void load(entry.path)};
   const download=async(entry:RemoteEntry)=>{
-    if(downloading)return;setMenu(null);setDownloading(entry.path);setError('');setMessage('');
-    try{const data=await downloadOriginalLog({host_id:host.id,path:entry.path},fetch,'/api/files/download');
+    if(downloadRequest.current)return;const controller=new AbortController();downloadRequest.current=controller;setMenu(null);setDownloading(entry.path);setError('');setMessage('');
+    try{const data=await downloadOriginalLog({host_id:host.id,path:entry.path},fetch,'/api/files/download',controller.signal);
       if(!mounted.current)return;
       const url=URL.createObjectURL(data.blob),link=document.createElement('a');link.href=url;link.download=data.filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);setMessage('已交给浏览器下载：'+entry.name);
     }catch(e){if(mounted.current)setError((e instanceof Error?e.message:String(e)).replaceAll('日志','文件'))}
-    finally{if(mounted.current)setDownloading('')}
+    finally{if(downloadRequest.current===controller)downloadRequest.current=null;if(mounted.current)setDownloading('')}
   };
   const stage=(entry:RemoteEntry,op:'copy'|'move')=>{setClipboard({entry,op});setMenu(null);setMessage((op==='copy'?'已复制：':'已剪切：')+entry.name+'，请到目标目录点击粘贴。')};
   const paste=(directory:string)=>{if(clipboard){setMenu(null);setAction({op:clipboard.op,directory,source:clipboard.entry})}};
   const copyPath=async(entry:RemoteEntry)=>{setMenu(null);try{await navigator.clipboard.writeText(entry.path);setMessage('已复制路径')}catch{setError('无法写入系统剪贴板，请手动复制路径：'+entry.path)}};
-  const edit=(entry:RemoteEntry)=>{if(!supported){setError('文本编辑需要重启本地服务后启用');return}setMenu(null);setEditor(entry.path)};
+  const switchEditor=(path:string)=>{if(editor===path)return;const open=()=>setEditor(path);if(editorClose.current)editorClose.current(open);else open()};
+  const edit=(entry:RemoteEntry)=>{if(!supported){setError('文本编辑需要重启本地服务后启用');return}setMenu(null);switchEditor(entry.path)};
   const perform=async(destination:string)=>{
     if(!action)return;setOperationBusy(true);setError('');
     try{const command=action.op==='create'||action.op==='mkdir'?{op:action.op,path:destination}:{op:action.op==='rename'?'move' as const:action.op,path:action.source!.path,destination};
       await fileOperation(host.id,command);setMessage('操作完成：'+destination);if(action.op==='move')setClipboard(null);setSelected(null);
-      if(root)await openRoot(root.path);if(action.op==='create')setEditor(destination);
+      if(root)await openRoot(root.path);if(action.op==='create')switchEditor(destination);
     }finally{setOperationBusy(false)}
   };
   const context=(event:React.MouseEvent,entry:RemoteEntry)=>{if(!entry.accessible||entry.kind==='other')return;event.preventDefault();setSelected(entry);setMenu({entry,x:Math.max(8,Math.min(event.clientX,window.innerWidth-210)),y:Math.max(8,Math.min(event.clientY,window.innerHeight-320))})};

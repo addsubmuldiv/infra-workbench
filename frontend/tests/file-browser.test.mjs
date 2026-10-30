@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import {downloadOriginalLog} from '../src/logDownload.ts';
+import {fitFileWindow,moveFileWindow} from '../src/fileWindow.ts';
+
+function harness(t,component='BrowserBody',fetchDownload){
+  const values=[],deps=[],effects=[],cleanups=[];let slot=0,tree;
+  const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),
+    useState:initial=>{const i=slot++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value}]},
+    useRef:initial=>{const i=slot++;if(!(i in values))values[i]={current:initial};return values[i]},
+    useEffect:(fn,next)=>{const i=slot++;if(!next||!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}}};
+  const old={window:globalThis.window,document:globalThis.document,fetch:globalThis.fetch};
+  Object.assign(globalThis,{window:{innerWidth:1200,innerHeight:800,addEventListener(){},removeEventListener(){}},document:{addEventListener(){},removeEventListener(){}},
+    fetch:async(url,options)=>url==='/api/files/capabilities'?{ok:true,json:async()=>({editing:true})}:fetchDownload(url,options)});
+  t.after(()=>{cleanups.splice(0).forEach(fn=>fn?.());Object.assign(globalThis,old)});
+  const entries=['A','B'].map(name=>({name:name+'.txt',path:'/tmp/'+name+'.txt',kind:'file',accessible:true,size:1,modified:1}));
+  const files={listDirectory:async()=>({path:'/tmp',parent:'/',entries,total:2,next_offset:null}),fileOperation:async()=>({})};
+  const exports={};
+  const source=ts.transpileModule(fs.readFileSync(new URL('../src/FileBrowser.tsx',import.meta.url),'utf8')+'\nexport {BrowserBody};',
+    {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
+  function FileEditor(){}
+  new Function('require','exports',source)(name=>name==='react'?react:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./fileWindow'?{fitFileWindow,moveFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key}),exports);
+  const guard={current:null},hosts=[{id:'A',target:'A'},{id:'B',target:'B'}];
+  let props=component==='BrowserBody'?{host:hosts[0],onBusy(){},editorClose:guard}:{host:hosts[0],hosts,close(){},requestId:'first'};
+  const render=updates=>{props={...props,...updates};slot=0;tree=exports[component](props);for(const effect of effects.splice(0))effect();return tree};
+  const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(child=>nodes(child))];
+  const find=predicate=>nodes(tree).find(predicate);
+  return {render,find,guard,hosts,async loaded(){render();await new Promise(resolve=>setImmediate(resolve));render()},
+    clickFile(name){find(n=>n.type==='button'&&n.props['aria-label']==='文件 /tmp/'+name+'.txt').props.onClick();render()},
+    editorPath(){return find(n=>n.type===FileEditor)?.props.path},body(){return find(n=>typeof n.type==='function'&&n.type.name==='BrowserBody')},
+    unmount(){cleanups.splice(0).forEach(fn=>fn?.())}};
+}
+
+test('switching files preserves the old editor until the save guard permits leaving',async t=>{
+  const h=harness(t);await h.loaded();h.clickFile('A');assert.equal(h.editorPath(),'/tmp/A.txt');
+  let proceed,guards=0;h.guard.current=after=>{guards++;proceed=after};
+  h.clickFile('A');assert.equal(guards,0);
+  h.clickFile('B');assert.equal(guards,1);assert.equal(h.editorPath(),'/tmp/A.txt');
+  proceed();h.render();assert.equal(h.editorPath(),'/tmp/B.txt');
+});
+
+test('external machine requests respect cancellation and wait until an active save finishes',t=>{
+  const h=harness(t,'FileBrowser');h.render();let proceed;
+  h.body().props.editorClose.current=after=>{proceed=after};
+  h.render({host:h.hosts[1],requestId:'second'});assert.equal(h.body().props.host.id,'A');
+  // Cancel: leave the callback unused, and allow a later explicit request to retry.
+  h.render({requestId:'third'});assert.equal(h.body().props.host.id,'A');
+  proceed();h.render();assert.equal(h.body().props.host.id,'B');
+  h.body().props.onBusy(true);h.render();
+  proceed=null;h.render({host:h.hosts[0],requestId:'fourth'});assert.equal(proceed,null);
+  h.body().props.onBusy(false);h.render();assert.equal(typeof proceed,'function');
+  proceed();h.render();assert.equal(h.body().props.host.id,'A');
+});
+
+test('closing the file browser aborts its unfinished download',async t=>{
+  let signal,started;const pending=new Promise(resolve=>{started=resolve});
+  const h=harness(t,'BrowserBody',(url,options)=>new Promise((resolve,reject)=>{
+    signal=options.signal;started();signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
+  }));
+  await h.loaded();const download=h.find(n=>n.type==='button'&&n.props['aria-label']==='下载 /tmp/A.txt').props.onClick();
+  await pending;assert.equal(signal.aborted,false);h.unmount();assert.equal(signal.aborted,true);await download;
+});

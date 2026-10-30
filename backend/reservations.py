@@ -70,17 +70,18 @@ class ReservationBook:
         self.store.save('reservations', self.items)
 
     def observe(self, host_id, snapshot, now=None):
+        active = [item for item in self.items if item['host_id'] == host_id and item['status'] != 'ready']
+        if not active:
+            return
         now = time.time() if now is None else now
-        before = copy.deepcopy(self.items)
+        before = {item['id']: copy.deepcopy(item) for item in active}
         events = []
         mail = []
         by_id = {device['id']: device for device in snapshot.get('devices', [])}
         collected = snapshot.get('collected_at')
         fresh = (snapshot.get('status') == 'online' and collected is not None
                  and 0 <= now-collected <= MAX_SAMPLE_GAP)
-        for item in self.items:
-            if item['host_id'] != host_id or item['status'] == 'ready':
-                continue
+        for item in active:
             devices = [by_id.get(device_id) for device_id in item['devices']]
             count_mode = item.get('mode') == 'count'
             if count_mode:
@@ -123,18 +124,19 @@ class ReservationBook:
                     payload = self.mail.prepare(item)
                     if payload:
                         mail.append(payload)
-        if self.items != before:
+        if any(item != before[item['id']] for item in active):
             try:
                 # Completing a reminder and recording its event commit together.
                 self.store.save_with_events('reservations', self.items, events, now, mail)
             except Exception:
-                self.items[:] = before
+                self.items[:] = [before.get(item['id'], item) for item in self.items]
                 raise
 
     def view(self, now=None):
         now = time.time() if now is None else now
-        result = copy.deepcopy(self.items)
-        mail_statuses = self.store.mail_statuses()
+        result = [{key: copy.deepcopy(value) for key, value in item.items() if key != 'identities'}
+                  for item in self.items]
+        mail_statuses = self.store.mail_statuses(item['id'] for item in self.items)
         for item in result:
             item['email'] = mail_statuses.get(item['id'])
             if (item['status'] not in ('ready', 'needs_selection') and item['last_observed'] is not None

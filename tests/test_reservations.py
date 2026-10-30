@@ -131,6 +131,26 @@ def test_edit_cancel_and_duplicate_booking(tmp_path):
     store.db.close()
 
 
+def test_failed_completion_rolls_back_only_current_host_and_views_are_detached(tmp_path, monkeypatch):
+    store = Store(tmp_path/'test.db')
+    book = ReservationBook(store)
+    first = book.add(HOST, [device()], 0, 1, now=1000)
+    other = book.add(dict(id='other', target='other-server'), [device()], 120, 1, now=1000)
+    before = copy.deepcopy(book.items)
+    def fail(*args):
+        raise RuntimeError('disk unavailable')
+    monkeypatch.setattr(store, 'save_with_events', fail)
+    with pytest.raises(RuntimeError):
+        observe(book, 1000)
+    assert book.items == before
+    assert [item['id'] for item in book.items] == [first['id'], other['id']]
+    result = book.view(1000)
+    assert all('identities' not in item for item in result)
+    result[0]['labels'].append('external mutation')
+    assert book.items == before
+    store.db.close()
+
+
 def test_booking_api_validation_persistence_and_host_removal(tmp_path):
     app = create_app(tmp_path, start_poll=False)
     app.state.hosts.append(copy.deepcopy(HOST))
