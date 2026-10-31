@@ -1,0 +1,141 @@
+import io
+import zipfile
+import pytest
+from backend.store import Store
+from backend.skill_service import SkillService, SkillError
+
+
+def files(name='my-check', body='检查机器。', metadata=''):
+    return {'SKILL.md': f'---\nname: {name}\ndescription: 检查机器时使用\n{metadata}---\n{body}'}
+
+
+@pytest.fixture
+def skills(tmp_path):
+    store=Store(tmp_path/'skills.db')
+    service=SkillService(store, tmp_path/'builtins')
+    yield service
+    store.db.close()
+
+
+def install(service, content=None, **kwargs):
+    draft=service.create_draft(content or files(), **kwargs)
+    return service.install_draft(draft['id'], draft['revision'], ['list_hosts'])
+
+
+def test_lifecycle_versions_snapshot_and_restart(skills):
+    one=install(skills)
+    assert one['version']==1 and one['effective']=='next_turn'
+    draft=skills.create_draft(files(body='新步骤。'), 'my-check', 1)
+    two=skills.install_draft(draft['id'], draft['revision'], [])
+    assert two['version']==2
+    assert '新步骤' in skills.read('my-check')['files']['SKILL.md']
+    skills.rollback('my-check', 1, 2)
+    assert skills.read('my-check')['version']==1
+    assert len(skills.read('my-check')['versions'])==2
+    skills.set_enabled('my-check', False, 1)
+    assert skills.snapshot()==({}, [])
+    skills.set_enabled('my-check', True, 1)
+    assert '/skills/my-check/SKILL.md' in SkillService(skills.store, skills.builtin_root).snapshot()[0]
+
+
+def test_stale_draft_revision_and_uninstall_reinstall(skills):
+    install(skills)
+    draft=skills.create_draft(files(body='old'), 'my-check', 1)
+    changed=skills.update_draft(draft['id'], 1, files(body='new'))
+    with pytest.raises(SkillError): skills.install_draft(draft['id'], 1, [])
+    skills.delete('my-check', 1)
+    install(skills)
+    with pytest.raises(SkillError): skills.install_draft(draft['id'], changed['revision'], [])
+
+
+def test_validation_dependencies_references_and_yaml(skills):
+    draft=skills.create_draft(files(metadata='metadata:\n  iwb-required-tools: list_hosts missing_tool\n'))
+    report=skills.validate_draft(draft['id'], 1, ['list_hosts'])
+    assert report['missing_tools']==['missing_tool'] and not report['valid']
+    with pytest.raises(SkillError): skills.install_draft(draft['id'], 1, ['list_hosts'])
+    draft=skills.create_draft(files(body='读取 references/absent.md。'))
+    assert not skills.validate_draft(draft['id'],1,[])['valid']
+    draft=skills.create_draft({'SKILL.md':'---\nname: [\n---\nx'})
+    assert not skills.validate_draft(draft['id'],1,[])['valid']
+
+
+def test_zip_preserves_binary_and_blocks_traversal(skills):
+    out=io.BytesIO()
+    with zipfile.ZipFile(out,'w') as z:
+        z.writestr('my-check/SKILL.md',files()['SKILL.md'])
+        z.writestr('my-check/assets/picture.png',b'\x89PNG\x00\xff')
+    draft=skills.import_package('skill.zip',out.getvalue())
+    skills.install_draft(draft['id'],1,[])
+    assert 'assets/picture.png' not in skills.read('my-check')['files']
+    with zipfile.ZipFile(io.BytesIO(skills.export('my-check'))) as z:
+        assert z.read('my-check/assets/picture.png')==b'\x89PNG\x00\xff'
+    for bad in ['../evil','C:/evil','x/../evil','x\\evil','x/CON','x/a:stream']:
+        out=io.BytesIO()
+        with zipfile.ZipFile(out,'w') as z:z.writestr(bad,'bad')
+        with pytest.raises(SkillError):skills.import_package('bad.zip',out.getvalue())
+
+
+def test_builtin_immutable_and_conflict(skills):
+    root=skills.builtin_root/'my-check';root.mkdir(parents=True)
+    (root/'SKILL.md').write_text(files()['SKILL.md'],encoding='utf-8')
+    assert skills.catalog()[0]['source']=='builtin'
+    with pytest.raises(SkillError):install(skills)
+    with pytest.raises(SkillError):skills.delete('my-check',1)
+
+
+def test_duplicate_case_and_symlink_packages_rejected(skills):
+    for entries in [[('SKILL.md',files()['SKILL.md']),('skill.md','x')], [('SKILL.md',files()['SKILL.md']),('a','x')]]:
+        out=io.BytesIO()
+        with zipfile.ZipFile(out,'w') as z:
+            for path,data in entries:
+                info=zipfile.ZipInfo(path)
+                if path=='a': info.create_system=3;info.external_attr=0o120777<<16
+                z.writestr(info,data)
+        with pytest.raises(SkillError):skills.import_package('bad.zip',out.getvalue())
+
+
+def test_routes_shared_service_and_upload_bounds(skills):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.skill_routes import register_skill_routes
+    app=FastAPI();register_skill_routes(app,skills,lambda:['list_hosts'])
+    with TestClient(app) as client:
+        draft=client.post('/api/skills/drafts',json={'files':files()}).json()
+        assert client.post('/api/skills/drafts/'+draft['id']+'/validate',json={'revision':1}).json()['valid']
+        assert client.post('/api/skills/drafts/'+draft['id']+'/install',json={'revision':1}).status_code==200
+        assert client.get('/api/skills').json()['items'][0]['name']=='my-check'
+        assert client.get('/api/skills/my-check/export').headers['content-type']=='application/zip'
+        assert client.put('/api/skills/my-check/enabled',json={'enabled':False,'expected_version':2}).status_code==409
+        assert client.put('/api/skills/my-check/enabled',json={'enabled':False,'expected_version':1}).status_code==200
+        assert client.post('/api/skills/import?filename=x.md',content=b'x'*(2*1024*1024+1)).status_code==413
+        assert client.delete('/api/skills/my-check?expected_version=1').status_code==200
+        assert client.get('/api/skills/my-check').status_code==404
+
+
+def test_size_bounds_and_unsafe_windows_names(skills):
+    with pytest.raises(SkillError):skills.create_draft({'SKILL.md':'x'*(1024*1024+1)})
+    with pytest.raises(SkillError):skills.create_draft({str(i):'x' for i in range(129)})
+    for path in ['a?.md','a|b.md','a<z.md','a*.md']:
+        with pytest.raises(SkillError):skills.create_draft({path:'x'})
+
+
+def test_duplicate_yaml_keys_rejected(skills):
+    draft=skills.create_draft({'SKILL.md':'---\nname: my-check\nname: other-check\ndescription: Check\n---\nDo it.'})
+    assert not skills.validate_draft(draft['id'],1,[])['valid']
+
+
+def test_edit_installed_text_preserves_binary_assets(skills):
+    draft=skills.create_draft(dict(files(),**{'assets/picture.png':b'\x89PNG\xff'}))
+    skills.install_draft(draft['id'],1,[])
+    detail=skills.read('my-check')
+    draft=skills.create_draft(detail['files'],'my-check',1)
+    skills.install_draft(draft['id'],1,[])
+    with zipfile.ZipFile(io.BytesIO(skills.export('my-check'))) as z:
+        assert z.read('my-check/assets/picture.png')==b'\x89PNG\xff'
+
+
+def test_markdown_nested_reference_links(skills):
+    draft=skills.create_draft(dict(files(body='[参考](references/指南.md)'),**{'references/指南.md':'[下一步](missing.md)'}))
+    assert not skills.validate_draft(draft['id'],1,[])['valid']
+    draft=skills.create_draft(dict(files(body='[参考](references/指南.md)'),**{'references/指南.md':'[模板](../assets/报告.md)','assets/报告.md':'报告'}))
+    assert skills.validate_draft(draft['id'],1,[])['valid']
