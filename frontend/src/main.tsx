@@ -1,21 +1,27 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Activity, ArrowDownLeft, ArrowUpRight, Bell, CalendarClock, Check, ChevronRight, CircleHelp, Copy, Cpu, Database, LayoutGrid, LoaderCircle, Monitor, Plus, Palette, Radio, RefreshCw, Search, Server, Settings, ShieldCheck, Terminal, Trash2, X, Zap} from 'lucide-react';
+import {Activity, KeyRound, ArrowDownLeft, ArrowUpRight, Bell, CalendarClock, Check, ChevronRight, CircleHelp, Copy, Cpu, Database, LayoutGrid, LoaderCircle, Monitor, Plus, Palette, Radio, RefreshCw, Search, Server, Settings, ShieldCheck, Terminal, Trash2, X, Zap} from 'lucide-react';
 import './style.css';
 import './themes.css';
 import './journey.css';
+import './sidebarLayout.css';
+import {WorkspaceLayout} from './WorkspaceLayout';
 import {JourneyArt} from './JourneyArt';
 import {PrecisionCompare} from './PrecisionCompare';
 import {FileBrowser} from './FileBrowser';
 import type {TerminalRequest} from './TerminalDock';
 import {pageFromHash,hostSelectionPage,type Page} from './navigation';
 const TerminalDock=React.lazy(()=>import('./TerminalDock').then(module=>({default:module.TerminalDock})));
+const ServerImport=React.lazy(()=>import('./ServerImport'));
 import {THEMES, browserStorage, loadPreferences, savePreferences, scopedHosts, toggleHost} from './preferences';
 import {shouldNotify} from './notifications';
 import {Reservations,ReservationDialog,type ReservationDraft} from './ReservationPanel';
 import type {Reservation} from './reservations';
 import {MailSettingsPage} from './MailSettingsPage';
+import {MCPSettings} from './MCPSettings';
 import {singleFlight} from './requests';
+import {SSHPasswordDialog} from './SSHPasswordDialog';
+import {RemoveHostDialog} from './RemoveHostDialog';
 import {deviceUsage} from './hostUsage';
 import {HOST_CATEGORIES,filterHosts,type HostCategory} from './hostList';
 const bootPreferences=loadPreferences(browserStorage());
@@ -53,6 +59,8 @@ function App(){
   const [hostSearch,setHostSearch]=useState('');
   const [hostCategory,setHostCategory]=useState<HostCategory>('全部');
   const [sudoHost,setSudoHost]=useState<Host|null>(null);
+  const [sshPasswordHost,setSSHPasswordHost]=useState<Host|null>(null);
+  const [removalHost,setRemovalHost]=useState<Host|null>(null);
   const [fileHost,setFileHost]=useState<{host:Host;requestId:string;path?:string}|null>(null);
   const [terminalRequest,setTerminalRequest]=useState<TerminalRequest|null>(null);
   const [precisionMounted,setPrecisionMounted]=useState(()=>pageFromHash(location.hash)==='precision');
@@ -108,6 +116,14 @@ function App(){
   const shown=scope.filter(h=>filter==='全部'||h.snapshot.devices.some(d=>d.kind===filter)||!h.snapshot.devices.length);
   const detailHost=state.hosts.find(h=>h.id===detail?.host),detailDevice=detailHost?.snapshot.devices.find(d=>d.id===detail?.device);
   const toggle=(h:string,d:string)=>setSelected(old=>({...old,[h]:(old[h]||[]).includes(d)?old[h].filter(i=>i!==d):[...(old[h]||[]),d]}));
+  const clearDeviceSelection=(event:React.MouseEvent<HTMLElement>)=>{
+    const target=event.target;
+    // Only the background itself counts as blank space. Device rows, controls,
+    // selection actions and floating windows keep their normal interactions.
+    if(!(target instanceof Element)||!target.matches('main,.content,.two-columns,.machines,.section-heading,.page-heading,.machine,.machine-heading,.machine-footer,.stats,.stats>div,.finder,.system-summary,.page-footer,.footnote'))return;
+    if(window.getSelection()?.isCollapsed===false)return;
+    setSelected(old=>Object.values(old).some(ids=>ids.length)?{}:old);
+  };
   const selectHosts=(ids:string[]|null,direct=false)=>{
     setPreferences(old=>({...old,hostIds:ids}));
     if(direct){setFilter('全部');if(mobileHosts.current)mobileHosts.current.open=false;window.scrollTo({top:0})}
@@ -115,6 +131,18 @@ function App(){
   };
 
   const resourceBody=(h:Host)=>({host_id:h.id,devices:selected[h.id]||[],minimum_gib:minimum,port});
+  const removeHost=async(host:Host)=>{
+    await api('/hosts/'+encodeURIComponent(host.id),'DELETE');
+    await load();
+    setState(old=>({...old,hosts:old.hosts.filter(h=>h.id!==host.id),rules:old.rules.filter(r=>r.host_id!==host.id),reservations:old.reservations.filter(r=>r.host_id!==host.id)}));
+    setPreferences(old=>({...old,hostIds:old.hostIds===null?null:old.hostIds.filter(id=>id!==host.id)}));
+    setSelected(old=>{const next={...old};delete next[host.id];return next});
+    if(fileHost?.host.id===host.id)setFileHost(null);
+    if(sshPasswordHost?.id===host.id)setSSHPasswordHost(null);
+    if(sudoHost?.id===host.id)setSudoHost(null);
+    if(detail?.host===host.id){setDetail(null);setCheck(null)}
+    setNotice('已移除机器 '+host.target);
+  };
   const inspect=(host:Host,d:Device)=>{setDetail({host:host.id,device:d.id});setCheck(null)};
   const pageTitle=page==='overview'?'算力总览':page==='connections'?'机器连接':page==='precision'?'训练精度对比':page==='reservations'?'卡预约':page==='settings'?'设置':'资源监控';
   useEffect(()=>{document.title=pageTitle+' · Infra Workbench'},[pageTitle]);
@@ -129,27 +157,28 @@ function App(){
       const usage=deviceUsage(h.snapshot);
       return <div className={'host-picker-row '+(checked?'selected':'')} key={h.id}>
         <input type="checkbox" aria-label={'显示机器 '+h.target} checked={checked} onChange={()=>selectHosts(toggleHost(preferences.hostIds,h.id,state.hosts.map(h=>h.id)))}/>
-        <button aria-label={'只看机器 '+h.target} title="查看此机器的设备" onClick={()=>selectHosts([h.id],true)}><span className={'host-dot '+(h.snapshot.fresh?'online':'')}/><span><strong>{h.target}</strong><small>{usage.total} 卡 · {h.snapshot.fresh?'在线':h.snapshot.status==='error'?'采集失败':'等待采集'}</small><small className="host-usage" title="按设备数统计（多芯片卡每个 die 单独计数）。有计算进程计为占用；确认无计算进程且无 Alarm 计为空闲，不受显存筛选影响。">{h.snapshot.fresh&&usage.total>0?<><span className="occupied">占用 <b>{usage.occupied}</b></span><span className="idle">空闲 <b>{usage.idle}</b></span>{usage.unknown>0&&<span>未知 <b>{usage.unknown}</b></span>}{usage.abnormal>0&&<span className="abnormal">异常 <b>{usage.abnormal}</b></span>}</>:<span>{usage.total?'状态待更新':'等待设备信息'}</span>}</small></span><ChevronRight size={13}/></button>
+        <button aria-label={'只看机器 '+h.target} title="查看此机器的设备" onClick={()=>selectHosts([h.id],true)}><span className={'host-dot '+(h.snapshot.fresh?'online':'')}/><span><strong>{h.target}</strong><small>{usage.total} 卡 · {h.snapshot.fresh?'在线':h.snapshot.status==='error'?'采集失败':'等待采集'}</small><small className="host-usage" title="按设备数统计（多芯片卡每个 die 单独计数）。有计算进程计为占用；确认无计算进程且无 Alarm 计为空闲，不受显存筛选影响。">{h.snapshot.fresh&&usage.total>0?<><span className="occupied">占用 <b>{usage.occupied}</b></span><span className="idle">空闲 <b>{usage.idle}</b></span>{usage.unknown>0&&<span>未知 <b>{usage.unknown}</b></span>}{usage.abnormal>0&&<span className="abnormal">异常 <b>{usage.abnormal}</b></span>}</>:<span>{usage.total?'状态待更新':'等待设备信息'}</span>}</small></span></button>
+        <button className="host-remove-button" aria-label={'从列表移除机器 '+h.target} title={'移除机器 '+h.target} onClick={()=>setRemovalHost(h)}><Trash2 size={14}/></button>
       </div>})}
       {state.hosts.length===0&&<p className="subtle">添加机器后会出现在这里。</p>}
       {state.hosts.length>0&&!listedHosts.length&&<p className="subtle">{hostSearch.trim()?'没有匹配的机器。':`暂无${hostCategory==='全部'?'':' '+hostCategory+' '}机器。`}</p>}
     </div><small className="saved-hint"><Check size={11}/>自动记住本次选择</small>
   </div>;
-  return <div className="shell">
+  return <WorkspaceLayout>
     <aside className="sidebar"><div className="brand"><span className="brand-icon"><Cpu size={23}/></span><div>Infra<span>WORKBENCH</span></div></div>
       <div className="workspace"><span className="avatar">本</span><div>本地工作空间<small>Personal workspace</small></div></div>
       <div className="nav-label">工作台</div><nav>{[["overview","算力总览",LayoutGrid],["connections","机器连接",Server],["watch","资源监控",Radio],["reservations","卡预约",CalendarClock],["precision","精度对比",Activity],["settings","设置",Settings]].map(([key,label,Icon])=><button key={String(key)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='connections'&&<span className="nav-count">{state.hosts.length}</span>}{key==='watch'&&state.rules.length>0&&<span className="nav-count">{state.rules.length}</span>}{key==='reservations'&&state.reservations.some(r=>r.status!=='ready')&&<span className="nav-count">{state.reservations.filter(r=>r.status!=='ready').length}</span>}</button>)}</nav>
       <div className="sidebar-hosts">{hostList}</div>
       <div className="sidebar-bottom"><div className="agent"><i/>本地服务{error?'未连接':'已连接'}<small>SSH · 无需远端 Agent</small></div><div className="version">Infra Workbench <span>v0.1</span></div></div>
     </aside>
-    <main><header><div className="breadcrumb">工作空间 <ChevronRight size={13}/>{pageTitle}</div>
+    <main onClick={clearDeviceSelection}><header><div className="breadcrumb">工作空间 <ChevronRight size={13}/>{pageTitle}</div>
       <div className="header-tools"><span className="live"><i/>10s 实时采集</span>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>主题</span></summary><div className="theme-options"><h3>选择界面主题</h3><p>主题偏好自动保存在本机</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{t.name}</strong><small>{t.mode==='light'?'亮色':'暗色'} · {t.description}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
         <button className={'icon-button '+(notify?'teal':'')} aria-label="开启浏览器通知" onClick={enableNotifications}><Bell size={18}/></button><span className="avatar small">本</span>
       </div></header>
     {preferences.theme==='frieren'&&<JourneyArt/>}
-    <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='connections'?'CONNECTIONS':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':'RESOURCE GUARD'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?'跨机器读取训练日志，自动提取指标并按真实步数对齐。':page==='watch'?'关注准备使用的设备，在资源变化时收到提醒。':page==='reservations'?'预约指定设备，等它们连续空闲后收到提醒。':page==='settings'?'管理邮件通知与发件邮箱。':page==='overview'?`全部 ${state.hosts.length} 台机器的资源概况 · 左侧选择仅影响下方详情`:`正在查看 ${scope.length} 台机器 · 从左侧列表选择你关注的资源`}</p></div><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button></div>
+    <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='connections'?'CONNECTIONS':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':'RESOURCE GUARD'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?'跨机器读取训练日志，自动提取指标并按真实步数对齐。':page==='watch'?'关注准备使用的设备，在资源变化时收到提醒。':page==='reservations'?'预约指定设备，等它们连续空闲后收到提醒。':page==='settings'?'管理 AI agent 接入、邮件通知与发件邮箱。':page==='overview'?`全部 ${state.hosts.length} 台机器的资源概况 · 左侧选择仅影响下方详情`:`正在查看 ${scope.length} 台机器 · 从左侧列表选择你关注的资源`}</p></div><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button></div>
     <details className="mobile-hosts" ref={mobileHosts}><summary><Server size={15}/>选择机器 · {scope.length} / {state.hosts.length}</summary>{hostList}</details>
     {error&&<div className="error-banner">{error}</div>}
     {precisionMounted&&<div className="precision-cache" hidden={page!=='precision'}><PrecisionCompare hosts={state.hosts}/></div>}
@@ -159,7 +188,7 @@ function App(){
     {(page==='overview'||page==='connections')&&<div className="two-columns"><div className="machines"><div className="section-heading"><h2>所选机器详情<span>{shown.length} 台机器</span></h2><div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
       {shown.length===0&&<div className="empty"><Server size={32}/><h3>{state.hosts.length===0?'连接第一台机器':scope.length===0?'选择要查看的机器':'没有符合设备类型的机器'}</h3><p>{state.hosts.length===0?'从本机 SSH 配置选择，或输入主机和账号密码。':'在机器列表中点击名称单选，或勾选多台机器。'}</p>{state.hosts.length===0?<button className="primary" onClick={()=>setAdding(true)}><Plus size={16}/>添加机器</button>:<button className="secondary" onClick={()=>{selectHosts(null);setFilter('全部')}}>显示全部机器</button>}</div>}
       {shown.map(host=>{const snapshot=host.snapshot,ids=selected[host.id]||[];return <section className="machine" key={host.id} aria-label={'机器详情 '+host.target}>
-        <div className="machine-heading"><span className="machine-icon"><Server size={20}/></span><div className="machine-name"><h3>{host.target}<Badge tone={snapshot.fresh?'green':'amber'}>{snapshot.fresh?'在线':snapshot.status==='error'?'采集失败':snapshot.status==='connecting'?'连接中':'数据过期'}</Badge></h3><p>{machineSummary(snapshot.devices)} <span>·</span> SSH {host.auth==='password_session'?'密码会话':'免密连接'}</p></div><button className="ssh-open" aria-label={'浏览 '+host.target+' 文件'} onClick={()=>setFileHost({host,requestId:crypto.randomUUID()})}><Database size={15}/><span>文件</span></button><button className="ssh-open" aria-label={'打开 '+host.target+' 终端'} onClick={()=>setTerminalRequest({id:crypto.randomUUID(),host})}><Terminal size={15}/><span>终端</span></button><button className={'sudo-button '+(host.sudo?.enabled?'enabled':'')} title={host.sudo?.message||'设置 sudo 进程详情'} aria-label={host.target+' sudo 设置'} onClick={()=>setSudoHost(host)}><ShieldCheck size={15}/><span>sudo</span></button><button className="icon-button" aria-label={'刷新 '+host.target} disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}><RefreshCw size={16} className={busy===host.id?'spin':''}/></button><button className="icon-button" aria-label={'移除 '+host.target} onClick={()=>act('remove',()=>api('/hosts/'+host.id,'DELETE'))}><Trash2 size={15}/></button></div>
+        <div className="machine-heading"><span className="machine-icon"><Server size={20}/></span><div className="machine-name"><h3>{host.target}<Badge tone={snapshot.fresh?'green':'amber'}>{snapshot.fresh?'在线':snapshot.status==='error'?'采集失败':snapshot.status==='connecting'?'连接中':'数据过期'}</Badge></h3><p>{machineSummary(snapshot.devices)} <span>·</span> SSH {host.auth==='password_session'?'密码会话':'免密连接'}</p></div><button className="ssh-open" aria-label={'预约 '+host.target+' 的卡'} title="预约这台机器的卡" onClick={()=>{navigate('reservations');setReservationDraft({hostId:host.id,devices:ids.filter(id=>snapshot.devices.some(device=>device.id===id)),minimum})}}><CalendarClock size={15}/><span>预约</span></button><button className="ssh-open" aria-label={'浏览 '+host.target+' 文件'} onClick={()=>setFileHost({host,requestId:crypto.randomUUID()})}><Database size={15}/><span>文件</span></button><button className="ssh-open" aria-label={'打开 '+host.target+' 终端'} onClick={()=>setTerminalRequest({id:crypto.randomUUID(),host})}><Terminal size={15}/><span>终端</span></button><button className="sudo-button" aria-label={host.target+' SSH 密码设置'} title="保存或删除此机器的 SSH 登录密码，供 MCP 工具 显式读取" onClick={()=>setSSHPasswordHost(host)}><KeyRound size={15}/><span>SSH 密码</span></button><button className={'sudo-button '+(host.sudo?.enabled?'enabled':'')} title={host.sudo?.message||'设置 sudo 进程详情'} aria-label={host.target+' sudo 设置'} onClick={()=>setSudoHost(host)}><ShieldCheck size={15}/><span>sudo</span></button><button className="icon-button" aria-label={'刷新 '+host.target} disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}><RefreshCw size={16} className={busy===host.id?'spin':''}/></button><button className="secondary compact remove-host-button" aria-label={'移除机器 '+host.target} title="移除机器" onClick={()=>setRemovalHost(host)}><Trash2 size={15}/><span>移除</span></button></div>
         {host.sudo?.enabled&&!['ready','pending'].includes(host.sudo.status)&&<div className="sudo-alert"><ShieldCheck size={14}/><span>{host.sudo.message}</span><button className="text-button" onClick={()=>setSudoHost(host)}>设置</button></div>}
         <SystemSummary system={snapshot.system} fresh={snapshot.fresh}/>
         {snapshot.error&&<div className="connection-error"><p>{snapshot.error_stage==='parse'?'SSH 已连接 · 设备信息解析失败：':snapshot.error_stage==='probe'?'SSH 已连接 · 远端采集失败：':''}{snapshot.error}</p>{snapshot.error_stage==='connection'?<button className="text-button" onClick={()=>setAdding(true)}>检查连接凭据 <ArrowUpRight size={13}/></button>:<button className="text-button" disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}>重试采集 <RefreshCw size={13}/></button>}</div>}
@@ -178,18 +207,20 @@ function App(){
       </section>})}
       <div className="footnote"><CircleHelp size={14}/>低利用率不代表空闲。筛选结果反映资源指标，不代表资源授权或预留。</div>
     </div><aside className="event-column"><EventPanel events={state.events}/><div className="data-source"><Database size={14}/>真实 SSH 采集<span>本地存储</span></div></aside></div>}
-    {page==='settings'&&<MailSettingsPage/>}
+    {page==='settings'&&<><MCPSettings/><MailSettingsPage/></>}
     {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} update={async(id,wait_seconds)=>{await api('/reservations/'+id,'PATCH',{wait_seconds});await load()}} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} enableNotifications={enableNotifications} notify={notify}/>}
     {page==='watch'&&<><div className="watch-heading"><h2>监控规则 <Badge>{state.rules.length}</Badge></h2><button className="secondary" onClick={enableNotifications}><Bell size={15}/>{notify?'通知已开启':'开启浏览器通知'}</button></div><p className="subtle">从设备列表勾选后点击“监控所选”。规则持续监控，不受当前查看的机器选择影响。</p>{state.rules.length===0&&<div className="empty"><Radio size={32}/><h3>还没有监控规则</h3><button className="secondary" onClick={()=>navigate('overview')}>去选择设备</button></div>}{state.rules.map(r=><div className="rule-row" key={r.id}><Radio size={20}/><div><h3>{state.hosts.find(h=>h.id===r.host_id)?.target}</h3><p>设备 {r.devices.map(id=>id.replace('phy:','Phy-ID ')).join(', ')} · 每设备 ≥ {r.minimum_gib} GiB · 端口 {r.port}</p></div><Badge tone={r.status==='active'?'green':'amber'}>{r.status==='needs_selection'?'需重新选设备':r.status==='active'?'监控中':'等待有效采集'}</Badge><button className="icon-button" aria-label="删除监控规则" onClick={()=>act('rule',()=>api('/rules/'+r.id,'DELETE'))}><Trash2 size={16}/></button></div>)}<EventPanel events={state.events}/></>}
     <footer className="page-footer"><span><ShieldCheck size={13}/>私钥留在本机 · sudo 密码可选存入系统凭据管理器</span><span>LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
     <React.Suspense fallback={null}>{terminalRequest&&<TerminalDock request={terminalRequest} hosts={state.hosts} onDirectory={(hostId,path)=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setFileHost({host,path,requestId:crypto.randomUUID()})}}/>}</React.Suspense>
     {notice&&<div role="status" className="toast"><Check size={17}/>{notice}<button className="icon-button" aria-label="关闭提示" onClick={()=>setNotice('')}><X size={15}/></button></div>}
-    {adding&&<AddMachine close={()=>setAdding(false)} connected={async(message,hostId)=>{if(hostId)setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,hostId])]}));setNotice(message);setAdding(false);await load()}}/>}
+    {adding&&<AddMachine close={()=>setAdding(false)} imported={async ids=>{setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,...ids])]}));await load()}} connected={async(message,hostId)=>{if(hostId)setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,hostId])]}));setNotice(message);setAdding(false);await load()}}/>}
     {reservationDraft&&<ReservationDialog countEnabled={state.reservation_modes?.includes('count')} hosts={state.hosts} draft={reservationDraft} close={()=>setReservationDraft(null)} openSettings={()=>{setReservationDraft(null);navigate('settings')}} save={async(body)=>{await api('/reservations','POST',body);await load();setNotice('预约已保存；所选设备连续空闲后会提醒一次。');navigate('reservations')}}/>}
     {fileHost&&<FileBrowser onTerminal={(hostId,cwd)=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setTerminalRequest({id:crypto.randomUUID(),host,cwd})}} initialPath={fileHost.path} host={fileHost.host} requestId={fileHost.requestId} hosts={state.hosts} close={()=>setFileHost(null)}/>}
+    {sshPasswordHost&&<SSHPasswordDialog key={sshPasswordHost.id} host={sshPasswordHost} close={()=>setSSHPasswordHost(null)} updated={async()=>{await load()}}/>}
+    {removalHost&&<RemoveHostDialog key={removalHost.id} host={removalHost} close={()=>setRemovalHost(null)} remove={()=>removeHost(removalHost)}/>}
     {sudoHost&&<SudoModal key={sudoHost.id} host={sudoHost} close={()=>setSudoHost(null)} updated={async()=>{await load()}}/>}
     {detail&&<div className="drawer-shade" onClick={()=>{setDetail(null);setCheck(null)}}><section className="drawer" onClick={e=>e.stopPropagation()}><div className="drawer-heading"><div className="eyebrow">DEVICE INSPECTOR</div><button className="icon-button" aria-label="关闭设备详情" onClick={()=>{setDetail(null);setCheck(null)}}><X size={20}/></button></div><h2>{detailHost?.target}</h2><p className="subtle">{detailDevice?.kind} {detailDevice?displayId(detailDevice):''} · {detailDevice?.name}{detailDevice?.physical_id!=null&&` · 卡 ${detailDevice.card_id} / 芯片 ${detailDevice.chip_id}`}</p>{detailDevice&&<><div className="detail-metrics"><div>剩余显存<strong>{gib(detailDevice.memory_free)} <small>GiB</small></strong></div><div>计算利用率<strong>{detailDevice.utilization??'—'}<small>%</small></strong></div></div><h3>计算进程 <Badge>{detailDevice.processes.length}</Badge></h3>{!detailDevice.processes_known?<div className="error-banner">进程信息无法完整读取，不能确认空闲。</div>:detailDevice.processes.length===0?<p className="subtle">采集工具未报告可见计算进程。</p>:detailDevice.processes.map(p=><ProcessDetails key={p.pid} process={p} onCopy={text=>navigator.clipboard.writeText(text).then(()=>setNotice("已复制")).catch(()=>setNotice("复制失败，可手动选择文本复制"))}/>)}<button className="secondary wide" onClick={()=>toggle(detail.host,detail.device)}><Check size={15}/>{(selected[detail.host]||[]).includes(detail.device)?'取消选择此设备':'选择此设备'}</button></>}{check&&<div className={'check-result '+(check.status==='PASS'?'pass':'')}><h3><ShieldCheck size={18}/>检查结果：{check.status}</h3>{check.reasons.map((r,i)=><p key={i}>{r}</p>)}</div>}<div className="drawer-note">数据来自最近一次采集。进程不可见时会明确标记，检查结果不构成资源预留。</div></section></div>}
-  </div>;
+  </WorkspaceLayout>;
 }
 
 function SystemSummary({system,fresh}:{system?:SystemMetrics|null;fresh:boolean}){
@@ -254,14 +285,15 @@ function SudoModal({host,close,updated}:{host:Host;close:()=>void;updated:()=>Pr
   </section></div>;
 }
 
-function AddMachine({close,connected}:{close:()=>void;connected:(message:string,hostId?:string)=>void}){
-  const [manual,setManual]=useState(false),[aliases,setAliases]=useState<string[]>([]),[query,setQuery]=useState(''),[target,setTarget]=useState(''),[user,setUser]=useState(''),[port,setPort]=useState(22),[password,setPassword]=useState(''),[provision,setProvision]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[configPath,setConfigPath]=useState('');
-  useEffect(()=>{api('/config-hosts').then(data=>{setAliases(data.aliases);setConfigPath(data.path)}).catch(e=>setError(e.message))},[]);
-  const connect=async(e:React.FormEvent)=>{e.preventDefault();setLoading(true);setError('');try{const result=await api('/connect','POST',{target,user:user||null,port:manual?port:null,manual,password:password||null,provision});setPassword('');connected(result.message,result.host_id)}catch(e){setPassword('');setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}};
-  return <div className="modal-shade"><section role="dialog" aria-modal="true" aria-labelledby="add-title" className="modal"><div className="modal-header"><div><div className="eyebrow">CONNECT / SSH</div><h2 id="add-title">添加机器</h2></div><button className="icon-button" disabled={loading} aria-label="关闭添加机器" onClick={close}><X size={20}/></button></div><div className="tabs"><button type="button" className={!manual?'selected':''} onClick={()=>{setManual(false);setTarget('');setError('')}}>从 SSH 配置选择</button><button type="button" className={manual?'selected':''} onClick={()=>{setManual(true);setTarget('');setError('')}}>手动添加</button></div><form onSubmit={connect}>
+function AddMachine({close,connected,imported}:{close:()=>void;connected:(message:string,hostId?:string)=>void;imported:(ids:string[])=>void}){
+  const [bulk,setBulk]=useState(false);
+  const [manual,setManual]=useState(false),[aliases,setAliases]=useState<string[]>([]),[query,setQuery]=useState(''),[target,setTarget]=useState(''),[user,setUser]=useState(''),[port,setPort]=useState(22),[password,setPassword]=useState(''),[provision,setProvision]=useState(false),[rememberPassword,setRememberPassword]=useState(false),[canRemember,setCanRemember]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[configPath,setConfigPath]=useState('');
+  useEffect(()=>{api('/config-hosts').then(data=>{setAliases(data.aliases);setConfigPath(data.path);setCanRemember(data.can_remember_ssh_password===true)}).catch(e=>setError(e.message))},[]);
+  const connect=async(e:React.FormEvent)=>{e.preventDefault();setLoading(true);setError('');try{const result=await api('/connect','POST',{target,user:user||null,port:manual?port:null,manual,password:password||null,provision,remember_password:rememberPassword});setPassword('');connected(result.message,result.host_id)}catch(e){setPassword('');setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}};
+  return <div className="modal-shade"><section role="dialog" aria-modal="true" aria-labelledby="add-title" className={'modal '+(bulk?'import-modal':'')}><div className="modal-header"><div><div className="eyebrow">CONNECT / SSH</div><h2 id="add-title">添加机器</h2></div><button className="icon-button" disabled={loading} aria-label="关闭添加机器" onClick={close}><X size={20}/></button></div><div className="tabs"><button type="button" disabled={loading} className={!manual&&!bulk?'selected':''} onClick={()=>{setBulk(false);setManual(false);setTarget('');setError('')}}>从 SSH 配置选择</button><button type="button" disabled={loading} className={manual&&!bulk?'selected':''} onClick={()=>{setBulk(false);setManual(true);setTarget('');setError('')}}>手动添加</button><button type="button" disabled={loading} className={bulk?'selected':''} onClick={()=>{setBulk(true);setPassword('');setError('')}}>Excel 批量导入</button></div>{bulk?<React.Suspense fallback={<p className="subtle">正在加载…</p>}><ServerImport onChanged={imported}/></React.Suspense>:<form onSubmit={connect}>
     {!manual?<><p className="config-path"><Terminal size={13}/>{configPath||'读取 ~/.ssh/config…'}</p><div className="search-input"><Search size={16}/><input aria-label="搜索 SSH 机器" placeholder="搜索已保存的机器…" value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="alias-list">{aliases.filter(a=>a.toLowerCase().includes(query.toLowerCase())).map(a=><button type="button" className={target===a?'selected':''} key={a} onClick={()=>setTarget(a)}><Server size={15}/><span>{a}</span>{target===a?<Check size={15}/>:<ChevronRight size={14}/>}</button>)}{aliases.length===0&&<p className="subtle">未找到机器，可切换到手动添加。</p>}</div></>:<><label className="form-label">主机地址<input required placeholder="例如 192.168.1.10" value={target} onChange={e=>setTarget(e.target.value.trim())}/></label><label className="form-label">SSH 端口<input required type="number" min="1" max="65535" value={port} onChange={e=>setPort(+e.target.value)}/></label></>}
-    <div className="form-row"><label className="form-label">用户名 {!manual&&<small>留空使用 SSH 配置</small>}<input required={manual} autoComplete="username" value={user} onChange={e=>setUser(e.target.value.trim())} placeholder={manual?'登录用户名':'使用已有配置'}/></label><label className="form-label">密码 <small>已有免密可留空</small><input type="password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)} placeholder="仅在本次连接时使用"/></label></div>
-    <label className="provision-option"><input type="checkbox" checked={provision} onChange={e=>setProvision(e.target.checked)}/><div><strong>登录后自动配置免密连接</strong><p>生成本机专用密钥，向远端追加公钥，再验证无密码登录。需要提供本次登录密码。</p></div><ShieldCheck size={20}/></label><div className="privacy-note"><ShieldCheck size={14}/>密码不保存；不覆盖远端已有公钥。未勾选时仅保持本次会话。</div>
-    {error&&<div role="alert" className="connection-error">{error}</div>}<div className="modal-footer"><span>{target?<><i className="dot"/>{target}</>:'选择一台机器开始'}</span><button className="primary" disabled={loading||!target||(provision&&!password)}>{loading?<LoaderCircle size={16} className="spin"/>:<ArrowUpRight size={16}/ >}{loading?'正在连接…':'连接机器'}</button></div></form></section></div>
+    <div className="form-row"><label className="form-label">用户名 {!manual&&<small>留空使用 SSH 配置</small>}<input required={manual} autoComplete="username" value={user} onChange={e=>setUser(e.target.value.trim())} placeholder={manual?'登录用户名':'使用已有配置'}/></label><label className="form-label">密码 <small>已有免密可留空</small><input type="password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)} placeholder={rememberPassword?'连接成功后保存到系统凭据管理器':'仅在本次连接时使用'}/></label></div>
+    <label className="provision-option"><input type="checkbox" checked={provision} onChange={e=>setProvision(e.target.checked)}/><div><strong>登录后自动配置免密连接</strong><p>生成本机专用密钥，向远端追加公钥，再验证无密码登录。需要提供本次登录密码。</p></div><ShieldCheck size={20}/></label><label className="checkbox-label"><input aria-label="记住 SSH 登录密码" type="checkbox" checked={rememberPassword} disabled={!canRemember||loading} onChange={e=>setRememberPassword(e.target.checked)}/>记住 SSH 登录密码，供 MCP 工具 读取</label><div className="privacy-note"><ShieldCheck size={14}/>{rememberPassword?'登录成功后保存到当前用户的系统凭据管理器，可在机器的 SSH 密码设置中删除。':'未勾选记住时不保存 SSH 密码；免密配置不覆盖已有公钥。'}</div>
+    {error&&<div role="alert" className="connection-error">{error}</div>}<div className="modal-footer"><span>{target?<><i className="dot"/>{target}</>:'选择一台机器开始'}</span><button className="primary" disabled={loading||!target||((provision||rememberPassword)&&!password)}>{loading?<LoaderCircle size={16} className="spin"/>:<ArrowUpRight size={16}/ >}{loading?'正在连接…':'连接机器'}</button></div></form>}</section></div>
 }
 createRoot(document.getElementById('root')!).render(<App/>);

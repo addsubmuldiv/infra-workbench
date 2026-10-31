@@ -22,5 +22,8 @@ id_ed25519*
 *.sqlite*
 release/
 work/
+*.egg-info/
+/build/
+/dist/
 # Local validation notes include private machine names; share generic docs instead.
 VALIDATION.md

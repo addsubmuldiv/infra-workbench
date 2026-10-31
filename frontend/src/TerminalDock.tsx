@@ -8,6 +8,10 @@ import '@xterm/xterm/css/xterm.css';
 import './terminal.css';
 import {directoryLinkProvider} from './terminalPaths';
 import {emptyCommandLine,editCommandLine,historySuggestion,type CommandLine,type HistoryCommand} from './terminalSuggestions';
+import {TERMINAL_FRAME_KEY,fitTerminalFrame,loadTerminalFrame,moveTerminalFrame,resizeTerminalFrame,terminalFrameStyle,type TerminalFrame} from './terminalWindow';
+
+const terminalViewport=()=>({width:window.innerWidth||1200,height:window.innerHeight||900});
+function terminalStorage(){try{return window.localStorage??null}catch{return null}}
 
 type Host={id:string;target:string;user:string|null};
 export type TerminalRequest={id:string;host:Host;cwd?:string};
@@ -199,8 +203,10 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
 
 export function TerminalDock({request,hosts,onDirectory}:{request:TerminalRequest|null;hosts:Host[];onDirectory?:(hostId:string,path:string)=>void}){
   const [tabs,setTabs]=useState<Tab[]>([]),[active,setActive]=useState(''),[collapsed,setCollapsed]=useState(false),[maximized,setMaximized]=useState(false);
-  const [height,setHeight]=useState(370),[font,setFont]=useState(13),[picker,setPicker]=useState(false),[hint,setHint]=useState('');
+  const [frame,setFrame]=useState(()=>loadTerminalFrame(terminalStorage(),terminalViewport())),[font,setFont]=useState(13),[picker,setPicker]=useState(false),[hint,setHint]=useState('');
   const [savedSessions,setSavedSessions]=useState<Record<string,{id:string;created:number}[]>>({}),[sessionBusy,setSessionBusy]=useState(false);
+  const [dragging,setDragging]=useState(false);
+  const gesture=useRef<{id:number;edge:string;x:number;y:number;frame:TerminalFrame}|null>(null);
   const handles=useRef<Record<string,Handle|null>>({}),dock=useRef<HTMLElement>(null);
   const current=tabs.find(tab=>tab.id===active);
   const hasLiveSessions=tabs.some(tab=>!tab.session&&(tab.phase==='connecting'||tab.phase==='running'));
@@ -208,7 +214,11 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   useEffect(()=>{if(request){const existing=request.cwd===undefined?tabs.find(tab=>tab.host.id===request.host.id):undefined;if(existing){setActive(existing.id);setCollapsed(false)}else add(request.host,request.cwd)}},[request]);
   useEffect(()=>{setTabs(old=>old.filter(tab=>hosts.some(host=>host.id===tab.host.id)))},[hosts.map(host=>host.id).join(',')]);
   useEffect(()=>{if(tabs.length&&!tabs.some(tab=>tab.id===active))setActive(tabs.at(-1)!.id)},[tabs,active]);
-  useEffect(()=>{document.documentElement.style.setProperty('--terminal-space',tabs.length?(collapsed?'64px':(maximized?'calc(100vh - 130px)':height+24+'px')):'0px');return()=>{document.documentElement.style.removeProperty('--terminal-space')}},[tabs.length,collapsed,maximized,height]);
+  useEffect(()=>{
+    const resize=()=>{setFrame(old=>fitTerminalFrame(old,terminalViewport()));gesture.current=null;setDragging(false)};
+    window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);
+  },[]);
+  useEffect(()=>{try{terminalStorage()?.setItem(TERMINAL_FRAME_KEY,JSON.stringify(frame))}catch{}},[frame]);
   useEffect(()=>{if(!hint)return;const timer=setTimeout(()=>setHint(''),12000);return()=>clearTimeout(timer)},[hint]);
   useEffect(()=>{
     if(!hasLiveSessions)return;
@@ -240,18 +250,29 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
     if(tab&&!tab.session&&(tab.phase==='connecting'||tab.phase==='running')&&!window.confirm('关闭此 SSH 会话？前台任务可能随连接结束，建议先用 tmux 保留任务。'))return;
     const remaining=tabs.filter(tab=>tab.id!==id);setTabs(remaining);if(id===active)setActive(remaining.at(-1)?.id||'');
   };
-  const resize=(event:React.PointerEvent)=>{
-    if(maximized||collapsed)return;
-    event.preventDefault();const start=event.clientY,initial=height;event.currentTarget.setPointerCapture(event.pointerId);
-    const move=(moveEvent:PointerEvent)=>setHeight(Math.max(240,Math.min(window.innerHeight-110,initial+start-moveEvent.clientY)));
-    const end=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end);window.removeEventListener('pointercancel',end)};
-    window.addEventListener('pointermove',move);window.addEventListener('pointerup',end,{once:true});window.addEventListener('pointercancel',end,{once:true});
+  const startGesture=(event:React.PointerEvent,edge='move')=>{
+    if(event.button!==0||maximized||collapsed||gesture.current)return;
+    if(edge==='move'&&(event.target as HTMLElement).closest('button,input,select,textarea,a'))return;
+    event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
+    gesture.current={id:event.pointerId,edge,x:event.clientX,y:event.clientY,frame};setDragging(true);
   };
+  const moveGesture=(event:React.PointerEvent)=>{
+    const start=gesture.current;if(!start||event.pointerId!==start.id)return;
+    const dx=event.clientX-start.x,dy=event.clientY-start.y;
+    setFrame(start.edge==='move'?moveTerminalFrame(start.frame,dx,dy,terminalViewport()):resizeTerminalFrame(start.frame,start.edge,dx,dy,terminalViewport()));
+  };
+  const endGesture=()=>{gesture.current=null;setDragging(false)};
+  const restore=()=>{setCollapsed(false);requestAnimationFrame(()=>handles.current[active]?.focus())};
+  const running=tabs.filter(tab=>tab.phase==='running').length,disconnected=tabs.filter(tab=>['error','closed'].includes(tab.phase)).length;
   if(!tabs.length)return null;
-  return <section ref={dock} className={'terminal-dock '+(collapsed?'collapsed ':'')+(maximized&&!collapsed?'maximized':'')} style={{height:collapsed?48:maximized?'calc(100dvh - 100px)':height}} aria-label="SSH 终端面板">
-    <div className="terminal-resize" onPointerDown={resize} role="separator" aria-label="拖动调整终端高度" aria-orientation="horizontal" tabIndex={0} onKeyDown={event=>{if(event.key==='ArrowUp')setHeight(h=>Math.min(innerHeight-110,h+30));if(event.key==='ArrowDown')setHeight(h=>Math.max(240,h-30))}}><i/></div>
-    <div className="terminal-topbar"><div className="terminal-brand"><span><Terminal size={16}/></span><strong>终端</strong><small>SSH WORKSPACE</small><b>{tabs.length}</b></div>
-      <div className="terminal-window-actions"><button aria-label="折叠终端" title="折叠后保持连接" onClick={()=>setCollapsed(!collapsed)}>{collapsed?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</button><button aria-label={maximized?'还原终端':'最大化终端'} onClick={()=>{setMaximized(!maximized);setCollapsed(false)}}>{maximized?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="关闭所有终端" title="关闭所有终端连接" onClick={()=>{if(!hasLiveSessions||window.confirm('关闭所有 SSH 会话？普通会话的前台任务可能结束；持久会话只断开显示连接。'))setTabs([])}}><X size={17}/></button></div>
+  return <section ref={dock} className={'terminal-dock floating '+(collapsed?'collapsed ':'')+(maximized&&!collapsed?'maximized ':'')+(dragging?'dragging':'')} style={terminalFrameStyle(frame,terminalViewport(),collapsed,maximized)} aria-label="SSH 终端面板" onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
+    {collapsed&&<button className="terminal-minimized-launcher" aria-label="恢复 SSH 终端" title={'恢复终端 · '+(current?.host.target||'SSH 会话')} onClick={restore}><span className="terminal-launcher-icon"><Terminal size={21}/><i className={'session-dot '+(disconnected?'error':running?'running':'connecting')}/></span><span className="terminal-launcher-text"><strong>SSH 终端 <b>{tabs.length}</b><ChevronUp size={14}/></strong><small>{running} 个运行中{disconnected>0?` · ${disconnected} 个已断开`:' · 点击恢复'}</small></span></button>}
+    {!collapsed&&!maximized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'terminal-resize-handle edge-'+edge} onPointerDown={event=>startGesture(event,edge)} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?'调整终端大小':undefined} tabIndex={edge==='se'?0:undefined} onKeyDown={event=>{
+      const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(!offset)return;
+      event.preventDefault();setFrame(old=>resizeTerminalFrame(old,'se',...offset,terminalViewport()));
+    }}/ >)}
+    <div className="terminal-topbar" style={{display:collapsed?'none':undefined}} onPointerDown={event=>startGesture(event)} onDoubleClick={event=>{if(!(event.target as HTMLElement).closest('button'))setMaximized(!maximized)}}><div className="terminal-brand"><span><Terminal size={16}/></span><strong>终端</strong><small>拖动移动 · 边缘缩放</small><b>{tabs.length}</b></div>
+      <div className="terminal-window-actions"><button aria-label="最小化终端" title="收到右下角，保持所有连接" onClick={()=>{setCollapsed(true);setPicker(false)}}><ChevronDown size={16}/></button><button aria-label={maximized?'还原终端':'最大化终端'} onClick={()=>{setMaximized(!maximized);setCollapsed(false)}}>{maximized?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="关闭所有终端" title="关闭所有终端连接" onClick={()=>{if(!hasLiveSessions||window.confirm('关闭所有 SSH 会话？普通会话的前台任务可能结束；持久会话只断开显示连接。'))setTabs([])}}><X size={17}/></button></div>
     </div>
     <div className="terminal-body" style={{display:collapsed?'none':undefined}}>
       <div className="terminal-tabbar" role="tablist" aria-label="SSH 会话"><div className="terminal-tabs">{tabs.map((tab,index)=><div key={tab.id} className={'terminal-tab '+(tab.id===active?'selected':'')}><button role="tab" aria-selected={tab.id===active} onClick={()=>setActive(tab.id)}><i className={'session-dot '+tab.phase}/><span>{tab.host.target}</span><small>{tab.session?'持久 '+tab.session.slice(0,4):String(index+1).padStart(2,'0')}</small></button><button className="terminal-tab-close" aria-label={'关闭 '+tab.host.target+' 终端'} onClick={()=>close(tab.id)}><X size={12}/></button></div>)}</div><div className="terminal-add"><button aria-label="新建 SSH 终端" title="新建会话" onClick={()=>setPicker(!picker)}><Plus size={17}/></button>{picker&&<div className="terminal-picker"><strong>连接到机器</strong>{hosts.map(host=><div key={host.id} className="terminal-picker-host"><button onClick={()=>add(host)}><Terminal size={14}/><span>{host.target}<small>{host.user||'使用 SSH 配置账号'}</small></span><Plus size={14}/></button><button disabled={sessionBusy} onClick={()=>persistent(host)}>新建持久会话</button>{(savedSessions[host.id]||[]).map(session=><div key={session.id} className="terminal-saved-session"><button onClick={()=>add(host,undefined,session.id)}>恢复 {session.id.slice(0,6)} · {new Date(session.created*1000).toLocaleString()}</button><button title="结束远端任务并移除记录" onClick={async()=>{if(!window.confirm('结束此持久会话及其中的任务？'))return;try{const response=await fetch('/api/hosts/'+host.id+'/terminal-sessions/'+session.id,{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail);setSavedSessions(old=>({...old,[host.id]:(old[host.id]||[]).filter(s=>s.id!==session.id)}))}catch(error){setHint(String(error))}}}>结束</button></div>)}</div>)}</div>}</div></div>

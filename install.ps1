@@ -58,6 +58,7 @@ try {
     }
     if (-not (Test-Path -LiteralPath 'frontend\dist\index.html')) { throw 'Frontend build is missing. Run install.cmd -RebuildFrontend with Node.js installed.' }
     Write-Host 'Installation complete. Next time, double-click the Run launcher.' -ForegroundColor Green
+    Write-Host 'MCP endpoint (after service startup): http://127.0.0.1:8765/mcp'
     if (-not $NoLaunch) {
         $launcher = if ($Console) { 'start.ps1' } else { 'background.ps1' }
         $launchArguments = @{}

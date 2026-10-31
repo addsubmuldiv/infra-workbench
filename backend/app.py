@@ -27,6 +27,12 @@ from .log_routes import register_log_routes
 from .file_routes import register_file_routes
 from .reservations import ReservationBook
 from .mail import MailService, register_mail_routes
+from .ssh_passwords import SSHPasswords
+from .agent_service import AgentService
+from .mcp_server import register_mcp
+from .agent_errors import AgentError
+from .server_import_routes import register_import_routes
+from .server_import_matching import find_existing,prepare_existing
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,6 +44,7 @@ class ConnectionRequest(BaseModel):
     manual: bool = False
     password: SecretStr | None = None
     provision: bool = False
+    remember_password: bool = False
 
     @field_validator('target', 'user')
     @classmethod
@@ -95,6 +102,10 @@ class SudoRequest(BaseModel):
     install_helper: bool = False
 
 
+class SSHPasswordRequest(BaseModel):
+    password: SecretStr = Field(min_length=1, max_length=2048)
+
+
 def parse_ports(result):
     if result['code'] != 0:
         return None
@@ -109,16 +120,18 @@ def parse_ports(result):
     return ports
 
 
-def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None):
+def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None):
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
+    ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else WindowsCredentialStore('InfraWorkbench/ssh/'))
     sudo = SudoService(ssh, credential_store if credential_store is not None else WindowsCredentialStore())
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
     mail = MailService(store, email_credential_store if email_credential_store is not None else WindowsCredentialStore('InfraWorkbench/mail/'))
     reservations = ReservationBook(store, mail)
     snapshots, locks = {}, {}
+    collect_tasks = {}
     tracker = TransitionTracker()
     invalid_rules = set()
     semaphore = asyncio.Semaphore(4)
@@ -138,7 +151,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             raise HTTPException(404, '找不到机器')
         return host
 
-    async def collect(host):
+    async def collect_once(host):
         host_id = host['id']
         async with locks.setdefault(host_id, asyncio.Lock()), semaphore:
             previous = snapshots.get(host_id, {})
@@ -217,6 +230,14 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                     store.event(host_id, host['target']+('：SSH 连接失败' if stage == 'connection' else '：已连接，设备解析失败' if stage == 'parse' else '：已连接，远端采集失败'))
                 return snapshots[host_id]
 
+    async def collect(host):
+        key=host['id']
+        task=collect_tasks.get(key)
+        if task is None or task.done():
+            task=asyncio.create_task(collect_once(host));collect_tasks[key]=task
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        return await asyncio.shield(task)
+
     async def poll():
         async def loop(host):
             while host in hosts:
@@ -239,36 +260,54 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @asynccontextmanager
     async def lifespan(app):
-        task = asyncio.create_task(poll()) if start_poll else None
-        mail_task = asyncio.create_task(mail.run()) if start_poll else None
-        terminal_task=asyncio.create_task(app.state.terminals.watch_persistent(hosts)) if start_poll else None
-        yield
-        if terminal_task:
-            terminal_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):await terminal_task
-        if mail_task:
-            mail_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await mail_task
-        if task:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        await app.state.terminals.close_host()
-        await app.state.file_transfers.close()
-        await ssh.close()
-        store.db.close()
+        async with app.state.mcp_server.session_manager.run():
+            task = asyncio.create_task(poll()) if start_poll else None
+            mail_task = asyncio.create_task(mail.run()) if start_poll else None
+            terminal_task=asyncio.create_task(app.state.terminals.watch_persistent(hosts)) if start_poll else None
+            import_cleanup=asyncio.create_task(app.state.server_imports.maintain())
+            yield
+            import_cleanup.cancel()
+            with contextlib.suppress(asyncio.CancelledError):await import_cleanup
+            await app.state.server_imports.close()
+            if terminal_task:
+                terminal_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):await terminal_task
+            if mail_task:
+                mail_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await mail_task
+            if task:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            await app.state.terminals.close_host()
+            await app.state.file_transfers.close()
+            await app.state.agent_service.close()
+            for pending_collect in collect_tasks.values():
+                if not pending_collect.done():pending_collect.cancel()
+            await asyncio.gather(*collect_tasks.values(),return_exceptions=True)
+            await ssh.close()
+            store.db.close()
 
     app = FastAPI(title='Infra Workbench', lifespan=lifespan)
     app.state.hosts, app.state.ssh = hosts, ssh
     app.state.sudo = sudo
+    app.state.ssh_passwords = ssh_passwords
     app.state.mail = mail
     register_mail_routes(app, mail)
     register_terminal_routes(app,hosts,ssh,store,sudo)
+    register_mcp(app, AgentService(hosts,snapshots,ssh,ssh_passwords,collect))
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.middleware('http')
     async def local_only(request: Request, call_next):
+        if request.url.path == '/mcp':
+            origin=request.headers.get('origin')
+            if origin and origin != str(request.base_url).rstrip('/'):
+                return JSONResponse({'detail':'MCP Origin 不匹配'},status_code=403)
+            result=await call_next(request)
+            result.headers['Cache-Control']='no-store'
+            return result
         if request.method not in ('GET', 'HEAD', 'OPTIONS'):
             origin = request.headers.get('origin')
             if request.headers.get('x-iwb') != '1' or (origin and origin != str(request.base_url).rstrip('/')):
@@ -282,7 +321,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     @app.get('/api/config-hosts')
     async def config_hosts():
         config = Path.home()/'.ssh'/'config'
-        return dict(path=str(config), aliases=discover_aliases(config))
+        return dict(path=str(config), aliases=discover_aliases(config),can_remember_ssh_password=bool(getattr(ssh_passwords.vault,'supported',True)))
 
     @app.get('/api/health')
     async def health():
@@ -295,7 +334,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         for host in hosts:
             snap = snapshots.get(host['id'], dict(status='connecting', devices=[], collected_at=None))
             fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= 30 and snap['status'] == 'online')
-            items.append(dict(**host, sudo=sudo.view(host), snapshot=dict(snap, fresh=fresh)))
+            items.append(dict(**host, sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), snapshot=dict(snap, fresh=fresh)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})
@@ -305,9 +344,9 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             visible_rules.append(dict(rule, status=status))
         return dict(hosts=items, rules=visible_rules, reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
-    @app.post('/api/connect')
-    @serialize_connections
-    async def connect(body: ConnectionRequest):
+    async def connect_machine(body: ConnectionRequest,collect_now=True):
+        if body.remember_password and not body.password:
+            raise HTTPException(422,'勾选记住 SSH 密码时，请提供本次登录密码')
         if body.manual and not body.user:
             raise HTTPException(422, '请填写用户名')
         if not body.manual and body.target not in discover_aliases(Path.home()/'.ssh'/'config'):
@@ -328,9 +367,97 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         if new:
             hosts.append(host)
         host['auth'] = result['auth']
+        if body.remember_password:
+            try:
+                saved=await ssh_passwords.save(host,body.password.get_secret_value(),ssh.verified_configs.get(host['id']))
+                if saved.get('password_saved') is not True:raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','SSH 密码保存状态无法确认')
+                result['password_saved']=True
+            except AgentError:
+                # Preserve the successful connection; never echo the secret or claim it was saved.
+                result['message']+='；SSH 密码保存失败，请在机器的 SSH 密码设置中重试'
+                result['password_save_failed']=True
         store.save('hosts', hosts)
-        await collect(host)
+        if collect_now:await collect(host)
         return dict(**result, host_id=host['id'])
+
+    @app.post('/api/connect')
+    @serialize_connections
+    async def connect(body:ConnectionRequest):
+        return await connect_machine(body)
+
+    @serialize_connections
+    async def import_connection(row):
+        existing=await find_existing(row,hosts,ssh)
+        if existing:
+            if not row.password:return dict(host_id=existing['id'],skipped=True)
+            # Verify on a separate connection; don't replace an existing
+            # monitoring/terminal session or alter the host's SSH configuration.
+            connection=await ssh.password_connection(existing,row.password.get_secret_value())
+            try:
+                verified=ssh.connection_configs.get(connection)
+                try:
+                    saved=await ssh_passwords.save(existing,row.password.get_secret_value(),verified)
+                    if saved.get('password_saved') is not True:raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','SSH 密码保存状态无法确认')
+                    return dict(host_id=existing['id'],skipped=True,password_saved=True)
+                except AgentError:return dict(host_id=existing['id'],skipped=True,password_save_failed=True)
+            finally:
+                connection.close();await connection.wait_closed()
+        body=ConnectionRequest(target=row.target,user=row.user,port=row.port,manual=True,password=row.password,
+                               remember_password=bool(row.password))
+        # Polling discovers newly added hosts; don't hold import progress for
+        # CPU/GPU collection or background key setup.
+        return await connect_machine(body,collect_now=False)
+
+    async def import_key(row):
+        host=next((h for h in hosts if h['id']==row.host_id),None)
+        if host is None:return dict(ok=False)
+        candidate=dict(host)
+        # Use a dedicated transport: provisioning must not replace/close the
+        # password session already serving this host's monitor or terminals.
+        worker=SSHService(ssh.data,known_hosts=ssh.known_hosts)
+        try:
+            # Only key creation needs serialization; slow remote work is separate.
+            async with connection_lock:await worker.ensure_key()
+            result=await worker.connect(candidate,row.password.get_secret_value(),True)
+            if result.get('provision_error'):return dict(ok=False,reason=result.get('message',''))
+            async with connection_lock:
+                current=next((h for h in hosts if h['id']==row.host_id),None)
+                if current is None or any(current.get(key)!=candidate.get(key) for key in ('target','user','port','manual')):return dict(ok=False)
+                current.update(auth='key',key_path=candidate['key_path']);store.save('hosts',hosts)
+            return dict(ok=True)
+        finally:await worker.close()
+
+    async def prepare_import(rows):await prepare_existing(rows,hosts,ssh)
+    register_import_routes(app,hosts,import_connection,import_key,prepare_import)
+
+    @app.get('/api/hosts/{host_id}/ssh-password')
+    async def ssh_password_status(host_id:str):
+        return JSONResponse(ssh_passwords.view(find(host_id)),headers={'Cache-Control':'no-store'})
+
+    @app.post('/api/hosts/{host_id}/ssh-password')
+    @serialize_connections
+    async def save_ssh_password(host_id:str,body:SSHPasswordRequest):
+        host=find(host_id)
+        try:
+            connection=await ssh.password_connection(host,body.password.get_secret_value())
+            try:
+                verified=ssh.connection_configs.get(connection)
+                value=await ssh_passwords.save(host,body.password.get_secret_value(),verified)
+            finally:
+                connection.close();await connection.wait_closed()
+            return JSONResponse(value,headers={'Cache-Control':'no-store'})
+        except AgentError as exc:
+            raise HTTPException(400,exc.message) from None
+        except Exception:
+            raise HTTPException(400,'SSH 密码验证失败，未保存；请检查账号、密码和目标机器。') from None
+
+    @app.delete('/api/hosts/{host_id}/ssh-password')
+    @serialize_connections
+    async def delete_ssh_password(host_id:str):
+        try:
+            return JSONResponse(ssh_passwords.forget(find(host_id)),headers={'Cache-Control':'no-store'})
+        except AgentError as exc:
+            raise HTTPException(400,exc.message) from None
 
     @app.delete('/api/hosts/{host_id}')
     @serialize_connections
@@ -340,12 +467,16 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         async with locks.setdefault(host_id, asyncio.Lock()):
             try:
                 await sudo.forget(host)
+                ssh_passwords.forget(host)
+            except AgentError as exc:
+                raise HTTPException(400,exc.message) from None
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
             hosts.remove(host)
         rules[:] = [r for r in rules if r['host_id'] != host_id]
         reservations.remove_host(host_id)
         conn = ssh.sessions.pop(host_id, None)
+        ssh.verified_configs.pop(host_id,None)
         if conn:
             conn.close()
         store.save('hosts', hosts)

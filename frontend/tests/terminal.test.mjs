@@ -68,7 +68,7 @@ function harness(t,{tabs=null,initialStates={}}={}){
     if(name==='@xterm/xterm')return {Terminal};
     if(name==='@xterm/addon-search')return {SearchAddon:class {onDidChangeResults(){return {dispose(){}}}clearDecorations(){}}};
     if(name==='@xterm/addon-fit')return {FitAddon:class {fit(){}proposeDimensions(){return dimensions}}};
-    if(name==='./terminalPaths'||name==='./terminalSuggestions'){
+    if(name==='./terminalPaths'||name==='./terminalSuggestions'||name==='./terminalWindow'){
       const pathExports={};
       const source=fs.readFileSync(new URL('../src/'+name.slice(2)+'.ts',import.meta.url),'utf8');
       const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;

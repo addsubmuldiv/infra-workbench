@@ -16,6 +16,7 @@ class SSHService:
         self.known_hosts = Path(known_hosts) if known_hosts else Path.home()/'.ssh'/'known_hosts'
         self.custom_known_hosts = known_hosts is not None
         self.sessions = {}
+        self.verified_configs = {}
         self.connection_configs = weakref.WeakKeyDictionary()
 
     async def command(self, args, source=None, timeout=15):
@@ -59,6 +60,24 @@ class SSHService:
         for line in out.splitlines():
             key, _, value = line.partition(' ')
             result.setdefault(key, value)
+        return result
+
+    async def effective_details(self, host):
+        """Resolve the same native invocation, retaining repeatable SSH options."""
+        args = self.arguments(host)
+        code, out, _ = await self.command(args[:-1]+['-G',args[-1]])
+        if code:
+            raise ValueError('无法解析 SSH 配置，请检查该别名与 OpenSSH 配置。')
+        result = {}
+        repeated = {'identityfile','certificatefile','localforward','remoteforward','sendenv','setenv'}
+        for line in out.splitlines():
+            key, separator, value = line.partition(' ')
+            if not separator:
+                continue
+            if key in repeated:
+                result.setdefault(key,[]).append(value)
+            else:
+                result.setdefault(key,value)
         return result
 
     async def password_connection(self, host, password, key_only=False):
@@ -150,6 +169,7 @@ class SSHService:
                 raise RuntimeError(err[-1000:] or 'SSH 连接失败')
             return dict(auth='password_session' if host['id'] in self.sessions else 'key', message='连接成功')
         conn = await self.password_connection(host, password)
+        self.verified_configs[host['id']] = dict(self.connection_configs.get(conn) or await self.effective(host))
         old = self.sessions.pop(host['id'], None)
         if old:
             old.close()

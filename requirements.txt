@@ -3,3 +3,6 @@ uvicorn==0.54.0
 asyncssh==2.24.1
 websockets==15.0.1
 pywinpty==3.1.2; sys_platform == 'win32'
+mcp==2.3.0
+openpyxl==3.1.5
+defusedxml==0.7.1
