@@ -38,3 +38,28 @@ test('only Ctrl+left click opens directories, plain click and URLs do nothing',(
   for(const text of ['user@host:~$ pwd','https://example.com','relative/path'])assert.equal(directoryPathLink(term(text),1),undefined);
   const alternate=term('/data');alternate.buffer.active.type='alternate';assert.equal(directoryPathLink(alternate,1),undefined);
 });
+
+test('a stationary hovered path tracks Control press, release and window blur',async()=>{
+  const events=new EventTarget(),provider=directoryLinkProvider(term('/home/test'),()=>{},events);
+  let link;provider.provideLinks(1,links=>link=links[0]);
+  const key=(type,ctrlKey)=>{const event=new Event(type);Object.assign(event,{ctrlKey,key:'Control'});events.dispatchEvent(event)};
+  link.hover({ctrlKey:false});await Promise.resolve();assert.equal(link.decorations.underline,false);
+  key('keydown',true);assert.deepEqual(link.decorations,{pointerCursor:true,underline:true});
+  key('keyup',false);assert.deepEqual(link.decorations,{pointerCursor:false,underline:false});
+  key('keydown',true);events.dispatchEvent(new Event('blur'));assert.equal(link.decorations.underline,false);
+  key('keydown',true);link.leave();assert.equal(link.decorations.underline,false);
+  key('keydown',true);assert.equal(link.decorations.underline,false);
+  link.hover({ctrlKey:true});await Promise.resolve();provider.dispose();assert.equal(link.decorations.underline,false);
+  key('keydown',true);assert.equal(link.decorations.underline,false);
+});
+
+test('Control held before hover decorates after xterm installs its tracking properties',async()=>{
+  const provider=directoryLinkProvider(term('/data/中文'),()=>{},new EventTarget());
+  let link;provider.provideLinks(1,links=>link=links[0]);
+  link.hover({ctrlKey:true});
+  // xterm initializes hover state, invokes hover(), then replaces decorations
+  // with its tracked object. Changes before that replacement are not rendered.
+  link.decorations={pointerCursor:false,underline:false};
+  await Promise.resolve();assert.deepEqual(link.decorations,{pointerCursor:true,underline:true});
+  link.dispose();assert.equal(link.decorations.underline,false);provider.dispose();
+});

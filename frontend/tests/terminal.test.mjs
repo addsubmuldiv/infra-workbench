@@ -6,7 +6,8 @@ import ts from 'typescript';
 // Execute the real component's handlers. Only browser/PTY boundaries are replaced;
 // actual rendering and pixel geometry are checked in the live browser as well.
 function harness(t,{tabs=null}={}){
-  const effects=[],updates=[],phases=[],terminals=[],sockets=[],listeners=new Map();
+  const effects=[],updates=[],phases=[],terminals=[],sockets=[],listeners=new Map(),observers=[];
+  const dimensions={cols:100,rows:20};
   const cleanup=[];
   t.after(()=>cleanup.reverse().forEach(fn=>fn?.()));
   let stateIndex=0;
@@ -28,7 +29,7 @@ function harness(t,{tabs=null}={}){
     attachCustomKeyEventHandler(handler){this.keyHandler=handler}
     registerLinkProvider(provider){this.links=provider;return {dispose(){}}}
     getSelection(){return this.selection||''}
-    paste(text){this.input(text)}
+    paste(text){const normalized=text.replace(/\r?\n/g,'\r');this.input(this.bracketedPaste&&!this.options.ignoreBracketedPasteMode?'\x1b[200~'+normalized+'\x1b[201~':normalized)}
     write(text,callback){this.output.push(text);callback?.()}
     writeln(text){this.output.push(text)}
     scrollToBottom(){this.bottomCalls++}
@@ -48,7 +49,7 @@ function harness(t,{tabs=null}={}){
     document:{documentElement:{style:{setProperty(){},removeProperty(){}}}},
     window:{confirm:()=>false,addEventListener:(type,fn)=>listeners.set(type,fn),removeEventListener:type=>listeners.delete(type)},
     getComputedStyle:()=>({getPropertyValue:()=>''}),
-    ResizeObserver:class {observe(){}disconnect(){}},
+    ResizeObserver:class {constructor(fn){observers.push(fn)}observe(){}disconnect(){}},
     MutationObserver:class {observe(){}disconnect(){}},
     requestAnimationFrame:fn=>{fn();return 1},cancelAnimationFrame:()=>{},
   };
@@ -63,7 +64,7 @@ function harness(t,{tabs=null}={}){
   const require=name=>{
     if(name==='react')return react;
     if(name==='@xterm/xterm')return {Terminal};
-    if(name==='@xterm/addon-fit')return {FitAddon:class {fit(){}proposeDimensions(){return {cols:100,rows:20}}}};
+    if(name==='@xterm/addon-fit')return {FitAddon:class {fit(){}proposeDimensions(){return dimensions}}};
     if(name==='./terminalPaths'){
       const pathExports={};
       const source=fs.readFileSync(new URL('../src/terminalPaths.ts',import.meta.url),'utf8');
@@ -77,20 +78,71 @@ function harness(t,{tabs=null}={}){
   new Function('require','exports',js)(require,exports);
   const mount=()=>effects.splice(0).forEach(fn=>cleanup.push(fn()));
   const unmount=()=>cleanup.splice(0).reverse().forEach(fn=>fn?.());
-  return {...exports,terminals,sockets,updates,phases,listeners,mount,unmount};
+  return {...exports,terminals,sockets,updates,phases,listeners,mount,unmount,observers,dimensions};
 }
 
 const host={id:'host',target:'synthetic-host',user:'tester'};
 const liveTab={id:'tab',host,phase:'running',generation:0};
 async function view(t,onDirectory,cwd){
-  const h=harness(t),ref={current:null};
+  const h=harness(t),ref={current:null},clipboardListeners=new Map();
   const tree=h.TerminalView({tab:{...liveTab,cwd},active:true,font:13,onPhase:p=>h.phases.push(p),onDirectory},ref);
-  tree.props.ref.current={clientWidth:800,clientHeight:400,classList:{contains:()=>true}};
+  tree.props.ref.current={clientWidth:800,clientHeight:400,classList:{contains:()=>true},addEventListener:(name,handler)=>clipboardListeners.set(name,handler),removeEventListener:name=>clipboardListeners.delete(name)};
   h.mount();
   await new Promise(resolve=>setImmediate(resolve));
   h.sockets[0].onopen();h.sockets[0].message({type:'ready'});
-  return {...h,ref,term:h.terminals[0],socket:h.sockets[0]};
+  return {...h,ref,clipboardListeners,term:h.terminals[0],socket:h.sockets[0]};
 }
+
+const downloadCommand='nohup modelscope download --model Qwen/Qwen3-Omni-30B-A3B-Thinking README.md --local_dir ./dir > qwen3-omni-download.log 2>&1 < /dev/null &';
+test('native browser paste preserves single-line shell syntax without paste delimiters',async t=>{
+  const {term,socket,clipboardListeners,unmount}=await view(t);term.bracketedPaste=true;
+  let prevented=0,stopped=0;
+  clipboardListeners.get('paste')({clipboardData:{getData:()=>downloadCommand},preventDefault:()=>prevented++,stopPropagation:()=>stopped++});
+  assert.deepEqual(socket.sent.filter(message=>message.type==='input').map(message=>message.data),[downloadCommand]);
+  assert.equal(prevented,1);assert.equal(stopped,1);assert.equal(term.options.ignoreBracketedPasteMode,undefined);
+  term.input('\x1b[A');assert.equal(socket.sent.at(-1).data,'\x1b[A');
+  unmount();assert.equal(clipboardListeners.has('paste'),false);
+});
+
+test('Ctrl+Shift+V uses the same single-line compatibility paste exactly once',async t=>{
+  const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{readText:async()=>downloadCommand}}});
+  t.after(()=>{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator});
+  const {term,socket}=await view(t);term.bracketedPaste=true;
+  assert.equal(term.keyHandler({type:'keydown',ctrlKey:true,shiftKey:true,altKey:false,code:'KeyV',preventDefault(){}}),false);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(socket.sent.filter(message=>message.type==='input').map(message=>message.data),[downloadCommand]);
+});
+
+test('multiline paste retains negotiated delimiters and normalizes line endings',async t=>{
+  const {term,socket,clipboardListeners}=await view(t);term.bracketedPaste=true;
+  clipboardListeners.get('paste')({clipboardData:{getData:()=>"echo '中文'\r\necho done"},preventDefault(){},stopPropagation(){}});
+  assert.equal(socket.sent.at(-1).data,"\x1b[200~echo '中文'\recho done\x1b[201~");
+  assert.equal(term.options.ignoreBracketedPasteMode,undefined);
+});
+
+test('initial connection and unchanged layout do not resize the remote PTY again',async t=>{
+  const {socket,observers,dimensions}=await view(t);
+  for(const notify of observers)notify();
+  assert.equal(socket.sent.filter(m=>m.type==='resize').length,1);
+  dimensions.rows=23;
+  for(const notify of observers)notify();
+  assert.deepEqual(socket.sent.filter(m=>m.type==='resize'),[
+    {type:'resize',cols:100,rows:20},{type:'resize',cols:100,rows:23},
+  ]);
+  for(const notify of observers)notify();
+  assert.equal(socket.sent.filter(m=>m.type==='resize').length,2);
+});
+
+test('ConPTY compatibility is set before processing login output, only for native sessions',async t=>{
+  const {socket,term}=await view(t);
+  assert.equal(term.options.windowsPty,undefined);
+  const windowsPty={backend:'conpty',buildNumber:26100};
+  socket.message({type:'ready',windowsPty});
+  assert.deepEqual(term.options.windowsPty,windowsPty);
+  socket.message({type:'output',data:'login banner\r\nprompt$ '});
+  assert.equal(term.output.at(-1),'login banner\r\nprompt$ ');
+});
 
 test('long Unicode paste stays within frame limits and preserves all characters',async t=>{
   const {term,socket}=await view(t);

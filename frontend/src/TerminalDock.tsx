@@ -30,17 +30,23 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
   }}),[]);
   useEffect(()=>{
     let disposed=false,connected=false,failed=false;
+    let remoteSize:{cols:number;rows:number}|null=null;
     const phase=(next:Phase)=>{if(next==='error')failed=true;onPhase(next==='closed'&&failed?'error':next)};
     const term=new XTerminal({cursorBlink:true,cursorStyle:'bar',fontFamily:'"Cascadia Code","Cascadia Mono",Consolas,"Microsoft YaHei",monospace',fontSize:font,
       lineHeight:1.28,letterSpacing:.2,scrollback:5000,theme:palette(),allowProposedApi:false,convertEol:false});
     const fit=new FitAddon();term.loadAddon(fit);term.open(element.current!);terminal.current=term;
-    const links=term.registerLinkProvider(directoryLinkProvider(term,path=>directoryRef.current?.(tab.host.id,path)));
+    const pathLinks=directoryLinkProvider(term,path=>directoryRef.current?.(tab.host.id,path),window);
+    const registeredLinks=term.registerLinkProvider(pathLinks);
+    const links={dispose(){pathLinks.dispose();registeredLinks.dispose()}};
     const send=(message:unknown)=>{if(socketRef.current?.readyState===WebSocket.OPEN)socketRef.current.send(JSON.stringify(message))};
     const resize=()=>{
       if(!element.current||element.current.clientWidth<=10||element.current.clientHeight<=10)return;
       const dimensions=fit.proposeDimensions();
       if(dimensions)term.resize(Math.min(500,Math.max(2,dimensions.cols)),Math.min(200,Math.max(2,dimensions.rows)));
-      if(connected)send({type:'resize',cols:term.cols,rows:term.rows});
+      // ConPTY may repaint and reposition its cursor even for a repeated size.
+      if(connected&&(remoteSize?.cols!==term.cols||remoteSize?.rows!==term.rows)){
+        remoteSize={cols:term.cols,rows:term.rows};send({type:'resize',...remoteSize});
+      }
     };
     resizeRef.current=resize;
     const observer=new ResizeObserver(resize);observer.observe(element.current!);
@@ -54,7 +60,19 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
         send({type:'input',data:data.slice(start,end)});start=end;
       }
     });
-    const size=term.onResize(({cols,rows})=>{if(connected)send({type:'resize',cols:Math.min(500,Math.max(2,cols)),rows:Math.min(200,Math.max(2,rows))})});
+    const paste=(text:string)=>{
+      // Single-line commands need no delimiters; keep negotiated bracketed
+      // paste for multiline text and leave keyboard escapes untouched.
+      const previous=term.options.ignoreBracketedPasteMode;
+      if(!/[\r\n]/.test(text))term.options.ignoreBracketedPasteMode=true;
+      try{term.paste(text)}finally{term.options.ignoreBracketedPasteMode=previous}
+    };
+    const clipboardPaste=(event:ClipboardEvent)=>{
+      if(!event.clipboardData)return;
+      event.preventDefault();event.stopPropagation();paste(event.clipboardData.getData('text/plain'));
+    };
+    const container=element.current!;
+    container.addEventListener('paste',clipboardPaste,true);
     term.attachCustomKeyEventHandler(event=>{
       if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&event.code==='KeyC'){
         const selected=term.getSelection();
@@ -62,7 +80,7 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
       }
       if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&event.code==='KeyV'){
         if(!event.shiftKey)return false; // Let the browser paste event feed xterm; do not send the shell's Ctrl+V byte.
-        event.preventDefault();navigator.clipboard.readText().then(text=>{if(!disposed)term.paste(text)}).catch(()=>{});return false;
+        event.preventDefault();navigator.clipboard.readText().then(text=>{if(!disposed)paste(text)}).catch(()=>{});return false;
       }
       return true;
     });
@@ -74,11 +92,16 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
         if(disposed)return;
         const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/terminal/'+tab.host.id,['iwb-terminal',data.ticket]);
         socketRef.current=ws;
-        ws.onopen=()=>{resize();send({type:'resize',cols:Math.min(500,Math.max(2,term.cols)),rows:Math.min(200,Math.max(2,term.rows)),...(tab.cwd?{cwd:tab.cwd}:{})})};
+        ws.onopen=()=>{resize();remoteSize={cols:term.cols,rows:term.rows};send({type:'resize',...remoteSize,...(tab.cwd?{cwd:tab.cwd}:{})})};
         ws.onmessage=event=>{
           if(disposed)return;
           const message=JSON.parse(event.data);
-          if(message.type==='ready'){connected=true;phase('running');resize();if(element.current?.classList.contains('active'))term.focus()}
+          if(message.type==='ready'){
+            // Set native Windows compatibility before parsing login output.
+            // AsyncSSH sessions use the default xterm behavior instead.
+            if(message.windowsPty?.backend==='conpty')term.options.windowsPty=message.windowsPty;
+            connected=true;phase('running');resize();if(element.current?.classList.contains('active'))term.focus();
+          }
           else if(message.type==='output')term.write(message.data,()=>send({type:'ack'}));
           else if(message.type==='warning'){term.writeln('\r\n\x1b[33m'+message.message+'\x1b[0m')}
           else if(message.type==='error'){term.writeln('\r\n\x1b[31m'+message.message+'\x1b[0m');phase('error')}
@@ -89,7 +112,7 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
       }catch(error){if(!disposed){phase('error');term.writeln('\r\n'+(error instanceof Error?error.message:'连接失败'))}}
     };
     start();
-    return()=>{disposed=true;connected=false;observer.disconnect();themeObserver.disconnect();input.dispose();size.dispose();links.dispose();socketRef.current?.close();socketRef.current=null;term.dispose();terminal.current=null;resizeRef.current=null};
+    return()=>{disposed=true;connected=false;container.removeEventListener('paste',clipboardPaste,true);observer.disconnect();themeObserver.disconnect();input.dispose();links.dispose();socketRef.current?.close();socketRef.current=null;term.dispose();terminal.current=null;resizeRef.current=null};
   },[tab.id,tab.generation]);
   useEffect(()=>{if(terminal.current){terminal.current.options.fontSize=font;if(active)resizeRef.current?.()}},[font]);
   useEffect(()=>{if(active){const frame=requestAnimationFrame(()=>{resizeRef.current?.();terminal.current?.focus()});return()=>cancelAnimationFrame(frame)}},[active]);

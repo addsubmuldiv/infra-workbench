@@ -28,12 +28,23 @@ export function directoryPathLink(term:Pick<Terminal,'buffer'|'cols'>,lineNumber
   return {path,range:{start:{x:positions[start].x,y:positions[start].y},end:{x:positions[end].x+positions[end].width-1,y:positions[end].y}}};
 }
 
-export function directoryLinkProvider(term:Pick<Terminal,'buffer'|'cols'>,open:(path:string)=>void):ILinkProvider{
-  return {provideLinks(lineNumber,callback){
+export function directoryLinkProvider(term:Pick<Terminal,'buffer'|'cols'>,open:(path:string)=>void,keyEvents?:EventTarget):ILinkProvider&{dispose:()=>void}{
+  let hovered:ILink|undefined,ctrl=false,disposed=false;
+  const decorate=(link:ILink,enabled:boolean)=>{if(link.decorations){link.decorations.pointerCursor=enabled;link.decorations.underline=enabled}};
+  const clear=()=>{if(hovered)decorate(hovered,false);hovered=undefined;ctrl=false};
+  const modifier=(event:Event)=>{ctrl=(event as KeyboardEvent).ctrlKey;if(hovered)decorate(hovered,ctrl)};
+  keyEvents?.addEventListener('keydown',modifier,true);keyEvents?.addEventListener('keyup',modifier,true);keyEvents?.addEventListener('blur',clear);
+  return {dispose(){disposed=true;clear();keyEvents?.removeEventListener('keydown',modifier,true);keyEvents?.removeEventListener('keyup',modifier,true);keyEvents?.removeEventListener('blur',clear)},provideLinks(lineNumber,callback){
+    if(disposed){callback(undefined);return}
     const match=directoryPathLink(term,lineNumber);
     if(!match){callback(undefined);return}
     const link:ILink={text:match.path,range:match.range,decorations:{pointerCursor:false,underline:false},
-      hover:event=>{if(link.decorations){link.decorations.pointerCursor=event.ctrlKey;link.decorations.underline=event.ctrlKey}},
+      hover:event=>{hovered=link;ctrl=event.ctrlKey;
+        // xterm installs decoration setters after invoking hover(). Defer the
+        // first update so Control already held on entry is visibly rendered.
+        queueMicrotask(()=>{if(!disposed&&hovered===link)decorate(link,ctrl)});
+      },
+      leave:()=>{if(hovered===link)clear()},dispose:()=>{if(hovered===link)clear()},
       activate:event=>{if(!event.ctrlKey||event.button!==0)return;event.preventDefault();open(match.path)}};
     callback([link]);
   }};

@@ -37,14 +37,17 @@ def test_native_arguments_keep_ssh_config_and_force_an_interactive_terminal(tmp_
     assert 'EscapeChar=none' in args
 
 
-def test_web_terminal_requires_same_origin_single_use_ticket_and_closes_only_its_channel(tmp_path):
+@pytest.mark.parametrize('windows_pty',[None,dict(backend='conpty',buildNumber=26100)])
+def test_web_terminal_requires_same_origin_single_use_ticket_and_closes_only_its_channel(tmp_path,windows_pty):
     app=create_app(tmp_path,start_poll=False)
     app.state.hosts.append(dict(id='one',target='example',auth='key'))
     class Channel:
-        def __init__(self): self.queue=asyncio.Queue(); self.closed=False; self.size=None
+        def __init__(self):
+            self.queue=asyncio.Queue(); self.closed=False; self.size=None; self.sizes=[]
+            self.windows_pty=windows_pty
         async def read(self): return await self.queue.get()
         async def write(self,data): await self.queue.put('echo:'+data)
-        async def resize(self,cols,rows): self.size=(cols,rows)
+        async def resize(self,cols,rows): self.size=(cols,rows); self.sizes.append(self.size)
         async def close(self): self.closed=True
     channel=Channel()
     async def open_channel(host,cols,rows):
@@ -61,14 +64,18 @@ def test_web_terminal_requires_same_origin_single_use_ticket_and_closes_only_its
         ticket=client.post(path,headers={'X-IWB':'1'}).json()['ticket']
         with client.websocket_connect('/api/terminal/one',subprotocols=['iwb-terminal',ticket],headers={'Origin':'http://testserver'}) as socket:
             socket.send_json(dict(type='resize',cols=112,rows=32))
-            assert socket.receive_json()['type']=='ready'
+            ready=socket.receive_json()
+            assert ready==dict(type='ready',**({'windowsPty':windows_pty} if windows_pty else {}))
+            socket.send_json(dict(type='resize',cols=112,rows=32))
             socket.send_json(dict(type='input',data='中文路径\r'))
             assert socket.receive_json()==dict(type='output',data='echo:中文路径\r')
             socket.send_json(dict(type='ack'))
             socket.send_json(dict(type='resize',cols=120,rows=36))
+            socket.send_json(dict(type='resize',cols=120,rows=36))
             socket.send_json(dict(type='close'))
             assert socket.receive_json()['type']=='exit'
         assert channel.closed and channel.size==(120,36)
+        assert channel.sizes==[(120,36)]
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect('/api/terminal/one',subprotocols=['iwb-terminal',ticket],headers={'Origin':'http://testserver'}): pass
         assert not app.state.terminals.active
@@ -105,6 +112,7 @@ def test_oversized_input_is_rejected_without_ending_the_session(tmp_path):
 def test_native_pty_roundtrip_resize_and_close_uses_only_its_own_process():
     async def scenario():
         terminal=await NativeTerminal.spawn(['powershell.exe','-NoLogo','-NoProfile','-Command',"Write-Output 'PTY-READY'; $v = Read-Host; Write-Output ('PTY-REPLY:'+$v)"],100,24)
+        assert terminal.windows_pty==dict(backend='conpty',buildNumber=sys.getwindowsversion().build)
         await terminal.resize(120,32)
         output=''
         async def read_until_reply():

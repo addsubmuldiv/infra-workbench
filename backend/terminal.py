@@ -6,6 +6,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import sys
 import shlex
 import time
 from ctypes import wintypes
@@ -57,6 +58,7 @@ class NativeTerminal:
     def __init__(self, args, cols, rows):
         from winpty import PTY, Backend
         self.closed = False
+        self.windows_pty = dict(backend='conpty',buildNumber=sys.getwindowsversion().build)
         executable = shutil.which(args[0])
         if not executable:
             raise ValueError('找不到 Windows OpenSSH 客户端')
@@ -176,7 +178,9 @@ class TerminalManager:
                 channel=await self.open_channel(host,cols,rows,cwd=cwd)
             else:
                 channel=await self.open_channel(host,cols,rows)
-            await websocket.send_json(dict(type='ready'))
+            windows_pty=getattr(channel,'windows_pty',None)
+            await websocket.send_json(dict(type='ready',**({'windowsPty':windows_pty} if windows_pty else {})))
+            current_size=(cols,rows)
             credits=asyncio.Semaphore(8)
             pending=0
 
@@ -191,7 +195,7 @@ class TerminalManager:
                         await websocket.send_json(dict(type='output',data=data[offset:offset+4096]))
 
             async def inputs():
-                nonlocal pending
+                nonlocal pending,current_size
                 while True:
                     message=await websocket.receive_json()
                     if not isinstance(message,dict): raise ValueError('终端消息格式无效')
@@ -203,7 +207,11 @@ class TerminalManager:
                             await websocket.send_json(dict(type='warning',message='本次输入过长，未发送到远端；连接已保留，请分段粘贴'))
                             continue
                         await channel.write(data)
-                    elif kind=='resize': await channel.resize(*dimensions(message))
+                    elif kind=='resize':
+                        size=dimensions(message)
+                        if size!=current_size:
+                            await channel.resize(*size)
+                            current_size=size
                     elif kind=='ack':
                         if pending>0:
                             pending-=1
