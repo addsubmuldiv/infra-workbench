@@ -36,6 +36,8 @@ from .desktop_notifications import register_desktop_notification_routes
 from .ssh_passwords import SSHPasswords, connection_identity
 from .agent_service import AgentService
 from .mcp_server import register_mcp
+from .mcp_client import MCPGateway
+from .mcp_operations import REQUEST_ORIGIN
 from .agent_errors import AgentError
 from .server_import_routes import register_import_routes
 from .server_import_matching import find_existing,prepare_existing,new_import_host
@@ -326,17 +328,21 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_mail_routes(app, mail)
     register_desktop_notification_routes(app, store)
     register_terminal_routes(app,hosts,ssh,store,sudo)
-    register_mcp(app, AgentService(hosts,snapshots,ssh,ssh_passwords,collect))
+    app.state.agent_service = AgentService(hosts,snapshots,ssh,ssh_passwords,collect)
+    app.state.reservations, app.state.workbench_rules = reservations, rules
     async def refresh_assistant():
         return await app.state.agent_service.refresh(list(hosts), 25)
     app.state.infra_assistant = InfraAssistant(agent_api, app.state.agent_service.inventory, resource_history, refresh_assistant)
     register_assistant_routes(app, app.state.infra_assistant)
-    app.state.agent_chat = AgentChat(store,agent_api,ChatTools(app.state.infra_assistant,app.state.agent_service,ssh))
+    probes = ChatTools(app.state.infra_assistant,app.state.agent_service,ssh)
+    register_mcp(app, app.state.agent_service, probes)
+    app.state.agent_chat = AgentChat(store,agent_api,MCPGateway(app.state.mcp_service))
     register_chat_routes(app,app.state.agent_chat)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.middleware('http')
     async def local_only(request: Request, call_next):
+        REQUEST_ORIGIN.set(str(request.base_url).rstrip('/'))
         if request.url.path == '/mcp':
             origin=request.headers.get('origin')
             if origin and origin != str(request.base_url).rstrip('/'):

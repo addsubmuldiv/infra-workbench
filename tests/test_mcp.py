@@ -55,7 +55,8 @@ def test_real_sdk_discovers_six_tools_and_uses_defaults_and_structured_results(t
             async with Client(url+'/mcp') as client:
                 assert 'search_hosts' in client.instructions and 'get_ssh_password' in client.instructions
                 tools=(await client.list_tools()).tools
-                assert {t.name for t in tools}==set(TOOLS)
+                assert {t.name for t in tools}==set(app.state.mcp_service.catalog())
+                assert set(TOOLS) <= {t.name for t in tools}
                 assert SECRET not in json.dumps([t.model_dump(by_alias=True) for t in tools])
                 result=await client.call_tool('search_hosts',dict(kind='NPU',count=6,min_free_gib=40))
                 data=result.structured_content
@@ -109,7 +110,7 @@ def test_standard_http_mcp_no_private_header_and_legacy_client_compatibility(tmp
                 assert result.status_code==200,result.text
                 assert result.json()['result']['protocolVersion']=='2025-11-25'
                 tools=await http.post(url+'/mcp',headers=headers,json=dict(jsonrpc='2.0',id=2,method='tools/list',params={}))
-                assert tools.status_code==200 and len(tools.json()['result']['tools'])==6
+                assert tools.status_code==200 and len(tools.json()['result']['tools'])==len(app.state.mcp_service.catalog())
                 assert tools.headers['cache-control']=='no-store'
                 call=await http.post(url+'/mcp',headers=headers,json=dict(jsonrpc='2.0',id=3,method='tools/call',params=dict(name='list_hosts',arguments={})))
                 assert call.status_code==200 and call.json()['result']['structuredContent']['ok']
@@ -120,7 +121,28 @@ def test_standard_http_mcp_no_private_header_and_legacy_client_compatibility(tmp
                 info=await http.get(url+'/api/mcp-info')
                 assert info.status_code==200
                 assert info.json()['path']=='/mcp'
-                assert {t['name'] for t in info.json()['tools']}==set(TOOLS)
+                assert {t['name'] for t in info.json()['tools']}==set(app.state.mcp_service.catalog())
                 assert SECRET not in info.text
                 assert (await http.get(url+'/cli/v1/capabilities')).status_code==404
+    asyncio.run(scenario())
+
+
+def test_external_mcp_can_book_edit_cancel_and_read_the_same_skills(tmp_path):
+    async def scenario():
+        async with running_app(tmp_path) as (app, url):
+            async with Client(url + '/mcp') as client:
+                skills = await client.call_tool('list_skills', {})
+                assert 'manage-reservations' in {v['name'] for v in skills.structured_content['data']['items']}
+                skill = await client.call_tool('read_skill', {'name': 'manage-reservations'})
+                assert 'create_reservation' in skill.structured_content['data']['content']
+                created = await client.call_tool('create_reservation', dict(
+                    host_id='fixtureid', mode='count', kind='NPU', required_count=2, minimum_gib=10))
+                assert not created.is_error, created.structured_content
+                item = created.structured_content['data']
+                assert item['base_url'] == url + '/'  # Notifications keep the real server port.
+                changed = await client.call_tool('update_reservation', dict(reservation_id=item['id'], wait_seconds=300))
+                assert not changed.is_error and changed.structured_content['data']['wait_seconds'] == 300
+                cancelled = await client.call_tool('cancel_reservation', {'reservation_id': item['id']})
+                assert not cancelled.is_error
+                assert app.state.reservations.view() == []
     asyncio.run(scenario())

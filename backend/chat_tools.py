@@ -98,7 +98,8 @@ def remote_source():
     files=(folder/'files_probe.py').read_text(encoding='utf-8').split('\ndef main(')[0]
     reads=(folder/'file_ops.py').read_text(encoding='utf-8').split('\ndef no_replace(')[0]
     processes=(folder/'remote_probe.py').read_text(encoding='utf-8').split('\ndef main(')[0]
-    return files+'\n'+reads+'\n'+processes+'\n'+(folder/'agent_read_probe.py').read_text(encoding='utf-8')
+    policy=(folder/'model_paths.py').read_text(encoding='utf-8')
+    return files+'\n'+reads+'\n'+processes+'\n'+policy+'\n'+(folder/'agent_read_probe.py').read_text(encoding='utf-8')
 
 
 class ChatTools:

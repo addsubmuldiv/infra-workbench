@@ -107,14 +107,27 @@ def register_file_routes(app,ssh,find):
         return {'ok':True}
 
     @app.post('/api/files/operation')
-    async def operation(body:FileOperation):
+    async def operation(body:FileOperation,request:Request=None):
         host=find(body.host_id)
         if body.op=='save' and (body.content is None or body.revision is None):
             raise HTTPException(422,'保存文本需要内容及原始文件版本')
         if body.op in ('copy','move') and not body.destination:
             raise HTTPException(422,'请提供目标路径')
         payload=json.dumps(body.model_dump(exclude={'host_id'}),ensure_ascii=True)
-        script=operation_source+'\nmain(json.loads('+repr(payload)+'))\n'
+        script=operation_source
+        if request is not None and request.headers.get('x-iwb-mcp')=='1':
+            script+='\n'+Path(__file__).with_name('model_paths.py').read_text(encoding='utf-8')
+            script+='''
+_application_perform = perform
+def perform(request):
+    checked_path(request['path'])
+    if request.get('destination'):
+        checked_path(request['destination'])
+    if request['op'] in ('copy', 'move'):
+        check_model_tree(request['path'])
+    return _application_perform(request)
+'''
+        script+='\nmain(json.loads('+repr(payload)+'))\n'
         try:
             async with host_locks.setdefault(body.host_id,asyncio.Lock()),operations:
                 code,out,_=await ssh.run(host,'python3 -',script)

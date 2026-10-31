@@ -54,30 +54,39 @@ def register_log_routes(app,ssh,store,find):
     semaphore=asyncio.Semaphore(2)
     download_slots=asyncio.Semaphore(2)
     jobs=store.load('log_comparisons',[])
+    app.state.log_snapshots, app.state.log_configs = snapshots, jobs
 
     def prune():
         now=time.monotonic()
         for key in list(snapshots):
             if now-snapshots[key]['created']>1800: snapshots.pop(key)
 
-    def cache(data,host_id,path):
+    def cache(data,host_id,path,model_safe=False):
         prune()
         # Cache at most four two-sided comparisons; raw log text is never saved.
         while len(snapshots)>=8: snapshots.popitem(last=False)
         key=uuid.uuid4().hex
-        data.update(id=key,host_id=host_id,path=path,created=time.monotonic())
+        data.update(id=key,host_id=host_id,path=path,created=time.monotonic(),model_safe=model_safe)
         snapshots[key]=data
-        return {k:v for k,v in data.items() if k not in ('records','created')}
+        return {k:v for k,v in data.items() if k not in ('records','created','model_safe')}
 
     def snapshot(key):
         prune()
         if key not in snapshots: raise HTTPException(410,'日志快照已过期或服务已重启，请重新读取双方日志')
         return snapshots[key]
 
-    async def remote(location,action):
+    async def remote(location,action,model_access=False):
         host=find(location.host_id)
         request=json.dumps(dict(action=action,path=location.path),ensure_ascii=True)
-        script=source+'\nmain(json.loads('+repr(request)+'))\n'
+        script=source
+        if model_access:
+            script+='\n'+Path(__file__).with_name('model_paths.py').read_text(encoding='utf-8')
+            script+='''
+_application_validate_path = validate_path
+def validate_path(value):
+    return _application_validate_path(checked_path(value))
+'''
+        script+='\nmain(json.loads('+repr(request)+'))\n'
         try:
             async with semaphore:
                 code,out,_=await ssh.run(host,'python3 -',script)
@@ -95,12 +104,13 @@ def register_log_routes(app,ssh,store,find):
             raise HTTPException(400,'远端未返回有效日志数据，请检查连接、文件编码和 Python3') from None
 
     @app.post('/api/logs/read')
-    async def read(location:LogLocation):
-        return cache(await remote(location,'read'),location.host_id,location.path)
+    async def read(location:LogLocation,request:Request):
+        model_access=request.headers.get('x-iwb-mcp')=='1'
+        return cache(await remote(location,'read',model_access),location.host_id,location.path,model_safe=model_access)
 
     @app.post('/api/logs/browse')
-    async def browse(location:LogLocation):
-        return await remote(location,'browse')
+    async def browse(location:LogLocation,request:Request):
+        return await remote(location,'browse',request.headers.get('x-iwb-mcp')=='1')
 
     @app.post('/api/logs/download')
     async def download(location:LogLocation,request:Request):
@@ -153,5 +163,5 @@ def register_log_routes(app,ssh,store,find):
         for side in (0,1):
             rows=[json.dumps(dict(iteration=f'{i+1}/300',loss=x+(0.002*(i+1) if side else 0),
                    grad_norm=norms[i]+(0.01*(i+1) if side else 0),learning_rate=6.7e-7*(i+1)))+'\n' for i,x in enumerate(values)]
-            output.append(cache(dict(parse_lines(rows),file=dict(size=0,mtime=None),demo=True),'demo','示例数据（非真实服务器）'))
+            output.append(cache(dict(parse_lines(rows),file=dict(size=0,mtime=None),demo=True),'demo','示例数据（非真实服务器）',model_safe=True))
         return dict(baseline=output[0],candidate=output[1])

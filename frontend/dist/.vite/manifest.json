@@ -1,0 +1,216 @@
+{
+  "_AppConfirm-BFIFCPIk.css": {
+    "file": "assets/AppConfirm-BFIFCPIk.css",
+    "src": "_AppConfirm-BFIFCPIk.css"
+  },
+  "_AppConfirm-Ch07mTjE.js": {
+    "file": "assets/AppConfirm-Ch07mTjE.js",
+    "name": "AppConfirm",
+    "imports": [
+      "index.html",
+      "_windowLayers-qlqIYRpc.js"
+    ],
+    "css": [
+      "assets/AppConfirm-BFIFCPIk.css"
+    ]
+  },
+  "_FileBrowser-BXzIsreW.css": {
+    "file": "assets/FileBrowser-BXzIsreW.css",
+    "src": "_FileBrowser-BXzIsreW.css"
+  },
+  "_FileBrowser-Bo4XCkWi.js": {
+    "file": "assets/FileBrowser-Bo4XCkWi.js",
+    "name": "FileBrowser",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_logDownload-DThUYG1R.js",
+      "_windowLayers-qlqIYRpc.js",
+      "_minus-BJazJHV8.js",
+      "_minimize-2-dwyBXSkt.js",
+      "_upload-BWUwFe2q.js",
+      "_download-DxuNJ7Cx.js",
+      "_chevron-down-DE_Pyas6.js"
+    ],
+    "dynamicImports": [
+      "src/TextEditor.tsx"
+    ],
+    "css": [
+      "assets/FileBrowser-BXzIsreW.css"
+    ]
+  },
+  "_chevron-down-DE_Pyas6.js": {
+    "file": "assets/chevron-down-DE_Pyas6.js",
+    "name": "chevron-down",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_download-DxuNJ7Cx.js": {
+    "file": "assets/download-DxuNJ7Cx.js",
+    "name": "download",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_logDownload-DThUYG1R.js": {
+    "file": "assets/logDownload-DThUYG1R.js",
+    "name": "logDownload",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_minimize-2-dwyBXSkt.js": {
+    "file": "assets/minimize-2-dwyBXSkt.js",
+    "name": "minimize-2",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_minus-BJazJHV8.js": {
+    "file": "assets/minus-BJazJHV8.js",
+    "name": "minus",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_send-bXoBRNLS.js": {
+    "file": "assets/send-bXoBRNLS.js",
+    "name": "send",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_upload-BWUwFe2q.js": {
+    "file": "assets/upload-BWUwFe2q.js",
+    "name": "upload",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_windowLayers-qlqIYRpc.js": {
+    "file": "assets/windowLayers-qlqIYRpc.js",
+    "name": "windowLayers",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "index.html": {
+    "file": "assets/index-DfkmL-RK.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "dynamicImports": [
+      "src/PrecisionCompare.tsx",
+      "_FileBrowser-Bo4XCkWi.js",
+      "src/TerminalDock.tsx",
+      "src/ServerImport.tsx",
+      "src/SettingsPage.tsx",
+      "src/AssistantWindow.tsx"
+    ],
+    "css": [
+      "assets/index-DTq1AIOy.css"
+    ]
+  },
+  "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs": {
+    "file": "assets/addon-webgl-DXJodPk8.js",
+    "name": "addon-webgl",
+    "src": "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
+    "isDynamicEntry": true
+  },
+  "src/AssistantWindow.tsx": {
+    "file": "assets/AssistantWindow-c8X8VKdw.js",
+    "name": "AssistantWindow",
+    "src": "src/AssistantWindow.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_AppConfirm-Ch07mTjE.js",
+      "_chevron-down-DE_Pyas6.js",
+      "_send-bXoBRNLS.js",
+      "_windowLayers-qlqIYRpc.js",
+      "_minus-BJazJHV8.js"
+    ],
+    "css": [
+      "assets/AssistantWindow-EFTO_488.css"
+    ]
+  },
+  "src/PrecisionCompare.tsx": {
+    "file": "assets/PrecisionCompare-SmmEleAY.js",
+    "name": "PrecisionCompare",
+    "src": "src/PrecisionCompare.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_logDownload-DThUYG1R.js",
+      "_download-DxuNJ7Cx.js"
+    ],
+    "css": [
+      "assets/PrecisionCompare-lD65XQ0C.css"
+    ]
+  },
+  "src/ServerImport.tsx": {
+    "file": "assets/ServerImport-BS0qo15q.js",
+    "name": "ServerImport",
+    "src": "src/ServerImport.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_download-DxuNJ7Cx.js",
+      "_upload-BWUwFe2q.js"
+    ],
+    "css": [
+      "assets/ServerImport-C32AXzxq.css"
+    ]
+  },
+  "src/SettingsPage.tsx": {
+    "file": "assets/SettingsPage-BK_6SIix.js",
+    "name": "SettingsPage",
+    "src": "src/SettingsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_chevron-down-DE_Pyas6.js",
+      "_send-bXoBRNLS.js"
+    ],
+    "css": [
+      "assets/SettingsPage-DWaHV1pn.css"
+    ]
+  },
+  "src/TerminalDock.tsx": {
+    "file": "assets/TerminalDock-CvKMkfzG.js",
+    "name": "TerminalDock",
+    "src": "src/TerminalDock.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_windowLayers-qlqIYRpc.js",
+      "_AppConfirm-Ch07mTjE.js",
+      "_chevron-down-DE_Pyas6.js",
+      "_minimize-2-dwyBXSkt.js"
+    ],
+    "dynamicImports": [
+      "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs"
+    ],
+    "css": [
+      "assets/TerminalDock-CCliI6hK.css"
+    ]
+  },
+  "src/TextEditor.tsx": {
+    "file": "assets/TextEditor-aiSGaeeZ.js",
+    "name": "TextEditor",
+    "src": "src/TextEditor.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_FileBrowser-Bo4XCkWi.js",
+      "_logDownload-DThUYG1R.js",
+      "_windowLayers-qlqIYRpc.js",
+      "_minus-BJazJHV8.js",
+      "_minimize-2-dwyBXSkt.js",
+      "_upload-BWUwFe2q.js",
+      "_download-DxuNJ7Cx.js",
+      "_chevron-down-DE_Pyas6.js"
+    ]
+  }
+}

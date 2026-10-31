@@ -13,13 +13,13 @@ from deepagents.middleware.summarization import create_summarization_middleware
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, message_to_dict, messages_from_dict
 from langchain_core.messages.utils import convert_to_messages
-from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
 from langsmith import tracing_context
 from pydantic import ValidationError
 
 from .agent_langchain import WorkbenchChatModel, wire_messages
-from .chat_tools import REGISTRY, scrub
+from .chat_tools import scrub
+from .mcp_client import gateway_for, discover_tools
 
 
 SKILLS_ROOT = Path(__file__).with_name('skills')
@@ -65,15 +65,16 @@ def bundled_files():
 
 
 class ToolTrace(AgentMiddleware):
-    def __init__(self, turn, tools, allowed, secret, save):
+    def __init__(self, turn, tools, allowed, secret, save, tool_names):
         self.turn, self.workbench_tools, self.allowed, self.secret, self.save = turn, tools, allowed, secret, save
         self.total, self.remote = 0, 0
+        self.tool_names = tool_names
 
     async def awrap_tool_call(self, request, handler):
         call = request.tool_call
         name, args = call['name'], call['args']
         self.total += 1
-        if name in {REMOTE_NAMES.get(n, n) for n in REGISTRY}:
+        if name in self.tool_names:
             self.remote += 1
         if self.total > 16 or self.remote > 8:
             raise RunLimit('已达本轮工具调用上限，已有检查结果保留，可继续追问。')
@@ -97,7 +98,7 @@ class ToolTrace(AgentMiddleware):
             result = ToolMessage(content=json.dumps(dict(ok=False, error=output), ensure_ascii=False),
                                  tool_call_id=call['id'], name=name, status='error')
         except Exception:
-            output = '只读工具未能完成，请检查连接或权限'
+            output = '工具未能完成，请检查连接或权限；写入操作请先核对状态再重试'
             trace['status'] = 'failed'
             result = ToolMessage(content=json.dumps(dict(ok=False, error=output), ensure_ascii=False),
                                  tool_call_id=call['id'], name=name, status='error')
@@ -115,26 +116,6 @@ class ToolTrace(AgentMiddleware):
                 pass
         self.save()
         return result
-
-
-def remote_tools(tools, state, allowed, secret):
-    result = []
-    def make_call(name, schema):
-        async def call(**kwargs):
-            schema.model_validate(kwargs)
-            value = await tools.call(name, kwargs, state, allowed)
-            output = scrub(value, secret)
-            if len(output) > 7000:
-                output = json.dumps(dict(truncated=True, preview=output[:6500], note='结果已截断，请缩小范围或分页。'), ensure_ascii=False)
-            return output
-        return call
-    for original, (schema, description) in REGISTRY.items():
-        result.append(StructuredTool(name=REMOTE_NAMES.get(original, original), description=description,
-                                     # Keep omitted fields omitted: Workbench's
-                                     # patch semantics inherit prior filters.
-                                     # ChatTools validates the original dict.
-                                     args_schema=schema.model_json_schema(), coroutine=make_call(original, schema)))
-    return result
 
 
 def repair_messages(messages):
@@ -166,43 +147,46 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
             raise RunLimit('已达本轮模型步骤上限，已有检查结果保留，可继续追问。')
         start_text()
 
-    model = WorkbenchChatModel(provider, on_start=model_start, on_text=on_text, sanitize=sanitize)
-    summary_model = WorkbenchChatModel(provider, sanitize=sanitize)
-    backend = StateBackend()
-    saver = InMemorySaver()
-    graph = create_deep_agent(
-        model=model, system_prompt=instructions, tools=remote_tools(tools, chat['state'], allowed, secret),
-        backend=backend, skills=['/skills/'], checkpointer=saver,
-        middleware=[FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'glob', 'grep']),
-                    create_summarization_middleware(summary_model, backend),
-                    ToolTrace(turn, tools, allowed, secret, save)],
-    )
-    state = unpack_state(chat.get('deep_state', {}))
-    previous = state.get('messages')
-    if previous is None:
-        previous = convert_to_messages(chat['messages'][:-1])
-        for message in previous:
-            if message.type == 'ai':
-                for call in message.tool_calls:
-                    call['name'] = REMOTE_NAMES.get(call['name'], call['name'])
-    state['messages'] = repair_messages(previous)
-    state['files'] = dict(state.get('files', {}), **bundled_files())
-    state['skills_metadata'] = None  # Re-read the packaged library on each user turn.
-    config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': 100}
-    # This application has private server data: never enable hosted tracing even
-    # if LANGSMITH_TRACING was set in the parent process environment.
-    with tracing_context(enabled=False):
-        try:
-            # Private summarization fields are intentionally excluded from graph
-            # inputs. Hydrate the checkpoint, rather than re-submit them as input.
-            await graph.aupdate_state(config, state, as_node='model')
-            await graph.ainvoke({'messages': [HumanMessage(content=chat['messages'][-1]['content'])]}, config)
-        finally:
-            snapshot = await graph.aget_state(config)
-            if snapshot.values:
-                values = dict(snapshot.values)
-                values['messages'] = repair_messages(values.get('messages', []))
-                chat['deep_state'] = pack_state(values)
-                chat['messages'] = wire_messages(values['messages'])
-                chat['runtime'] = 'deepagents'
-                save()
+    async with gateway_for(tools).session(chat['state'], allowed) as client:
+        mcp_tools = await discover_tools(client, secret)
+        model = WorkbenchChatModel(provider, on_start=model_start, on_text=on_text, sanitize=sanitize)
+        summary_model = WorkbenchChatModel(provider, sanitize=sanitize)
+        backend = StateBackend()
+        saver = InMemorySaver()
+        graph = create_deep_agent(
+            model=model, system_prompt=instructions, tools=mcp_tools,
+            backend=backend, skills=['/skills/'], checkpointer=saver,
+            middleware=[FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'glob', 'grep']),
+                        create_summarization_middleware(summary_model, backend),
+                        ToolTrace(turn, tools, allowed, secret, save, {t.name for t in mcp_tools})],
+        )
+        state = unpack_state(chat.get('deep_state', {}))
+        previous = state.get('messages')
+        if previous is None:
+            previous = convert_to_messages(chat['messages'][:-1])
+            for message in previous:
+                if message.type == 'ai':
+                    for call in message.tool_calls:
+                        call['name'] = REMOTE_NAMES.get(call['name'], call['name'])
+        state['messages'] = repair_messages(previous)
+        state['files'] = dict(state.get('files', {}), **bundled_files())
+        state['skills_metadata'] = None  # Re-read the packaged library on each user turn.
+        config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': 100}
+        # This application has private server data: never enable hosted tracing even
+        # if LANGSMITH_TRACING was set in the parent process environment.
+        with tracing_context(enabled=False):
+            try:
+                # Private summarization fields are intentionally excluded from graph
+                # inputs. Hydrate the checkpoint, rather than re-submit them as input.
+                await graph.aupdate_state(config, state, as_node='model')
+                await graph.ainvoke({'messages': [HumanMessage(content=chat['messages'][-1]['content'])]}, config)
+            finally:
+                snapshot = await graph.aget_state(config)
+                if snapshot.values:
+                    values = dict(snapshot.values)
+                    values['messages'] = repair_messages(values.get('messages', []))
+                    chat['deep_state'] = pack_state(values)
+                    chat['messages'] = wire_messages(values['messages'])
+                    chat['runtime'] = 'deepagents'
+                    chat['tool_transport'] = 'mcp'
+                    save()

@@ -6,7 +6,7 @@ Infra Workbench 提供 **Streamable HTTP MCP**，和网页共用后台：
 http://127.0.0.1:8765/mcp
 ```
 
-先双击 `运行.cmd`。在网页「设置 → AI agent 接入」可以复制当前地址；若使用其他端口，以页面地址为准。将它添加到支持 Streamable HTTP 的 MCP 客户端。客户端连接后会自动读取六个工具、参数 schema、使用示例及服务器使用说明，无须安装 infra-cli。
+先双击 `运行.cmd`。在网页「设置 → AI agent 接入」可以复制当前地址；若使用其他端口，以页面地址为准。将它添加到支持 Streamable HTTP 的 MCP 客户端。客户端连接后会自动发现完整工具目录、参数 schema 和服务器使用说明，无须安装 infra-cli。
 
 ## 本机 agent
 
@@ -48,7 +48,7 @@ env HTTP_PROXY=http://127.0.0.1:18899 \
 
 已用远端 Codex 0.163.0 的实际 MCP 客户端通过上述代理完成六工具发现，并通过远端 MCP 协议调用验证了机器查询、资源筛选和 SSH 描述。验证使用隔离的虚构机器，不涉及真实密码。其他客户端的代理支持需分别确认。
 
-## 六个工具
+## 原有六个兼容工具
 
 | 工具 | 作用 | 常用参数 |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ env HTTP_PROXY=http://127.0.0.1:18899 \
    ```
 
 2. 用结果中的完整 `host_id` 调用 `get_ssh_info`。需要核对进程时，调用 `get_resources` 并传同一个 `host_id`。
-3. agent 使用自己所在环境的 SSH 工具连接。Workbench 不转发 agent 的命令或文件。
+3. agent 使用自己所在环境的 SSH 工具连接。这是原有连接信息接口的使用方式。也可以直接调用新增的服务器文件/检查 MCP 工具，复用 Workbench 的 SSH。
 4. 只有确需密码认证、并且 `ssh_password_available=true` 时，调用 `get_ssh_password`，将结果直接交给支持密码认证的 SSH 库或工具。不要拼进命令行参数或复述密码。
 
 不知道有哪些机器时先 `list_hosts`。机器别名允许重名，优先使用完整 ID；精确别名不唯一时会报错，不会自动猜一台。
@@ -116,3 +116,17 @@ SSH 密码在网页每台机器的「SSH 密码」入口验证并保存，可随
 ## 开发验证
 
 使用官方 Python MCP SDK，服务与 GUI 共用同一个采集器和机器库。测试包含标准 SDK 客户端、2025-11-25 协议兼容、六工具 schema、部分失败、密码隔离和独立 SSH 密钥/密码连接。`/cli/v1` 与 infra-cli 产品入口已移除。
+
+## 统一业务能力与写入
+
+现已通过同一 MCP 提供资源和进程查询、SSH 固定检查、服务器文件读写、训练日志读取/对比/配置保存、训练前检查、预约增改撤销、监控规则增删、终端持久会话管理，以及导入批次操作。
+
+- 约机器：`create_reservation`，修改用 `update_reservation`，取消用 `cancel_reservation`，`get_workbench_state` 核对。不是锁卡或启动训练。
+- 技能：`list_skills` / `read_skill` 可读取与内置 Agent 相同的九个业务流程。流程写在 skill 中，不在 MCP 适配器里写任务编排。
+- 传输交接：下载返回 `handoff_required` 和 HTTP 参数，尚未执行下载。上传先创建任务，由客户端发送字节；交互终端仍走 WebSocket。`get_workbench_entry` 说明接法。
+- 凭据输入、模型自配置、通知投递回执等保留在设置/客户端内部，不作为模型可调用的业务操作。旧 `get_ssh_password` 仅供外部客户端显式使用，内置模型看不到。
+- 写入仅按用户明确要求调用；取消和超时不等于回滚，应先核对实际状态再决定重试。MCP 请求体上限 64 KiB，大文件通过上传通道传输。
+
+内置 Agent 用官方 MCP SDK 的进程内消息流连接同一目录和分发服务；外部 Agent 走本文的 Streamable HTTP。工具名和 schema 来源相同，内置连接额外强制执行本轮机器范围。
+
+详见 [统一 MCP 架构与验证](UNIFIED-MCP.md)。

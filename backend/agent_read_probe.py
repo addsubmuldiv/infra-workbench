@@ -6,17 +6,6 @@ import sys
 import time
 
 
-def checked_path(value):
-    path=os.path.realpath(path_value(value))
-    names=path.lower().split(os.sep)
-    name=names[-1]
-    if ('.ssh' in names or name=='.env' or name.startswith('.env.') or name in ('shadow','gshadow','credentials','credentials.json')
-            or name.startswith('id_rsa') or name.startswith('id_ed25519') or name.endswith(('.key','.pem','.p12','.pfx'))
-            or path.startswith('/proc/') and name in ('environ','mem') or path.startswith('/dev/')):
-        raise ValueError('此路径可能包含凭据或特殊设备内容，本阶段不向模型读取')
-    return path
-
-
 def check_command(argv):
     """Drain a bounded pipe with a total deadline; never invoke a shell."""
     child=subprocess.Popen(argv,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,shell=False)

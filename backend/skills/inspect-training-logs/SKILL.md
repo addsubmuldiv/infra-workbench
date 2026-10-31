@@ -11,4 +11,4 @@ description: 读取训练日志，解释 loss、grad_norm、报错和任务进�
 4. 需要核对任务是否仍在运行时，使用 search_fleet(scope="processes") 或 ssh_check(check="processes")。
 5. 区分日志明确记录的事实和可能原因。不要仅凭 loss 波动断言收敛，不要仅凭进程消失断言训练成功。
 
-大量日志的逐 step 数值对比可在软件“训练精度对比”界面进行；本技能的按行读取不能代替完整对齐统计。
+大量日志逐 step 数值对比读取 compare-training-runs 技能，调用 read_training_log 和 compare_training_logs，由软件计算；按行抽样不能代替完整对齐统计。
