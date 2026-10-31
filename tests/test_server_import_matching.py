@@ -21,7 +21,8 @@ def test_existing_config_alias_matches_by_name_or_resolved_endpoint(tmp_path,tar
         def close(self):pass
         async def wait_closed(self):pass
     async def authenticate(current,password):
-        assert current is host and password=='SYNTHETIC-ALIAS-PASSWORD'
+        assert {key:value for key,value in current.items() if key!='_import_identity'}==host
+        assert current.get('_import_identity') and password=='SYNTHETIC-ALIAS-PASSWORD'
         authenticated.append(current['id']);connection=Connection()
         app.state.ssh.connection_configs[connection]=dict(config)
         return connection

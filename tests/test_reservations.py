@@ -183,3 +183,44 @@ def test_booking_api_validation_persistence_and_host_removal(tmp_path):
         assert client.get('/api/state').json()['reservations'] == []
     with TestClient(create_app(tmp_path, start_poll=False)) as client:
         assert client.get('/api/state').json()['reservations'] == []
+
+
+@pytest.mark.parametrize('utilization', [None, float('nan'), float('inf'), -1, 101, True, False, '0'])
+def test_invalid_utilization_resets_fixed_idle_window(tmp_path, utilization):
+    store = Store(tmp_path/'test.db')
+    book = ReservationBook(store)
+    book.add(HOST, [device()], 20, 1, now=1000)
+    observe(book, 1000)
+    observe(book, 1010, [device(utilization=utilization)])
+    assert book.items[0]['status'] == 'unknown'
+    assert book.items[0]['idle_since'] is None
+    observe(book, 1020)
+    assert book.items[0]['status'] == 'settling'
+    assert book.items[0]['idle_since'] == 1020
+    store.db.close()
+
+
+def test_nvidia_na_utilization_is_unknown_not_idle(tmp_path):
+    from backend.core import parse_nvidia
+    cards = parse_nvidia('0, gpu-0, Test GPU, 24576, 0, N/A, 35', '')
+    assert cards[0]['utilization'] is None
+    store = Store(tmp_path/'test.db')
+    book = ReservationBook(store)
+    book.add(HOST, cards, 0, 1, now=1000)
+    observe(book, 1000, cards)
+    assert book.items[0]['status'] == 'unknown'
+    assert not store.events()
+    store.db.close()
+
+
+def test_missing_utilization_never_completes_fixed_booking(tmp_path):
+    store = Store(tmp_path/'test.db')
+    book = ReservationBook(store)
+    card = device()
+    card.pop('utilization')
+    book.add(HOST, [card], 0, 1, now=1000)
+    observe(book, 1000, [card])
+    assert book.items[0]['status'] == 'unknown'
+    assert book.items[0]['idle_since'] is None
+    assert store.db.execute('SELECT count(*) FROM events').fetchone()[0] == 0
+    store.db.close()

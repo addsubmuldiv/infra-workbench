@@ -36,6 +36,8 @@ class ImportRow:
     password_status:str='not_provided'
     password_reason:str=''
     expected_identity:str|None=field(default=None,repr=False)
+    port_explicit:bool=True
+    resolved_identity:str|None=field(default=None,repr=False)
 
     def __post_init__(self):
         if isinstance(self.password,str):self.password=SecretStr(self.password)
@@ -88,7 +90,8 @@ def parse_workbook(data):
                 if not row.user or not re.fullmatch(r'[\w.@:+-]+',row.user) or row.user.startswith('-') or len(row.user)>100:
                     raise ValueError('账号为空或格式不正确')
                 port=values['port'].value if 'port' in values else None
-                if port not in (None,''):
+                row.port_explicit=port not in (None,'')
+                if row.port_explicit:
                     if isinstance(port,bool) or not re.fullmatch(r'\d{1,5}',str(port).strip()):raise ValueError('端口必须为 1–65535 的整数')
                     row.port=int(str(port).strip())
                     if not 1<=row.port<=65535:raise ValueError('端口必须为 1–65535 的整数')
@@ -101,7 +104,9 @@ def parse_workbook(data):
                     if len(str(password))>4096:raise ValueError('密码过长')
                     row.password=SecretStr(str(password))
                     row.password_status='pending'
-                identity=(row.target.lower(),row.user,row.port)
+                # A blank alias port may inherit a non-22 port; keep it distinct
+                # until the route's preview resolves the SSH configuration.
+                identity=(row.target.lower(),row.user,row.port if row.port_explicit else None)
                 if identity in seen:
                     row.status='skipped';row.reason=f'与文件第 {seen[identity]} 行重复，已跳过';row.password=None
                     if row.password_status=='pending':row.password_status='not_saved';row.password_reason='重复记录，未保存本行密码'
@@ -131,7 +136,7 @@ def import_template():
         for cell in row:cell.number_format='@'
     sheet.freeze_panes='A2';sheet.auto_filter.ref='A1:D3'
     notes=book.create_sheet('填写说明')
-    for text in ['请替换示例 IP、账号、密码；删除不用的示例行。','程序只读取第一个工作表，首行为表头。','IP 和账号必填；IP 列也可填写已有机器的 SSH 别名。密码留空时使用已有免密；端口留空默认为 22，非标准端口请填写。','密码列请使用文本格式，避免丢失前导零。提供的密码验证成功后自动保存到系统凭据管理器，可在机器的 SSH 密码设置中删除。','一次最多 100 台；文件内重复行跳过。按 SSH 别名或实际地址、账号、端口匹配已有机器；只补存密码，不重复添加、不更改密钥或跳板。匹配多台时请改填唯一 SSH 别名。','勾选后台配置免密后，先完成导入，再单独排队追加并验证公钥；已有机器仅补存密码，不执行此操作。']:
+    for text in ['请替换示例 IP、账号、密码；删除不用的示例行。','程序只读取第一个工作表，首行为表头。','IP 和账号必填；IP 列也可填写本机 SSH 配置中的别名。账号必填并覆盖别名账号；端口留空时沿用别名端口，普通地址默认为 22；填写端口则覆盖别名端口。密码留空时使用已有免密。','密码列请使用文本格式，避免丢失前导零。提供的密码验证成功后自动保存到系统凭据管理器，可在机器的 SSH 密码设置中删除。','一次最多 100 台；文件内重复行跳过。按 SSH 别名或实际地址、账号、端口匹配已有机器；只补存密码，不重复添加、不更改密钥或跳板。匹配多台时请改填唯一 SSH 别名。','勾选后台配置免密后，先完成导入，再单独排队追加并验证公钥；已有机器仅补存密码，不执行此操作。']:
         notes.append([text]);notes.cell(notes.max_row,1).font=Font(name='Arial',size=11)
     notes.column_dimensions['A'].width=105
     output=io.BytesIO();book.save(output);book.close();return output.getvalue()

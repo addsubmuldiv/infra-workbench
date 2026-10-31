@@ -6,7 +6,8 @@ from pathlib import Path
 
 import asyncssh
 
-from .core import install_key_script
+from .core import discover_aliases, install_key_script
+from .ssh_passwords import connection_identity
 
 
 class SSHService:
@@ -31,6 +32,18 @@ class SSHService:
             raise
         return proc.returncode, out.decode('utf-8', errors='replace'), err.decode('utf-8', errors='replace')
 
+    def destination(self, host):
+        target = host['target']
+        if host.get('manual'):
+            return target
+        aliases = discover_aliases(Path.home()/'.ssh'/'config')
+        if target in aliases:
+            return target
+        matches = [name for name in aliases if name.casefold() == target.casefold()]
+        if len(matches) > 1:
+            raise ValueError('SSH 别名大小写存在多个匹配，请使用配置中的完整名称')
+        return matches[0] if matches else target
+
     def arguments(self, host):
         args = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
                 '-o', 'ConnectionAttempts=1', '-o', 'ClearAllForwardings=yes',
@@ -43,7 +56,7 @@ class SSHService:
             args += ['-i', host['key_path'], '-o', 'IdentitiesOnly=yes']
         if self.custom_known_hosts:
             args += ['-o', 'UserKnownHostsFile='+str(self.known_hosts)]
-        return args + [host['target']]
+        return args + [self.destination(host)]
 
     async def effective(self, host):
         if host.get('manual'):
@@ -53,7 +66,7 @@ class SSHService:
             args += ['-l', host['user']]
         if host.get('port'):
             args += ['-p', str(host['port'])]
-        code, out, err = await self.command(args + [host['target']])
+        code, out, err = await self.command(args + [self.destination(host)])
         if code:
             raise ValueError('无法解析 SSH 配置：'+err[-500:])
         result = {}
@@ -80,8 +93,15 @@ class SSHService:
                 result.setdefault(key,value)
         return result
 
+    @staticmethod
+    def check_import_identity(host, config):
+        expected = host.get('_import_identity')
+        if expected and connection_identity(config) != expected:
+            raise ValueError('导入预览后 SSH 配置已变化，请重新选择 Excel 并核对')
+
     async def password_connection(self, host, password, key_only=False):
         cfg = await self.effective(host)
+        self.check_import_identity(host, cfg)
         options = dict(host=cfg['hostname'], port=int(cfg.get('port', 22)),
                        username=cfg.get('user'), password=password, config=None,
                        known_hosts=str(self.known_hosts), connect_timeout=8, login_timeout=12,
@@ -114,10 +134,10 @@ class SSHService:
             return done.exit_status, done.stdout, done.stderr
         return await self.command(self.arguments(host)+[command], source)
 
-    async def run_bound(self, host, command, source, config):
+    async def run_bound(self, host, command, source, config, *, native=False):
         """Pin secret-bearing commands to the endpoint resolved before validation."""
         fields = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
-        session = self.sessions.get(host['id'])
+        session = None if native else self.sessions.get(host['id'])
         if session and not session.is_closed():
             original = self.connection_configs.get(session)
             if original is None or any(config.get(key)!=original.get(key) for key in fields):
@@ -164,7 +184,12 @@ class SSHService:
 
     async def connect(self, host, password=None, provision=False):
         if not password:
-            code, out, err = await self.run(host, 'printf iwb-connected')
+            if host.get('_import_identity'):
+                cfg = await self.effective(host)
+                self.check_import_identity(host, cfg)
+                code, out, err = await self.run_bound(host, 'printf iwb-connected', None, cfg, native=True)
+            else:
+                code, out, err = await self.run(host, 'printf iwb-connected')
             if code != 0 or 'iwb-connected' not in out:
                 raise RuntimeError(err[-1000:] or 'SSH 连接失败')
             return dict(auth='password_session' if host['id'] in self.sessions else 'key', message='连接成功')
@@ -183,10 +208,13 @@ class SSHService:
                 raise RuntimeError(done.stderr[-500:] or '远端公钥追加失败')
             candidate = dict(host, key_path=path)
             verify = await self.password_connection(candidate, None, key_only=True)
+            verified = self.connection_configs.get(verify)
             verify.close()
             await verify.wait_closed()
-            code, out, err = await self.command(self.arguments(candidate)+[
-                'printf iwb-connected'])
+            if host.get('_import_identity'):
+                code, out, err = await self.run_bound(candidate, 'printf iwb-connected', None, verified, native=True)
+            else:
+                code, out, err = await self.command(self.arguments(candidate)+['printf iwb-connected'])
             if code != 0 or 'iwb-connected' not in out:
                 raise RuntimeError('公钥已追加，但 OpenSSH 免密验证失败：'+err[-500:])
             host['key_path'] = path

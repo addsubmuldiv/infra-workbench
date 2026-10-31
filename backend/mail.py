@@ -11,6 +11,8 @@ import uuid
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from typing import Literal
+from urllib.parse import urljoin
+from .reminder_links import reservation_link
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -169,7 +171,7 @@ class MailService:
     def prepare(self, reservation):
         if not reservation.get('email_notify', False) or not self.config['enabled']:
             return None
-        return dict(id=reservation['id'], email_notify=True, revision=self.config['revision'], target=reservation['target'],
+        return dict(id=reservation['id'], url=urljoin(reservation.get('base_url', 'http://127.0.0.1:8765/'), reservation_link(reservation)), email_notify=True, revision=self.config['revision'], target=reservation['target'],
                     labels=reservation['labels'], wait_seconds=reservation['wait_seconds'],
                     minimum_gib=reservation['minimum_gib'], notified_at=reservation['notified_at'])
 
@@ -183,7 +185,9 @@ class MailService:
             text = (f"机器：{payload['target']}\n设备：{', '.join(payload['labels'])}\n"
                     f"连续空闲：{payload['wait_seconds']/60:g} 分钟\n"
                     f"每设备剩余显存要求：{payload['minimum_gib']:g} GiB\n确认时间：{when}\n\n"
-                    '预约条件已满足。这是空闲提醒，不锁定设备；启动训练前请再次检查当前占用。')
+                    '预约条件已满足。这是空闲提醒，不锁定设备；启动训练前请再次检查当前占用。'
+                    + f"\n\n查看机器和设备：{payload.get('url', 'http://127.0.0.1:8765/')}\n"
+                    + '请在运行 Infra Workbench 的电脑上打开此链接。')
         else:
             text = '这是一封 Infra Workbench 测试邮件。收到此邮件说明当前邮件通知配置可以使用。\n预约设备持续空闲达到设定时间后，会使用相同配置发送提醒。'
         message.set_content(text)

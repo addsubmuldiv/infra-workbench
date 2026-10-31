@@ -20,7 +20,7 @@ def location(key):return os.path.join(root,'iwb-'+key+'.json')
 def snapshot(key):
     try:
         path=location(key);fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
-        with os.fdopen(fd) as stream:return json.loads(stream.read(16384))
+        with os.fdopen(fd) as stream:return json.loads(stream.read(65536))
     except (OSError,ValueError):return {}
 action=options['action']
 if action=='status':

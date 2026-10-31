@@ -1,4 +1,5 @@
 """Bounded terminal preferences and filtered command metadata, never output."""
+import copy
 import time
 import re,secrets,math
 from .terminal_shell import safe_command
@@ -52,23 +53,45 @@ class TerminalWorkspace:
 
     def view(self,host_id,identity):
         value=self.profile(host_id,identity)
-        return {**{k:value[k] for k in ('history','settings','snippets')},'sessions':[{k:v for k,v in session.items() if k not in ('token','last_result')} for session in value['sessions']]}
+        return {**{k:value[k] for k in ('history','settings','snippets')},'sessions':[{k:v for k,v in session.items() if k not in ('token','last_result','seen_results')} for session in value['sessions']]}
 
     def result(self,host,identity,session_id,result):
-        if not isinstance(result,dict):return None
-        if not isinstance(result.get('id'),str) or not re.fullmatch('[a-f0-9]{32}',result['id']):return None
-        if type(result.get('seconds')) not in (int,float) or not math.isfinite(result['seconds']) or not 0<=result['seconds']<=365*86400:return None
-        if type(result.get('status')) is not int or not 0<=result['status']<=255:return None
-        if type(result.get('finished')) not in (int,float) or not math.isfinite(result['finished']):return None
+        accepted=self.results(host,identity,session_id,[result])
+        return accepted[0] if accepted else None
+
+    def results(self,host,identity,session_id,results):
+        """Consume a bounded completion batch once, together with its notification events."""
+        if not isinstance(results,list):return []
         profile=self.profile(host['id'],identity)
         session=next((s for s in profile['sessions'] if s['id']==session_id),None)
-        if not session or session.get('last_result')==result['id']:return None
-        session['last_result']=result['id'];self.save()
-        # Do not replay old completion notices after opening the app hours later.
+        if not session:return []
+        seen=session.get('seen_results',[])
+        seen=list(seen) if isinstance(seen,list) else []
+        if session.get('last_result') and session['last_result'] not in seen:seen.append(session['last_result'])
+        known=set(seen);accepted=[]
+        for result in results[-129:]:
+            if not isinstance(result,dict):continue
+            if not isinstance(result.get('id'),str) or not re.fullmatch('[a-f0-9]{32}',result['id']) or result['id'] in known:continue
+            if type(result.get('seconds')) not in (int,float) or not math.isfinite(result['seconds']) or not 0<=result['seconds']<=365*86400:continue
+            if type(result.get('status')) is not int or not 0<=result['status']<=255:continue
+            if type(result.get('finished')) not in (int,float) or not math.isfinite(result['finished']):continue
+            accepted.append({key:result[key] for key in ('id','seconds','status','finished')})
+            known.add(result['id']);seen.append(result['id'])
+        if not accepted:return []
+        before=copy.deepcopy(session)
+        session.update(last_result=accepted[-1]['id'],seen_results=seen[-256:])
+        now=time.time();events=[]
         settings=profile['settings']
-        if settings.get('notify_enabled',True) and result['seconds']>=settings.get('notify_seconds',60) and -30<=time.time()-result['finished']<=120:
-            self.store.event(host['target'],f"终端命令已结束 · 用时 {result['seconds']} 秒 · 退出码 {result['status']}")
-        return result
+        for result in accepted:
+            # Old results are consumed silently, including after a service restart.
+            if settings.get('notify_enabled',True) and result['seconds']>=settings.get('notify_seconds',60) and -30<=now-result['finished']<=120:
+                events.append((host['target'],f"终端命令已结束 · 用时 {result['seconds']} 秒 · 退出码 {result['status']}"))
+        try:
+            self.store.save_with_events('terminal_workspace',self.profiles,events,now)
+        except Exception:
+            session.clear();session.update(before)
+            raise
+        return accepted
 
 
 class CommandCompletion:

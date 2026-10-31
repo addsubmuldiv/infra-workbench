@@ -166,7 +166,8 @@ def test_reimport_existing_host_only_verifies_and_saves_without_replacing_its_se
         def close(self):closed.append(True)
         async def wait_closed(self):pass
     async def authenticate(current,password):
-        assert current is host and password=='fake-only-password'
+        assert {key:value for key,value in current.items() if key!='_import_identity'}==host
+        assert current.get('_import_identity') and password=='fake-only-password'
         if not password_ok:raise RuntimeError('Permission denied fake-only-password')
         conn=Connection();app.state.ssh.connection_configs[conn]=await app.state.ssh.effective_details(host);return conn
     app.state.ssh.password_connection=authenticate

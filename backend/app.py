@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator, model_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
@@ -27,12 +27,13 @@ from .log_routes import register_log_routes
 from .file_routes import register_file_routes
 from .reservations import ReservationBook
 from .mail import MailService, register_mail_routes
-from .ssh_passwords import SSHPasswords
+from .desktop_notifications import register_desktop_notification_routes
+from .ssh_passwords import SSHPasswords, connection_identity
 from .agent_service import AgentService
 from .mcp_server import register_mcp
 from .agent_errors import AgentError
 from .server_import_routes import register_import_routes
-from .server_import_matching import find_existing,prepare_existing
+from .server_import_matching import find_existing,prepare_existing,new_import_host
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -92,7 +93,21 @@ class ReservationRequest(BaseModel):
 
 
 class ReservationUpdate(BaseModel):
-    wait_seconds: int = Field(ge=0, le=86400)
+    host_id: str | None = None
+    devices: list[str] | None = Field(default=None, max_length=64)
+    mode: Literal['fixed', 'count'] | None = None
+    required_count: int | None = Field(default=None, ge=1, le=64)
+    kind: Literal['GPU', 'NPU'] | None = None
+    wait_seconds: int | None = Field(default=None, ge=0, le=86400)
+    minimum_gib: float | None = Field(default=None, ge=0, le=100000, allow_inf_nan=False)
+    email_notify: bool | None = None
+
+    @model_validator(mode='after')
+    def non_nullable_fields(self):
+        for key in self.model_fields_set - {'kind', 'required_count'}:
+            if getattr(self, key) is None:
+                raise ValueError('预约字段不能为空')
+        return self
 
 
 class SudoRequest(BaseModel):
@@ -295,6 +310,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     app.state.ssh_passwords = ssh_passwords
     app.state.mail = mail
     register_mail_routes(app, mail)
+    register_desktop_notification_routes(app, store)
     register_terminal_routes(app,hosts,ssh,store,sudo)
     register_mcp(app, AgentService(hosts,snapshots,ssh,ssh_passwords,collect))
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
@@ -344,12 +360,12 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             visible_rules.append(dict(rule, status=status))
         return dict(hosts=items, rules=visible_rules, reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
-    async def connect_machine(body: ConnectionRequest,collect_now=True):
+    async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None):
         if body.remember_password and not body.password:
             raise HTTPException(422,'勾选记住 SSH 密码时，请提供本次登录密码')
         if body.manual and not body.user:
             raise HTTPException(422, '请填写用户名')
-        if not body.manual and body.target not in discover_aliases(Path.home()/'.ssh'/'config'):
+        if not body.manual and body.target.casefold() not in {name.casefold() for name in discover_aliases(Path.home()/'.ssh'/'config')}:
             raise HTTPException(422, 'SSH 配置中未找到该别名，请刷新或选择手动添加')
         effective_port = body.port or (22 if body.manual else None)
         host = next((h for h in hosts if h['target'] == body.target and h.get('user') == body.user
@@ -358,7 +374,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         host = host or dict(id=uuid.uuid4().hex, target=body.target, user=body.user,
                             port=effective_port, manual=body.manual)
         try:
-            result = await ssh.connect(host, body.password.get_secret_value() if body.password else None, body.provision)
+            candidate=dict(host,_import_identity=expected_identity) if expected_identity else host
+            result = await ssh.connect(candidate, body.password.get_secret_value() if body.password else None, body.provision)
+            if expected_identity:
+                host.update({key:value for key,value in candidate.items() if key!='_import_identity'})
         except Exception as exc:
             message = str(exc)[:1000] or '连接超时'
             if 'host key' in message.lower() or 'Host key' in message:
@@ -392,7 +411,9 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             if not row.password:return dict(host_id=existing['id'],skipped=True)
             # Verify on a separate connection; don't replace an existing
             # monitoring/terminal session or alter the host's SSH configuration.
-            connection=await ssh.password_connection(existing,row.password.get_secret_value())
+            expected=row.expected_identity or row.resolved_identity or connection_identity(await ssh.effective(existing))
+            candidate=dict(existing,_import_identity=expected)
+            connection=await ssh.password_connection(candidate,row.password.get_secret_value())
             try:
                 verified=ssh.connection_configs.get(connection)
                 try:
@@ -402,16 +423,16 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 except AgentError:return dict(host_id=existing['id'],skipped=True,password_save_failed=True)
             finally:
                 connection.close();await connection.wait_closed()
-        body=ConnectionRequest(target=row.target,user=row.user,port=row.port,manual=True,password=row.password,
-                               remember_password=bool(row.password))
+        body=ConnectionRequest(**new_import_host(row),password=row.password,remember_password=bool(row.password))
         # Polling discovers newly added hosts; don't hold import progress for
         # CPU/GPU collection or background key setup.
-        return await connect_machine(body,collect_now=False)
+        return await connect_machine(body,collect_now=False,expected_identity=row.resolved_identity)
 
     async def import_key(row):
         host=next((h for h in hosts if h['id']==row.host_id),None)
         if host is None:return dict(ok=False)
         candidate=dict(host)
+        if row.resolved_identity:candidate['_import_identity']=row.resolved_identity
         # Use a dedicated transport: provisioning must not replace/close the
         # password session already serving this host's monitor or terminals.
         worker=SSHService(ssh.data,known_hosts=ssh.known_hosts)
@@ -557,40 +578,83 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         store.save('rules', rules)
         return {'ok': True}
 
-    @app.post('/api/reservations')
-    async def add_reservation(body: ReservationRequest):
+    def reservation_selection(body):
+        host = find(body.host_id)
+        snap = snapshots.get(host['id'], {})
+        if snap.get('status') != 'online' or not 0 <= time.time()-(snap.get('collected_at') or 0) <= 30:
+            raise HTTPException(409, '请先成功刷新机器，再选择设备预约')
+        by_id = {device['id']: device for device in snap.get('devices', [])}
+        kind = body.kind
+        if body.mode == 'count':
+            kinds = {device['kind'] for device in by_id.values()}
+            if kind is None and len(kinds) == 1:
+                kind = next(iter(kinds))
+            if kind is None or sum(device['kind'] == kind for device in by_id.values()) < body.required_count:
+                raise HTTPException(422, '请选择设备类型，预约数量不能超过机器的设备总数')
+        if any(device_id not in by_id for device_id in body.devices):
+            raise HTTPException(422, '所选设备已变化，请重新选择')
+        return host, [by_id[device_id] for device_id in body.devices], kind
+
+    def reservation_mail_available(body):
         if body.email_notify and not mail.view()['reservation_available']:
             raise HTTPException(409, '请先在设置中启用邮件通知，并保存完整邮箱配置和授权码')
+
+    def reservation_origin(request):
+        # TrustedHostMiddleware restricts the host; save the actual local port.
+        return str(request.base_url) if request.url.hostname in ('127.0.0.1', 'localhost') else 'http://127.0.0.1:8765/'
+
+    @app.post('/api/reservations')
+    async def add_reservation(body: ReservationRequest, request: Request):
+        reservation_mail_available(body)
         async with locks.setdefault(body.host_id, asyncio.Lock()):
-            host = find(body.host_id)
-            snap = snapshots.get(host['id'], {})
-            if snap.get('status') != 'online' or not 0 <= time.time()-(snap.get('collected_at') or 0) <= 30:
-                raise HTTPException(409, '请先成功刷新机器，再选择设备预约')
-            by_id = {device['id']: device for device in snap.get('devices', [])}
-            kind = body.kind
-            if body.mode == 'count':
-                kinds = {device['kind'] for device in by_id.values()}
-                if kind is None and len(kinds) == 1:
-                    kind = next(iter(kinds))
-                if kind is None or sum(device['kind'] == kind for device in by_id.values()) < body.required_count:
-                    raise HTTPException(422, '请选择设备类型，预约数量不能超过机器的设备总数')
-            if any(device_id not in by_id for device_id in body.devices):
-                raise HTTPException(422, '所选设备已变化，请重新选择')
+            host, devices, kind = reservation_selection(body)
             try:
-                return reservations.add(host, [by_id[device_id] for device_id in body.devices],
-                                        body.wait_seconds, body.minimum_gib, mode=body.mode,
-                                        required_count=body.required_count, kind=kind, email_notify=body.email_notify)
+                return reservations.add(host, devices, body.wait_seconds, body.minimum_gib, mode=body.mode,
+                                        required_count=body.required_count, kind=kind, email_notify=body.email_notify,
+                                        base_url=reservation_origin(request))
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from None
 
     @app.patch('/api/reservations/{reservation_id}')
-    async def update_reservation(reservation_id: str, body: ReservationUpdate):
+    async def update_reservation(reservation_id: str, body: ReservationUpdate, request: Request):
+        changes = body.model_dump(exclude_unset=True)
         try:
-            return reservations.update(reservation_id, body.wait_seconds)
+            initial = reservations.get(reservation_id)
         except KeyError:
             raise HTTPException(404, '找不到预约') from None
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from None
+        resource_edit = bool(changes.keys() & {'host_id', 'devices', 'mode', 'required_count', 'kind', 'minimum_gib'})
+        # Keep the target stable while acquiring its collector lock, then read the record again.
+        target_host = changes.get('host_id', initial['host_id'])
+        async with locks.setdefault(target_host, asyncio.Lock()):
+            try:
+                current = reservations.get(reservation_id)
+                if current['status'] == 'ready':
+                    raise HTTPException(409, '这条预约已提醒，请重新选择设备预约')
+                if changes.get('host_id', current['host_id']) != target_host:
+                    raise HTTPException(409, '预约机器已变化，请刷新后重试')
+                merged = {key: current[key] for key in ReservationRequest.model_fields if key in current}
+                merged.update(changes)
+                # Fields belonging to the previous mode must not leak into the next mode.
+                if merged.get('mode', 'fixed') == 'fixed':
+                    merged.update(required_count=None, kind=None)
+                elif current.get('mode', 'fixed') != 'count' and 'devices' not in changes:
+                    merged['devices'] = []
+                validated = ReservationRequest.model_validate(merged)
+                reservation_mail_available(validated)
+                selection = {}
+                if resource_edit:
+                    host, devices, kind = reservation_selection(validated)
+                    selection = dict(host=host, devices=devices, mode=validated.mode,
+                                     required_count=validated.required_count, kind=kind)
+                return reservations.update(reservation_id, validated.wait_seconds,
+                                           minimum_gib=validated.minimum_gib, email_notify=validated.email_notify,
+                                           base_url=reservation_origin(request), **selection)
+            except ValidationError:
+                raise HTTPException(422, '预约输入格式不正确，请检查设备选择和预约条件') from None
+            except KeyError:
+                raise HTTPException(404, '找不到预约') from None
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from None
 
     @app.delete('/api/reservations/{reservation_id}')
     async def remove_reservation(reservation_id: str):

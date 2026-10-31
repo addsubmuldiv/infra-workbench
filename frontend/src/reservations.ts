@@ -1,6 +1,17 @@
 import type {MailResult} from './mailSettings';
-export type Reservation={id:string;host_id:string;target:string;devices:string[];labels:string[];mode?:'fixed'|'count';required_count?:number;kind?:string;available_count?:number|null;matched_devices?:string[];wait_seconds:number;minimum_gib:number;status:'waiting'|'settling'|'unknown'|'needs_selection'|'ready';idle_seconds:number;remaining_seconds:number;notified_at:number|null;email_notify?:boolean;email?:MailResult|null};
+export type DesktopStatus='pending'|'sending'|'submitted'|'failed'|'disabled'|'unknown'|'skipped';
+export type Reservation={id:string;host_id:string;target:string;devices:string[];labels:string[];mode?:'fixed'|'count';required_count?:number;kind?:string;available_count?:number|null;matched_devices?:string[];wait_seconds:number;minimum_gib:number;status:'waiting'|'settling'|'unknown'|'needs_selection'|'ready';idle_seconds:number;remaining_seconds:number;notified_at:number|null;email_notify?:boolean;email?:MailResult|null;desktop?:{status:DesktopStatus;error?:string;updated:number}|null;url?:string};
 export type ReservationHost={id:string;target:string;snapshot:{fresh:boolean;devices:{id:string;display_id?:string;kind:string;name:string;processes:unknown[];processes_known:boolean}[]}};
+export type ReservationDraft={hostId?:string;devices?:string[];minimum?:number;mode?:'fixed'|'count';requiredCount?:number;kind?:string;waitSeconds?:number;emailNotify?:boolean;editingId?:string};
+export function reservationDraft(item:Reservation,editing:boolean):ReservationDraft{
+  return {hostId:item.host_id,devices:[...item.devices],minimum:item.minimum_gib,mode:item.mode??'fixed',requiredCount:item.required_count,kind:item.kind,waitSeconds:item.wait_seconds,emailNotify:item.email_notify===true,...(editing?{editingId:item.id}:{})};
+}
+export function reservationLocation(item:Pick<Reservation,'host_id'|'mode'|'devices'|'matched_devices'>):string{
+  const query=new URLSearchParams({host:item.host_id});
+  for(const id of item.mode==='count'?item.matched_devices??[]:item.devices)query.append('device',id);
+  return '#overview?'+query.toString();
+}
+export const desktopStatusText:Record<DesktopStatus,string>={pending:'Windows 通知等待托盘处理',sending:'正在提交 Windows 通知',submitted:'已提交 Windows 通知',failed:'Windows 通知提交失败',disabled:'托盘桌面通知已关闭',unknown:'Windows 通知结果待确认',skipped:'未提交 Windows 通知'};
 const WAIT_KEY='infra-workbench:reservation-wait-minutes';
 export function waitSeconds(minutes:number):number{
   if(!Number.isFinite(minutes)||minutes<0||minutes>1440)throw new Error('等待时间请输入 0～1440 分钟');

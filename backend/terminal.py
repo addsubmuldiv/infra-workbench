@@ -152,19 +152,25 @@ class TerminalManager:
         targets=[v['websocket'] for v in self.active.values() if v['host_id']==host_id and v.get('identity')==identity and 'websocket' in v]
         await asyncio.gather(*(socket.send_json(message) for socket in targets),return_exceptions=True)
 
+    async def check_persistent(self,host):
+        profile=self.workspace.profiles.get(host['id'])
+        if not profile or not profile.get('sessions'):return
+        try:
+            identity=self.sudo.identity(await self.ssh.effective(host))
+            if profile.get('identity')!=identity:return
+            sessions=profile['sessions'][:]
+            states=tmux_response(*await self.ssh.run(host,tmux_command('status',ids=[s['id'] for s in sessions])))
+            for item in states:
+                state=item.get('state',{})
+                results=state.get('results',[])
+                if not isinstance(results,list):results=[]
+                # Legacy running shells still expose just one completed result.
+                self.workspace.results(host,identity,item['id'],results[-128:]+[state.get('result')])
+        except Exception:pass # Connection churn must remain silent.
+
     async def watch_persistent(self,hosts):
-        async def check(host):
-            profile=self.workspace.profiles.get(host['id'])
-            if not profile or not profile.get('sessions'):return
-            try:
-                identity=self.sudo.identity(await self.ssh.effective(host))
-                if profile.get('identity')!=identity:return
-                sessions=profile['sessions'][:]
-                states=tmux_response(*await self.ssh.run(host,tmux_command('status',ids=[s['id'] for s in sessions])))
-                for item in states:self.workspace.result(host,identity,item['id'],item.get('state',{}).get('result'))
-            except Exception:pass # Connection churn must remain silent.
         while True:
-            await asyncio.gather(*(check(host) for host in list(hosts)))
+            await asyncio.gather(*(self.check_persistent(host) for host in list(hosts)))
             await asyncio.sleep(15)
 
     async def open_channel(self,host,cols,rows,cwd=None,command=None,config=None):

@@ -142,6 +142,9 @@ def test_default_and_legacy_reservations_only_emit_desktop_events(tmp_path):
     assert len(store.events()) == 1 and store.events()[0]['notify']
     assert book.view()[0]['email'] is None
     # Stored reservations from older versions have no notification preference.
+    # A legacy record had no desktop delivery row in the older schema.
+    with store.db:
+        store.db.execute('DELETE FROM desktop_outbox')
     book.items[0].pop('email_notify')
     book.items[0].update(status='waiting', idle_since=None, notified_at=None)
     store.save('reservations', book.items)
@@ -272,3 +275,61 @@ def test_api_requires_local_header_and_never_echoes_password(tmp_path):
         assert response.status_code == 200 and response.json()['ok']
         response = client.delete('/api/settings/mail/password', headers={'X-IWB':'1'})
         assert response.status_code == 200 and not response.json()['enabled']
+
+
+def test_reservation_email_links_to_matched_devices_on_saved_local_port(tmp_path):
+    store, _, mail = setup(tmp_path)
+    item = dict(id='test',host_id='host / &',target='test-server',mode='count',devices=[],
+                matched_devices=['chip:0:1','2'],labels=['0/1','2'],wait_seconds=60,minimum_gib=1,
+                notified_at=time.time(),email_notify=True,base_url='http://localhost:9876/')
+    payload=mail.prepare(item)
+    assert payload['url']=='http://localhost:9876/#overview?host=host+%2F+%26&device=chip%3A0%3A1&device=2'
+    text=mail.message(mail.config,payload).get_content()
+    assert payload['url'] in text
+    assert '运行' in text and '电脑' in text
+    legacy=dict(item)
+    legacy.pop('base_url')
+    assert mail.prepare(legacy)['url'].startswith('http://127.0.0.1:8765/#overview?')
+    store.db.close()
+
+
+@pytest.mark.parametrize('remove_host', [False, True])
+def test_deleting_completed_booking_skips_pending_desktop_delivery(tmp_path, remove_host):
+    store, _, mail = setup(tmp_path)
+    book, item = complete(store, mail)
+    assert book.view()[0]['desktop']['status'] == 'pending'
+    if remove_host:
+        book.remove_host('host')
+    else:
+        book.remove(item['id'])
+    assert store.db.execute('SELECT status FROM desktop_outbox WHERE id=?',(item['id'],)).fetchone()[0]=='skipped'
+    assert store.db.execute('SELECT status FROM mail_outbox WHERE id=?',(item['id'],)).fetchone()[0]=='skipped'
+    store.db.close()
+
+
+def test_completion_mail_desktop_and_event_rollback_together_then_complete_once(tmp_path):
+    store, _, mail = setup(tmp_path)
+    book=ReservationBook(store,mail)
+    card=dict(id='0',uuid='gpu-0',kind='GPU',name='Test GPU',health='Warning',memory_free=8*1024**3,
+              processes_known=True,processes=[],utilization=0)
+    item=book.add(dict(id='host',target='test-server'),[card],0,1,email_notify=True)
+    store.db.execute("CREATE TRIGGER fail_mail BEFORE INSERT ON mail_outbox BEGIN SELECT RAISE(FAIL, 'disk unavailable'); END")
+    store.db.commit()
+    now=time.time()
+    with pytest.raises(Exception,match='disk unavailable'):
+        book.observe('host',dict(status='online',collected_at=now,devices=[card]),now)
+    assert book.items[0]['status']=='waiting'
+    assert store.load('reservations',[])[0]['status']=='waiting'
+    assert store.db.execute('SELECT count(*) FROM events').fetchone()[0]==0
+    assert store.db.execute('SELECT count(*) FROM desktop_outbox').fetchone()[0]==0
+    assert store.db.execute('SELECT count(*) FROM mail_outbox').fetchone()[0]==0
+    store.db.execute('DROP TRIGGER fail_mail')
+    store.db.commit()
+    book.observe('host',dict(status='online',collected_at=now,devices=[card]),now)
+    view=book.view(now)[0]
+    assert view['status']=='ready' and view['desktop']['status']=='pending' and view['email']['status']=='pending'
+    assert view['url']=='#overview?host=host&device=0'
+    event=store.events()[0]
+    assert event['reservation_id']==item['id'] and event['url']==view['url']
+    assert len(store.events())==1
+    store.db.close()

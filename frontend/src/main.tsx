@@ -10,13 +10,13 @@ import {JourneyArt} from './JourneyArt';
 import {PrecisionCompare} from './PrecisionCompare';
 import {FileBrowser} from './FileBrowser';
 import type {TerminalRequest} from './TerminalDock';
-import {pageFromHash,hostSelectionPage,type Page} from './navigation';
+import {pageFromHash,hostSelectionPage,hostLocationFromHash,notificationLocation,type Page} from './navigation';
 const TerminalDock=React.lazy(()=>import('./TerminalDock').then(module=>({default:module.TerminalDock})));
 const ServerImport=React.lazy(()=>import('./ServerImport'));
 import {THEMES, browserStorage, loadPreferences, savePreferences, scopedHosts, toggleHost} from './preferences';
 import {shouldNotify} from './notifications';
 import {Reservations,ReservationDialog,type ReservationDraft} from './ReservationPanel';
-import type {Reservation} from './reservations';
+import {reservationDraft as draftFromReservation,reservationLocation,type Reservation} from './reservations';
 import {MailSettingsPage} from './MailSettingsPage';
 import {MCPSettings} from './MCPSettings';
 import {singleFlight} from './requests';
@@ -33,7 +33,7 @@ type SystemMetrics = {cpu_percent:number|null;cpu_cores:number|null;memory:{memo
 type SudoSettings = {enabled:boolean;password_saved:boolean;password_in_memory:boolean;can_remember:boolean;status:string;message:string};
 type Host = {id:string; target:string; user:string|null; port:number|null; manual:boolean; auth:string; sudo?:SudoSettings; snapshot:{status:string; fresh:boolean; collected_at:number|null; error?:string; error_stage?:string; system?:SystemMetrics|null; devices:Device[]}};
 type Rule = {id:string; host_id:string; devices:string[]; minimum_gib:number; port:number; status?:string};
-type Event = {id:number; created:number; host:string; message:string; notify?:boolean};
+type Event = {id:number; created:number; host:string; message:string; notify?:boolean; url?:string};
 type State = {hosts:Host[]; rules:Rule[]; reservations:Reservation[]; reservation_modes?:string[]; events:Event[]; server_time:number};
 const gib=(n:number|null|undefined)=>n==null?'—':(n/1024**3).toFixed(1);
 const clock=(n:number)=>new Date(n*1000).toLocaleTimeString('zh-CN',{hour12:false});
@@ -55,6 +55,7 @@ function Badge({children,tone='muted'}:{children:React.ReactNode;tone?:string}){
 function App(){
   const [state,setState]=useState<State>({hosts:[],rules:[],reservations:[],events:[],server_time:0});
   const [reservationDraft,setReservationDraft]=useState<ReservationDraft|null>(null);
+  const [pendingLocation,setPendingLocation]=useState(()=>hostLocationFromHash(location.hash));
   const [preferences,setPreferences]=useState(()=>loadPreferences(browserStorage()));
   const [hostSearch,setHostSearch]=useState('');
   const [hostCategory,setHostCategory]=useState<HostCategory>('全部');
@@ -76,7 +77,7 @@ function App(){
     if(next!==page)window.scrollTo({top:0});
   };
   useEffect(()=>{
-    const sync=()=>{const next=pageFromHash(location.hash);setPage(next);if(next==='precision')setPrecisionMounted(true);setDetail(null);setCheck(null);window.scrollTo({top:0})};
+    const sync=()=>{setPendingLocation(hostLocationFromHash(location.hash));const next=pageFromHash(location.hash);setPage(next);if(next==='precision')setPrecisionMounted(true);setDetail(null);setCheck(null);window.scrollTo({top:0})};
     window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync);
   },[]);
   useEffect(()=>{
@@ -91,7 +92,10 @@ function App(){
     try{
       const next:State=await api('/state','GET',undefined,controller.signal);if(controller.signal.aborted)return;setState({...next,reservations:next.reservations??[]});setError('');
       if(lastEvent.current!==null&&notifyRef.current&&'Notification' in window&&Notification.permission==='granted')
-        for(const event of [...next.events].reverse())if(event.id>lastEvent.current&&shouldNotify(event))new Notification('Infra Workbench',{body:event.message,tag:String(event.id)});
+        for(const event of [...next.events].reverse())if(event.id>lastEvent.current&&shouldNotify(event)){
+          const notification=new Notification('Infra Workbench',{body:event.message,tag:String(event.id)});
+          notification.onclick=()=>{window.open(location.origin+location.pathname+notificationLocation(event.url),'_blank','noopener');notification.close()};
+        }
       lastEvent.current=next.events[0]?.id??lastEvent.current??0;
     }catch{if(!controller.signal.aborted)setError('本地服务未连接，请检查启动窗口。')}
     finally{if(stateRequest.current===controller)stateRequest.current=null}
@@ -102,6 +106,23 @@ function App(){
     if(!savePreferences(browserStorage(),preferences)&&!storageWarning.current){storageWarning.current=true;setNotice('浏览器不允许保存偏好，主题与机器选择在关闭页面后将无法恢复。')}
   },[preferences]);
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),7000);return()=>clearTimeout(t)},[notice]);
+  useEffect(()=>{
+    if(!pendingLocation||!state.server_time)return;
+    const host=state.hosts.find(host=>host.id===pendingLocation.hostId);
+    if(!host){setNotice('提醒对应的机器已移除，请在卡预约中查看记录。');setPendingLocation(null);return}
+    if(host.snapshot.status==='connecting'&&!host.snapshot.devices.length)return;
+    const ids=pendingLocation.devices.filter(id=>host.snapshot.devices.some(device=>device.id===id));
+    setPreferences(old=>({...old,hostIds:[host.id]}));setFilter('全部');setHostCategory('全部');setHostSearch('');
+    setSelected({[host.id]:ids});
+    if(ids.length<pendingLocation.devices.length)setNotice('已定位机器；部分设备未出现在最近采集中，请核对当前设备列表。');
+    else if(ids.length)setNotice('已定位提醒对应的机器和设备，请在使用前检查当前占用。');
+    setPendingLocation(null);
+  },[pendingLocation,state.hosts,state.server_time]);
+  const locateReservation=(item:Reservation)=>{
+    const hash=reservationLocation(item);setPage('overview');setDetail(null);setCheck(null);
+    setPendingLocation(hostLocationFromHash(hash));location.hash=hash;window.scrollTo({top:0});
+  };
+
   const act=async(key:string,fn:()=>Promise<unknown>)=>{setBusy(key);try{await fn();await load()}catch(e){setNotice(e instanceof Error?e.message:String(e))}finally{setBusy('')}};
   const enableNotifications=async()=>{
     if(!('Notification'in window)){setNotice('此浏览器不支持系统通知，事件仍显示在页面中。');return}
@@ -208,13 +229,13 @@ function App(){
       <div className="footnote"><CircleHelp size={14}/>低利用率不代表空闲。筛选结果反映资源指标，不代表资源授权或预留。</div>
     </div><aside className="event-column"><EventPanel events={state.events}/><div className="data-source"><Database size={14}/>真实 SSH 采集<span>本地存储</span></div></aside></div>}
     {page==='settings'&&<><MCPSettings/><MailSettingsPage/></>}
-    {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} update={async(id,wait_seconds)=>{await api('/reservations/'+id,'PATCH',{wait_seconds});await load()}} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} enableNotifications={enableNotifications} notify={notify}/>}
+    {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} edit={item=>setReservationDraft(draftFromReservation(item,true))} rebook={item=>setReservationDraft(draftFromReservation(item,false))} locate={locateReservation} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} enableNotifications={enableNotifications} notify={notify}/>}
     {page==='watch'&&<><div className="watch-heading"><h2>监控规则 <Badge>{state.rules.length}</Badge></h2><button className="secondary" onClick={enableNotifications}><Bell size={15}/>{notify?'通知已开启':'开启浏览器通知'}</button></div><p className="subtle">从设备列表勾选后点击“监控所选”。规则持续监控，不受当前查看的机器选择影响。</p>{state.rules.length===0&&<div className="empty"><Radio size={32}/><h3>还没有监控规则</h3><button className="secondary" onClick={()=>navigate('overview')}>去选择设备</button></div>}{state.rules.map(r=><div className="rule-row" key={r.id}><Radio size={20}/><div><h3>{state.hosts.find(h=>h.id===r.host_id)?.target}</h3><p>设备 {r.devices.map(id=>id.replace('phy:','Phy-ID ')).join(', ')} · 每设备 ≥ {r.minimum_gib} GiB · 端口 {r.port}</p></div><Badge tone={r.status==='active'?'green':'amber'}>{r.status==='needs_selection'?'需重新选设备':r.status==='active'?'监控中':'等待有效采集'}</Badge><button className="icon-button" aria-label="删除监控规则" onClick={()=>act('rule',()=>api('/rules/'+r.id,'DELETE'))}><Trash2 size={16}/></button></div>)}<EventPanel events={state.events}/></>}
     <footer className="page-footer"><span><ShieldCheck size={13}/>私钥留在本机 · sudo 密码可选存入系统凭据管理器</span><span>LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
     <React.Suspense fallback={null}>{terminalRequest&&<TerminalDock request={terminalRequest} hosts={state.hosts} onDirectory={(hostId,path)=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setFileHost({host,path,requestId:crypto.randomUUID()})}}/>}</React.Suspense>
     {notice&&<div role="status" className="toast"><Check size={17}/>{notice}<button className="icon-button" aria-label="关闭提示" onClick={()=>setNotice('')}><X size={15}/></button></div>}
     {adding&&<AddMachine close={()=>setAdding(false)} imported={async ids=>{setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,...ids])]}));await load()}} connected={async(message,hostId)=>{if(hostId)setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,hostId])]}));setNotice(message);setAdding(false);await load()}}/>}
-    {reservationDraft&&<ReservationDialog countEnabled={state.reservation_modes?.includes('count')} hosts={state.hosts} draft={reservationDraft} close={()=>setReservationDraft(null)} openSettings={()=>{setReservationDraft(null);navigate('settings')}} save={async(body)=>{await api('/reservations','POST',body);await load();setNotice('预约已保存；所选设备连续空闲后会提醒一次。');navigate('reservations')}}/>}
+    {reservationDraft&&<ReservationDialog countEnabled={state.reservation_modes?.includes('count')} hosts={state.hosts} draft={reservationDraft} close={()=>setReservationDraft(null)} openSettings={()=>{setReservationDraft(null);navigate('settings')}} save={async(body)=>{await api(reservationDraft.editingId?'/reservations/'+encodeURIComponent(reservationDraft.editingId):'/reservations',reservationDraft.editingId?'PATCH':'POST',body);await load();setNotice(reservationDraft.editingId?'预约已更新，按新条件重新计时。':'预约已保存；所选设备连续空闲后会提醒一次。');navigate('reservations')}}/>}
     {fileHost&&<FileBrowser onTerminal={(hostId,cwd)=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setTerminalRequest({id:crypto.randomUUID(),host,cwd})}} initialPath={fileHost.path} host={fileHost.host} requestId={fileHost.requestId} hosts={state.hosts} close={()=>setFileHost(null)}/>}
     {sshPasswordHost&&<SSHPasswordDialog key={sshPasswordHost.id} host={sshPasswordHost} close={()=>setSSHPasswordHost(null)} updated={async()=>{await load()}}/>}
     {removalHost&&<RemoveHostDialog key={removalHost.id} host={removalHost} close={()=>setRemovalHost(null)} remove={()=>removeHost(removalHost)}/>}
@@ -251,7 +272,7 @@ function ProcessDetails({process:p,onCopy}:{process:Proc;onCopy:(text:string)=>v
   </article>;
 }
 
-function EventPanel({events}:{events:Event[]}){return <section className="events"><div className="section-heading"><h2><Activity size={16}/>最近事件</h2><Badge>7 天</Badge></div>{events.length===0?<div className="events-empty"><div><Check size={18}/></div><p>暂无资源变化</p><small>添加监控后，变化会记录在这里。</small></div>:events.slice(0,20).map(e=><div className="event" key={e.id}><span className="event-dot"/><div><p>{e.message}</p><small>{new Date(e.created*1000).toLocaleDateString('zh-CN')} · {clock(e.created)}</small></div></div>)}</section>}
+function EventPanel({events}:{events:Event[]}){return <section className="events"><div className="section-heading"><h2><Activity size={16}/>最近事件</h2><Badge>7 天</Badge></div>{events.length===0?<div className="events-empty"><div><Check size={18}/></div><p>暂无资源变化</p><small>添加监控后，变化会记录在这里。</small></div>:events.slice(0,20).map(e=><div className="event" key={e.id}><span className="event-dot"/><div><p>{e.message}</p><small>{new Date(e.created*1000).toLocaleDateString('zh-CN')} · {clock(e.created)}</small>{e.url&&hostLocationFromHash(e.url)&&<a className="event-location" href={notificationLocation(e.url)}>查看机器和设备</a>}</div></div>)}</section>}
 
 function SudoModal({host,close,updated}:{host:Host;close:()=>void;updated:()=>Promise<void>}){
   const [settings,setSettings]=useState<SudoSettings|undefined>(host.sudo);

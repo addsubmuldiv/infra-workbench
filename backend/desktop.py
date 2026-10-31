@@ -1,4 +1,4 @@
-"""Windows tray launcher. Does not change the backend or browser notification flow."""
+"""Windows tray launcher with durable reservation notification acknowledgements."""
 import argparse
 import ctypes
 import json
@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0,str(ROOT))
 from backend.notifications import should_notify
+from backend.reminder_links import event_link
 URL = 'http://127.0.0.1:8765/'
 APP_ID = 'InfraWorkbench.Desktop'
 DATA = Path(os.environ.get('IWB_DATA', str(ROOT/'data')))
@@ -55,18 +56,99 @@ def get_api(path):
         return json.load(response)
 
 
+def update_delivery(reservation_id, status, error=''):
+    from urllib.parse import quote
+    request = Request(URL+'api/notifications/'+quote(reservation_id, safe='')+'/desktop',
+                      data=json.dumps(dict(status=status, error=error[:500])).encode('utf-8'),
+                      headers={'Content-Type': 'application/json', 'X-IWB': '1'}, method='POST')
+    with OPENER.open(request, timeout=3) as response:
+        return json.load(response)
+
+
+def notification_events(fetch=get_api):
+    # The UI history has a size limit; the durable pending queue is independent.
+    events = {}
+    for path in ('state', 'notifications/desktop-pending'):
+        try:
+            for event in fetch(path).get('events', []):
+                events[event['id']] = event
+        except Exception:
+            # Keep the successful half; a later authoritative pending poll can recover.
+            logging.debug('Notification source unavailable: %s', path, exc_info=True)
+    return list(events.values())
+
+
 class EventCursor:
-    def __init__(self):
+    def __init__(self, started_at=None):
         self.last = None
+        self.started_at = started_at
 
     def consume(self, events):
         newest = max((event['id'] for event in events),default=0)
         if self.last is None:
             self.last = newest
-            return []
-        fresh = sorted((event for event in events if event['id']>self.last),key=lambda event:event['id'])
+            fresh = [event for event in events if
+                     (self.started_at is not None and isinstance(event.get('created'), (int, float))
+                      and event['created'] >= self.started_at)
+                     or (event.get('reservation_id') and event.get('desktop_status') == 'pending')]
+        else:
+            fresh = [event for event in events if event['id'] > self.last
+                     or (event.get('reservation_id') and event.get('desktop_status') == 'pending')]
         self.last = max(self.last,newest)
-        return [event for event in fresh if should_notify(event)]
+        return sorted((event for event in fresh if should_notify(event)
+                       and (not event.get('reservation_id') or event.get('desktop_status') == 'pending')),
+                      key=lambda event: event['id'])
+
+
+def deliver_events(events, enabled, notify, transition=update_delivery):
+    """Claim each reservation once; an uncertain HTTP result never triggers a resend."""
+    deliverable = []
+    for event in events:
+        item_id = event.get('reservation_id')
+        if item_id:
+            try:
+                result = transition(item_id, 'sending' if enabled else 'disabled')
+            except Exception:
+                logging.exception('Desktop delivery claim failed for %s', item_id)
+                continue
+            if not enabled or not result.get('claimed'):
+                continue
+        if enabled:
+            deliverable.append(event)
+    if not deliverable:
+        return
+    text = (deliverable[0]['message'] if len(deliverable) == 1 else
+            '\n'.join(event['message'] for event in deliverable[:3])
+            + (f'\n另有 {len(deliverable)-3} 条变化' if len(deliverable) > 3 else ''))
+    destination = event_link(deliverable[0]) if len(deliverable) == 1 else '#reservations'
+    status, error = 'submitted', ''
+    try:
+        notify('Infra Workbench · 资源变化', text, destination)
+    except Exception as exc:
+        status, error = 'failed', str(exc)[:500]
+        logging.exception('Windows notification request failed')
+    for event in deliverable:
+        if event.get('reservation_id'):
+            try:
+                transition(event['reservation_id'], status, error)
+            except Exception:
+                logging.exception('Desktop delivery acknowledgement failed for %s', event['reservation_id'])
+
+
+class NotificationClicks:
+    """Legacy balloon callbacks lack an event ID; overlapping requests stay generic."""
+    def __init__(self):
+        self.target = '#reservations'
+        self.outstanding = 0
+
+    def submitting(self, destination):
+        self.target = destination if self.outstanding == 0 else '#reservations'
+        self.outstanding += 1
+
+    def dismissed(self):
+        self.outstanding = max(0, self.outstanding-1)
+        if not self.outstanding:
+            self.target = '#reservations'
 
 
 class DesktopSettings:
@@ -156,7 +238,7 @@ class ServiceHost:
             self.thread.join(timeout=20)
 
 
-def run_tray(service,settings,startup,open_browser,smoke_test=False):
+def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=None):
     register_notification_identity()
     from ctypes import wintypes as w
     user=ctypes.WinDLL('user32',use_last_error=True)
@@ -202,6 +284,8 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
     stop=threading.Event()
     messages=queue.Queue()
     receipt=dict(icon_created=False,notification_accepted=False,icon_removed=False)
+    clicks=NotificationClicks()
+    notification_lock=threading.RLock()
     WM_TRAY,WM_DELIVER=0x8001,0x8002
     icon=user.LoadImageW(None,str(ROOT/'backend'/'assets'/'workbench.ico'),1,
                         user.GetSystemMetrics(49),user.GetSystemMetrics(50),0x10)
@@ -215,14 +299,18 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
     icon_data=Notification(size=ctypes.sizeof(Notification),id=1,flags=7,callback=WM_TRAY,
                            icon=icon,tip='Infra Workbench · 后台监控',balloonIcon=notification_icon)
 
-    def notify(title,text):
-        icon_data.flags=0x10
-        icon_data.title=title[:63]
-        icon_data.info=text[:255]
-        icon_data.infoFlags=0x04|0x20  # NIIF_USER | NIIF_LARGE_ICON
-        if not shell.Shell_NotifyIconW(1,ctypes.byref(icon_data)):
-            raise RuntimeError('Windows 未接受桌面通知请求')
-        receipt['notification_accepted']=True
+    def notify(title,text,destination='#reservations'):
+        with notification_lock:
+            if stop.is_set():
+                raise RuntimeError('托盘正在退出，未提交桌面通知')
+            clicks.submitting(destination)
+            data=Notification(size=ctypes.sizeof(Notification),hwnd=hwnd,id=1,flags=0x10,
+                              title=title[:63],info=text[:255],infoFlags=0x04|0x20,
+                              balloonIcon=notification_icon)
+            if not shell.Shell_NotifyIconW(1,ctypes.byref(data)):
+                clicks.dismissed()
+                raise RuntimeError('Windows 未接受桌面通知请求')
+            receipt['notification_accepted']=True
 
     def menu(hwnd):
         popup=user.CreatePopupMenu()
@@ -241,7 +329,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
             elif selected==3:
                 startup.set(not startup.enabled())
             elif selected==4:
-                notify('Infra Workbench','桌面通知测试：关闭浏览器后，托盘仍会提醒监控规则的资源变化。')
+                messages.put(('Infra Workbench','桌面通知测试：关闭浏览器后，托盘仍会提醒监控规则的资源变化。'))
             elif selected==5:
                 user.DestroyWindow(hwnd)
             user.PostMessageW(hwnd,0,0,0)
@@ -254,13 +342,17 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
             if message==taskbar_created:
                 icon_data.flags=7;shell.Shell_NotifyIconW(0,ctypes.byref(icon_data));return 0
             if message==WM_TRAY:
-                if lp==0x203 or lp==0x405: webbrowser.open(URL)
+                if lp==0x203: webbrowser.open(URL)
+                elif lp==0x405:
+                    with notification_lock:
+                        destination=clicks.target
+                        clicks.dismissed()
+                    webbrowser.open(URL+destination)
+                elif lp in (0x403,0x404):
+                    with notification_lock: clicks.dismissed()
                 elif lp in (0x205,0x7b): menu(hwnd)
                 return 0
             if message==WM_DELIVER:
-                try: title,text=messages.get_nowait()
-                except queue.Empty: return 0
-                if settings.notifications: notify(title,text)
                 return 0
             if message==2:
                 stop.set();shell.Shell_NotifyIconW(2,ctypes.byref(icon_data));user.PostQuitMessage(0);return 0
@@ -283,25 +375,29 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
     receipt['icon_created']=True
 
     def monitor():
-        cursor=EventCursor()
+        cursor=EventCursor(started_at)
         while not stop.is_set():
+            while not messages.empty():
+                try:
+                    title,text=messages.get_nowait()
+                    if settings.notifications: notify(title,text)
+                except Exception:
+                    logging.exception('Desktop test notification failed')
             try:
-                events=cursor.consume(get_api('state').get('events',[]))
+                events=cursor.consume(notification_events()) if not smoke_test else []
                 if events:
-                    text=events[0]['message'] if len(events)==1 else '\n'.join(e['message'] for e in events[:3])+(f'\n另有 {len(events)-3} 条变化' if len(events)>3 else '')
-                    messages.put(('Infra Workbench · 资源变化',text))
+                    deliver_events(events,settings.notifications,notify)
             except Exception:
                 # Transient local-service/SSH failures remain visible in the UI.
                 # They must not accumulate disconnect/reconnect desktop alerts.
                 pass
-            if not messages.empty(): user.PostMessageW(hwnd,WM_DELIVER,0,0)
-            stop.wait(2)
+            stop.wait(.1 if smoke_test else 2)
+    if smoke_test:
+        messages.put(('Infra Workbench · 通知测试','这是系统托盘功能的测试通知，测试图标将自动退出。'))
     worker=threading.Thread(target=monitor,name='iwb-notifications',daemon=True)
     worker.start()
     if open_browser: webbrowser.open(URL)
     if smoke_test:
-        messages.put(('Infra Workbench · 通知测试','这是系统托盘功能的测试通知，测试图标将自动退出。'))
-        user.PostMessageW(hwnd,WM_DELIVER,0,0)
         threading.Timer(1,lambda:user.PostMessageW(hwnd,0x10,0,0)).start()
     try:
         msg=w.MSG()
@@ -312,9 +408,10 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False):
             user.TranslateMessage(ctypes.byref(msg));user.DispatchMessageW(ctypes.byref(msg))
     finally:
         stop.set();worker.join(timeout=4)
-        shell.Shell_NotifyIconW(2,ctypes.byref(icon_data))
-        user.DestroyIcon(notification_icon)
-        user.DestroyIcon(icon)
+        with notification_lock:
+            shell.Shell_NotifyIconW(2,ctypes.byref(icon_data))
+            user.DestroyIcon(notification_icon)
+            user.DestroyIcon(icon)
         receipt['icon_removed']=True
     return receipt
 
@@ -340,8 +437,9 @@ def main():
         if duplicate:
             if not args.no_browser: webbrowser.open(URL)
             return
+        started_at=time.time()
         service.ensure()
-        run_tray(service,DesktopSettings(DATA/'desktop.json'),Startup(),not args.no_browser)
+        run_tray(service,DesktopSettings(DATA/'desktop.json'),Startup(),not args.no_browser,started_at=started_at)
     except Exception as exc:
         logging.exception('Desktop startup failed')
         ctypes.windll.user32.MessageBoxW(None,str(exc),'Infra Workbench',0x10)

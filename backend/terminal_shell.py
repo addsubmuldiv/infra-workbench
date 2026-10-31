@@ -60,12 +60,20 @@ path=os.environ.get('IWB_TERMINAL_STATE')
 if path and kind in ('start','prompt'):
     try:
         try:
-            with open(path) as stream: prior=json.load(stream)
+            with open(path) as stream: prior=json.loads(stream.read(65536))
         except (OSError,ValueError):prior={}
         state=dict(kind=kind,status=int(status),cwd=cwd)
+        results=prior.get('results',[])
+        if not isinstance(results,list):results=[]
+        # Keep completed runs separate from the next running command. The last
+        # result remains available to old clients; the queue covers detached polls.
+        previous=prior.get('result')
+        if isinstance(previous,dict) and not any(v.get('id')==previous.get('id') for v in results if isinstance(v,dict)):
+            results.append(previous)
         if kind=='start':state.update(run_id=uuid.uuid4().hex,started=time.time())
-        elif prior.get('kind')=='start':state['result']=dict(id=prior['run_id'],seconds=round(max(0,time.time()-prior['started']),1),status=int(status),finished=time.time())
-        elif 'result' in prior:state['result']=prior['result']
+        elif prior.get('kind')=='start':results.append(dict(id=prior['run_id'],seconds=round(max(0,time.time()-prior['started']),1),status=int(status),finished=time.time()))
+        state['results']=results[-128:]
+        if state['results']:state['result']=state['results'][-1]
         temporary=path+'.'+uuid.uuid4().hex+'.tmp'
         fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,'w') as stream:json.dump(state,stream)

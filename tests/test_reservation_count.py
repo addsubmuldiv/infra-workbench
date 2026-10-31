@@ -99,3 +99,23 @@ def test_count_api_uses_any_card_and_rejects_impossible_counts(tmp_path):
         client.post('/api/hosts/test/refresh',headers=headers)
         item=client.get('/api/state').json()['reservations'][0]
         assert item['status']=='ready' and len(item['matched_devices'])==6
+
+
+@pytest.mark.parametrize('utilization', [None, float('nan'), float('inf'), -1, 101, True, False])
+def test_count_excludes_unknown_utilization_but_enough_known_idle_still_settles(tmp_path, utilization):
+    store = Store(tmp_path/'test.db')
+    book = ReservationBook(store)
+    book.add(dict(id='test',target='test'), [], 10, 1, now=1000,
+             mode='count',required_count=6,kind='GPU')
+    ds = cards()
+    for d in ds[5:]: d['utilization'] = utilization
+    book.observe('test',dict(status='online',collected_at=1000,devices=ds),1000)
+    assert book.items[0]['available_count'] == 5
+    assert book.items[0]['status'] == 'unknown'
+    ds[5]['utilization'] = 0
+    book.observe('test',dict(status='online',collected_at=1010,devices=ds),1010)
+    assert book.items[0]['status'] == 'settling'
+    book.observe('test',dict(status='online',collected_at=1020,devices=ds),1020)
+    assert book.items[0]['status'] == 'ready'
+    assert book.items[0]['matched_devices'] == ['0','1','2','3','4','5']
+    store.db.close()
