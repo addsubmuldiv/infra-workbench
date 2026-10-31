@@ -20,7 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
 from .ssh import SSHService
 from .store import Store
-from .credentials import WindowsCredentialStore
+from .credentials import create_credential_store
 from .sudo import SudoService
 from .terminal import register_terminal_routes
 from .log_routes import register_log_routes
@@ -139,11 +139,11 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
-    ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else WindowsCredentialStore('InfraWorkbench/ssh/'))
-    sudo = SudoService(ssh, credential_store if credential_store is not None else WindowsCredentialStore())
+    ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else create_credential_store('InfraWorkbench/ssh/'))
+    sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store())
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
-    mail = MailService(store, email_credential_store if email_credential_store is not None else WindowsCredentialStore('InfraWorkbench/mail/'))
+    mail = MailService(store, email_credential_store if email_credential_store is not None else create_credential_store('InfraWorkbench/mail/'))
     reservations = ReservationBook(store, mail)
     snapshots, locks = {}, {}
     collect_tasks = {}

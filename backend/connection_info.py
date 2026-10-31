@@ -3,6 +3,7 @@ import getpass
 import os
 import shlex
 import socket
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -74,7 +75,7 @@ async def describe_connection(ssh,passwords,host):
                 host_key_alias=cfg.get('hostkeyalias'),user_known_hosts_files=known_paths,
                 ssh_config_path=str(Path.home()/'.ssh'/'config'),ssh_argv=native,
                 ssh_argv_auth_mode='key_or_agent_noninteractive',
-                resolved_on=dict(computer=socket.gethostname(),os='windows' if os.name=='nt' else os.name,user=getpass.getuser()),
+                resolved_on=dict(computer=socket.gethostname(),os='macos' if sys.platform=='darwin' else 'windows' if os.name=='nt' else os.name,user=getpass.getuser()),
                 auth=dict(configured_methods=methods,open_software_session=opened,
                           software_session_exportable=False,external_ssh_status='not_tested',
                           ssh_password_available=saved['password_saved'],missing_requirements=[]),dependencies=dependencies,warnings=warnings)

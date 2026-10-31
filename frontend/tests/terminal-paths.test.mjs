@@ -63,3 +63,10 @@ test('Control held before hover decorates after xterm installs its tracking prop
   await Promise.resolve();assert.deepEqual(link.decorations,{pointerCursor:true,underline:true});
   link.dispose();assert.equal(link.decorations.underline,false);provider.dispose();
 });
+
+test('Command-hover and Command-click open a pwd directory on macOS',async()=>{
+  let opened=null;const provider=directoryLinkProvider(term('/data/中文'),path=>opened=path,new EventTarget());let link;
+  provider.provideLinks(1,links=>link=links[0]);link.hover({ctrlKey:false,metaKey:true});await Promise.resolve();
+  assert.equal(link.decorations.underline,true);
+  link.activate({ctrlKey:false,metaKey:true,button:0,preventDefault(){}});assert.equal(opened,'/data/中文');provider.dispose();
+});

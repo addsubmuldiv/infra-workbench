@@ -30,7 +30,7 @@ document.documentElement.dataset.theme=bootPreferences.theme;
 type Proc = {pid:number; name:string; user:string|null; memory_used:number|null; uid?:number|null; effective_uid?:number|null; parent_pid?:number|null; cwd?:string|null; executable?:string|null; command?:string|null; command_truncated?:boolean; identity_verified?:boolean; detail_status?:string; detail_source?:string; errors?:Record<string,string>};
 type Device = {id:string; display_id?:string; card_id?:string; chip_id?:string; physical_id?:string|null; kind:string; name:string; memory_total:number; memory_used:number; memory_free:number; utilization:number|null; temperature:number|null; processes:Proc[]; processes_known:boolean; health:string};
 type SystemMetrics = {cpu_percent:number|null;cpu_cores:number|null;memory:{memory_total:number;memory_used:number;memory_available:number}|null};
-type SudoSettings = {enabled:boolean;password_saved:boolean;password_in_memory:boolean;can_remember:boolean;status:string;message:string};
+type SudoSettings = {enabled:boolean;password_saved:boolean|null;credential_error?:string;password_in_memory:boolean;can_remember:boolean;status:string;message:string};
 type Host = {id:string; target:string; user:string|null; port:number|null; manual:boolean; auth:string; sudo?:SudoSettings; snapshot:{status:string; fresh:boolean; collected_at:number|null; error?:string; error_stage?:string; system?:SystemMetrics|null; devices:Device[]}};
 type Rule = {id:string; host_id:string; devices:string[]; minimum_gib:number; port:number; status?:string};
 type Event = {id:number; created:number; host:string; message:string; notify?:boolean; url?:string};
@@ -294,9 +294,9 @@ function SudoModal({host,close,updated}:{host:Host;close:()=>void;updated:()=>Pr
     <div className="modal-header"><div><div className="eyebrow">MACHINE / PERMISSIONS</div><h2 id="sudo-title">sudo 进程详情</h2><p className="subtle">{host.target} · 仅对这台机器生效</p></div><button className="icon-button" aria-label="关闭 sudo 设置" disabled={pending} onClick={close}><X size={20}/></button></div>
     <form onSubmit={save}>
       <label className="sudo-option"><input type="checkbox" checked={enabled} disabled={!ready||pending} onChange={e=>setEnabled(e.target.checked)}/><div><strong>启用 sudo 补齐进程详情</strong><p>读取占卡进程的用户、工作目录、启动命令和可执行文件。GPU、NPU、CPU 和内存监控保持普通账号采集。</p></div></label>
-      <div className="sudo-state"><ShieldCheck size={16}/><div><strong>{settings?.message||'正在读取设置…'}</strong><small>{settings?.password_saved?'密码已保存在 Windows 凭据管理器':settings?.password_in_memory?'密码仅保留到软件退出':'未保存 sudo 密码'}</small></div></div>
+      <div className="sudo-state"><ShieldCheck size={16}/><div><strong>{settings?.message||'正在读取设置…'}</strong><small>{settings?.password_saved?'密码已保存在 系统安全存储':settings?.password_in_memory?'密码仅保留到软件退出':'未保存 sudo 密码'}</small></div></div>
       <label className="form-label">此机器的 sudo 密码 <small>已保存密码或具备 sudo 免密权限时可留空</small><input aria-label="sudo 密码" type="password" autoComplete="off" maxLength={512} disabled={!enabled||pending||!ready} value={password} onChange={e=>setPassword(e.target.value)} placeholder={settings?.password_saved?'留空使用已保存密码':'输入当前 SSH 账号的 sudo 密码'}/></label>
-      <label className="checkbox-label sudo-remember"><input type="checkbox" checked={remember} disabled={!enabled||pending||!ready||!settings?.can_remember} onChange={e=>setRemember(e.target.checked)}/>记住 sudo 密码（Windows 凭据管理器）</label>
+      <label className="checkbox-label sudo-remember"><input type="checkbox" checked={remember} disabled={!enabled||pending||!ready||!settings?.can_remember} onChange={e=>setRemember(e.target.checked)}/>记住 sudo 密码（系统安全存储）</label>
       <p className="subtle sudo-hint">不勾选时，输入的密码只保留到本地服务退出。取消勾选后保存，也会删除原来保存的密码。</p>
       <label className="sudo-option sudo-install"><input type="checkbox" checked={install} disabled={!enabled||pending||!ready} onChange={e=>setInstall(e.target.checked)}/><div><strong>安装或更新固定的只读采集程序</strong><p>首次启用时勾选。保存后会在远端安装 root 所有的进程采集文件，不修改 sudo 授权规则。后续采集只调用此程序。</p></div></label>
       <div className="privacy-note"><ShieldCheck size={14}/>密码不会写入配置文件、浏览器存储或日志；普通账号仍需拥有服务器授予的 sudo 权限。</div>

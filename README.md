@@ -1,6 +1,6 @@
 # Infra Workbench
 
-一个在 Windows 上运行的服务器资源工作台，通过 SSH 查看组内多台机器的 GPU / Ascend NPU、CPU 和内存，方便寻找空闲资源。
+一个通过 SSH 查看多台 Linux 服务器资源的工作台，展示 GPU / Ascend NPU、CPU 和内存，方便寻找空闲资源。提供 Windows 启动入口和 macOS 适配入口。
 
 ![资源总览示例](docs/images/overview.jpg)
 
@@ -27,6 +27,8 @@
 
 以后仍然双击 **`运行.cmd`** 即可。安装窗口可以关闭，关闭浏览器后后台监控仍会继续；退出软件请使用托盘右键菜单。
 
+**macOS**：先准备 Python 3.11+，再双击 **`运行.command`**，使用菜单栏后台、钥匙串和本机 SSH 终端。Mac 适配尚未实机验证，安装步骤及限制见 [macOS 说明](docs/MACOS.md)。
+
 更新已有安装时，先保存文件、处理好终端任务，并退出后台，再拉取代码或解压新版本，双击 **`运行.cmd`**。只刷新网页不会重启后台。完整步骤见 [更新说明](docs/WINDOWS.md#更新与修复)。
 
 本机需要 **Windows 10 / 11 和 OpenSSH 客户端**。首次安装需要联网，脚本会准备 Python 环境和依赖，无须安装 Node.js。远端机器需要 Linux、Python 3，以及 `nvidia-smi` 或 `npu-smi`。
@@ -52,3 +54,5 @@ AI agent 接入见 **[MCP 使用说明](docs/MCP.md)**，服务地址为 `http:/
 [批量导入](docs/IMPORT.md) · [安装与排障](docs/WINDOWS.md) · [后台与通知](docs/BACKGROUND.md) · [卡预约](docs/RESERVATIONS.md) · [邮件通知](docs/MAIL.md) · [SSH 终端](docs/TERMINAL.md) · [服务器文件](docs/FILES.md) · [精度对比](docs/PRECISION.md)
 
 [数据与凭据](SECURITY.md) · [开发指南](CONTRIBUTING.md)
+
+[macOS 适配与验证范围](docs/MACOS.md)

@@ -15,3 +15,5 @@
 *.svg text eol=lf
 *.jpg binary
 *.woff2 binary
+*.command text eol=lf
+*.sh text eol=lf

@@ -2,6 +2,7 @@
 import ctypes
 import json
 import os
+import sys
 from ctypes import wintypes
 
 
@@ -52,7 +53,7 @@ class WindowsCredentialStore:
 
     def put(self, key, value):
         if not self.supported:
-            raise ValueError('此系统不支持 Windows 凭据管理器，请使用本次运行模式')
+            raise ValueError('此系统暂不支持保存凭据，请使用本次运行模式')
         raw = json.dumps(value, ensure_ascii=False).encode('utf-8')
         if len(raw)>2560:
             raise ValueError('密码超过凭据管理器容量')
@@ -67,3 +68,17 @@ class WindowsCredentialStore:
         target = self.target(key)
         if self.supported and not self.api.CredDeleteW(target, 1, 0) and ctypes.get_last_error()!=1168:
             raise ValueError('无法删除 Windows 凭据管理器中的密码')
+
+
+class UnsupportedCredentialStore(WindowsCredentialStore):
+    supported = False
+
+
+def create_credential_store(namespace='InfraWorkbench/sudo/'):
+    """Select an OS vault explicitly; never fall back to a credential file."""
+    if sys.platform == 'win32':
+        return WindowsCredentialStore(namespace)
+    if sys.platform == 'darwin':
+        from .macos_credentials import MacOSCredentialStore
+        return MacOSCredentialStore(namespace)
+    return UnsupportedCredentialStore(namespace)

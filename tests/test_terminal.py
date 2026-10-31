@@ -211,7 +211,14 @@ def test_password_connection_can_open_and_resize_a_pty_without_closing_monitor_t
             channel=await manager.open_channel(host,100,24)
             assert await asyncio.wait_for(channel.read(),3)=='PTY-READY'
             await channel.write('hello\n')
-            assert 'size:(100, 24) hello' in await asyncio.wait_for(channel.read(),3)
+            async def reply():
+                output=''
+                while 'size:(100, 24) hello' not in output:
+                    chunk=await channel.read()
+                    assert chunk,output
+                    output+=chunk
+                return output
+            assert 'size:(100, 24) hello' in await asyncio.wait_for(reply(),3)
             await channel.resize(120,32)
             await channel.close()
             code,out,_=await ssh.run(host,'printf test')

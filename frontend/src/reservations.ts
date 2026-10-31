@@ -11,7 +11,7 @@ export function reservationLocation(item:Pick<Reservation,'host_id'|'mode'|'devi
   for(const id of item.mode==='count'?item.matched_devices??[]:item.devices)query.append('device',id);
   return '#overview?'+query.toString();
 }
-export const desktopStatusText:Record<DesktopStatus,string>={pending:'Windows 通知等待托盘处理',sending:'正在提交 Windows 通知',submitted:'已提交 Windows 通知',failed:'Windows 通知提交失败',disabled:'托盘桌面通知已关闭',unknown:'Windows 通知结果待确认',skipped:'未提交 Windows 通知'};
+export const desktopStatusText:Record<DesktopStatus,string>={pending:'系统通知等待托盘处理',sending:'正在提交 系统通知',submitted:'已提交 系统通知',failed:'系统通知提交失败',disabled:'托盘桌面通知已关闭',unknown:'系统通知结果待确认',skipped:'未提交 系统通知'};
 const WAIT_KEY='infra-workbench:reservation-wait-minutes';
 export function waitSeconds(minutes:number):number{
   if(!Number.isFinite(minutes)||minutes<0||minutes>1440)throw new Error('等待时间请输入 0～1440 分钟');

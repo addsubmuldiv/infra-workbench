@@ -130,13 +130,15 @@ class SudoService:
 
     def view(self, host):
         status = self.states.get(host['id'], 'pending' if host.get('sudo_enabled') else 'disabled')
+        credential_error = ''
         try:
             saved = bool(self.vault.get(host['id']))
         except Exception:
-            saved = False
+            saved = None
+            credential_error = '无法读取系统安全存储，请解锁后重试；已有密码未删除'
         return dict(enabled=bool(host.get('sudo_enabled')), password_saved=saved,
                     password_in_memory=host['id'] in self.passwords,
-                    can_remember=getattr(self.vault, 'supported', True), status=status,
+                    can_remember=getattr(self.vault, 'supported', True), credential_error=credential_error, status=status,
                     message=MESSAGES.get(status, MESSAGES['error']))
 
     def identity(self, cfg):

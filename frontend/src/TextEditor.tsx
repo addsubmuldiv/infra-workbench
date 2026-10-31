@@ -53,15 +53,15 @@ export function TextEditor({value,onChange,readOnly}:{value:string;onChange:(val
   const clipboard=async(kind:'copy'|'cut'|'paste')=>{
     const view=editor.current;if(!view)return;setMessage('');
     try{const done=await ({copy:copyText,cut:cutText,paste:pasteText}[kind])(view);if(editor.current===view){setMessage(done?{copy:'已复制',cut:'已剪切',paste:'已粘贴'}[kind]:'请先选择文本或检查剪贴板');view.focus()}}
-    catch(e){if(editor.current===view)setMessage((e instanceof Error?e.message:'剪贴板不可用')+'；也可以在编辑区使用 Ctrl+C/X/V')}
+    catch(e){if(editor.current===view)setMessage((e instanceof Error?e.message:'剪贴板不可用')+'；也可以在编辑区使用 Ctrl/⌘+C/X/V')}
   };
   const tool=(label:string,icon:React.ReactNode,action:()=>void,disabled=false,title=label)=><button type="button" className="secondary" title={title} disabled={disabled} onMouseDown={e=>e.preventDefault()} onClick={action}>{icon}{label}</button>;
   return <div className="text-editor">
     <div className="text-editor-tools" role="toolbar" aria-label="文本编辑工具">
-      {tool('撤销',<Undo2 size={14}/>,()=>run(undo),readOnly||!info.undo,'撤销 · Ctrl+Z')}{tool('重做',<Redo2 size={14}/>,()=>run(redo),readOnly||!info.redo,'重做 · Ctrl+Y / Ctrl+Shift+Z')}
-      {tool('复制',<Copy size={14}/>,()=>void clipboard('copy'),!info.selected,'复制 · Ctrl+C')}{tool('剪切',<Scissors size={14}/>,()=>void clipboard('cut'),readOnly||!info.selected,'剪切 · Ctrl+X')}{tool('粘贴',<ClipboardPaste size={14}/>,()=>void clipboard('paste'),readOnly,'粘贴 · Ctrl+V')}{tool('全选',<TextSelect size={14}/>,()=>run(selectAll),false,'全选 · Ctrl+A')}
-      {tool('查找',<Search size={14}/>,()=>{const view=editor.current;if(view)openSearchPanel(view)},false,'查找当前文件 · Ctrl+F')}{tool('替换',<Replace size={14}/>,()=>{const view=editor.current;if(view)openReplace(view)},readOnly,'查找替换 · Ctrl+H')}
-      {tool('跳转行',<ListOrdered size={14}/>,()=>{const view=editor.current;if(view)gotoLine(view)},false,'跳转到行 · Ctrl+Alt+G')}
+      {tool('撤销',<Undo2 size={14}/>,()=>run(undo),readOnly||!info.undo,'撤销 · Ctrl/⌘+Z')}{tool('重做',<Redo2 size={14}/>,()=>run(redo),readOnly||!info.redo,'重做 · Ctrl/⌘+Y / Ctrl/⌘+Shift+Z')}
+      {tool('复制',<Copy size={14}/>,()=>void clipboard('copy'),!info.selected,'复制 · Ctrl/⌘+C')}{tool('剪切',<Scissors size={14}/>,()=>void clipboard('cut'),readOnly||!info.selected,'剪切 · Ctrl/⌘+X')}{tool('粘贴',<ClipboardPaste size={14}/>,()=>void clipboard('paste'),readOnly,'粘贴 · Ctrl/⌘+V')}{tool('全选',<TextSelect size={14}/>,()=>run(selectAll),false,'全选 · Ctrl/⌘+A')}
+      {tool('查找',<Search size={14}/>,()=>{const view=editor.current;if(view)openSearchPanel(view)},false,'查找当前文件 · Ctrl/⌘+F')}{tool('替换',<Replace size={14}/>,()=>{const view=editor.current;if(view)openReplace(view)},readOnly,'查找替换 · Ctrl/⌘+H')}
+      {tool('跳转行',<ListOrdered size={14}/>,()=>{const view=editor.current;if(view)gotoLine(view)},false,'跳转到行 · Ctrl/⌘+Alt+G')}
       <button type="button" className="secondary" aria-pressed={wrap} onMouseDown={e=>e.preventDefault()} onClick={()=>{const next=!wrap;setWrap(next);editor.current?.dispatch({effects:wrapping.current.reconfigure(next?EditorView.lineWrapping:[])})}}><WrapText size={14}/>自动换行</button>
     </div>
     {message&&<p className="file-inline" role="status">{message}</p>}

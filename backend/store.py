@@ -17,7 +17,7 @@ class Store:
         self.db.execute('CREATE TABLE IF NOT EXISTS desktop_outbox (id TEXT PRIMARY KEY, event_id INTEGER UNIQUE NOT NULL, created REAL, status TEXT, error TEXT, updated REAL, url TEXT NOT NULL)')
         self.db.execute('CREATE INDEX IF NOT EXISTS desktop_created ON desktop_outbox(status,created)')
         self.db.execute('CREATE INDEX IF NOT EXISTS desktop_updated ON desktop_outbox(status,updated)')
-        self.db.execute("UPDATE desktop_outbox SET status='unknown',error='托盘发送过程被中断，Windows 接收结果未知',updated=? WHERE status='sending'", (time.time(),))
+        self.db.execute("UPDATE desktop_outbox SET status='unknown',error='托盘发送过程被中断，系统接收结果未知',updated=? WHERE status='sending'", (time.time(),))
         self.db.execute('CREATE INDEX IF NOT EXISTS events_created ON events(created)')
         self.db.execute('CREATE INDEX IF NOT EXISTS mail_pending ON mail_outbox(status,created)')
         self.db.execute('CREATE INDEX IF NOT EXISTS mail_updated ON mail_outbox(updated)')
@@ -68,7 +68,7 @@ class Store:
                 with self.db:
                     self.db.execute("UPDATE desktop_outbox SET status=CASE status WHEN 'pending' THEN 'skipped' ELSE 'unknown' END,"
                                     "error=CASE status WHEN 'pending' THEN '提醒已超过 2 分钟，未补发过期桌面通知' "
-                                    "ELSE 'Windows 通知请求长时间未返回，接收结果未知；不会自动重发' END,updated=? WHERE " + condition,
+                                    "ELSE '桌面通知请求长时间未返回，接收结果未知；不会自动重发' END,updated=? WHERE " + condition,
                                     (now, *limits))
 
     def desktop_statuses(self, item_ids=None, now=None):

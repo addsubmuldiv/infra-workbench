@@ -392,3 +392,17 @@ test('duplicating tmux creates a separate persistent session in the same cwd',as
 test('unsupported shell metadata cannot replace cwd with the fallback placeholder',async t=>{
   const {socket,ref}=await view(t);socket.message({type:'shell',kind:'prompt',cwd:'/real/path',status:0});assert.equal(ref.current.cwd(),'/real/path');socket.message({type:'shell',kind:'unsupported',cwd:'/',status:0});assert.equal(ref.current.cwd(),undefined);
 });
+
+test('Command copy, paste and find stay local while Control+C remains a shell interrupt',async t=>{
+  const {term,socket,clipboardListeners}=await view(t);let copied='';
+  const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{configurable:true,value:{platform:'MacIntel',clipboard:{writeText:async text=>{copied=text}}}});t.after(()=>{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator});
+  term.selection='中文 output';
+  assert.equal(term.keyHandler({type:'keydown',key:'c',code:'KeyC',metaKey:true,ctrlKey:false,preventDefault(){}}),false);
+  assert.equal(copied,'中文 output');term.selection='';
+  assert.equal(term.keyHandler({type:'keydown',key:'c',code:'KeyC',metaKey:true,ctrlKey:false,preventDefault(){}}),false);
+  assert.equal(term.keyHandler({type:'keydown',key:'c',code:'KeyC',ctrlKey:true,metaKey:false,preventDefault(){}}),true);
+  assert.equal(term.keyHandler({type:'keydown',key:'v',code:'KeyV',metaKey:true,ctrlKey:false,preventDefault(){}}),false);
+  clipboardListeners.get('paste')({clipboardData:{getData:()=> '中文 paste'},preventDefault(){},stopPropagation(){}});
+  assert.equal(term.keyHandler({type:'keydown',key:'f',metaKey:true,ctrlKey:false,preventDefault(){}}),false);
+  assert.deepEqual(socket.sent.filter(frame=>frame.type==='input').map(frame=>frame.data),['中文 paste']);
+});

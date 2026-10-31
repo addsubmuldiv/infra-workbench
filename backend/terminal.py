@@ -185,9 +185,10 @@ class TerminalManager:
             options=dict(term_type='xterm-256color',term_size=(cols,rows))
             process=await asyncio.wait_for(conn.create_process(command,**options) if command is not None else conn.create_process(**options),15)
             return AsyncTerminal(process)
-        if os.name!='nt':
-            raise ValueError('原生 SSH 交互终端目前仅支持 Windows')
-        return await NativeTerminal.spawn(terminal_arguments(self.ssh,host,cwd,command,config),cols,rows)
+        args=terminal_arguments(self.ssh,host,cwd,command,config)
+        if os.name=='nt':return await NativeTerminal.spawn(args,cols,rows)
+        from .terminal_posix import PosixTerminal
+        return await PosixTerminal.spawn(args,cols,rows)
 
     async def close_host(self,host_id=None):
         tasks=[v['task'] for v in self.active.values() if host_id is None or v['host_id']==host_id]
