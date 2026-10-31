@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 import * as api from '../src/agentChat.ts';
+import * as skills from '../src/skills.ts';
 const chat=(id,run='run1')=>({id:id.repeat(32),title:id,created:1,updated:2,active_run:run,turns:[{id:'t-'+id,role:'assistant',content:'开始',created:2,status:run?'running':'completed'}]});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(t){
@@ -12,21 +13,23 @@ function harness(t){
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect,useLayoutEffect:useEffect,
     useState:initial=>{const i=slot++;if(!(i in values))values[i]=initial;return [values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value}]},
     useRef:initial=>{const i=slot++;if(!(i in values))values[i]={current:initial};return values[i]}};
-  const previous={fetch:globalThis.fetch,storage:Object.getOwnPropertyDescriptor(globalThis,'localStorage')};
+  const previous={fetch:globalThis.fetch,window:globalThis.window,storage:Object.getOwnPropertyDescriptor(globalThis,'localStorage')};
+  globalThis.window=new EventTarget();
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>null,setItem:(key,value)=>writes.push([key,value])}});
   globalThis.fetch=async(url,options)=>{
     requests.push({url,method:options?.method});
+    if(url==='/api/skills')return Response.json({items:[]});
     if(url.endsWith('/events')){let source;const body=new ReadableStream({start(controller){source=controller}});streams.push({id:url.split('/').at(-2),source,signal:options.signal});return new Response(body,{headers:{'Content-Type':'text/event-stream'}})}
     if(url==='/api/assistant/chats')return Response.json({items:[chat('a'),chat('b',null)]});
     return Response.json(chat(url.endsWith('b'.repeat(32))?'b':'a',url.endsWith('b'.repeat(32))?null:'run1'));
   };
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/AssistantChat.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./agentChat'?api:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{},exports);
+  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./agentChat'?api:name==='./skills'?skills:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{},exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=predicate=>nodes(tree).find(predicate);
   const render=()=>{slot=0;tree=exports.AssistantChat({configured:true,selectedHostIds:[]});const node=find(n=>n.props.className==='chat-transcript');node.props.ref.current=view;for(const effect of effects.splice(0))effect();return tree};
   const unmount=()=>cleanups.splice(0).forEach(fn=>fn?.());
-  t.after(()=>{unmount();globalThis.fetch=previous.fetch;if(previous.storage)Object.defineProperty(globalThis,'localStorage',previous.storage);else delete globalThis.localStorage});
+  t.after(()=>{unmount();globalThis.fetch=previous.fetch;globalThis.window=previous.window;if(previous.storage)Object.defineProperty(globalThis,'localStorage',previous.storage);else delete globalThis.localStorage});
   const publish=async(content,updated)=>{const data={chat_id:'a'.repeat(32),title:'a',updated,active_run:'run1',turn:{id:'t-a',role:'assistant',content,created:2,status:'running'}};streams[0].source.enqueue(new TextEncoder().encode(`event: turn\ndata: ${JSON.stringify(data)}\n\n`));await tick();render()};
   return {render,find,view,streams,writes,requests,publish,unmount,async loaded(){render();await tick();render();await tick();render()},text:()=>nodes(tree).filter(n=>n.props.className?.startsWith('chat-message-text')).flatMap(n=>nodes(n).flatMap(child=>child.props?.children||[])).filter(value=>typeof value==='string').join('')};
 }
