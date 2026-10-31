@@ -55,9 +55,15 @@ def text_files(raw):
 def encode_files(files):
     if not isinstance(files, dict) or not files or len(files)>COUNT_LIMIT:
         raise SkillError('技能必须包含文件，最多 128 个')
-    raw, seen, size = {}, set(), 0
+    raw, seen, size, spellings, directories = {}, set(), 0, {}, set()
     for path, content in files.items():
         safe_path(path)
+        parts=path.split('/')
+        for index in range(1,len(parts)+1):
+            prefix='/'.join(parts[:index]); folded=prefix.casefold()
+            if folded in spellings and spellings[folded]!=prefix:raise SkillError('技能目录名称的大小写不一致')
+            spellings[folded]=prefix
+            if index<len(parts):directories.add(folded)
         if path.casefold() in seen: raise SkillError('技能文件名不能重复或仅大小写不同')
         seen.add(path.casefold())
         if not isinstance(content, (str, bytes)): raise SkillError('技能文件内容必须是文本')
@@ -65,6 +71,7 @@ def encode_files(files):
         size += len(data)
         if len(data)>FILE_LIMIT or size>TOTAL_LIMIT: raise SkillError('技能文件超过大小限制')
         raw[path] = base64.b64encode(data).decode('ascii')
+    if seen & directories:raise SkillError('技能文件与目录路径冲突')
     return raw
 
 
@@ -211,6 +218,18 @@ class SkillService:
     def read_draft(self,draft_id):
         with self.lock:return self._draft_view(self._draft(draft_id))
 
+    def list_drafts(self):
+        with self.lock:
+            result=[]
+            for row in self.db.execute('SELECT payload FROM skill_drafts').fetchall():
+                draft=json.loads(row[0])
+                if draft.get('installed'):continue
+                item={k:v for k,v in draft.items() if k not in ('raw','incarnation')}
+                try:item['name']=parse_skill(text_files(draft['raw']))['name']
+                except SkillError:item['name']=draft['skill_name'] or '未命名草稿'
+                result.append(item)
+            return sorted(result,key=lambda item:item['created'],reverse=True)
+
     def update_draft(self,draft_id,revision,files):
         with self.lock:
             draft=self._draft(draft_id,revision)
@@ -247,7 +266,9 @@ class SkillService:
                     links=re.findall(r'\]\(\s*(?:<([^>]+)>|([^\s)]+))',text)
                     for bracketed,plain in links:
                         target=bracketed or plain
-                        parsed=urlsplit(target)
+                        try:parsed=urlsplit(target)
+                        except ValueError:
+                            errors.append('引用链接格式无效：'+target);continue
                         if parsed.scheme or parsed.netloc or not parsed.path:continue
                         resolved=posixpath.normpath(posixpath.join(posixpath.dirname(source),unquote(parsed.path)))
                         try:safe_path(resolved)

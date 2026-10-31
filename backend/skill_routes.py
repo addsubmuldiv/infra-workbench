@@ -48,6 +48,9 @@ def register_skill_routes(app, service, tools_callback: Callable):
     async def create(body: DraftBody):
         return invoke(service.create_draft,body.files,body.skill_name,body.base_version)
 
+    @app.get('/api/skills/drafts')
+    async def drafts():return dict(items=invoke(service.list_drafts))
+
     @app.get('/api/skills/drafts/{draft_id}')
     async def read_draft(draft_id:str):return invoke(service.read_draft,draft_id)
 

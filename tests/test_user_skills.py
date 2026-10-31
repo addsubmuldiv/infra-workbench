@@ -139,3 +139,34 @@ def test_markdown_nested_reference_links(skills):
     assert not skills.validate_draft(draft['id'],1,[])['valid']
     draft=skills.create_draft(dict(files(body='[参考](references/指南.md)'),**{'references/指南.md':'[模板](../assets/报告.md)','assets/报告.md':'报告'}))
     assert skills.validate_draft(draft['id'],1,[])['valid']
+
+
+def test_exportable_path_tree_has_consistent_directories(skills):
+    for content in [dict(files(),**{'a':'file','a/b.md':'child'}),dict(files(),**{'References/a.md':'a','references/b.md':'b'})]:
+        with pytest.raises(SkillError):skills.create_draft(content)
+
+
+def test_binary_copy_by_rename_keeps_assets(skills):
+    draft=skills.create_draft(dict(files(),**{'assets/image.bin':b'\xff\x00'}))
+    skills.install_draft(draft['id'],1,[])
+    copied=skills.import_package('copy.zip',skills.export('my-check'))
+    content=dict(copied['files']);content['SKILL.md']=content['SKILL.md'].replace('name: my-check','name: my-copy')
+    copied=skills.update_draft(copied['id'],1,content)
+    skills.install_draft(copied['id'],copied['revision'],[])
+    with zipfile.ZipFile(io.BytesIO(skills.export('my-copy'))) as z:
+        assert z.read('my-copy/assets/image.bin')==b'\xff\x00'
+
+
+def test_persisted_drafts_are_resumable_but_installed_hidden(skills):
+    draft=skills.create_draft(files())
+    restarted=SkillService(skills.store,skills.builtin_root)
+    assert restarted.list_drafts()[0]['id']==draft['id']
+    assert restarted.list_drafts()[0]['name']=='my-check'
+    restarted.install_draft(draft['id'],1,[])
+    assert restarted.list_drafts()==[]
+
+
+def test_deep_yaml_and_bad_url_are_validation_errors(skills):
+    for body in ['---\nname: my-check\ndescription: Check\nmetadata: '+('['*2000)+(']'*2000)+'\n---\nDo it.', files(body='[x](http://[bad)')['SKILL.md']]:
+        draft=skills.create_draft({'SKILL.md':body})
+        assert not skills.validate_draft(draft['id'],1,[])['valid']
