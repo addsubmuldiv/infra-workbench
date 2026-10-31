@@ -73,4 +73,3 @@ function FileAdder({onAdd,names}:{onAdd:(name:string)=>void;names:string[]}){
   const [name,setName]=useState('');const valid=!!name.trim()&&!names.includes(name.trim())&&!/(^\/|\\|(^|\/)\.\.?($|\/)|:)/.test(name.trim());
   return <div className="skill-copy"><label className="form-label">新增文本文件<input aria-label="新增技能文件路径" value={name} placeholder="references/guide.md" onChange={event=>setName(event.target.value)}/></label><button type="button" className="secondary" disabled={!valid} onClick={()=>{onAdd(name.trim());setName('')}}>添加文件</button></div>;
 }
-

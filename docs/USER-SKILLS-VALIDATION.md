@@ -31,3 +31,5 @@ python -m pytest -q --ignore=tests/test_auth.py -k 'not native_pty_roundtrip_res
 使用 127.0.0.1:18769 独立服务和 work/skills-ui-validation 数据目录，浏览器实际完成新建粘贴、安装、详情、停用、启用。AI 助手技能选择器可发现新安装技能。主应用 8765 未重启、未修改配置。
 
 技能权限和模型调用仍遵循现有工具实现。脚本作为附件保存但不执行；静态校验不等于业务步骤已试运行。预览服务仅供本机检查，独立数据不会自动迁移到主应用。
+
+窄内容区复查：AI 助手展开时，技能区域 clientWidth=551、scrollWidth=551；详情 clientWidth=549、scrollWidth=549，无横向溢出。截图 work/validation/skills-preview.png。
