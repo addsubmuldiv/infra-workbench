@@ -13,10 +13,11 @@ function harness(t,component='BrowserBody',fetchDownload){
     useEffect:(fn,next)=>{const i=slot++;if(!next||!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}}};
   const old={window:globalThis.window,document:globalThis.document,fetch:globalThis.fetch};
   Object.assign(globalThis,{window:{innerWidth:1200,innerHeight:800,addEventListener(){},removeEventListener(){}},document:{addEventListener(){},removeEventListener(){}},
-    fetch:async(url,options)=>url==='/api/files/capabilities'?{ok:true,json:async()=>({editing:true})}:fetchDownload(url,options)});
+    fetch:async(url,options)=>url==='/api/files/capabilities'?{ok:true,json:async()=>({editing:true,terminal_cwd:true,upload:true,search:true})}:fetchDownload(url,options)});
   t.after(()=>{cleanups.splice(0).forEach(fn=>fn?.());Object.assign(globalThis,old)});
   const entries=['A','B'].map(name=>({name:name+'.txt',path:'/tmp/'+name+'.txt',kind:'file',accessible:true,size:1,modified:1}));
-  const files={listDirectory:async()=>({path:'/tmp',parent:'/',entries,total:2,next_offset:null}),fileOperation:async()=>({})};
+  entries.push({name:'code',path:'/tmp/code',kind:'directory',accessible:true,size:null,modified:1});
+  const files={listDirectory:async(host,path)=>({path:path==='~'?'/tmp':path,parent:'/',entries:path==='~'||path==='/tmp'?entries:[],total:entries.length,next_offset:null}),fileOperation:async()=>({})};
   const exports={};
   const source=ts.transpileModule(fs.readFileSync(new URL('../src/FileBrowser.tsx',import.meta.url),'utf8')+'\nexport {BrowserBody};',
     {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
@@ -29,16 +30,45 @@ function harness(t,component='BrowserBody',fetchDownload){
   const find=predicate=>nodes(tree).find(predicate);
   return {render,find,guard,hosts,async loaded(){render();await new Promise(resolve=>setImmediate(resolve));render()},
     clickFile(name){find(n=>n.type==='button'&&n.props['aria-label']==='文件 /tmp/'+name+'.txt').props.onClick();render()},
+    openFile(name){const button=()=>find(n=>n.type==='button'&&n.props['aria-label']==='文件 /tmp/'+name+'.txt');button().props.onClick();render();button().props.onClick();render();button().props.onDoubleClick();render()},
     editorPath(){return find(n=>n.type===FileEditor)?.props.path},body(){return find(n=>typeof n.type==='function'&&n.type.name==='BrowserBody')},
     unmount(){cleanups.splice(0).forEach(fn=>fn?.())}};
 }
 
 test('switching files preserves the old editor until the save guard permits leaving',async t=>{
-  const h=harness(t);await h.loaded();h.clickFile('A');assert.equal(h.editorPath(),'/tmp/A.txt');
+  const h=harness(t);await h.loaded();h.openFile('A');assert.equal(h.editorPath(),'/tmp/A.txt');
   let proceed,guards=0;h.guard.current=after=>{guards++;proceed=after};
-  h.clickFile('A');assert.equal(guards,0);
-  h.clickFile('B');assert.equal(guards,1);assert.equal(h.editorPath(),'/tmp/A.txt');
+  h.openFile('A');assert.equal(guards,0);
+  h.clickFile('B');assert.equal(guards,0);assert.equal(h.editorPath(),'/tmp/A.txt');
+  h.openFile('B');assert.equal(guards,1);assert.equal(h.editorPath(),'/tmp/A.txt');
   proceed();h.render();assert.equal(h.editorPath(),'/tmp/B.txt');
+});
+
+test('single click selects a file for copy without opening an editor; double click edits it',async t=>{
+  const h=harness(t);await h.loaded();h.clickFile('A');assert.equal(h.editorPath(),undefined);
+  const copy=h.find(n=>n.type==='button'&&n.props.children.includes('复制'));
+  assert.equal(copy.props.disabled,false);copy.props.onClick();h.render();
+  h.find(n=>n.type==='button'&&n.props.children.includes('粘贴到当前目录')).props.onClick();h.render();
+  assert.equal(h.find(n=>n.props?.action)?.props.action.source.path,'/tmp/A.txt');
+  h.openFile('A');assert.equal(h.editorPath(),'/tmp/A.txt');
+});
+
+test('selecting a tree directory synchronizes the path and terminal and creation targets',async t=>{
+  const h=harness(t),opened=[];await h.loaded();h.render({onTerminal:path=>opened.push(path)});
+  h.find(n=>n.type==='button'&&n.props['aria-label']==='展开目录 /tmp/code').props.onClick();h.render();
+  assert.equal(h.find(n=>n.type==='input'&&n.props['aria-label']==='服务器目录路径').props.value,'/tmp/code');
+  const terminal=()=>h.find(n=>n.type==='button'&&n.props.children.includes('在当前目录打开终端'));
+  terminal().props.onClick();assert.deepEqual(opened,['/tmp/code']);
+  h.find(n=>n.type==='button'&&n.props.children.includes('新建文件')).props.onClick();h.render();
+  assert.equal(h.find(n=>n.props?.action)?.props.action.directory,'/tmp/code');
+  // Unsubmitted address-bar input must not change the directory used by actions.
+  h.find(n=>n.type==='input'&&n.props['aria-label']==='服务器目录路径').props.onChange({target:{value:'/not-submitted'}});h.render();
+  terminal().props.onClick();assert.deepEqual(opened,['/tmp/code','/tmp/code']);
+  // Explicit navigation replaces the old selection as well as the tree root.
+  h.find(n=>n.type==='button'&&n.props['aria-label']==='刷新文件目录').props.onClick();await h.loaded();
+  assert.equal(h.find(n=>n.type==='input'&&n.props['aria-label']==='服务器目录路径').props.value,'/tmp/code');
+  h.find(n=>n.type==='button'&&n.props['aria-label']==='打开主目录').props.onClick();await h.loaded();
+  terminal().props.onClick();assert.equal(opened.at(-1),'/tmp');
 });
 
 test('external machine requests respect cancellation and wait until an active save finishes',t=>{
@@ -61,4 +91,15 @@ test('closing the file browser aborts its unfinished download',async t=>{
   }));
   await h.loaded();const download=h.find(n=>n.type==='button'&&n.props['aria-label']==='下载 /tmp/A.txt').props.onClick();
   await pending;assert.equal(signal.aborted,false);h.unmount();assert.equal(signal.aborted,true);await download;
+});
+
+test('terminal path requests reopen a minimized file window and keep unsaved edits guarded',t=>{
+  const h=harness(t,'FileBrowser');h.render();let proceed;
+  h.find(n=>n.type==='button'&&n.props['aria-label']==='最小化文件窗口').props.onClick();h.render();
+  h.body().props.editorClose.current=after=>{proceed=after};
+  h.render({host:h.hosts[0],requestId:'pwd-link',initialPath:'/data/训练 项目'});
+  assert.equal(h.body().props.navigation.path,'~');
+  assert.ok(h.find(n=>n.type==='button'&&n.props['aria-label']==='恢复文件窗口'));
+  proceed();h.render();assert.equal(h.body().props.navigation.path,'/data/训练 项目');
+  assert.ok(h.find(n=>n.type==='button'&&n.props['aria-label']==='最小化文件窗口'));
 });

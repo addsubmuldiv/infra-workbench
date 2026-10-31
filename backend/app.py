@@ -251,6 +251,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await app.state.terminals.close_host()
+        await app.state.file_transfers.close()
         await ssh.close()
         store.db.close()
 

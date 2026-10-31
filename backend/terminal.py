@@ -6,6 +6,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import shlex
 import time
 from ctypes import wintypes
 
@@ -30,10 +31,18 @@ class TerminalTickets:
         return bool(value and value[0]==host_id and value[1]==origin and value[2]>self.clock())
 
 
-def terminal_arguments(ssh, host):
+def directory_command(cwd):
+    if not isinstance(cwd,str) or not cwd.startswith('/') or len(cwd)>4096 or any(c in cwd for c in '\0\r\n'):
+        raise ValueError('终端起始目录必须是有效的绝对路径')
+    script='cd -- '+shlex.quote(cwd)+' && exec "${SHELL:-/bin/sh}" -l'
+    return 'exec /bin/sh -c '+shlex.quote(script)
+
+
+def terminal_arguments(ssh, host, cwd=None):
     args = ssh.arguments(host)
     args = [arg for arg in args if arg!='-T']
-    return args[:-1]+['-tt','-o','EscapeChar=none']+[args[-1]]
+    result=args[:-1]+['-tt','-o','EscapeChar=none']+[args[-1]]
+    return result+[directory_command(cwd)] if cwd is not None else result
 
 
 def dimensions(message):
@@ -125,7 +134,8 @@ class TerminalManager:
     def __init__(self,ssh):
         self.ssh, self.tickets, self.active = ssh, TerminalTickets(), {}
 
-    async def open_channel(self,host,cols,rows):
+    async def open_channel(self,host,cols,rows,cwd=None):
+        command=directory_command(cwd) if cwd is not None else None
         conn=self.ssh.sessions.get(host['id'])
         if conn and not conn.is_closed():
             current=await self.ssh.effective(host)
@@ -133,11 +143,12 @@ class TerminalManager:
             keys=('hostname','port','user','proxyjump','proxycommand','hostkeyalias')
             if original is None or any(current.get(key)!=original.get(key) for key in keys):
                 raise ValueError('SSH 配置已变化，请重新连接机器')
-            process=await asyncio.wait_for(conn.create_process(term_type='xterm-256color',term_size=(cols,rows)),15)
+            options=dict(term_type='xterm-256color',term_size=(cols,rows))
+            process=await asyncio.wait_for(conn.create_process(command,**options) if command is not None else conn.create_process(**options),15)
             return AsyncTerminal(process)
         if os.name!='nt':
             raise ValueError('原生 SSH 交互终端目前仅支持 Windows')
-        return await NativeTerminal.spawn(terminal_arguments(self.ssh,host),cols,rows)
+        return await NativeTerminal.spawn(terminal_arguments(self.ssh,host,cwd),cols,rows)
 
     async def close_host(self,host_id=None):
         tasks=[v['task'] for v in self.active.values() if host_id is None or v['host_id']==host_id]
@@ -159,7 +170,12 @@ class TerminalManager:
             if not isinstance(initial,dict) or initial.get('type')!='resize':
                 raise ValueError('终端初始化消息无效')
             cols,rows=dimensions(initial)
-            channel=await self.open_channel(host,cols,rows)
+            cwd=initial.get('cwd')
+            if cwd is not None:
+                directory_command(cwd)
+                channel=await self.open_channel(host,cols,rows,cwd=cwd)
+            else:
+                channel=await self.open_channel(host,cols,rows)
             await websocket.send_json(dict(type='ready'))
             credits=asyncio.Semaphore(8)
             pending=0

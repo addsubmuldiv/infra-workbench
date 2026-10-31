@@ -25,7 +25,10 @@ function harness(t,{tabs=null}={}){
     onData(fn){this.input=fn;return {dispose(){}}}
     onResize(fn){this.resized=fn;return {dispose(){}}}
     resize(cols,rows){this.cols=cols;this.rows=rows;this.resized?.({cols,rows})}
-    attachCustomKeyEventHandler(){}
+    attachCustomKeyEventHandler(handler){this.keyHandler=handler}
+    registerLinkProvider(provider){this.links=provider;return {dispose(){}}}
+    getSelection(){return this.selection||''}
+    paste(text){this.input(text)}
     write(text,callback){this.output.push(text);callback?.()}
     writeln(text){this.output.push(text)}
     scrollToBottom(){this.bottomCalls++}
@@ -61,6 +64,13 @@ function harness(t,{tabs=null}={}){
     if(name==='react')return react;
     if(name==='@xterm/xterm')return {Terminal};
     if(name==='@xterm/addon-fit')return {FitAddon:class {fit(){}proposeDimensions(){return {cols:100,rows:20}}}};
+    if(name==='./terminalPaths'){
+      const pathExports={};
+      const source=fs.readFileSync(new URL('../src/terminalPaths.ts',import.meta.url),'utf8');
+      const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
+      new Function('exports',compiled)(pathExports);
+      return pathExports;
+    }
     if(name==='lucide-react'||name.endsWith('.css'))return {};
     throw new Error('Unexpected dependency '+name);
   };
@@ -72,9 +82,9 @@ function harness(t,{tabs=null}={}){
 
 const host={id:'host',target:'synthetic-host',user:'tester'};
 const liveTab={id:'tab',host,phase:'running',generation:0};
-async function view(t){
+async function view(t,onDirectory,cwd){
   const h=harness(t),ref={current:null};
-  const tree=h.TerminalView({tab:liveTab,active:true,font:13,onPhase:p=>h.phases.push(p)},ref);
+  const tree=h.TerminalView({tab:{...liveTab,cwd},active:true,font:13,onPhase:p=>h.phases.push(p),onDirectory},ref);
   tree.props.ref.current={clientWidth:800,clientHeight:400,classList:{contains:()=>true}};
   h.mount();
   await new Promise(resolve=>setImmediate(resolve));
@@ -137,4 +147,48 @@ test('closed sessions do not prevent leaving the page',t=>{
   const h=harness(t,{tabs:[{...liveTab,phase:'closed'}]});
   h.TerminalDock({request:null,hosts:[host]});h.mount();
   assert.equal(h.listeners.has('beforeunload'),false);
+});
+
+test('Ctrl+C copies a selection, but still reaches the shell when nothing is selected',async t=>{
+  const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+  const copied=[];
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async text=>copied.push(text)}}});
+  t.after(()=>{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator});
+  const {term,socket}=await view(t);let prevented=0;
+  const event={type:'keydown',ctrlKey:true,shiftKey:false,altKey:false,code:'KeyC',preventDefault:()=>prevented++};
+  term.selection='selected output';
+  assert.equal(term.keyHandler(event),false);assert.deepEqual(copied,['selected output']);
+  assert.equal(prevented,1);assert.equal(socket.sent.filter(message=>message.type==='input').length,0);
+  term.selection='';assert.equal(term.keyHandler(event),true);assert.equal(prevented,1);
+});
+
+test('Ctrl+V allows native browser paste without emitting the shell literal-input control byte',async t=>{
+  const {term,socket}=await view(t);let prevented=false;
+  assert.equal(term.keyHandler({type:'keydown',ctrlKey:true,shiftKey:false,altKey:false,code:'KeyV',preventDefault:()=>{prevented=true}}),false);
+  assert.equal(prevented,false);assert.equal(socket.sent.filter(message=>message.type==='input').length,0);
+  // xterm's standard paste event processes the clipboard text via onData.
+  term.paste('ordinary clipboard text');assert.equal(socket.sent.at(-1).data,'ordinary clipboard text');
+});
+
+test('directory clicks carry the terminal host identity instead of the currently selected machine',async t=>{
+  const opened=[],{term}=await view(t,(id,path)=>opened.push({id,path}));
+  const text='/tmp',line={isWrapped:false,length:4,translateToString:()=>text,getCell:index=>({getChars:()=>text[index],getWidth:()=>1})};
+  term.buffer={active:{type:'normal',getLine:index=>index===0?line:undefined}};
+  let links;term.links.provideLinks(1,value=>links=value);
+  links[0].activate({ctrlKey:true,button:0,preventDefault(){}});
+  assert.deepEqual(opened,[{id:'host',path:'/tmp'}]);
+});
+
+test('a directory terminal sends its starting path only in the initial handshake',async t=>{
+  const {socket}=await view(t,undefined,"/data/中文 ; $(not-a-command)");
+  const first=socket.sent.find(message=>message.type==='resize');
+  assert.equal(first.cwd,"/data/中文 ; $(not-a-command)");
+  assert.equal(socket.sent.filter(message=>message.cwd).length,1);
+});
+
+test('opening a terminal in a directory creates a new tab and preserves existing sessions',t=>{
+  const h=harness(t,{tabs:[liveTab]});
+  h.TerminalDock({request:{id:'request',host,cwd:'/data'},hosts:[host]});h.mount();
+  let tabs=[liveTab];for(const update of h.updates.filter(value=>value.index===0))tabs=typeof update.value==='function'?update.value(tabs):update.value;
+  assert.equal(tabs.length,2);assert.equal(tabs[0],liveTab);assert.equal(tabs[1].cwd,'/data');
 });

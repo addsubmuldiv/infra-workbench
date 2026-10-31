@@ -4,11 +4,12 @@ import {FitAddon} from '@xterm/addon-fit';
 import {ArrowDownToLine,ChevronDown,ChevronUp,Copy,Maximize2,Minimize2,Plus,RefreshCw,ShieldCheck,Terminal,Trash2,X} from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import './terminal.css';
+import {directoryLinkProvider} from './terminalPaths';
 
 type Host={id:string;target:string;user:string|null};
-export type TerminalRequest={id:string;host:Host};
+export type TerminalRequest={id:string;host:Host;cwd?:string};
 type Phase='connecting'|'running'|'closed'|'error';
-type Tab={id:string;host:Host;phase:Phase;generation:number};
+type Tab={id:string;host:Host;phase:Phase;generation:number;cwd?:string};
 type Handle={clear:()=>void;copy:()=>void;focus:()=>void;scrollToBottom:()=>void};
 const labels:Record<Phase,string>={connecting:'正在连接',running:'会话运行中',closed:'连接已结束',error:'连接失败'};
 
@@ -20,9 +21,10 @@ function palette(){
     brightBlack:'#8090a4',brightRed:'#ef8c8c',brightGreen:'#7bcea7',brightYellow:'#e6c488',brightBlue:'#8bb5ef',brightMagenta:'#c5a3ea',brightCyan:'#89d3d6',brightWhite:'#f0f4fa'};
 }
 
-const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase:(phase:Phase)=>void}>(function TerminalView({tab,active,font,onPhase},ref){
+const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase:(phase:Phase)=>void;onDirectory?:(hostId:string,path:string)=>void}>(function TerminalView({tab,active,font,onPhase,onDirectory},ref){
   const element=useRef<HTMLDivElement>(null),terminal=useRef<XTerminal|null>(null),resizeRef=useRef<(()=>void)|null>(null);
   const socketRef=useRef<WebSocket|null>(null);
+  const directoryRef=useRef(onDirectory);directoryRef.current=onDirectory;
   useImperativeHandle(ref,()=>({clear:()=>terminal.current?.clear(),focus:()=>terminal.current?.focus(),scrollToBottom:()=>terminal.current?.scrollToBottom(),copy:()=>{
     const text=terminal.current?.getSelection();if(text)navigator.clipboard.writeText(text).catch(()=>{});
   }}),[]);
@@ -32,6 +34,7 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
     const term=new XTerminal({cursorBlink:true,cursorStyle:'bar',fontFamily:'"Cascadia Code","Cascadia Mono",Consolas,"Microsoft YaHei",monospace',fontSize:font,
       lineHeight:1.28,letterSpacing:.2,scrollback:5000,theme:palette(),allowProposedApi:false,convertEol:false});
     const fit=new FitAddon();term.loadAddon(fit);term.open(element.current!);terminal.current=term;
+    const links=term.registerLinkProvider(directoryLinkProvider(term,path=>directoryRef.current?.(tab.host.id,path)));
     const send=(message:unknown)=>{if(socketRef.current?.readyState===WebSocket.OPEN)socketRef.current.send(JSON.stringify(message))};
     const resize=()=>{
       if(!element.current||element.current.clientWidth<=10||element.current.clientHeight<=10)return;
@@ -53,11 +56,13 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
     });
     const size=term.onResize(({cols,rows})=>{if(connected)send({type:'resize',cols:Math.min(500,Math.max(2,cols)),rows:Math.min(200,Math.max(2,rows))})});
     term.attachCustomKeyEventHandler(event=>{
-      if(event.type==='keydown'&&event.ctrlKey&&event.shiftKey&&event.code==='KeyC'){
-        const selected=term.getSelection();if(selected)navigator.clipboard.writeText(selected).catch(()=>{});return false;
+      if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&event.code==='KeyC'){
+        const selected=term.getSelection();
+        if(selected||event.shiftKey){event.preventDefault();if(selected)navigator.clipboard.writeText(selected).catch(()=>{});return false}
       }
-      if(event.type==='keydown'&&event.ctrlKey&&event.shiftKey&&event.code==='KeyV'){
-        navigator.clipboard.readText().then(text=>{if(!disposed)term.paste(text)}).catch(()=>{});return false;
+      if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&event.code==='KeyV'){
+        if(!event.shiftKey)return false; // Let the browser paste event feed xterm; do not send the shell's Ctrl+V byte.
+        event.preventDefault();navigator.clipboard.readText().then(text=>{if(!disposed)term.paste(text)}).catch(()=>{});return false;
       }
       return true;
     });
@@ -69,7 +74,7 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
         if(disposed)return;
         const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/terminal/'+tab.host.id,['iwb-terminal',data.ticket]);
         socketRef.current=ws;
-        ws.onopen=()=>{resize();send({type:'resize',cols:Math.min(500,Math.max(2,term.cols)),rows:Math.min(200,Math.max(2,term.rows))})};
+        ws.onopen=()=>{resize();send({type:'resize',cols:Math.min(500,Math.max(2,term.cols)),rows:Math.min(200,Math.max(2,term.rows)),...(tab.cwd?{cwd:tab.cwd}:{})})};
         ws.onmessage=event=>{
           if(disposed)return;
           const message=JSON.parse(event.data);
@@ -84,21 +89,21 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
       }catch(error){if(!disposed){phase('error');term.writeln('\r\n'+(error instanceof Error?error.message:'连接失败'))}}
     };
     start();
-    return()=>{disposed=true;connected=false;observer.disconnect();themeObserver.disconnect();input.dispose();size.dispose();socketRef.current?.close();socketRef.current=null;term.dispose();terminal.current=null;resizeRef.current=null};
+    return()=>{disposed=true;connected=false;observer.disconnect();themeObserver.disconnect();input.dispose();size.dispose();links.dispose();socketRef.current?.close();socketRef.current=null;term.dispose();terminal.current=null;resizeRef.current=null};
   },[tab.id,tab.generation]);
   useEffect(()=>{if(terminal.current){terminal.current.options.fontSize=font;if(active)resizeRef.current?.()}},[font]);
   useEffect(()=>{if(active){const frame=requestAnimationFrame(()=>{resizeRef.current?.();terminal.current?.focus()});return()=>cancelAnimationFrame(frame)}},[active]);
   return <div ref={element} className={'terminal-screen '+(active?'active':'')} aria-label={tab.host.target+' SSH 交互终端'}/>;
 });
 
-export function TerminalDock({request,hosts}:{request:TerminalRequest|null;hosts:Host[]}){
+export function TerminalDock({request,hosts,onDirectory}:{request:TerminalRequest|null;hosts:Host[];onDirectory?:(hostId:string,path:string)=>void}){
   const [tabs,setTabs]=useState<Tab[]>([]),[active,setActive]=useState(''),[collapsed,setCollapsed]=useState(false),[maximized,setMaximized]=useState(false);
   const [height,setHeight]=useState(370),[font,setFont]=useState(13),[picker,setPicker]=useState(false),[hint,setHint]=useState('');
   const handles=useRef<Record<string,Handle|null>>({}),dock=useRef<HTMLElement>(null);
   const current=tabs.find(tab=>tab.id===active);
   const hasLiveSessions=tabs.some(tab=>tab.phase==='connecting'||tab.phase==='running');
-  const add=(host:Host)=>{if(tabs.length>=12){setHint('最多同时打开 12 个终端');return}const id=crypto.randomUUID();setTabs(old=>[...old,{id,host,phase:'connecting',generation:0}]);setActive(id);setCollapsed(false);setPicker(false)};
-  useEffect(()=>{if(request){const existing=tabs.find(tab=>tab.host.id===request.host.id);if(existing){setActive(existing.id);setCollapsed(false)}else add(request.host)}},[request]);
+  const add=(host:Host,cwd?:string)=>{if(tabs.length>=12){setHint('最多同时打开 12 个终端');return}const id=crypto.randomUUID();setTabs(old=>[...old,{id,host,phase:'connecting',generation:0,cwd}]);setActive(id);setCollapsed(false);setPicker(false)};
+  useEffect(()=>{if(request){const existing=request.cwd===undefined?tabs.find(tab=>tab.host.id===request.host.id):undefined;if(existing){setActive(existing.id);setCollapsed(false)}else add(request.host,request.cwd)}},[request]);
   useEffect(()=>{setTabs(old=>old.filter(tab=>hosts.some(host=>host.id===tab.host.id)))},[hosts.map(host=>host.id).join(',')]);
   useEffect(()=>{if(tabs.length&&!tabs.some(tab=>tab.id===active))setActive(tabs.at(-1)!.id)},[tabs,active]);
   useEffect(()=>{document.documentElement.style.setProperty('--terminal-space',tabs.length?(collapsed?'64px':(maximized?'calc(100vh - 130px)':height+24+'px')):'0px');return()=>{document.documentElement.style.removeProperty('--terminal-space')}},[tabs.length,collapsed,maximized,height]);
@@ -128,9 +133,9 @@ export function TerminalDock({request,hosts}:{request:TerminalRequest|null;hosts
     </div>
     <div className="terminal-body" style={{display:collapsed?'none':undefined}}>
       <div className="terminal-tabbar" role="tablist" aria-label="SSH 会话"><div className="terminal-tabs">{tabs.map((tab,index)=><div key={tab.id} className={'terminal-tab '+(tab.id===active?'selected':'')}><button role="tab" aria-selected={tab.id===active} onClick={()=>setActive(tab.id)}><i className={'session-dot '+tab.phase}/><span>{tab.host.target}</span><small>{String(index+1).padStart(2,'0')}</small></button><button className="terminal-tab-close" aria-label={'关闭 '+tab.host.target+' 终端'} onClick={()=>close(tab.id)}><X size={12}/></button></div>)}</div><div className="terminal-add"><button aria-label="新建 SSH 终端" title="新建会话" onClick={()=>setPicker(!picker)}><Plus size={17}/></button>{picker&&<div className="terminal-picker"><strong>连接到机器</strong>{hosts.map(host=><button key={host.id} onClick={()=>add(host)}><Terminal size={14}/><span>{host.target}<small>{host.user||'使用 SSH 配置账号'}</small></span><Plus size={14}/></button>)}</div>}</div></div>
-      <div className="terminal-toolbar"><div><span className="terminal-path">{current?.host.user||'SSH'}<b>@</b>{current?.host.target}</span><span className={'terminal-phase '+current?.phase}><i className={'session-dot '+current?.phase}/>{current&&labels[current.phase]}</span></div><div><button aria-label="减小终端字号" onClick={()=>setFont(f=>Math.max(10,f-1))}>A−</button><span className="terminal-font-size">{font}</span><button aria-label="增大终端字号" onClick={()=>setFont(f=>Math.min(22,f+1))}>A+</button><span className="terminal-divider"/><button aria-label="复制终端所选内容" title="复制所选内容 · Ctrl+Shift+C" onClick={()=>{handles.current[active]?.copy();setHint('选中文字后可复制；粘贴使用 Ctrl+Shift+V')}}><Copy size={14}/></button><button aria-label="清空终端显示" title="仅清空显示，不中断命令" onClick={()=>handles.current[active]?.clear()}><Trash2 size={14}/></button><button aria-label="滚动到终端底部" onClick={()=>{handles.current[active]?.scrollToBottom()}}><ArrowDownToLine size={14}/></button><button aria-label="重新连接当前终端" title="结束当前会话并重新连接" onClick={()=>{if(current&&(['closed','error'].includes(current.phase)||window.confirm('重新连接将结束当前 SSH 会话，是否继续？')))setTabs(old=>old.map(tab=>tab.id===active?{...tab,generation:tab.generation+1,phase:'connecting'}:tab))}}><RefreshCw size={14}/></button></div></div>
-      <div className="terminal-viewport">{tabs.map(tab=><TerminalView key={tab.id} ref={handle=>{handles.current[tab.id]=handle}} tab={tab} active={tab.id===active} font={font} onPhase={phase=>setTabs(old=>old.map(item=>item.id===tab.id?{...item,phase}:item))}/>)}</div>
-      <div className="terminal-statusbar"><span><ShieldCheck size={12}/>本机 SSH · 独立交互会话</span><span>{hint||'Ctrl+Shift+C 复制 · Ctrl+Shift+V 粘贴 · 长任务建议使用 tmux'}</span><span>UTF-8 <i/>xterm-256color</span></div>
+      <div className="terminal-toolbar"><div><span className="terminal-path">{current?.host.user||'SSH'}<b>@</b>{current?.host.target}</span><span className={'terminal-phase '+current?.phase}><i className={'session-dot '+current?.phase}/>{current&&labels[current.phase]}</span></div><div><button aria-label="减小终端字号" onClick={()=>setFont(f=>Math.max(10,f-1))}>A−</button><span className="terminal-font-size">{font}</span><button aria-label="增大终端字号" onClick={()=>setFont(f=>Math.min(22,f+1))}>A+</button><span className="terminal-divider"/><button aria-label="复制终端所选内容" title="复制所选内容 · Ctrl+C" onClick={()=>{handles.current[active]?.copy();setHint('选中文字后 Ctrl+C 复制；Ctrl+V 粘贴')}}><Copy size={14}/></button><button aria-label="清空终端显示" title="仅清空显示，不中断命令" onClick={()=>handles.current[active]?.clear()}><Trash2 size={14}/></button><button aria-label="滚动到终端底部" onClick={()=>{handles.current[active]?.scrollToBottom()}}><ArrowDownToLine size={14}/></button><button aria-label="重新连接当前终端" title="结束当前会话并重新连接" onClick={()=>{if(current&&(['closed','error'].includes(current.phase)||window.confirm('重新连接将结束当前 SSH 会话，是否继续？')))setTabs(old=>old.map(tab=>tab.id===active?{...tab,generation:tab.generation+1,phase:'connecting'}:tab))}}><RefreshCw size={14}/></button></div></div>
+      <div className="terminal-viewport">{tabs.map(tab=><TerminalView key={tab.id} ref={handle=>{handles.current[tab.id]=handle}} tab={tab} active={tab.id===active} font={font} onDirectory={onDirectory} onPhase={phase=>setTabs(old=>old.map(item=>item.id===tab.id?{...item,phase}:item))}/>)}</div>
+      <div className="terminal-statusbar"><span><ShieldCheck size={12}/>本机 SSH · 独立交互会话</span><span>{hint||'Ctrl+C 复制选中 · Ctrl+V 粘贴 · Ctrl+点击 pwd 路径打开目录'}</span><span>UTF-8 <i/>xterm-256color</span></div>
     </div>
   </section>;
 }

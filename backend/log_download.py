@@ -27,7 +27,7 @@ def download_filename(host,path):
     return re.sub(r'[\x00-\x1f\x7f<>:"/\\|?*]','_',name).strip(' .')[:180] or 'training.log'
 
 
-async def receive_file(reader,target,disconnected=None):
+async def receive_file(reader,target,disconnected=None,on_progress=None):
     consumed=0
     while True:
         line=await reader.readline()
@@ -41,12 +41,14 @@ async def receive_file(reader,target,disconnected=None):
     size=metadata.get('size')
     if type(size) is not int or not 0<=size<=MAX_DOWNLOAD: raise ValueError('日志文件大小无效或超过 512 MiB')
     remaining=size
+    if on_progress: on_progress(0,size)
     while remaining:
         if disconnected is not None and await disconnected(): raise ValueError('下载已取消')
         block=await reader.read(min(128*1024,remaining))
         if not block: raise ValueError('日志下载不完整，请重试；未保存部分文件')
         await asyncio.to_thread(target.write,block)
         remaining-=len(block)
+        if on_progress: on_progress(size-remaining,size)
     if await reader.read(1): raise ValueError('远端文件传输长度不匹配，请重试')
     return metadata
 
@@ -94,12 +96,12 @@ async def open_download(ssh,host,source):
             with contextlib.suppress(asyncio.CancelledError,Exception): await error_task
 
 
-async def original_log_response(ssh,host,path,request:Request,label='日志'):
+async def original_log_response(ssh,host,path,request:Request,label='日志',on_progress=None):
     target=tempfile.TemporaryFile(mode='w+b')
     try:
         async def transfer():
             async with open_download(ssh,host,download_script(path)) as (reader,wait):
-                metadata=await receive_file(reader,target,request.is_disconnected)
+                metadata=await receive_file(reader,target,request.is_disconnected,on_progress)
                 if await wait()!=0: raise ValueError('下载期间日志发生变化或连接断开，请重试；未保存部分文件')
                 return metadata
         metadata=await asyncio.wait_for(transfer(),300)
