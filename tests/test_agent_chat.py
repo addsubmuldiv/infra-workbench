@@ -174,7 +174,7 @@ def test_tool_errors_are_visible_and_model_cannot_report_a_failed_check_as_succe
         harness,model,tools=service(tmp_path);chat=harness.create()
         async def failed(*args):raise ValueError('没有读取权限')
         tools.call=failed
-        model.replies=[tool_message('read_file',{'host_id':'a','path':'/file'}),dict(message=dict(role='assistant',content='文件无法读取，权限不足。'))]
+        model.replies=[tool_message('read_server_file',{'host_id':'a','path':'/file'}),dict(message=dict(role='assistant',content='文件无法读取，权限不足。'))]
         value=harness.begin(chat['id'],ChatMessageRequest(content='读文件'))
         await harness.runs[value['active_run']]
         result=harness.get(chat['id'])

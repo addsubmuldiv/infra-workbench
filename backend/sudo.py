@@ -5,6 +5,8 @@ import json
 import shlex
 from pathlib import Path
 
+from . import remote_probe
+
 HELPER = '/usr/local/libexec/infra-workbench-process-v1.py'
 PYTHON = '/usr/bin/python3'
 PROTOCOL = 'iwb-process-v1'
@@ -22,8 +24,26 @@ def validate_request(args):
 
 
 def helper_source():
-    probe = (Path(__file__).parent/'remote_probe.py').read_text(encoding='utf-8')
-    return probe.split('\ndef main():', 1)[0]+'\n'+inspect.getsource(validate_request)+'''
+    # Only process inspection belongs in the privileged helper. Including the
+    # whole monitor made unrelated changes (e.g. tmux) invalidate installed
+    # helpers and silently drop configured hosts back to unprivileged reads.
+    source = '''"""Fixed read-only process metadata helper."""
+import json
+import os
+import re
+import shlex
+from pathlib import Path
+from urllib.parse import unquote
+try:
+    import pwd
+except ImportError:
+    pwd = None
+
+'''
+    for function in (remote_probe.sensitive_name, remote_probe.redact_arguments,
+                     remote_probe.read_process_details, validate_request):
+        source += inspect.getsource(function)+'\n'
+    return source+'''
 if __name__ == '__main__':
     import sys
     if os.geteuid() != 0:
@@ -235,7 +255,7 @@ class SudoService:
         return self.view(host)
 
     async def enrich(self, host, pids, cutoff):
-        if not host.get('sudo_enabled') or not pids or cutoff is None:
+        if not host.get('sudo_enabled'):
             return {}
         try:
             config = await self.ssh.effective(host)
@@ -245,21 +265,41 @@ class SudoService:
                 return {}
             if self.states.get(host['id'])=='denied':
                 return {}  # Do not repeatedly retry a rejected password every poll.
+
+            async def authorized(command):
+                out = await self.invoke(host, command(False), None, config)
+                if out is None and self.states.get(host['id'])=='password_required':
+                    password = self.password(host, identity)
+                    if password is not None:
+                        out = await self.invoke(host, command(True), password, config)
+                return out
+
             state = await self.helper_state(host, config)
+            if state=='version_mismatch':
+                # Enabling this host already authorized installing its fixed
+                # helper. Maintain it after upgrades using the same bound
+                # identity and saved credential, including when no cards are busy.
+                output = await authorized(installation_command)
+                if output is None:
+                    return {}
+                if 'IWB_INSTALL_OK' not in output:
+                    self.status(host,'error')
+                    return {}
+                state = await self.helper_state(host, config)
             if state!='ready':
                 self.status(host,state)
                 return {}
-            out = await self.invoke(host,helper_command(pids,cutoff),None,config)
-            if out is None and self.states.get(host['id'])=='password_required':
-                password = self.password(host,identity)
-                if password is not None:
-                    out = await self.invoke(host,helper_command(pids,cutoff,True),password,config)
+            inspect_pids = bool(pids) and cutoff is not None
+            out = await authorized(lambda password: helper_command(pids,cutoff,password)
+                                   if inspect_pids else helper_command(password=password))
             if out is None:
                 return {}
             details = self.decode(out).get('details',{})
             if not isinstance(details,dict):
                 raise ValueError('invalid details')
             self.status(host,'ready')
+            if not inspect_pids:
+                return {}
             return {str(pid):details[str(pid)] for pid in pids if isinstance(details.get(str(pid)),dict)
                     and details[str(pid)].get('pid')==pid}
         except Exception:

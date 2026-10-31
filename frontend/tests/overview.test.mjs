@@ -9,6 +9,7 @@ import * as requests from '../src/requests.ts';
 import * as usage from '../src/hostUsage.ts';
 import * as hostList from '../src/hostList.ts';
 import * as ids from '../src/browserId.ts';
+import * as assistantLayout from '../src/assistantLayout.ts';
 
 const GiB=1024**3;
 function host(id,kind,count,fresh=true){return {id,target:id,user:null,auth:'key',snapshot:{status:fresh?'online':'error',fresh,collected_at:1,devices:Array.from({length:count},(_,index)=>({id:String(index),kind,name:'Test device',memory_total:64*GiB,memory_used:8*GiB,memory_free:56*GiB,utilization:0,temperature:35,health:'OK',processes_known:true,processes:[]}))}}}
@@ -26,7 +27,7 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts){
   }
   const source=fs.readFileSync(new URL('../src/main.tsx',import.meta.url),'utf8')+'\nexport {App};';
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};const mocks={'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':preferences,'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids};
+  const exports={};const mocks={'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':preferences,'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
   new Function('require','exports',js)(name=>mocks[name]||new Proxy({},{get:(_,key)=>key}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);
@@ -76,6 +77,15 @@ test('legacy connections page displays overview without a duplicate navigation e
   const h=harness(t,'#connections');h.render();
   assert.ok(h.button('算力总览'));assert.equal(h.button('机器连接'),undefined);
   assert.deepEqual(h.metrics(),['2/ 3','14个设备','2台机器','0条']);
+});
+
+test('AI navigation toggles the side window without leaving the current workspace page',t=>{
+  const h=harness(t);h.render();h.button('卡预约').props.onClick();h.render();
+  assert.equal(h.button('AI 助手').props['aria-pressed'],true);
+  h.button('AI 助手').props.onClick();h.render();assert.equal(h.button('AI 助手').props['aria-pressed'],false);
+  assert.equal(h.button('卡预约').props['aria-current'],'page');
+  h.button('展开 AI 助手').props.onClick();h.render();assert.equal(h.button('AI 助手').props['aria-pressed'],true);
+  assert.equal(h.button('卡预约').props['aria-current'],'page');
 });
 
 test('machine names and checkboxes open overview from other workspace pages',t=>{

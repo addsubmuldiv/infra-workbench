@@ -78,6 +78,8 @@ def credential_identity(config):
 
 
 class AgentAPIService:
+    supports_streaming = True
+
     def __init__(self, store, vault):
         self.store, self.vault = store, vault
         self.config = store.load('agent_api_settings', AgentAPISettings().model_dump(exclude={'api_key', 'remember'}))
@@ -247,9 +249,9 @@ class AgentAPIService:
                 result = result.replace(key, '[已隐藏 API key]')
             return dict(text=result, protocol=protocol, model=config['model'])
 
-    async def turn(self,instructions,messages,tools):
+    async def turn(self,instructions,messages,tools,*,on_text=None):
         from .agent_model_turn import model_turn
-        return await model_turn(self,instructions,messages,tools)
+        return await model_turn(self,instructions,messages,tools,on_text=on_text)
 
     async def test(self):
         async with self.lock:

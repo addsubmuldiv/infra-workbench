@@ -38,6 +38,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-backgroun
 | `backend/ssh_passwords.py` | 身份绑定的可选 SSH 密码存储，与 sudo/邮件分开 |
 | `backend/mcp_server.py` | 官方 SDK Streamable HTTP 适配与现有后台生命周期集成 |
 | `backend/agent_api.py` | 内置模型接口配置、独立凭据、Responses/Chat Completions 适配和连接测试 |
+| `backend/agent_runtime.py` / `agent_langchain.py` | Deep Agents 图、模型适配、虚拟技能、工具记录及框架状态保存；不自行维护模型/工具循环 |
+| `backend/skills/*/SKILL.md` | 只读业务技能；下一轮对话发现更新，不加载用户目录中的未知技能 |
 | `backend/infra_assistant.py` / `resource_history.py` | 中文只读查询条件、确定性跨机匹配、有界变化记录及带引用的 AI 摘要 |
 | `backend/core.py` | GPU/NPU 解析和资源判断 |
 | `backend/remote_probe.py` | 远端只读采集 CPU、内存、设备、进程和端口 |
