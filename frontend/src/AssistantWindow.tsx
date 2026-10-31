@@ -60,7 +60,7 @@ export function AssistantWindow({open,onClose,onDockWidthChange,...assistantProp
   };
   const frame=fitFrame(layout.frame,size);
   const dimensions=floating?{left:frame.x,top:frame.y,width:frame.width,height:frame.height}:{right:0,top:0,width:dockWidth,height:'100dvh'};
-  return <section ref={element} hidden={!open} className={'assistant-window '+layout.mode+(preview?' dock-preview':'')+(dragging?' dragging':'')} style={dimensions}
+  return <section id="infra-assistant-panel" ref={element} hidden={!open} className={'assistant-window '+layout.mode+(preview?' dock-preview':'')+(dragging?' dragging':'')} style={dimensions}
     role={floating?'dialog':'complementary'} aria-label="AI 助手窗口" aria-modal={floating?false:undefined} data-floating-window={open&&floating?'assistant':undefined}
     onPointerDownCapture={floating?activateFloatingWindow:undefined} onFocusCapture={floating?activateFloatingWindow:undefined}
     onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onLostPointerCapture={event=>finish(event,true)}>
