@@ -65,10 +65,11 @@ def bundled_files():
 
 
 class ToolTrace(AgentMiddleware):
-    def __init__(self, turn, tools, allowed, secret, save, tool_names):
+    def __init__(self, turn, tools, allowed, secret, save, tool_names, skill_receipts=()):
         self.turn, self.workbench_tools, self.allowed, self.secret, self.save = turn, tools, allowed, secret, save
         self.total, self.remote = 0, 0
         self.tool_names = tool_names
+        self.skill_receipts = {item['name']: item for item in skill_receipts}
 
     async def awrap_tool_call(self, request, handler):
         call = request.tool_call
@@ -114,6 +115,21 @@ class ToolTrace(AgentMiddleware):
                     trace['status'] = 'failed'
             except (ValueError, AttributeError, TypeError):
                 pass
+        if trace['status'] == 'succeeded':
+            skill_name = None
+            if name == 'read_file':
+                parts = args.get('file_path', '').split('/')
+                if len(parts) == 4 and parts[1] == 'skills' and parts[3] == 'SKILL.md':
+                    skill_name = parts[2]
+            elif name == 'read_skill':
+                # Historical/disabled reads are not activation of the current snapshot.
+                skill_name = args.get('name')
+                receipt = self.skill_receipts.get(skill_name)
+                if receipt and args.get('version', receipt['version']) != receipt['version']:
+                    skill_name = None
+            receipt = self.skill_receipts.get(skill_name)
+            if receipt and receipt not in self.turn.setdefault('skills_read', []):
+                self.turn['skills_read'].append(dict(receipt))
         self.save()
         return result
 
@@ -136,7 +152,7 @@ def repair_messages(messages):
     return result
 
 
-async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, save, start_text, on_text, sanitize):
+async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, save, start_text, on_text, sanitize, *, skills=None):
     turn = chat['turns'][-1]
     model_calls = 0
 
@@ -147,7 +163,23 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
             raise RunLimit('已达本轮模型步骤上限，已有检查结果保留，可继续追问。')
         start_text()
 
-    async with gateway_for(tools).session(chat['state'], allowed) as client:
+    gateway = gateway_for(tools)
+    skills = skills or getattr(gateway.service, 'skills', None)
+    gateway.service.skills = skills
+    skill_details = None
+    if skills is not None:
+        with skills.lock:
+            text_files, receipts = skills.snapshot()
+            skill_details = {item['name']: skills.read(item['name']) for item in receipts}
+        files = {path: create_file_data(content) for path, content in text_files.items()}
+    else:
+        files, receipts = bundled_files(), []
+    turn['skill_snapshot'] = receipts
+    turn['skills_read'] = []
+    selected = turn.get('selected_skill_names', [])
+    if selected:
+        instructions += '\n用户明确选择本轮技能，请先读取对应 SKILL.md，再结合任务使用：' + json.dumps(selected, ensure_ascii=False)
+    async with gateway.session(chat['state'], allowed, skill_details) as client:
         mcp_tools = await discover_tools(client, secret)
         model = WorkbenchChatModel(provider, on_start=model_start, on_text=on_text, sanitize=sanitize)
         summary_model = WorkbenchChatModel(provider, sanitize=sanitize)
@@ -158,7 +190,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
             backend=backend, skills=['/skills/'], checkpointer=saver,
             middleware=[FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'glob', 'grep']),
                         create_summarization_middleware(summary_model, backend),
-                        ToolTrace(turn, tools, allowed, secret, save, {t.name for t in mcp_tools})],
+                        ToolTrace(turn, tools, allowed, secret, save, {t.name for t in mcp_tools}, receipts)],
         )
         state = unpack_state(chat.get('deep_state', {}))
         previous = state.get('messages')
@@ -169,7 +201,10 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
                     for call in message.tool_calls:
                         call['name'] = REMOTE_NAMES.get(call['name'], call['name'])
         state['messages'] = repair_messages(previous)
-        state['files'] = dict(state.get('files', {}), **bundled_files())
+        # Skill paths are replaced, not merged: disabled/deleted attachments must disappear.
+        state['files'] = {path: value for path, value in state.get('files', {}).items()
+                          if path != '/skills' and not path.startswith('/skills/')}
+        state['files'].update(files)
         state['skills_metadata'] = None  # Re-read the packaged library on each user turn.
         config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': 100}
         # This application has private server data: never enable hosted tracing even

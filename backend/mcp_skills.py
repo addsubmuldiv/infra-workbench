@@ -48,3 +48,70 @@ def call(name, args):
         description = next((line[len('description:'):].strip() for line in text.splitlines() if line.startswith('description:')), '')
         items.append(dict(name=path.parent.name, description=description))
     return response(dict(items=items))
+
+
+# Management tools write only to the application-owned user skill store.
+FILES = {'type': 'object', 'minProperties': 1, 'maxProperties': 128,
+         'additionalProperties': {'type': 'string', 'maxLength': 1048576}}
+REV = {'type': 'integer', 'minimum': 1}
+NAME = {'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$', 'maxLength': 64}
+
+def management_spec(name, description, properties, required, readonly=False):
+    value = spec(name, description, properties, required)
+    value['annotations']['readOnlyHint'] = readonly
+    value['annotations']['idempotentHint'] = readonly
+    return value
+
+MANAGEMENT = {
+    'list_managed_skills': management_spec('list_managed_skills', '管理用途：列出所有内置和用户技能，含停用状态及最新版本。激活技能列表以本轮 list_skills 快照为准。', {}, [], True),
+    'list_skill_drafts': management_spec('list_skill_drafts', '列出尚未安装的持久化技能草稿，用 get_skill_draft 继续编辑。', {}, [], True),
+    'inspect_skill': management_spec('inspect_skill', '管理用途：读取当前或历史技能版本，包括停用技能。内容仅供编辑参考，不改变本轮激活快照。', {'name':NAME, 'version':REV}, ['name'], True),
+    'get_skill_draft': management_spec('get_skill_draft', '读取技能草稿及修订号。', {'draft_id': {'type':'string'}}, ['draft_id'], True),
+    'create_skill_draft': management_spec('create_skill_draft', '生成用户技能草稿，不安装。files 的键为包内相对路径，必须含 SKILL.md；name/description 遵循 Agent Skills 标准。声明依赖用 metadata.workbench-required-tools（空格分隔）。更新需传 skill_name 和 base_version；复制内置技能必须使用新名称。',
+        {'files': FILES, 'skill_name': NAME, 'base_version': REV}, ['files']),
+    'update_skill_draft': management_spec('update_skill_draft', '替换草稿文本文件，需要当前修订号；只改草稿，不改变已安装技能。',
+        {'draft_id': {'type':'string'}, 'revision': REV, 'files': FILES}, ['draft_id','revision','files']),
+    'validate_skill_draft': management_spec('validate_skill_draft', '检查草稿格式、文件引用和声明的工具依赖；通过不代表实际运行成功。',
+        {'draft_id': {'type':'string'}, 'revision': REV}, ['draft_id','revision'], True),
+    'install_skill_draft': management_spec('install_skill_draft', '仅在用户明确要求安装或更新技能时调用。重新校验指定草稿修订，安装不可变版本；下一轮生效，不能增加工具权限。',
+        {'draft_id': {'type':'string'}, 'revision': REV}, ['draft_id','revision']),
+    'set_skill_enabled': management_spec('set_skill_enabled', '按用户要求启用或停用用户技能，下一轮生效。内置技能不可修改。',
+        {'name': NAME, 'enabled': {'type':'boolean'}, 'expected_version': REV}, ['name','enabled','expected_version']),
+    'rollback_skill': management_spec('rollback_skill', '按用户要求将用户技能切换到指定历史版本，下一轮生效。',
+        {'name': NAME, 'version': REV, 'expected_version': REV}, ['name','version','expected_version']),
+}
+
+def skill_catalog():
+    catalog = dict(CATALOG, **MANAGEMENT)
+    catalog['list_skills'] = spec('list_skills', '内置 Agent 列出本轮启用的技能快照；外部客户端列出当前技能库。管理含停用技能请用 list_managed_skills。', {}, [])
+    catalog['read_skill'] = spec('read_skill', '读取指定技能和版本，包括文本附件及版本元数据。读取不表示执行。',
+        {'name': NAME, 'version': REV}, ['name'])
+    return catalog
+
+def registry_call(service, name, args, tools):
+    from .skill_service import SkillError
+    try:
+        if name == 'get_workbench_entry':
+            return call(name, args)
+        if name == 'list_skill_drafts':
+            data = {'items': service.list_drafts()}
+        elif name in ('list_skills', 'list_managed_skills'):
+            data = {'items': service.catalog()}
+        elif name in ('read_skill', 'inspect_skill'):
+            data = service.read(**args)
+            data['content'] = data['files'].get('SKILL.md', '')
+        elif name == 'get_skill_draft':
+            data = service.read_draft(args['draft_id'])
+        elif name in ('validate_skill_draft', 'install_skill_draft'):
+            data = getattr(service, name.replace('_skill', ''))(args['draft_id'], args['revision'], list(tools))
+        elif name == 'update_skill_draft':
+            data = service.update_draft(args['draft_id'], args['revision'], args['files'])
+        elif name == 'set_skill_enabled':
+            data = service.set_enabled(**args)
+        elif name == 'rollback_skill':
+            data = service.rollback(**args)
+        else:
+            data = service.create_draft(**args)
+        return response(data)
+    except SkillError as exc:
+        raise AgentError(exc.code, str(exc), {'user_action':'检查草稿、版本或工具依赖；冲突时重新读取最新版本，不盲目覆盖。'}) from None

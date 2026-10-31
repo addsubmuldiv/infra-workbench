@@ -335,7 +335,12 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     app.state.infra_assistant = InfraAssistant(agent_api, app.state.agent_service.inventory, resource_history, refresh_assistant)
     register_assistant_routes(app, app.state.infra_assistant)
     probes = ChatTools(app.state.infra_assistant,app.state.agent_service,ssh)
+    from .skill_service import SkillService
+    from .skill_routes import register_skill_routes
+    app.state.skills = SkillService(store)
     register_mcp(app, app.state.agent_service, probes)
+    app.state.mcp_service.skills = app.state.skills
+    register_skill_routes(app, app.state.skills, lambda: list(app.state.mcp_service.scoped({}, None).catalog()))
     app.state.agent_chat = AgentChat(store,agent_api,MCPGateway(app.state.mcp_service))
     register_chat_routes(app,app.state.agent_chat)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
@@ -355,7 +360,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             if request.headers.get('x-iwb') != '1' or (origin and origin != str(request.base_url).rstrip('/')):
                 return JSONResponse({'detail': '仅允许本机页面操作'}, status_code=403)
         result = await call_next(request)
-        if request.url.path.startswith(('/api/settings/agent', '/api/assistant')):
+        if request.url.path.startswith(('/api/settings/agent', '/api/assistant', '/api/skills')):
             result.headers['Cache-Control'] = 'no-store'
         return result
 

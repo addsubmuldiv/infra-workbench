@@ -46,9 +46,9 @@ class MCPGateway:
         return self.service.probes.inventory(allowed)
 
     @asynccontextmanager
-    async def session(self, state, allowed):
+    async def session(self, state, allowed, skill_snapshot=None):
         from .mcp_server import create_mcp
-        service = self.service.scoped(state, allowed)
+        service = self.service.scoped(state, allowed, skill_snapshot)
         server, _ = create_mcp(service)
         failure = None
         async with create_client_server_memory_streams() as (client_streams, server_streams):

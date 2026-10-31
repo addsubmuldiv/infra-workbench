@@ -15,14 +15,16 @@ PRIVATE = {'get_ssh_password', 'get_ssh_info'}
 
 
 class WorkbenchMCPService:
-    def __init__(self, probes, legacy=None, operations=None, *, state=None, allowed=None, embedded=False):
+    def __init__(self, probes, legacy=None, operations=None, *, state=None, allowed=None, embedded=False, skills=None, skill_snapshot=None):
         self.probes, self.legacy, self.operations = probes, legacy, operations
         self.state = state if state is not None else {}
         self.allowed, self.embedded = allowed, embedded
+        self.skills = skills
+        self.skill_snapshot = skill_snapshot
 
-    def scoped(self, state, allowed):
+    def scoped(self, state, allowed, skill_snapshot=None):
         return WorkbenchMCPService(self.probes, self.legacy, self.operations,
-                                   state=state, allowed=allowed, embedded=True)
+                                   state=state, allowed=allowed, embedded=True, skills=self.skills, skill_snapshot=skill_snapshot)
 
     def catalog(self):
         catalog = copy.deepcopy(TOOLS) if self.legacy is not None else {}
@@ -38,6 +40,8 @@ class WorkbenchMCPService:
         if self.operations is not None:
             catalog.update(self.operations.catalog())
             catalog.update(mcp_skills.CATALOG)
+        if self.skills is not None:
+            catalog.update(mcp_skills.skill_catalog())
         if self.embedded:
             for name in PRIVATE:
                 catalog.pop(name, None)
@@ -49,6 +53,18 @@ class WorkbenchMCPService:
             raise AgentError('INVALID_ARGUMENT', '未知工具或参数不是 JSON 对象。')
         if next(Draft202012Validator(catalog[name]['inputSchema']).iter_errors(arguments), None):
             raise AgentError('INVALID_ARGUMENT', '参数不符合工具 inputSchema。')
+        if self.skill_snapshot is not None and name in ('list_skills', 'read_skill'):
+            if name == 'list_skills':
+                return response({'items': [{key: value for key, value in item.items() if key not in ('files', 'file_manifest', 'versions')}
+                                          for item in self.skill_snapshot.values()]})
+            item = self.skill_snapshot.get(arguments['name'])
+            if item is None or arguments.get('version', item['version']) != item['version']:
+                raise AgentError('SKILL_NOT_FOUND', '本轮技能快照中没有此技能或版本；安装和更新下一轮生效。')
+            data = copy.deepcopy(item)
+            data['content'] = data['files'].get('SKILL.md', '')
+            return response(data)
+        if self.skills is not None and name in mcp_skills.skill_catalog():
+            return mcp_skills.registry_call(self.skills, name, arguments, catalog)
         if name in mcp_skills.CATALOG:
             return mcp_skills.call(name, arguments)
         # Omitted fields remain omitted; legacy fleet filters inherit previous
