@@ -4,8 +4,11 @@ import fs from 'node:fs';
 import ts from 'typescript';
 import {downloadOriginalLog} from '../src/logDownload.ts';
 import {fitFileWindow,moveFileWindow,resizeFileWindow} from '../src/fileWindow.ts';
+import * as folderUploads from '../src/folderUpload.ts';
+import * as fileTransfers from '../src/fileTransfers.ts';
+import * as ids from '../src/browserId.ts';
 
-function harness(t,component='BrowserBody',fetchDownload,folderSupported=true){
+function harness(t,component='BrowserBody',fetchDownload,folderSupported=true,folderSender){
   const values=[],deps=[],effects=[],cleanups=[];let slot=0,tree;
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),
     useState:initial=>{const i=slot++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value}]},
@@ -13,7 +16,7 @@ function harness(t,component='BrowserBody',fetchDownload,folderSupported=true){
     useEffect:(fn,next)=>{const i=slot++;if(!next||!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}}};
   const old={window:globalThis.window,document:globalThis.document,fetch:globalThis.fetch};
   Object.assign(globalThis,{window:{innerWidth:1200,innerHeight:800,addEventListener(){},removeEventListener(){}},document:{addEventListener(){},removeEventListener(){}},
-    fetch:async(url,options)=>url==='/api/files/capabilities'?{ok:true,json:async()=>({editing:true,terminal_cwd:true,upload:true,search:true,folder_download:folderSupported})}:fetchDownload(url,options)});
+    fetch:async(url,options)=>url==='/api/files/capabilities'?{ok:true,json:async()=>({editing:true,terminal_cwd:true,upload:true,search:true,folder_download:folderSupported,folder_upload:folderSupported})}:fetchDownload(url,options)});
   t.after(()=>{cleanups.splice(0).forEach(fn=>fn?.());Object.assign(globalThis,old)});
   const entries=['A','B'].map(name=>({name:name+'.txt',path:'/tmp/'+name+'.txt',kind:'file',accessible:true,size:1,modified:1}));
   entries.push({name:'code',path:'/tmp/code',kind:'directory',accessible:true,size:null,modified:1});
@@ -22,7 +25,7 @@ function harness(t,component='BrowserBody',fetchDownload,folderSupported=true){
   const source=ts.transpileModule(fs.readFileSync(new URL('../src/FileBrowser.tsx',import.meta.url),'utf8')+'\nexport {BrowserBody};',
     {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   function FileEditor(){}
-  new Function('require','exports',source)(name=>name==='react'?react:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key}),exports);
+  new Function('require','exports',source)(name=>name==='react'?react:name==='./browserId'?ids:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./folderUpload'?folderUploads:name==='./fileTransfers'?{...fileTransfers,uploadPayload:folderSender??fileTransfers.uploadPayload}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key}),exports);
   const guard={current:null},hosts=[{id:'A',target:'A'},{id:'B',target:'B'}];
   let props=component==='BrowserBody'?{host:hosts[0],onBusy(){},editorClose:guard}:{host:hosts[0],hosts,close(){},requestId:'first'};
   const render=updates=>{props={...props,...updates};slot=0;tree=exports[component](props);for(const effect of effects.splice(0))effect();return tree};
@@ -122,6 +125,35 @@ test('old backends expose the folder action as disabled until upgraded',async t=
   const h=harness(t,'BrowserBody',undefined,false);await h.loaded();
   h.find(n=>n.type==='button'&&n.props['aria-label']==='文件操作 /tmp/code').props.onClick({preventDefault(){},clientX:100,clientY:100});h.render();
   assert.equal(h.find(n=>n.props?.role==='menuitem'&&n.props.children.includes('下载文件夹')).props.disabled,true);
+  assert.equal(h.find(n=>n.type==='button'&&n.props.children.includes('上传文件夹')).props.disabled,true);
+});
+
+test('folder picker preserves the selected destination and passes one cancellable bundle to upload',async t=>{
+  let actual,signal,started;const pending=new Promise(resolve=>started=resolve);
+  const h=harness(t,'BrowserBody',undefined,true,(...args)=>new Promise((resolve,reject)=>{
+    actual=args;signal=args[5];started();signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
+  }));
+  await h.loaded();h.find(n=>n.type==='button'&&n.props['aria-label']==='展开目录 /tmp/code').props.onClick();await h.loaded();
+  const file=new File(['contents'],'a.txt');Object.defineProperty(file,'webkitRelativePath',{value:'project/sub/a.txt'});
+  const input=h.find(n=>n.type==='input'&&n.props['aria-label']==='上传文件夹选择器');assert.ok(input);assert.equal(input.props.webkitdirectory,'');
+  input.props.onChange({currentTarget:{files:[file],value:'selected'}});await pending;h.render();
+  assert.deepEqual(actual.slice(0,3),['A','/tmp/code','project']);assert.equal(actual[4],'folder');assert.ok(actual[3] instanceof Blob);
+  h.find(n=>n.type==='button'&&n.props.children.includes('取消传输')).props.onClick();assert.equal(signal.aborted,true);
+  await new Promise(resolve=>setImmediate(resolve));h.render();
+});
+
+test('native folder chooser uploads empty directories and a closed window cannot start a late upload',async t=>{
+  const uploads=[];
+  const h=harness(t,'BrowserBody',undefined,true,async(...args)=>{uploads.push(args);return '/tmp/empty-project'});await h.loaded();
+  window.showDirectoryPicker=async()=>({kind:'directory',name:'empty-project',async *entries(){yield ['empty',{kind:'directory',name:'empty',async *entries(){}}]}});
+  h.find(n=>n.type==='button'&&n.props.children.includes('上传文件夹')).props.onClick();
+  await new Promise(resolve=>setImmediate(resolve));h.render();
+  assert.equal(uploads.length,1);assert.equal(uploads[0][2],'empty-project');
+  assert.ok((await uploads[0][3].text()).includes('"directories":["empty"]'));
+  let choose;window.showDirectoryPicker=()=>new Promise(resolve=>choose=resolve);
+  h.find(n=>n.type==='button'&&n.props.children.includes('上传文件夹')).props.onClick();h.unmount();
+  choose({kind:'directory',name:'late',async *entries(){}});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(uploads.length,1);
 });
 
 test('terminal path requests reopen a minimized file window and keep unsaved edits guarded',t=>{

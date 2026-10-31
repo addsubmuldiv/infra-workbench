@@ -1,0 +1,5 @@
+.terminal-load-error,.terminal-loading{position:fixed;right:20px;bottom:20px;z-index:145;max-width:min(440px,calc(100vw - 40px));padding:18px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.terminal-load-error h2{font-size:15px;margin:0 0 10px}
+.terminal-load-error p{font-size:12px;line-height:1.7;color:var(--muted);margin:8px 0}
+.terminal-load-error>div{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.terminal-loading{font-size:12px}

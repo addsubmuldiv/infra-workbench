@@ -1,0 +1,15 @@
+.overview-stat{position:relative;transition:background .15s}
+.overview-stat:hover,.overview-stat:focus-within{background:var(--hover)}
+.stats>div>.stat-action{display:flex;align-items:center;justify-content:flex-start;gap:5px;color:var(--accent);font-size:11px;margin-top:12px}
+.finder{flex-wrap:wrap}
+.finder .match-count{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+.finder .match-count .secondary{white-space:nowrap}
+.finder button:disabled,.overview-stat button:disabled{cursor:default}
+.device-overview{padding:18px 20px;margin-bottom:18px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
+.device-overview>p{color:var(--muted);font-size:12px;line-height:1.7;margin:10px 0}
+.device-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:10px}
+.device-groups>button{display:flex;justify-content:flex-start;flex-wrap:wrap;text-align:left;padding:14px;border:1px solid var(--line);border-radius:7px;background:var(--input);color:var(--text);gap:10px}
+.device-groups>button:hover{background:var(--hover);border-color:var(--accent)}
+.device-group-name{flex:1;min-width:100px;overflow-wrap:anywhere}
+.device-groups strong{font-size:12px}.device-groups small{color:var(--muted);font-weight:400}
+@media(max-width:650px){.finder .match-count{width:100%;border-left:0;padding-left:0}.finder .match-count button{margin-left:auto}}

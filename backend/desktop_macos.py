@@ -165,7 +165,8 @@ class LoginStartup:
     def __init__(self, path=None, root=ROOT, python=None, data=DATA):
         self.path = Path(path) if path is not None else Path.home()/'Library'/'LaunchAgents'/(self.LABEL+'.plist')
         self.root, self.data = Path(root).resolve(), Path(data).resolve()
-        self.arguments = [str(python or sys.executable), str(self.root/'backend'/'desktop_macos.py'), '--no-browser']
+        from backend.desktop_runtime import runtime_arguments
+        self.arguments = runtime_arguments(python or sys.executable, self.root, platform='darwin')
 
     def _read(self):
         try:
@@ -185,7 +186,7 @@ class LoginStartup:
             if self.path.exists() and not self._owns(existing):
                 raise RuntimeError('登录启动文件已被其他项目或安装目录使用，未覆盖')
             value = dict(Label=self.LABEL, ProgramArguments=self.arguments, RunAtLoad=True, KeepAlive=False,
-                         WorkingDirectory=str(self.root),
+                         WorkingDirectory=str(self.data if getattr(sys,'frozen',False) else self.root),
                          EnvironmentVariables={'IWB_DATA': str(self.data),
                                                'PATH': '/opt/homebrew/bin:/usr/local/bin:'+os.environ.get('PATH', '/usr/bin:/bin:/usr/sbin:/sbin')},
                          StandardOutPath=str(self.data/'macos-desktop-launch.log'),

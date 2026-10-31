@@ -1,0 +1,1310 @@
+{
+  "date": "2026-10-31",
+  "platform": "Windows 11; actual headed Edge and Tauri Release WebView2",
+  "hardware": {
+    "logicalProcessors": 20,
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "physicalBytes": 68563062784
+  },
+  "conditions": {
+    "viewport": "1440x900",
+    "hosts": 48,
+    "devices": 384,
+    "backend": "Existing Python service already ready; common backend excluded from client tree",
+    "output": "Local WebSocket fixture; 8 in-flight messages per terminal, real xterm write callbacks",
+    "browser": "Dedicated headed Edge, no extensions, isolated profile",
+    "desktop": "Optimized build; only application identifier differs to isolate single-instance/window state",
+    "flags": "Both engines disable background/occlusion throttling; isolated per-process loopback proxy",
+    "shutdown": "Wait for host and engine child processes to exit before reuse of profile",
+    "browserOuter": {
+      "width": 1462,
+      "height": 991
+    }
+  },
+  "caveats": [
+    "Fresh snapshots before/after; Python backend already ready and excluded.",
+    "Private working set of full client process tree; not summed RSS.",
+    "Three output trials/client: 4 terminals x64KiB/s for45s, 8 x128KiB/s for60s.",
+    "Unchanged-poll UI scenario is13s with static48-host/384-device inventory; not every real sampling cycle is unchanged.",
+    "No OS cache flush or reboot; independent startup has5 subsequent launches.",
+    "Early baseline included short focused regression commands; small CPU/timing differences should be treated cautiously.",
+    "No native macOS execution; Windows WebKit port and API absence tests are supplementary only."
+  ],
+  "beforeHash": "58522962401b56badba2613ae8914f88d4c693f21874e72223e3f15c8aced5a7",
+  "afterHash": "0d195807277eada9908a65641a3578ce47ffca15a396de03c2803642dc07f404",
+  "rawFiles": {
+    "before": "work/desktop-benchmark/run-2026-10-31T15-04-22-047Z/results.json",
+    "after": "work/desktop-benchmark/run-2026-10-31T15-34-29-250Z/results.json",
+    "beforeUI": "work/desktop-benchmark/ui-2026-10-31T15-29-19-525Z/results.json",
+    "afterUI": "work/desktop-benchmark/ui-2026-10-31T15-31-50-622Z/results.json"
+  },
+  "clients": {
+    "desktop": {
+      "before": {
+        "versions": [
+          "Edg/156.0.4314.50"
+        ],
+        "startupMs": {
+          "median": 2381.19,
+          "min": 1366.64,
+          "max": 2806.94,
+          "samples": [
+            2806.94,
+            1438.32,
+            2381.19,
+            1366.64,
+            2502.24
+          ]
+        },
+        "navigationToReadyMs": {
+          "median": 379.7000000476837,
+          "min": 308.40000009536743,
+          "max": 484.39999985694885,
+          "samples": [
+            484.39999985694885,
+            308.40000009536743,
+            379.7000000476837,
+            311.7999999523163,
+            392
+          ]
+        },
+        "beforeNavigationEstimateMs": {
+          "median": 2001.49,
+          "min": 1054.84,
+          "max": 2322.54,
+          "samples": [
+            2322.54,
+            1129.92,
+            2001.49,
+            1054.84,
+            2110.24
+          ]
+        },
+        "idleMiB": {
+          "median": 194,
+          "min": 185.33,
+          "max": 207.69,
+          "samples": [
+            207.69,
+            194,
+            185.33
+          ]
+        },
+        "entryBytes": 519544,
+        "entryFiles": [
+          {
+            "path": "/assets/index-DcIqgP1y.css",
+            "decodedBytes": 100857
+          },
+          {
+            "path": "/assets/index-Vo67Rjmu.js",
+            "decodedBytes": 418687
+          }
+        ],
+        "unchangedPoll": {
+          "commits": {
+            "median": 7,
+            "min": 7,
+            "max": 7,
+            "samples": [
+              7,
+              7,
+              7
+            ]
+          },
+          "scriptMs": {
+            "median": 150.49,
+            "min": 144.96,
+            "max": 186.46,
+            "samples": [
+              150.49,
+              186.46,
+              144.96
+            ]
+          },
+          "layoutMs": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "samples": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "terminalDrag": {
+          "writesDuringGesture": {
+            "median": 200,
+            "min": 200,
+            "max": 200,
+            "samples": [
+              200,
+              200,
+              200
+            ]
+          },
+          "totalWrites": {
+            "median": 200,
+            "min": 200,
+            "max": 200,
+            "samples": [
+              200,
+              200,
+              200
+            ]
+          },
+          "scriptMs": {
+            "median": 108.03,
+            "min": 98.66,
+            "max": 124.85,
+            "samples": [
+              124.85,
+              108.03,
+              98.66
+            ]
+          },
+          "taskMs": {
+            "median": 543.15,
+            "min": 527.12,
+            "max": 610.4,
+            "samples": [
+              610.4,
+              543.15,
+              527.12
+            ]
+          }
+        },
+        "loads": {
+          "4": {
+            "privateWorkingSetMiB": {
+              "median": 424.54,
+              "min": 420.77,
+              "max": 431.75,
+              "samples": [
+                431.75,
+                424.54,
+                420.77
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 566.52,
+              "min": 563.42,
+              "max": 579.24,
+              "samples": [
+                579.24,
+                566.52,
+                563.42
+              ]
+            },
+            "cpuCores": {
+              "median": 1.12,
+              "min": 1.03,
+              "max": 1.13,
+              "samples": [
+                1.12,
+                1.03,
+                1.13
+              ]
+            },
+            "writeP95Ms": {
+              "median": 3.43,
+              "min": 3.16,
+              "max": 4.14,
+              "samples": [
+                3.43,
+                4.14,
+                3.16
+              ]
+            },
+            "tabP95Ms": {
+              "median": 18.5,
+              "min": 15.1,
+              "max": 19.6,
+              "samples": [
+                19.6,
+                18.5,
+                15.1
+              ]
+            },
+            "frameP95Ms": {
+              "median": 4.3,
+              "min": 4.3,
+              "max": 4.3,
+              "samples": [
+                4.3,
+                4.3,
+                4.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 255.78,
+              "min": 255.72,
+              "max": 255.86,
+              "samples": [
+                255.72,
+                255.86,
+                255.78
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 35390720,
+            "ackBytes": 35390720,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          },
+          "8": {
+            "privateWorkingSetMiB": {
+              "median": 518.34,
+              "min": 500.93,
+              "max": 530.15,
+              "samples": [
+                530.15,
+                518.34,
+                500.93
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 659.2,
+              "min": 638.05,
+              "max": 676.07,
+              "samples": [
+                676.07,
+                659.2,
+                638.05
+              ]
+            },
+            "cpuCores": {
+              "median": 1.3,
+              "min": 0.85,
+              "max": 1.35,
+              "samples": [
+                1.35,
+                0.85,
+                1.3
+              ]
+            },
+            "writeP95Ms": {
+              "median": 6.79,
+              "min": 6.27,
+              "max": 12.37,
+              "samples": [
+                6.79,
+                12.37,
+                6.27
+              ]
+            },
+            "tabP95Ms": {
+              "median": 18.1,
+              "min": 16.1,
+              "max": 22.9,
+              "samples": [
+                18.1,
+                22.9,
+                16.1
+              ]
+            },
+            "frameP95Ms": {
+              "median": 4.3,
+              "min": 4.3,
+              "max": 8.3,
+              "samples": [
+                4.3,
+                8.3,
+                4.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 1023.72,
+              "min": 1023.68,
+              "max": 1023.81,
+              "samples": [
+                1023.72,
+                1023.81,
+                1023.68
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 188853248,
+            "ackBytes": 188853248,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          }
+        }
+      },
+      "after": {
+        "versions": [
+          "Edg/156.0.4314.50"
+        ],
+        "startupMs": {
+          "median": 1585,
+          "min": 1246.02,
+          "max": 1797.09,
+          "samples": [
+            1797.09,
+            1246.02,
+            1533.04,
+            1585,
+            1747.98
+          ]
+        },
+        "navigationToReadyMs": {
+          "median": 397.2000000476837,
+          "min": 343,
+          "max": 442.09999990463257,
+          "samples": [
+            397.2000000476837,
+            343,
+            422.69999980926514,
+            442.09999990463257,
+            386.7999999523163
+          ]
+        },
+        "beforeNavigationEstimateMs": {
+          "median": 1142.9,
+          "min": 903.02,
+          "max": 1399.89,
+          "samples": [
+            1399.89,
+            903.02,
+            1110.34,
+            1142.9,
+            1361.18
+          ]
+        },
+        "idleMiB": {
+          "median": 155.02,
+          "min": 150.62,
+          "max": 159.02,
+          "samples": [
+            159.02,
+            150.62,
+            155.02
+          ]
+        },
+        "entryBytes": 379787,
+        "entryFiles": [
+          {
+            "path": "/assets/index-CmOcfW0C.js",
+            "decodedBytes": 314232
+          },
+          {
+            "path": "/assets/index-DTq1AIOy.css",
+            "decodedBytes": 65555
+          }
+        ],
+        "unchangedPoll": {
+          "commits": {
+            "median": 1,
+            "min": 1,
+            "max": 1,
+            "samples": [
+              1,
+              1,
+              1
+            ]
+          },
+          "scriptMs": {
+            "median": 9.43,
+            "min": 6.92,
+            "max": 10.47,
+            "samples": [
+              10.47,
+              6.92,
+              9.43
+            ]
+          },
+          "layoutMs": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "samples": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "terminalDrag": {
+          "writesDuringGesture": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "samples": [
+              0,
+              0,
+              0
+            ]
+          },
+          "totalWrites": {
+            "median": 1,
+            "min": 1,
+            "max": 1,
+            "samples": [
+              1,
+              1,
+              1
+            ]
+          },
+          "scriptMs": {
+            "median": 99.3,
+            "min": 94.44,
+            "max": 100.87,
+            "samples": [
+              100.87,
+              99.3,
+              94.44
+            ]
+          },
+          "taskMs": {
+            "median": 555.9,
+            "min": 530.55,
+            "max": 559.68,
+            "samples": [
+              555.9,
+              559.68,
+              530.55
+            ]
+          }
+        },
+        "loads": {
+          "4": {
+            "privateWorkingSetMiB": {
+              "median": 388.49,
+              "min": 375.08,
+              "max": 396.54,
+              "samples": [
+                396.54,
+                375.08,
+                388.49
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 528.16,
+              "min": 512.27,
+              "max": 534.73,
+              "samples": [
+                534.73,
+                512.27,
+                528.16
+              ]
+            },
+            "cpuCores": {
+              "median": 0.69,
+              "min": 0.5,
+              "max": 0.86,
+              "samples": [
+                0.86,
+                0.69,
+                0.5
+              ]
+            },
+            "writeP95Ms": {
+              "median": 4.72,
+              "min": 2.86,
+              "max": 5.63,
+              "samples": [
+                2.86,
+                4.72,
+                5.63
+              ]
+            },
+            "tabP95Ms": {
+              "median": 18.7,
+              "min": 12.1,
+              "max": 22,
+              "samples": [
+                12.1,
+                18.7,
+                22
+              ]
+            },
+            "frameP95Ms": {
+              "median": 4.3,
+              "min": 4.3,
+              "max": 4.3,
+              "samples": [
+                4.3,
+                4.3,
+                4.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 255.84,
+              "min": 255.78,
+              "max": 255.89,
+              "samples": [
+                255.78,
+                255.89,
+                255.84
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 35379712,
+            "ackBytes": 35379712,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          },
+          "8": {
+            "privateWorkingSetMiB": {
+              "median": 475.9,
+              "min": 472.16,
+              "max": 483.24,
+              "samples": [
+                483.24,
+                472.16,
+                475.9
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 616.21,
+              "min": 612,
+              "max": 624.62,
+              "samples": [
+                624.62,
+                612,
+                616.21
+              ]
+            },
+            "cpuCores": {
+              "median": 1.01,
+              "min": 0.89,
+              "max": 1.41,
+              "samples": [
+                1.41,
+                0.89,
+                1.01
+              ]
+            },
+            "writeP95Ms": {
+              "median": 10.14,
+              "min": 6.76,
+              "max": 11.56,
+              "samples": [
+                6.76,
+                10.14,
+                11.56
+              ]
+            },
+            "tabP95Ms": {
+              "median": 20.7,
+              "min": 16.6,
+              "max": 21.5,
+              "samples": [
+                21.5,
+                16.6,
+                20.7
+              ]
+            },
+            "frameP95Ms": {
+              "median": 8.3,
+              "min": 4.3,
+              "max": 8.3,
+              "samples": [
+                4.3,
+                8.3,
+                8.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 1023.79,
+              "min": 1023.42,
+              "max": 1023.88,
+              "samples": [
+                1023.79,
+                1023.88,
+                1023.42
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 188765184,
+            "ackBytes": 188765184,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          }
+        }
+      }
+    },
+    "browser": {
+      "before": {
+        "versions": [
+          "Edg/156.0.4314.42"
+        ],
+        "startupMs": {
+          "median": 1143.71,
+          "min": 905.91,
+          "max": 1355.35,
+          "samples": [
+            905.91,
+            1143.71,
+            1255.42,
+            1355.35,
+            920.16
+          ]
+        },
+        "navigationToReadyMs": {
+          "median": 563.2999999523163,
+          "min": 475.2000000476837,
+          "max": 686.4000000953674,
+          "samples": [
+            504.7999999523163,
+            664.8000001907349,
+            563.2999999523163,
+            686.4000000953674,
+            475.2000000476837
+          ]
+        },
+        "beforeNavigationEstimateMs": {
+          "median": 478.91,
+          "min": 401.11,
+          "max": 692.12,
+          "samples": [
+            401.11,
+            478.91,
+            692.12,
+            668.95,
+            444.96
+          ]
+        },
+        "idleMiB": {
+          "median": 214.55,
+          "min": 199.61,
+          "max": 223.18,
+          "samples": [
+            223.18,
+            214.55,
+            199.61
+          ]
+        },
+        "entryBytes": 519544,
+        "entryFiles": [
+          {
+            "path": "/assets/index-Vo67Rjmu.js",
+            "decodedBytes": 418687
+          },
+          {
+            "path": "/assets/index-DcIqgP1y.css",
+            "decodedBytes": 100857
+          }
+        ],
+        "unchangedPoll": {
+          "commits": {
+            "median": 7,
+            "min": 7,
+            "max": 7,
+            "samples": [
+              7,
+              7,
+              7
+            ]
+          },
+          "scriptMs": {
+            "median": 193.44,
+            "min": 147.56,
+            "max": 237.17,
+            "samples": [
+              237.17,
+              193.44,
+              147.56
+            ]
+          },
+          "layoutMs": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "samples": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "terminalDrag": {
+          "writesDuringGesture": {
+            "median": 200,
+            "min": 200,
+            "max": 200,
+            "samples": [
+              200,
+              200,
+              200
+            ]
+          },
+          "totalWrites": {
+            "median": 200,
+            "min": 200,
+            "max": 200,
+            "samples": [
+              200,
+              200,
+              200
+            ]
+          },
+          "scriptMs": {
+            "median": 88.14,
+            "min": 87.83,
+            "max": 127.69,
+            "samples": [
+              127.69,
+              88.14,
+              87.83
+            ]
+          },
+          "taskMs": {
+            "median": 475.57,
+            "min": 465.51,
+            "max": 715.02,
+            "samples": [
+              715.02,
+              465.51,
+              475.57
+            ]
+          }
+        },
+        "loads": {
+          "4": {
+            "privateWorkingSetMiB": {
+              "median": 437.64,
+              "min": 419.27,
+              "max": 442.65,
+              "samples": [
+                437.64,
+                442.65,
+                419.27
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 612.03,
+              "min": 585.64,
+              "max": 612.08,
+              "samples": [
+                612.03,
+                612.08,
+                585.64
+              ]
+            },
+            "cpuCores": {
+              "median": 0.47,
+              "min": 0.46,
+              "max": 0.53,
+              "samples": [
+                0.46,
+                0.53,
+                0.47
+              ]
+            },
+            "writeP95Ms": {
+              "median": 4.22,
+              "min": 3.78,
+              "max": 5.76,
+              "samples": [
+                5.76,
+                4.22,
+                3.78
+              ]
+            },
+            "tabP95Ms": {
+              "median": 16.7,
+              "min": 15.2,
+              "max": 17,
+              "samples": [
+                17,
+                16.7,
+                15.2
+              ]
+            },
+            "frameP95Ms": {
+              "median": 4.3,
+              "min": 4.3,
+              "max": 4.3,
+              "samples": [
+                4.3,
+                4.3,
+                4.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 255.83,
+              "min": 255.72,
+              "max": 255.9,
+              "samples": [
+                255.83,
+                255.9,
+                255.72
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 35390720,
+            "ackBytes": 35390720,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          },
+          "8": {
+            "privateWorkingSetMiB": {
+              "median": 531.65,
+              "min": 502.2,
+              "max": 531.99,
+              "samples": [
+                531.65,
+                531.99,
+                502.2
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 703.52,
+              "min": 674,
+              "max": 705.73,
+              "samples": [
+                703.52,
+                705.73,
+                674
+              ]
+            },
+            "cpuCores": {
+              "median": 1.04,
+              "min": 0.86,
+              "max": 1.07,
+              "samples": [
+                1.07,
+                1.04,
+                0.86
+              ]
+            },
+            "writeP95Ms": {
+              "median": 12.88,
+              "min": 7.65,
+              "max": 13.33,
+              "samples": [
+                13.33,
+                12.88,
+                7.65
+              ]
+            },
+            "tabP95Ms": {
+              "median": 20.9,
+              "min": 16.9,
+              "max": 27.1,
+              "samples": [
+                27.1,
+                20.9,
+                16.9
+              ]
+            },
+            "frameP95Ms": {
+              "median": 8.3,
+              "min": 4.3,
+              "max": 8.3,
+              "samples": [
+                8.3,
+                8.3,
+                4.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 1023.6,
+              "min": 1023.57,
+              "max": 1023.72,
+              "samples": [
+                1023.6,
+                1023.72,
+                1023.57
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 188721152,
+            "ackBytes": 188721152,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          }
+        }
+      },
+      "after": {
+        "versions": [
+          "Edg/156.0.4314.42"
+        ],
+        "startupMs": {
+          "median": 1305.61,
+          "min": 840.82,
+          "max": 1385.29,
+          "samples": [
+            840.82,
+            1385.29,
+            1306.37,
+            848.63,
+            1305.61
+          ]
+        },
+        "navigationToReadyMs": {
+          "median": 686.2999999523163,
+          "min": 450.09999990463257,
+          "max": 837.2000000476837,
+          "samples": [
+            450.09999990463257,
+            837.2000000476837,
+            751.7999999523163,
+            514.4000000953674,
+            686.2999999523163
+          ]
+        },
+        "beforeNavigationEstimateMs": {
+          "median": 548.09,
+          "min": 334.23,
+          "max": 619.31,
+          "samples": [
+            390.72,
+            548.09,
+            554.57,
+            334.23,
+            619.31
+          ]
+        },
+        "idleMiB": {
+          "median": 189.56,
+          "min": 179.18,
+          "max": 197.23,
+          "samples": [
+            197.23,
+            179.18,
+            189.56
+          ]
+        },
+        "entryBytes": 379787,
+        "entryFiles": [
+          {
+            "path": "/assets/index-DTq1AIOy.css",
+            "decodedBytes": 65555
+          },
+          {
+            "path": "/assets/index-CmOcfW0C.js",
+            "decodedBytes": 314232
+          }
+        ],
+        "unchangedPoll": {
+          "commits": {
+            "median": 1,
+            "min": 1,
+            "max": 1,
+            "samples": [
+              1,
+              1,
+              1
+            ]
+          },
+          "scriptMs": {
+            "median": 9.42,
+            "min": 7.16,
+            "max": 14.11,
+            "samples": [
+              14.11,
+              7.16,
+              9.42
+            ]
+          },
+          "layoutMs": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "samples": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "terminalDrag": {
+          "writesDuringGesture": {
+            "median": 0,
+            "min": 0,
+            "max": 0,
+            "samples": [
+              0,
+              0,
+              0
+            ]
+          },
+          "totalWrites": {
+            "median": 1,
+            "min": 1,
+            "max": 1,
+            "samples": [
+              1,
+              1,
+              1
+            ]
+          },
+          "scriptMs": {
+            "median": 102.12,
+            "min": 92.96,
+            "max": 118.32,
+            "samples": [
+              118.32,
+              102.12,
+              92.96
+            ]
+          },
+          "taskMs": {
+            "median": 553.78,
+            "min": 517.15,
+            "max": 646.79,
+            "samples": [
+              646.79,
+              553.78,
+              517.15
+            ]
+          }
+        },
+        "loads": {
+          "4": {
+            "privateWorkingSetMiB": {
+              "median": 420.7,
+              "min": 406.67,
+              "max": 455.64,
+              "samples": [
+                420.7,
+                406.67,
+                455.64
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 597.8,
+              "min": 569.84,
+              "max": 621.29,
+              "samples": [
+                597.8,
+                569.84,
+                621.29
+              ]
+            },
+            "cpuCores": {
+              "median": 0.48,
+              "min": 0.37,
+              "max": 0.74,
+              "samples": [
+                0.37,
+                0.48,
+                0.74
+              ]
+            },
+            "writeP95Ms": {
+              "median": 3.27,
+              "min": 3.19,
+              "max": 4.45,
+              "samples": [
+                3.19,
+                3.27,
+                4.45
+              ]
+            },
+            "tabP95Ms": {
+              "median": 17.7,
+              "min": 15,
+              "max": 20.9,
+              "samples": [
+                15,
+                17.7,
+                20.9
+              ]
+            },
+            "frameP95Ms": {
+              "median": 4.3,
+              "min": 4.3,
+              "max": 4.3,
+              "samples": [
+                4.3,
+                4.3,
+                4.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 255.82,
+              "min": 255.72,
+              "max": 255.96,
+              "samples": [
+                255.96,
+                255.72,
+                255.82
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 35379712,
+            "ackBytes": 35379712,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          },
+          "8": {
+            "privateWorkingSetMiB": {
+              "median": 508.04,
+              "min": 494.45,
+              "max": 515.46,
+              "samples": [
+                515.46,
+                494.45,
+                508.04
+              ]
+            },
+            "privateCommitMiB": {
+              "median": 685.29,
+              "min": 664.27,
+              "max": 698.17,
+              "samples": [
+                698.17,
+                664.27,
+                685.29
+              ]
+            },
+            "cpuCores": {
+              "median": 0.75,
+              "min": 0.64,
+              "max": 0.99,
+              "samples": [
+                0.75,
+                0.64,
+                0.99
+              ]
+            },
+            "writeP95Ms": {
+              "median": 6.36,
+              "min": 6.18,
+              "max": 10.76,
+              "samples": [
+                6.36,
+                6.18,
+                10.76
+              ]
+            },
+            "tabP95Ms": {
+              "median": 15.1,
+              "min": 14.3,
+              "max": 25.9,
+              "samples": [
+                14.3,
+                15.1,
+                25.9
+              ]
+            },
+            "frameP95Ms": {
+              "median": 4.3,
+              "min": 4.3,
+              "max": 8.3,
+              "samples": [
+                4.3,
+                4.3,
+                8.3
+              ]
+            },
+            "receivedKiBPerSecond": {
+              "median": 1023.48,
+              "min": 1023.44,
+              "max": 1023.76,
+              "samples": [
+                1023.48,
+                1023.76,
+                1023.44
+              ]
+            },
+            "longTasks": [
+              0,
+              0,
+              0
+            ],
+            "sentBytes": 188699136,
+            "ackBytes": 188699136,
+            "pendingMessages": 0,
+            "inputErrors": 0
+          }
+        }
+      }
+    }
+  },
+  "webKitCompatibility": {
+    "platform": "Windows WebKit port; does not prove native macOS runtime",
+    "cases": [
+      {
+        "legacyApiFallback": false,
+        "viewports": [
+          {
+            "width": 480,
+            "documentWidth": 480
+          },
+          {
+            "width": 800,
+            "documentWidth": 800
+          },
+          {
+            "width": 1440,
+            "documentWidth": 1440
+          }
+        ],
+        "renderer": "dom",
+        "ackBytes": 129344,
+        "fileAndTerminalFlow": {
+          "saved": "桌面编辑保存验证\n",
+          "uploadBytes": 20,
+          "terminalInput": "echo desktop-check\r",
+          "terminalAcks": 20,
+          "stage": "dirty editor",
+          "dirtyEditor": true
+        },
+        "errors": []
+      },
+      {
+        "legacyApiFallback": true,
+        "viewports": [
+          {
+            "width": 480,
+            "documentWidth": 480
+          },
+          {
+            "width": 800,
+            "documentWidth": 800
+          },
+          {
+            "width": 1440,
+            "documentWidth": 1440
+          }
+        ],
+        "renderer": "dom",
+        "ackBytes": 129344,
+        "fileAndTerminalFlow": {
+          "saved": "桌面编辑保存验证\n",
+          "uploadBytes": 20,
+          "terminalInput": "echo desktop-check\r",
+          "terminalAcks": 20,
+          "stage": "dirty editor",
+          "dirtyEditor": true
+        },
+        "errors": []
+      }
+    ],
+    "version": "26.6"
+  }
+}

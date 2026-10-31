@@ -1,10 +1,12 @@
+import {browserId} from './browserId';
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowUp,Upload,Search,Terminal,ClipboardPaste,Copy,Scissors,FilePlus,FolderPlus,MoreHorizontal,ChevronDown,ChevronRight,Download,File,Folder,FolderOpen,Home,LoaderCircle,RefreshCw,Minus,PanelTopOpen,Maximize2,Minimize2,X} from 'lucide-react';
 import {listDirectory,fileOperation,searchFiles,type DirectoryPage,type RemoteEntry} from './files';
 import {downloadOriginalLog} from './logDownload';
 import './files.css';
-import {uploadFile,watchDownload,type TransferProgress} from './fileTransfers';
+import {uploadFile,uploadPayload,watchDownload,type TransferProgress} from './fileTransfers';
 import {FileEditor} from './FileEditor';
+import {folderFromFiles,readFolder,folderPayload,type FolderHandle,type FolderSelection} from './folderUpload';
 import {FileActionDialog,type FileAction} from './FileActionDialog';
 import {fitFileWindow,moveFileWindow,resizeFileWindow,type WindowFrame} from './fileWindow';
 import {activateFloatingWindow,registerFloatingWindow} from './windowLayers';
@@ -61,13 +63,13 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
   const currentDirectory=selected?(selected.kind==='directory'?selected.path:parentDirectory(selected.path)):root?.path;
   const [action,setAction]=useState<FileAction|null>(null),[operationBusy,setOperationBusy]=useState(false),[editorBusy,setEditorBusy]=useState(false),[editor,setEditor]=useState<string|null>(null);
   const [supported,setSupported]=useState(false);
-  const [features,setFeatures]=useState({upload:false,search:false,cwd:false,progress:false,folder:false});
+  const [features,setFeatures]=useState({upload:false,search:false,cwd:false,progress:false,folder:false,folderUpload:false});
   const [transfer,setTransfer]=useState<(TransferProgress&{id:string;name:string;direction:'upload'|'download'})|null>(null);
   const [query,setQuery]=useState(''),[recursive,setRecursive]=useState(false),[realtime,setRealtime]=useState(false),[searchResult,setSearchResult]=useState<DirectoryPage|null>(null);
   useEffect(()=>{if(!message)return;const timer=setTimeout(()=>setMessage(''),4000);return()=>clearTimeout(timer)},[message]);
   useEffect(()=>{if(transfer?.stage!=='done')return;const timer=setTimeout(()=>setTransfer(null),4000);return()=>clearTimeout(timer)},[transfer?.id,transfer?.stage]);
-  const uploadRequest=useRef<AbortController|null>(null),uploadInput=useRef<HTMLInputElement>(null),directoryRef=useRef(currentDirectory);directoryRef.current=currentDirectory;
-  useEffect(()=>{let active=true;fetch('/api/files/capabilities').then(response=>response.ok?response.json():null).then(data=>{if(active){setSupported(data?.editing===true);setFeatures({upload:!!data?.upload,search:!!data?.search,cwd:!!data?.terminal_cwd,progress:!!data?.transfer_progress,folder:!!data?.folder_download})}}).catch(()=>{});return()=>{active=false}},[]);
+  const uploadRequest=useRef<AbortController|null>(null),uploadInput=useRef<HTMLInputElement>(null),folderInput=useRef<HTMLInputElement>(null),directoryRef=useRef(currentDirectory);directoryRef.current=currentDirectory;
+  useEffect(()=>{let active=true;fetch('/api/files/capabilities').then(response=>response.ok?response.json():null).then(data=>{if(active){setSupported(data?.editing===true);setFeatures({upload:!!data?.upload,search:!!data?.search,cwd:!!data?.terminal_cwd,progress:!!data?.transfer_progress,folder:!!data?.folder_download,folderUpload:!!data?.folder_upload})}}).catch(()=>{});return()=>{active=false}},[]);
   useEffect(()=>{onBusy(operationBusy||editorBusy);return()=>onBusy(false)},[operationBusy,editorBusy]);
   const [menu,setMenu]=useState<{entry:RemoteEntry;x:number;y:number}|null>(null);
   const mounted=useRef(true),epoch=useRef(0),menuRef=useRef<HTMLDivElement>(null),downloadRequest=useRef<AbortController|null>(null);
@@ -98,7 +100,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
   const selectEntry=(entry:RemoteEntry)=>{setSelected(entry);setPath(entry.kind==='directory'?entry.path:parentDirectory(entry.path))};
   const download=async(entry:RemoteEntry)=>{
     if(downloadRequest.current||uploadRequest.current)return;
-    const controller=new AbortController(),watcher=new AbortController(),id=crypto.randomUUID();downloadRequest.current=controller;
+    const controller=new AbortController(),watcher=new AbortController(),id=browserId();downloadRequest.current=controller;
     setMenu(null);setDownloading(entry.path);setError('');setMessage('');setTransfer({id,direction:'download',name:entry.name,stage:entry.kind==='directory'?'packing':'download_remote',loaded:0,total:entry.kind==='directory'?null:entry.size});
     const cancelRemote=()=>{if(features.progress)void fetch('/api/files/downloads/'+id,{method:'DELETE',headers:{'X-IWB':'1'}}).catch(()=>{})};
     controller.signal.addEventListener('abort',cancelRemote,{once:true});
@@ -117,12 +119,33 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
     try{
       for(let index=0;index<files.length;index++){
         if(controller.signal.aborted)throw new DOMException('上传已取消','AbortError');
-        const file=files[index],id=crypto.randomUUID(),name=(files.length>1?'['+(index+1)+'/'+files.length+'] ':'')+file.name;
+        const file=files[index],id=browserId(),name=(files.length>1?'['+(index+1)+'/'+files.length+'] ':'')+file.name;
         await uploadFile(host.id,directory,file,controller.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'upload',name,...value})});
       }
       if(mounted.current){setMessage('已上传 '+files.length+' 个文件到 '+directory);if(directoryRef.current===directory)await openRoot(directory)}
     }catch(e){if(mounted.current){setTransfer(null);if(controller.signal.aborted)setMessage('已请求取消上传，请刷新目标目录确认结果');else setError(e instanceof Error?e.message:String(e))}}
     finally{if(uploadRequest.current===controller)uploadRequest.current=null}
+  };
+  const uploadDirectory=async(pick:(signal:AbortSignal)=>Promise<FolderSelection>)=>{
+    if(!features.folderUpload||!currentDirectory||downloadRequest.current||uploadRequest.current)return;
+    const directory=currentDirectory,controller=new AbortController(),id=browserId();uploadRequest.current=controller;
+    setError('');setMessage('');setTransfer({id,direction:'upload',name:'文件夹',stage:'preparing',loaded:0,total:null});
+    try{
+      const selection=await pick(controller.signal);
+      if(controller.signal.aborted||!mounted.current)throw new DOMException('上传已取消','AbortError');
+      const body=folderPayload(selection),name=selection.name+'（'+selection.files.length+' 个文件）';
+      await uploadPayload(host.id,directory,selection.name,body,'folder',controller.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'upload',name,...value})});
+      if(mounted.current){setMessage('已上传文件夹 '+selection.name+'：'+selection.files.length+' 个文件'+(selection.preservesEmpty?'，包含空目录':'；兼容选择器不包含空目录'));if(directoryRef.current===directory)await openRoot(directory)}
+    }catch(e){if(mounted.current){setTransfer(null);if(controller.signal.aborted||(e instanceof DOMException&&e.name==='AbortError'))setMessage('已取消文件夹上传；若刚好完成，请刷新目标目录确认');else setError(e instanceof Error?e.message:String(e))}}
+    finally{if(uploadRequest.current===controller)uploadRequest.current=null}
+  };
+  const chooseFolder=()=>{
+    const picker=(window as typeof window&{showDirectoryPicker?:(options:{mode:'read'})=>Promise<FolderHandle>}).showDirectoryPicker;
+    if(!picker){folderInput.current?.click();return}
+    void uploadDirectory(async signal=>{
+      const root=await picker.call(window,{mode:'read'});
+      return readFolder(root,signal,entries=>{if(mounted.current&&!signal.aborted)setTransfer(old=>old?.stage==='preparing'?{...old,name:root.name+' · 已读取 '+entries+' 项'}:old)});
+    });
   };
   const cancelTransfer=()=>{downloadRequest.current?.abort();uploadRequest.current?.abort()};
   const search=async()=>{
@@ -170,11 +193,12 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
       {label:'Fedora',command:'sudo dnf install plocate && sudo updatedb'},
     ].map(item=><div key={item.label}><strong>{item.label}</strong><pre><code>{item.command}</code></pre><button type="button" className="text-button" onClick={()=>navigator.clipboard.writeText(item.command).then(()=>setMessage('安装命令已复制，请在远程终端中执行')).catch(()=>setError('复制失败，请手动选择并复制命令'))}>复制 {item.label} 命令</button></div>)}<p>首次建立索引可能需要一些时间；完成后重新搜索即可自动使用。索引可能不包含所有目录，也可能滞后。其他系统请按发行版安装 locate 工具；如果已经安装，请检查 SSH 会话的 PATH。</p></details>}
     <input type="file" multiple hidden ref={uploadInput} aria-label="选择上传文件" onChange={event=>{const files=Array.from(event.currentTarget.files||[]);event.currentTarget.value='';void upload(files)}}/>
-    <div className="file-toolbar"><button className="secondary" title={currentDirectory} disabled={!features.upload||!currentDirectory||!!downloading||!!uploadRequest.current} onClick={()=>uploadInput.current?.click()}><Upload size={14}/>上传文件</button><button className="secondary" title={currentDirectory} disabled={!features.cwd||!currentDirectory} onClick={()=>{if(currentDirectory)onTerminal?.(currentDirectory)}}><Terminal size={14}/>在当前目录打开终端</button><button className="secondary" disabled={!supported||!currentDirectory||operationBusy} onClick={()=>setAction({op:'create',directory:currentDirectory!})}><FilePlus size={14}/>新建文件</button><button className="secondary" disabled={!supported||!currentDirectory||operationBusy} onClick={()=>setAction({op:'mkdir',directory:currentDirectory!})}><FolderPlus size={14}/>新建文件夹</button><button className="secondary" disabled={!supported||!selected||operationBusy} onClick={()=>stage(selected!,'copy')}><Copy size={14}/>复制</button><button className="secondary" disabled={!supported||!selected||operationBusy} onClick={()=>stage(selected!,'move')}><Scissors size={14}/>剪切</button><button className="secondary" disabled={!supported||!clipboard||!currentDirectory||operationBusy} onClick={()=>paste(currentDirectory!)}><ClipboardPaste size={14}/>粘贴到当前目录</button>{clipboard&&<span>{clipboard.op==='copy'?'复制':'剪切'}：{clipboard.entry.name}<button className="text-button" onClick={()=>setClipboard(null)}>取消</button></span>}{!supported&&<span>编辑与文件操作需重启本地服务启用</span>}</div>
-    {transfer&&<div className="file-transfer" role="status"><div><strong>{transfer.direction==='upload'?'上传':'下载'}：{transfer.name}</strong><span>{{packing:'远端打包文件夹',receiving:'浏览器 → 本地服务',sending:'本地服务 → 远端机器',verifying:'校验远端文件并发布',download_remote:'从远端接收文件',download_browser:'接收到浏览器',done:'传输完成'}[transfer.stage]}</span>{transfer.stage!=='done'&&<button className="text-button" onClick={cancelTransfer}>取消传输</button>}</div><progress max={Math.max(1,transfer.total??1)} value={transfer.total===null?undefined:transfer.stage==='done'?Math.max(1,transfer.total):transfer.loaded}/><small>{size(transfer.loaded)} / {transfer.total===null?'大小未知':size(transfer.total)}{transfer.stage==='done'?'':' · 关闭窗口或切换机器会取消传输'}</small></div>}
+    <input type="file" multiple hidden {...{webkitdirectory:''}} ref={folderInput} aria-label="上传文件夹选择器" onChange={event=>{const files=Array.from(event.currentTarget.files||[]);event.currentTarget.value='';if(files.length)void uploadDirectory(async()=>folderFromFiles(files))}}/>
+    <div className="file-toolbar"><button className="secondary" title={currentDirectory} disabled={!features.upload||!currentDirectory||!!downloading||!!uploadRequest.current} onClick={()=>uploadInput.current?.click()}><Upload size={14}/>上传文件</button><button className="secondary" title={!features.folderUpload?"重启本地服务以启用文件夹上传":"上传文件夹到 "+currentDirectory} disabled={!features.folderUpload||!currentDirectory||!!downloading||!!uploadRequest.current} onClick={chooseFolder}><FolderPlus size={14}/>上传文件夹</button><button className="secondary" title={currentDirectory} disabled={!features.cwd||!currentDirectory} onClick={()=>{if(currentDirectory)onTerminal?.(currentDirectory)}}><Terminal size={14}/>在当前目录打开终端</button><button className="secondary" disabled={!supported||!currentDirectory||operationBusy} onClick={()=>setAction({op:'create',directory:currentDirectory!})}><FilePlus size={14}/>新建文件</button><button className="secondary" disabled={!supported||!currentDirectory||operationBusy} onClick={()=>setAction({op:'mkdir',directory:currentDirectory!})}><FolderPlus size={14}/>新建文件夹</button><button className="secondary" disabled={!supported||!selected||operationBusy} onClick={()=>stage(selected!,'copy')}><Copy size={14}/>复制</button><button className="secondary" disabled={!supported||!selected||operationBusy} onClick={()=>stage(selected!,'move')}><Scissors size={14}/>剪切</button><button className="secondary" disabled={!supported||!clipboard||!currentDirectory||operationBusy} onClick={()=>paste(currentDirectory!)}><ClipboardPaste size={14}/>粘贴到当前目录</button>{clipboard&&<span>{clipboard.op==='copy'?'复制':'剪切'}：{clipboard.entry.name}<button className="text-button" onClick={()=>setClipboard(null)}>取消</button></span>}{!supported&&<span>编辑与文件操作需重启本地服务启用</span>}</div>
+    {transfer&&<div className="file-transfer" role="status"><div><strong>{transfer.direction==='upload'?'上传':'下载'}：{transfer.name}</strong><span>{{preparing:'正在读取文件夹',packing:'远端打包文件夹',receiving:'浏览器 → 本地服务',sending:'本地服务 → 远端机器',verifying:'校验远端内容并发布',download_remote:'从远端接收文件',download_browser:'接收到浏览器',done:'传输完成'}[transfer.stage]}</span>{transfer.stage!=='done'&&<button className="text-button" onClick={cancelTransfer}>取消传输</button>}</div><progress max={Math.max(1,transfer.total??1)} value={transfer.total===null?undefined:transfer.stage==='done'?Math.max(1,transfer.total):transfer.loaded}/><small>{size(transfer.loaded)} / {transfer.total===null?'大小未知':size(transfer.total)}{transfer.stage==='done'?'':' · 关闭窗口或切换机器会取消传输'}</small></div>}
     {error&&<div role="alert" className="file-error">{error}</div>}{message&&<p role="status" className="file-inline">{message}</p>}
     <div className="file-tree" role="region" aria-label={host.target+' 目录树'} onScroll={()=>setMenu(null)}>{loading.has('root')?<p className="file-inline"><LoaderCircle size={16} className="spin"/>正在连接并读取目录…</p>:root&&<><div className="file-columns"><strong>{root.path}</strong><span>大小</span><span>修改时间</span></div>{children(root.path,0)}</>}</div>
-    <footer className="file-footer">{downloading?<><LoaderCircle size={13} className="spin"/>正在下载，请稍候…</>:'使用当前 SSH 账号 · 文本编辑 ≤ 1 MiB · 复制 ≤ 64 MiB / 1000 项 · 下载 / 文件夹 ZIP ≤ 512 MiB'}</footer>
+    <footer className="file-footer">{downloading?<><LoaderCircle size={13} className="spin"/>正在下载，请稍候…</>:'使用当前 SSH 账号 · 文本编辑 ≤ 1 MiB · 复制 ≤ 64 MiB / 1000 项 · 上传 / 下载 ≤ 512 MiB · 文件夹 ≤ 10000 项'}</footer>
     {menu&&<div className="file-context" ref={menuRef} role="menu" style={{left:menu.x,top:menu.y}}>
       {menu.entry.kind==='file'&&<><button role="menuitem" disabled={!supported} onClick={()=>edit(menu.entry)}>打开并编辑</button><button role="menuitem" disabled={!!downloading} onClick={()=>download(menu.entry)}><Download size={15}/>下载文件</button></>}
       {menu.entry.kind==='directory'&&<><button role="menuitem" onClick={()=>openRoot(menu.entry.path)}>进入目录</button><button role="menuitem" disabled={!features.folder||!!downloading||!!uploadRequest.current||!menu.entry.accessible||!!menu.entry.symlink} title={!features.folder?'重启本地服务以启用文件夹下载':menu.entry.symlink?'请选择实际目录，不能打包符号链接目录':'打包为 ZIP 下载（不压缩）'} onClick={()=>download(menu.entry)}><Download size={15}/>下载文件夹</button><button role="menuitem" disabled={!features.cwd} onClick={()=>{onTerminal?.(menu.entry.path);setMenu(null)}}>在此处打开终端</button><button role="menuitem" disabled={!supported||!clipboard} onClick={()=>paste(menu.entry.path)}>粘贴到此目录</button></>}

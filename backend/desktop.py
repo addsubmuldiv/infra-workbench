@@ -175,10 +175,12 @@ class Startup:
     KEY=r'Software\Microsoft\Windows\CurrentVersion\Run'
 
     def __init__(self):
-        pythonw=Path(sys.executable).with_name('pythonw.exe')
+        frozen=bool(getattr(sys,'frozen',False))
+        pythonw=Path(sys.executable) if frozen else Path(sys.executable).with_name('pythonw.exe')
         if not pythonw.exists():
             raise RuntimeError('当前 Python 环境缺少 pythonw.exe，请重新安装项目运行环境')
-        self.command=startup_command(pythonw,Path(__file__).resolve())
+        from backend.desktop_runtime import runtime_arguments
+        self.command=subprocess.list2cmdline(runtime_arguments(pythonw,ROOT,platform='win32',frozen=frozen))
 
     def enabled(self):
         import winreg
@@ -416,10 +418,10 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
     return receipt
 
 
-def main():
+def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('--no-browser',action='store_true')
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
     if os.name!='nt': raise SystemExit('系统托盘目前支持 Windows 10/11')
     DATA.mkdir(parents=True,exist_ok=True)
     from logging.handlers import RotatingFileHandler

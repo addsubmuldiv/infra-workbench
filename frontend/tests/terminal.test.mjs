@@ -65,10 +65,11 @@ function harness(t,{tabs=null,initialStates={}}={}){
   const require=name=>{
     if(name==='react')return react;
     if(name==='./TerminalCommands')return ()=>null;
+    if(name==='./AppConfirm')return {useAppConfirm:()=>({confirm:async()=>false,confirmation:null})};
     if(name==='@xterm/xterm')return {Terminal};
     if(name==='@xterm/addon-search')return {SearchAddon:class {onDidChangeResults(){return {dispose(){}}}clearDecorations(){}}};
     if(name==='@xterm/addon-fit')return {FitAddon:class {fit(){}proposeDimensions(){return dimensions}}};
-    if(name==='./terminalPaths'||name==='./terminalSuggestions'||name==='./terminalWindow'||name==='./windowLayers'){
+    if(name==='./terminalPaths'||name==='./terminalSuggestions'||name==='./terminalWindow'||name==='./windowLayers'||name==='./terminalRenderer'||name==='./browserId'){
       const pathExports={};
       const source=fs.readFileSync(new URL('../src/'+name.slice(2)+'.ts',import.meta.url),'utf8');
       const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;

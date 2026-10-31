@@ -1,0 +1,18 @@
+.agent-settings{max-width:1150px;margin-bottom:38px}
+.agent-protocol-badge{font-size:11px;padding:6px 10px;border:1px solid var(--line);border-radius:20px;color:var(--muted);white-space:nowrap}
+.agent-form-heading{display:flex;align-items:flex-start;gap:12px;padding-bottom:22px;margin-bottom:22px;border-bottom:1px solid var(--line);color:var(--accent)}
+.agent-form-heading h3{margin:0;color:var(--text);font-size:14px}
+.agent-form-heading p{margin-top:7px}
+.agent-fields{border:0;padding:0;margin:0;min-width:0}
+.agent-fields select,.agent-model-input{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--text);font:inherit}
+.agent-fields .settings-help{margin-top:-5px;margin-bottom:20px}
+.agent-fields .settings-remember+.settings-help{margin-top:9px}
+.agent-model-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.agent-model-heading .form-label{margin:0}
+.agent-model-input{font-size:13px;margin-bottom:14px}
+.agent-timeout{max-width:210px}
+.agent-test-result{display:flex;flex-direction:column;gap:10px;font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.agent-test-result>span,.agent-test-result>small{color:var(--muted);font-size:11px}
+.agent-test-result .agent-test-ok{color:var(--accent)}
+.agent-test-result pre{margin:2px 0;padding:12px;background:var(--input);border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:200px;overflow:auto}
+.agent-fields:disabled{opacity:.65}

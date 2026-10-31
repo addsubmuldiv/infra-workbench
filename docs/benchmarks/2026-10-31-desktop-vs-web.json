@@ -1,0 +1,470 @@
+{
+  "conditions": {
+    "viewport": "1440x900",
+    "hosts": 48,
+    "devices": 384,
+    "backend": "Existing Python service already ready; common backend excluded from client tree",
+    "output": "Local WebSocket fixture; 8 in-flight messages per terminal, real xterm write callbacks",
+    "browser": "Dedicated headed Edge, no extensions, isolated profile",
+    "desktop": "Optimized build; only application identifier differs to isolate single-instance/window state",
+    "flags": "Both engines disable background/occlusion throttling; isolated per-process loopback proxy",
+    "browserOuter": {
+      "width": 1462,
+      "height": 991
+    },
+    "shutdown": "Wait for host and engine child processes to exit before reuse of profile"
+  },
+  "hardware": {
+    "logicalProcessors": 20,
+    "cpu": "13th Gen Intel(R) Core(TM) i5-13600KF",
+    "os": "Microsoft Windows NT 10.0.26300.0",
+    "physicalBytes": 68563062784
+  },
+  "frontendIndexSha256": "06dec90f1a8b43a0d953f33302c77aacb9bc9b4f68fb41b769fda6bccda152d9",
+  "versions": {
+    "desktop": [
+      "Edg/156.0.4314.50"
+    ],
+    "browser": [
+      "Edg/156.0.4314.42"
+    ]
+  },
+  "startup": {
+    "desktop": {
+      "newProfileMs": 1287.62,
+      "warmMs": {
+        "median": 1765.62,
+        "min": 1612.35,
+        "max": 2105.56
+      }
+    },
+    "browser": {
+      "newProfileMs": 1420.47,
+      "warmMs": {
+        "median": 967.52,
+        "min": 810.32,
+        "max": 1496.57
+      }
+    }
+  },
+  "idle": {
+    "desktop": {
+      "privateWorkingSetMiB": {
+        "median": 193.27,
+        "min": 192.71,
+        "max": 225.78
+      },
+      "privateCommitMiB": {
+        "median": 376.61,
+        "min": 338.07,
+        "max": 414.41
+      },
+      "processCount": 7
+    },
+    "browser": {
+      "privateWorkingSetMiB": {
+        "median": 218.07,
+        "min": 201.48,
+        "max": 226.38
+      },
+      "privateCommitMiB": {
+        "median": 413.77,
+        "min": 408.25,
+        "max": 439.16
+      },
+      "processCount": 9
+    }
+  },
+  "loads": {
+    "desktop-4": {
+      "trials": 3,
+      "requestedKiBPerSecond": 256,
+      "receivedKiBPerSecond": {
+        "median": 255.82,
+        "min": 255.76,
+        "max": 255.87
+      },
+      "privateWorkingSetMiB": {
+        "median": 426.31,
+        "min": 421.36,
+        "max": 429.2
+      },
+      "privateCommitMiB": {
+        "median": 563.71,
+        "min": 561.27,
+        "max": 569.49
+      },
+      "cpuCoreEquivalent": {
+        "median": 0.87,
+        "min": 0.57,
+        "max": 0.92
+      },
+      "outputWriteP95Ms": {
+        "median": 4.52,
+        "min": 4.04,
+        "max": 8.83
+      },
+      "frameP95Ms": {
+        "median": 4.3,
+        "min": 4.3,
+        "max": 4.3
+      },
+      "tabSwitchP95Ms": {
+        "median": 25,
+        "min": 21.1,
+        "max": 31.8
+      },
+      "longTasks": [
+        0,
+        0,
+        0
+      ],
+      "pendingMessages": [
+        0,
+        0,
+        0
+      ],
+      "sentBytes": 35379712,
+      "ackBytes": 35379712,
+      "inputErrors": 0,
+      "prematureClosures": 0,
+      "producerCpuCoreEquivalent": [
+        0.08,
+        0.06,
+        0.06
+      ],
+      "producerTickLagP95Ms": [
+        11.57,
+        11.58,
+        11.37
+      ]
+    },
+    "desktop-8": {
+      "trials": 3,
+      "requestedKiBPerSecond": 1024,
+      "receivedKiBPerSecond": {
+        "median": 1023.63,
+        "min": 1023.48,
+        "max": 1023.88
+      },
+      "privateWorkingSetMiB": {
+        "median": 507.39,
+        "min": 502.73,
+        "max": 509.33
+      },
+      "privateCommitMiB": {
+        "median": 651.44,
+        "min": 649.91,
+        "max": 653.81
+      },
+      "cpuCoreEquivalent": {
+        "median": 1.1,
+        "min": 0.96,
+        "max": 1.34
+      },
+      "outputWriteP95Ms": {
+        "median": 15.83,
+        "min": 13.93,
+        "max": 18.32
+      },
+      "frameP95Ms": {
+        "median": 8.3,
+        "min": 8.3,
+        "max": 8.4
+      },
+      "tabSwitchP95Ms": {
+        "median": 28.8,
+        "min": 22.7,
+        "max": 34
+      },
+      "longTasks": [
+        0,
+        0,
+        0
+      ],
+      "pendingMessages": [
+        0,
+        0,
+        0
+      ],
+      "sentBytes": 188765184,
+      "ackBytes": 188765184,
+      "inputErrors": 0,
+      "prematureClosures": 0,
+      "producerCpuCoreEquivalent": [
+        0.19,
+        0.18,
+        0.17
+      ],
+      "producerTickLagP95Ms": [
+        11.53,
+        11.54,
+        11.33
+      ]
+    },
+    "browser-4": {
+      "trials": 3,
+      "requestedKiBPerSecond": 256,
+      "receivedKiBPerSecond": {
+        "median": 255.73,
+        "min": 255.72,
+        "max": 255.95
+      },
+      "privateWorkingSetMiB": {
+        "median": 438.67,
+        "min": 419.08,
+        "max": 445.47
+      },
+      "privateCommitMiB": {
+        "median": 617.09,
+        "min": 591.09,
+        "max": 618.59
+      },
+      "cpuCoreEquivalent": {
+        "median": 0.69,
+        "min": 0.49,
+        "max": 1.09
+      },
+      "outputWriteP95Ms": {
+        "median": 4.85,
+        "min": 3.57,
+        "max": 8.17
+      },
+      "frameP95Ms": {
+        "median": 4.3,
+        "min": 4.3,
+        "max": 4.3
+      },
+      "tabSwitchP95Ms": {
+        "median": 19.3,
+        "min": 19,
+        "max": 25.7
+      },
+      "longTasks": [
+        0,
+        0,
+        0
+      ],
+      "pendingMessages": [
+        0,
+        0,
+        0
+      ],
+      "sentBytes": 35390720,
+      "ackBytes": 35390720,
+      "inputErrors": 0,
+      "prematureClosures": 0,
+      "producerCpuCoreEquivalent": [
+        0.08,
+        0.07,
+        0.07
+      ],
+      "producerTickLagP95Ms": [
+        11.59,
+        11.72,
+        11.34
+      ]
+    },
+    "browser-8": {
+      "trials": 3,
+      "requestedKiBPerSecond": 1024,
+      "receivedKiBPerSecond": {
+        "median": 1023.73,
+        "min": 1023.25,
+        "max": 1023.84
+      },
+      "privateWorkingSetMiB": {
+        "median": 525.98,
+        "min": 509.37,
+        "max": 528.91
+      },
+      "privateCommitMiB": {
+        "median": 693.1,
+        "min": 691.81,
+        "max": 704.1
+      },
+      "cpuCoreEquivalent": {
+        "median": 0.88,
+        "min": 0.66,
+        "max": 1.26
+      },
+      "outputWriteP95Ms": {
+        "median": 7.14,
+        "min": 6.42,
+        "max": 12.1
+      },
+      "frameP95Ms": {
+        "median": 4.3,
+        "min": 4.3,
+        "max": 8.3
+      },
+      "tabSwitchP95Ms": {
+        "median": 20.4,
+        "min": 15.5,
+        "max": 23.3
+      },
+      "longTasks": [
+        0,
+        0,
+        0
+      ],
+      "pendingMessages": [
+        0,
+        0,
+        0
+      ],
+      "sentBytes": 188765184,
+      "ackBytes": 188765184,
+      "inputErrors": 0,
+      "prematureClosures": 0,
+      "producerCpuCoreEquivalent": [
+        0.14,
+        0.16,
+        0.16
+      ],
+      "producerTickLagP95Ms": [
+        11.52,
+        11.58,
+        11.39
+      ]
+    }
+  },
+  "existingBrowser": {
+    "baseline": {
+      "samples": 3,
+      "privateWorkingSetMiB": 118.02,
+      "peakPrivateWorkingSetMiB": 118.23,
+      "privateCommitMiB": 263.36,
+      "processCount": 9,
+      "cpuCoreEquivalent": 0.03
+    },
+    "loaded": {
+      "samples": 3,
+      "privateWorkingSetMiB": 211.5,
+      "peakPrivateWorkingSetMiB": 212.35,
+      "privateCommitMiB": 450.8,
+      "processCount": 10,
+      "cpuCoreEquivalent": 0.04
+    },
+    "startupMs": [
+      492.97,
+      426.94,
+      462.08,
+      545.85,
+      267.8
+    ],
+    "incrementalPrivateWorkingSetMiB": 93.48,
+    "incrementalPrivateCommitMiB": 187.44
+  },
+  "startupSamples": [
+    {
+      "kind": "desktop",
+      "round": 0,
+      "firstProfileUse": true,
+      "milliseconds": 1287.62,
+      "navigationMs": 421.90000009536743,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.50"
+    },
+    {
+      "kind": "browser",
+      "round": 0,
+      "firstProfileUse": true,
+      "milliseconds": 1420.47,
+      "navigationMs": 725.8999998569489,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.42"
+    },
+    {
+      "kind": "browser",
+      "round": 1,
+      "firstProfileUse": false,
+      "milliseconds": 815.76,
+      "navigationMs": 447.30000019073486,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.42"
+    },
+    {
+      "kind": "desktop",
+      "round": 1,
+      "firstProfileUse": false,
+      "milliseconds": 2105.56,
+      "navigationMs": 680.5,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.50"
+    },
+    {
+      "kind": "desktop",
+      "round": 2,
+      "firstProfileUse": false,
+      "milliseconds": 1612.35,
+      "navigationMs": 391.60000014305115,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.50"
+    },
+    {
+      "kind": "browser",
+      "round": 2,
+      "firstProfileUse": false,
+      "milliseconds": 810.32,
+      "navigationMs": 407.60000014305115,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.42"
+    },
+    {
+      "kind": "browser",
+      "round": 3,
+      "firstProfileUse": false,
+      "milliseconds": 1095.88,
+      "navigationMs": 667.3999998569489,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.42"
+    },
+    {
+      "kind": "desktop",
+      "round": 3,
+      "firstProfileUse": false,
+      "milliseconds": 1669.21,
+      "navigationMs": 383.5,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.50"
+    },
+    {
+      "kind": "desktop",
+      "round": 4,
+      "firstProfileUse": false,
+      "milliseconds": 1765.62,
+      "navigationMs": 381.90000009536743,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.50"
+    },
+    {
+      "kind": "browser",
+      "round": 4,
+      "firstProfileUse": false,
+      "milliseconds": 1496.57,
+      "navigationMs": 799.5,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.42"
+    },
+    {
+      "kind": "browser",
+      "round": 5,
+      "firstProfileUse": false,
+      "milliseconds": 967.52,
+      "navigationMs": 510.40000009536743,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.42"
+    },
+    {
+      "kind": "desktop",
+      "round": 5,
+      "firstProfileUse": false,
+      "milliseconds": 1896.18,
+      "navigationMs": 401.5,
+      "viewport": "1440x900",
+      "version": "Edg/156.0.4314.50"
+    }
+  ],
+  "capturedDate": "2026-10-31 Asia/Hong_Kong"
+}

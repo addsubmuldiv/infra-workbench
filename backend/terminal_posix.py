@@ -9,6 +9,7 @@ import signal
 import struct
 import subprocess
 import sys
+from .desktop_runtime import pty_arguments
 
 
 class PosixTerminal:
@@ -30,7 +31,7 @@ class PosixTerminal:
             # A fresh, single-threaded interpreter acquires the controlling TTY.
             # Never run Python preexec_fn/pty.fork() inside a threaded ASGI server.
             self.process=subprocess.Popen(
-                [sys.executable,'-I',helper,'--fd',str(slave),'--',*args],
+                pty_arguments(sys.executable,helper,slave,args),
                 pass_fds=(slave,),close_fds=True,start_new_session=False,
                 stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,env=environment)

@@ -27,6 +27,11 @@ from .log_routes import register_log_routes
 from .file_routes import register_file_routes
 from .reservations import ReservationBook
 from .mail import MailService, register_mail_routes
+from .agent_api import AgentAPIService, register_agent_api_routes
+from .resource_history import ResourceHistory
+from .infra_assistant import InfraAssistant, register_assistant_routes
+from .agent_chat import AgentChat, register_chat_routes
+from .chat_tools import ChatTools
 from .desktop_notifications import register_desktop_notification_routes
 from .ssh_passwords import SSHPasswords, connection_identity
 from .agent_service import AgentService
@@ -135,7 +140,7 @@ def parse_ports(result):
     return ports
 
 
-def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None):
+def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None, agent_credential_store=None):
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
@@ -144,6 +149,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
     mail = MailService(store, email_credential_store if email_credential_store is not None else create_credential_store('InfraWorkbench/mail/'))
+    agent_api = AgentAPIService(store, agent_credential_store if agent_credential_store is not None else create_credential_store('InfraWorkbench/agent/'))
+    resource_history = ResourceHistory(store)
     reservations = ReservationBook(store, mail)
     snapshots, locks = {}, {}
     collect_tasks = {}
@@ -206,8 +213,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                         if not metadata:
                             proc['user'] = users.get(str(proc['pid']))
                 snap = dict(host_id=host_id, status='online', collected_at=time.time(), devices=devices,
-                            ports=parse_ports(raw['ports']), system=raw.get('system'), error=None, error_stage=None)
+                            ports=parse_ports(raw['ports']), system=raw.get('system'), error=None, error_stage=None,
+                            login_user=raw.get('login_user'), tmux=raw.get('tmux'))
                 snapshots[host_id] = snap
+                resource_history.observe(host, snap)
                 reservations.observe(host_id, snap)
                 if previous.get('status') == 'error':
                     store.event(host_id, host['target']+'：采集已恢复')
@@ -237,6 +246,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 message = str(exc)[:1000] or '连接或采集超时'
                 snapshots[host_id] = dict(previous, host_id=host_id, status='error', error=message, error_stage=stage,
                                          devices=previous.get('devices', []), collected_at=previous.get('collected_at'))
+                resource_history.observe(host, snapshots[host_id])
                 reservations.observe(host_id, snapshots[host_id])
                 for rule in rules:
                     if rule['host_id'] == host_id:
@@ -275,6 +285,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @asynccontextmanager
     async def lifespan(app):
+        app.state.agent_chat.recover()
         async with app.state.mcp_server.session_manager.run():
             task = asyncio.create_task(poll()) if start_poll else None
             mail_task = asyncio.create_task(mail.run()) if start_poll else None
@@ -284,6 +295,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             import_cleanup.cancel()
             with contextlib.suppress(asyncio.CancelledError):await import_cleanup
             await app.state.server_imports.close()
+            await app.state.agent_chat.close()
             if terminal_task:
                 terminal_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):await terminal_task
@@ -309,10 +321,18 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     app.state.sudo = sudo
     app.state.ssh_passwords = ssh_passwords
     app.state.mail = mail
+    app.state.agent_api = agent_api
+    register_agent_api_routes(app, agent_api)
     register_mail_routes(app, mail)
     register_desktop_notification_routes(app, store)
     register_terminal_routes(app,hosts,ssh,store,sudo)
     register_mcp(app, AgentService(hosts,snapshots,ssh,ssh_passwords,collect))
+    async def refresh_assistant():
+        return await app.state.agent_service.refresh(list(hosts), 25)
+    app.state.infra_assistant = InfraAssistant(agent_api, app.state.agent_service.inventory, resource_history, refresh_assistant)
+    register_assistant_routes(app, app.state.infra_assistant)
+    app.state.agent_chat = AgentChat(store,agent_api,ChatTools(app.state.infra_assistant,app.state.agent_service,ssh))
+    register_chat_routes(app,app.state.agent_chat)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.middleware('http')
@@ -328,10 +348,17 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             origin = request.headers.get('origin')
             if request.headers.get('x-iwb') != '1' or (origin and origin != str(request.base_url).rstrip('/')):
                 return JSONResponse({'detail': '仅允许本机页面操作'}, status_code=403)
-        return await call_next(request)
+        result = await call_next(request)
+        if request.url.path.startswith(('/api/settings/agent', '/api/assistant')):
+            result.headers['Cache-Control'] = 'no-store'
+        return result
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
+        if request.url.path.startswith('/api/assistant'):
+            return JSONResponse({'detail': '请检查查询内容和时间范围'}, status_code=422)
+        if request.url.path.startswith('/api/settings/agent'):
+            return JSONResponse({'detail': '请检查接口 URL、协议、模型名称、API key 和超时时间；URL 不能包含账号、查询参数或片段'}, status_code=422)
         return JSONResponse({'detail': '输入格式不正确，请检查主机、用户名、端口及设备选择'}, status_code=422)
 
     @app.get('/api/config-hosts')
@@ -503,6 +530,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         store.save('hosts', hosts)
         store.save('rules', rules)
         snapshots.pop(host_id, None)
+        resource_history.forget(host_id)
         return {'ok': True}
 
     @app.get('/api/hosts/{host_id}/sudo')

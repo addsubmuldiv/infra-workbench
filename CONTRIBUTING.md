@@ -37,6 +37,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-backgroun
 | `backend/agent_service.py` / `agent_query.py` / `connection_info.py` | 共用查询、有界刷新、资源筛选与 SSH 连接描述 |
 | `backend/ssh_passwords.py` | 身份绑定的可选 SSH 密码存储，与 sudo/邮件分开 |
 | `backend/mcp_server.py` | 官方 SDK Streamable HTTP 适配与现有后台生命周期集成 |
+| `backend/agent_api.py` | 内置模型接口配置、独立凭据、Responses/Chat Completions 适配和连接测试 |
+| `backend/infra_assistant.py` / `resource_history.py` | 中文只读查询条件、确定性跨机匹配、有界变化记录及带引用的 AI 摘要 |
 | `backend/core.py` | GPU/NPU 解析和资源判断 |
 | `backend/remote_probe.py` | 远端只读采集 CPU、内存、设备、进程和端口 |
 | `backend/store.py` | SQLite 中的主机、规则和事件 |

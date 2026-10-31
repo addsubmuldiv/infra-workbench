@@ -294,3 +294,11 @@ header{background:var(--panel);border-color:var(--line);position:sticky;top:0;z-
 .remove-host-button:hover{color:var(--danger);background:var(--danger-bg);border-color:var(--danger)}
 .remove-host-modal{width:min(480px,calc(100vw - 32px))}
 .remove-host-modal>p{line-height:1.9;overflow-wrap:anywhere}.remove-host-description{margin-top:14px;font-size:12px}
+.page-heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.page-heading-actions button{white-space:nowrap}
+.page-heading-actions button:disabled{cursor:not-allowed}
+.page-heading-actions .machine-delete-action{background:transparent;border-color:transparent;color:var(--muted);box-shadow:none;font-size:11px;padding:9px 10px}
+.page-heading-actions .machine-delete-action:hover:not(:disabled){color:var(--danger);background:var(--danger-bg)}
+.machine-delete-count{font-size:10px;min-width:16px;text-align:center;opacity:.8}
+.remove-host-list{max-height:220px;overflow:auto;padding-left:24px;line-height:1.9;overflow-wrap:anywhere}
+@media(max-width:800px){.page-heading{flex-wrap:wrap;gap:16px}.page-heading-actions{justify-content:flex-start}}

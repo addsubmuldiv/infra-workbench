@@ -13,7 +13,8 @@ def ensure_shortcut(root,app_id):
     folder=Path(os.environ['APPDATA'])/'Microsoft'/'Windows'/'Start Menu'/'Programs'/'Infra Workbench'
     folder.mkdir(parents=True,exist_ok=True)
     destination=folder/'Infra Workbench.lnk'
-    pythonw=Path(sys.executable).with_name('pythonw.exe')
+    frozen=bool(getattr(sys,'frozen',False))
+    pythonw=Path(sys.executable) if frozen else Path(sys.executable).with_name('pythonw.exe')
     if not pythonw.is_file(): raise RuntimeError('缺少 pythonw.exe，无法注册工作台通知身份')
 
     class Guid(ctypes.Structure):
@@ -51,7 +52,8 @@ def ensure_shortcut(root,app_id):
                                    ctypes.byref(Guid('000214f9-0000-0000-c000-000000000046')),ctypes.byref(link)))
         pointers.append(link)
         # IShellLinkW vtable: SetPath, SetArguments, SetWorkingDirectory, SetDescription.
-        for index,value in ((20,str(pythonw)),(11,subprocess.list2cmdline([str(root/'backend'/'desktop.py')])),
+        arguments=['--no-browser'] if frozen else [str(root/'backend'/'desktop.py')]
+        for index,value in ((20,str(pythonw)),(11,subprocess.list2cmdline(arguments)),
                             (9,str(root)),(7,'Infra Workbench - GPU / NPU resource workspace')):
             check(method(link,index,[w.LPCWSTR])(link,value))
         check(method(link,17,[w.LPCWSTR,ctypes.c_int])(link,str(root/'backend'/'assets'/'workbench.ico'),0))

@@ -1,0 +1,85 @@
+name: Desktop packages
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'backend/**'
+      - 'frontend/**'
+      - 'requirements*.txt'
+      - 'scripts/check-webkit-performance-compat.cjs'
+      - 'scripts/check-desktop-flows.cjs'
+      - 'scripts/desktop-benchmark-server.cjs'
+      - '.github/workflows/desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Desktop on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Create Python environment (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv/Scripts/python.exe -m pip install -r requirements-dev.txt -r desktop/requirements-build.txt
+      - name: Create Python environment (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements-dev.txt -r desktop/requirements-build.txt
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm ci
+        working-directory: desktop
+      - run: cargo test --locked
+        working-directory: desktop/src-tauri
+      - run: npm run build
+        working-directory: desktop
+      - name: Install WebKit compatibility test runtime
+        run: |
+          npm install --prefix work/desktop-benchmark --no-save ws@8 playwright@1.64.1
+          node work/desktop-benchmark/node_modules/playwright/cli.js install webkit
+      - name: Check shared UI on WebKit (including missing newer APIs)
+        run: node scripts/check-webkit-performance-compat.cjs
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: webkit-check-${{ matrix.os }}
+          path: |
+            work/performance-round2/webkit-compat.json
+            work/performance-round2/webkit-*.png
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

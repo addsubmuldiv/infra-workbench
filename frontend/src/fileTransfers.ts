@@ -1,4 +1,4 @@
-export type TransferProgress={stage:'packing'|'receiving'|'sending'|'verifying'|'done'|'download_remote'|'download_browser';loaded:number;total:number|null};
+export type TransferProgress={stage:'preparing'|'packing'|'receiving'|'sending'|'verifying'|'done'|'download_remote'|'download_browser';loaded:number;total:number|null};
 type UploadStatus={id:string;status:string;total:number;received:number;sent:number;error?:string;path?:string};
 const aborted=()=>new DOMException('传输已取消','AbortError');
 async function jsonRequest(url:string,options:RequestInit={},fetcher:typeof fetch=fetch){
@@ -29,15 +29,19 @@ export function sendUpload(url:string,file:Blob,signal:AbortSignal,progress:(loa
 }
 
 export async function uploadFile(host:string,directory:string,file:File,signal:AbortSignal,progress:(value:TransferProgress)=>void,fetcher:typeof fetch=fetch,sender=sendUpload):Promise<string>{
-  if(file.size>512*1024*1024)throw new Error('单个上传文件不能超过 512 MiB');
-  const job:UploadStatus=await jsonRequest('/api/files/uploads',{method:'POST',body:JSON.stringify({host_id:host,path:directory,name:file.name,size:file.size}),signal},fetcher);
+  return uploadPayload(host,directory,file.name,file,'file',signal,progress,fetcher,sender);
+}
+export async function uploadPayload(host:string,directory:string,name:string,body:Blob,kind:'file'|'folder',signal:AbortSignal,progress:(value:TransferProgress)=>void,fetcher:typeof fetch=fetch,sender=sendUpload):Promise<string>{
+  if(signal.aborted)throw aborted();
+  if(body.size>512*1024*1024)throw new Error('上传内容不能超过 512 MiB');
+  const job:UploadStatus=await jsonRequest('/api/files/uploads',{method:'POST',body:JSON.stringify({host_id:host,path:directory,name,size:body.size,...(kind==='folder'?{kind}:{})}),signal},fetcher);
   const url='/api/files/uploads/'+job.id;
   try{
-    progress({stage:'receiving',loaded:0,total:file.size});
-    await sender(url,file,signal,loaded=>progress({stage:'receiving',loaded,total:file.size}));
+    progress({stage:'receiving',loaded:0,total:body.size});
+    await sender(url,body,signal,loaded=>progress({stage:'receiving',loaded,total:body.size}));
     while(true){
       const state:UploadStatus=await jsonRequest(url,{signal},fetcher);
-      if(state.status==='done'){progress({stage:'done',loaded:file.size,total:file.size});return state.path!}
+      if(state.status==='done'){progress({stage:'done',loaded:body.size,total:body.size});return state.path!}
       if(['error','cancelled'].includes(state.status))throw new Error(state.error||'上传未完成');
       progress({stage:state.status==='verifying'?'verifying':'sending',loaded:state.sent,total:state.total});
       await pause(signal);

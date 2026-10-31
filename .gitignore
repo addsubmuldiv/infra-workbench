@@ -3,6 +3,7 @@ data/
 frontend/node_modules/
 __pycache__/
 .pytest_cache/
+.playwright-cli/
 *.py[cod]
 *.log
 .env
@@ -28,3 +29,9 @@ work/
 # Local validation notes include private machine names; share generic docs instead.
 VALIDATION.md
 .iwb-macos-install.lock
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/binaries/
+desktop/src-tauri/icons/*
+!desktop/src-tauri/icons/icon.icns

@@ -1,0 +1,7 @@
+/* Keep off-screen machine cards out of repeated layout/paint during sidebar
+   resizing. Remember measured heights after first display to limit scroll jumps.
+   Unsupported WebViews ignore these declarations and keep the normal layout. */
+.machine{
+  content-visibility:auto;
+  contain-intrinsic-size:auto 640px;
+}

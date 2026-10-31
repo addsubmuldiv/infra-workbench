@@ -12,8 +12,8 @@ export function MCPSettings(){
   }).then(value=>{if(alive)setInfo(value)}).catch(error=>{if(alive)setError(error.message)});return()=>{alive=false}},[]);
   const endpoint=window.location.origin+(info?.path||'/mcp');
   const copy=async()=>{try{await navigator.clipboard.writeText(endpoint);setCopied(true);setError('')}catch{setError('复制失败，请选中上方地址手动复制。')}};
-  return <section className="settings-page mcp-settings" aria-label="AI agent 接入">
-    <div className="settings-section-title"><Bot size={20}/><div><h2>AI agent 接入</h2><p>把 MCP 地址添加到 agent 客户端，连接后会自动发现工具、参数和使用示例。</p></div></div>
+  return <section className="settings-page mcp-settings" aria-label="外部 Agent（MCP）">
+    <div className="settings-section-title"><Bot size={20}/><div><h2>外部 Agent（MCP）</h2><p>把 MCP 地址添加到 agent 客户端，连接后会自动发现工具、参数和使用示例。</p></div></div>
     <div className="settings-card"><label className="form-label">本机 MCP 地址<div className="mcp-endpoint"><input aria-label="MCP 地址" readOnly value={endpoint} onFocus={event=>event.target.select()}/><button className="secondary" onClick={copy}>{copied?<Check size={15}/>:<Copy size={15}/ >}{copied?'已复制':'复制地址'}</button></div></label>
       <p>{info?`${info.transport} · ${info.tools.length} 个工具已就绪`:'正在读取工具…'}</p>
       {error&&<div className="settings-error" role="alert">{error}</div>}

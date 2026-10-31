@@ -18,6 +18,8 @@
 - **训练精度对比**：读取不同机器的训练日志，按步数对齐并对比指标。
 - **界面偏好**：多套亮色、暗色主题，可调整侧栏宽度，自动记住上次选择的机器。
 - **MCP 接入**：本地或远端 agent 可发现机器、筛选资源、取得 SSH 配置或已保存密码，由 agent 自行连接服务器。
+- **AI 助手**：用中文查找多台机器上的占卡进程、空闲设备和 tmux 会话；查看资源变化记录，并按需生成带原始记录引用的摘要。不需要配置项目路径。
+- **Agent 模型接口**：在设置中配置 URL、API key 和模型，支持 OpenAI Responses / Chat Completions、获取模型列表和文本连接测试。
 
 ## 开始使用
 
@@ -50,6 +52,10 @@ Excel 中也可填写本机 SSH 别名，沿用地址和跳板配置；账号以
 第一次使用可先看 **[功能与使用指南](docs/GUIDE.md)**。
 
 AI agent 接入见 **[MCP 使用说明](docs/MCP.md)**，服务地址为 `http://127.0.0.1:8765/mcp`。
+
+工作台内置模型服务的配置见 **[Agent 模型接口](docs/AGENT.md)**。
+
+「AI 助手 → 对话」支持多轮查询、读取服务器文件和固定 SSH 只读检查，显示每一步的机器与返回结果；沿用设置中的模型接口。
 
 [批量导入](docs/IMPORT.md) · [安装与排障](docs/WINDOWS.md) · [后台与通知](docs/BACKGROUND.md) · [卡预约](docs/RESERVATIONS.md) · [邮件通知](docs/MAIL.md) · [SSH 终端](docs/TERMINAL.md) · [服务器文件](docs/FILES.md) · [精度对比](docs/PRECISION.md)
 

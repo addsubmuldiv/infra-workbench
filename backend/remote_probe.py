@@ -189,8 +189,28 @@ def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None):
     return result
 
 
+def tmux_sessions():
+    if not shutil.which('tmux'):
+        return dict(status='unavailable', items=[])
+    result = run(['tmux', 'list-sessions', '-F', '#{session_id}\t#{session_name}\t#{session_attached}\t#{session_created}'])
+    if result['code'] != 0:
+        no_server = any(text in result['error'].lower() for text in ('no server running','no sessions','no such file or directory'))
+        return dict(status='known' if no_server else 'unknown', items=[])
+    items = []
+    for line in result['out'].splitlines()[:200]:
+        parts = line.split('\t')
+        if len(parts) != 4 or not parts[2].isdigit() or not parts[3].isdigit():
+            return dict(status='unknown', items=[])
+        items.append(dict(id=parts[0], name=parts[1][:200], attached=int(parts[2]), created=int(parts[3])))
+    return dict(status='known', items=items, truncated=len(result['out'].splitlines())>200)
+
+
 def main():
-    result = {'system': system_metrics()}
+    try:
+        login_user = pwd.getpwuid(os.getuid()).pw_name if pwd else None
+    except (KeyError, OSError, AttributeError):
+        login_user = None
+    result = {'system': system_metrics(), 'login_user': login_user, 'tmux': tmux_sessions()}
     try:
         process_cutoff_ticks = int(float(read_text('/proc/uptime').split()[0])*os.sysconf('SC_CLK_TCK'))
     except (OSError, ValueError, IndexError, AttributeError):

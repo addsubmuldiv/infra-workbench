@@ -56,3 +56,8 @@
   .sidebar .agent{padding:7px 8px;font-size:10px;white-space:nowrap}
   .sidebar .agent small,.sidebar .version{display:none}
 }
+
+.reservation-stat{position:relative}
+.reservation-stat:hover{background:var(--hover)}
+.reservation-stat-link{position:absolute;inset:0;border:0;border-radius:0;background:transparent;cursor:pointer}
+.reservation-stat-link:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}

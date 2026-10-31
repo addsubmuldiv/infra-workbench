@@ -17,7 +17,7 @@ function harness(t){
   t.after(()=>cleanups.forEach(fn=>fn?.()));
   for(const [key,value] of Object.entries(globals)){const original=Object.getOwnPropertyDescriptor(globalThis,key);Object.defineProperty(globalThis,key,{configurable:true,value,writable:true});t.after(()=>{if(original)Object.defineProperty(globalThis,key,original);else delete globalThis[key]})}
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/TerminalDock.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./terminalWindow'?frames:{},exports);
+  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>false,confirmation:null})}:name==='./terminalWindow'?frames:{},exports);
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const render=()=>{slot=0;tree=exports.TerminalDock({request:null,hosts:[host]});effects.splice(0).forEach(fn=>cleanups.push(fn()));return tree};
   const find=predicate=>nodes(tree).find(predicate);
@@ -67,4 +67,14 @@ test('all resize edges preserve viewport bounds and corrupt saved frames fall ba
   }
   const fallback=frames.loadTerminalFrame({getItem:()=>'{broken'},viewport);
   assert.ok(Number.isFinite(fallback.x)&&fallback.x>=12);
+});
+
+test('dragging does not write geometry to storage until release, including cancellation',t=>{
+  const h=harness(t);let root=h.render();const initial=[...h.disk.values()];
+  h.find(n=>n.props?.className==='terminal-topbar').props.onPointerDown(h.event());h.render();
+  root.props.onPointerMove(h.event(200,160));root=h.render();
+  assert.deepEqual([...h.disk.values()],initial,'do not synchronously save every pointer update');
+  const finalFrame={...root.props.style};root.props.onPointerCancel(h.event());h.render();
+  assert.notDeepEqual([...h.disk.values()],initial);
+  assert.equal(JSON.parse([...h.disk.values()][0]).x,finalFrame.left);
 });

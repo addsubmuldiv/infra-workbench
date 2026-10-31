@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 
-function harness(remove){
+function harness(remove,hosts){
   const values=[];let slot=0,tree,closed=0;
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),
     useState:initial=>{const i=slot++;if(!(i in values))values[i]=initial;return [values[i],v=>{values[i]=v}]},
@@ -11,7 +11,7 @@ function harness(remove){
   const source=fs.readFileSync(new URL('../src/RemoveHostDialog.tsx',import.meta.url),'utf8');
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const exports={};new Function('require','exports',js)(name=>name==='react'?react:new Proxy({},{get:(_,key)=>key}),exports);
-  const render=()=>{slot=0;tree=exports.RemoveHostDialog({host:{id:'fake',target:'example-server'},remove,close:()=>closed++});return tree};
+  const render=()=>{slot=0;tree=exports.RemoveHostDialog({host:{id:'fake',target:'example-server'},hosts,remove,close:()=>closed++});return tree};
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);
   return {render,find,get closed(){return closed}};
@@ -22,6 +22,18 @@ test('opening or cancelling the removal confirmation does not remove a machine',
   assert.equal(removed,0);
   h.find(n=>n.type==='button'&&n.props['aria-label']==='取消移除机器').props.onClick();
   assert.equal(removed,0);assert.equal(h.closed,1);
+});
+
+test('batch removal continues after a failure and retries only failed machines',async()=>{
+  const removed=[],calls=[];let fail=true;
+  const h=harness(async host=>{calls.push(host.id);if(host.id==='beta'&&fail)throw new Error('连接失败');removed.push(host.id)},[{id:'alpha',target:'Alpha'},{id:'beta',target:'Beta'},{id:'gamma',target:'Gamma'}]);
+  h.render();
+  await h.find(n=>n.props?.['aria-label']==='确认移除机器').props.onClick();h.render();
+  assert.deepEqual(removed,['alpha','gamma']);assert.equal(h.closed,0);
+  assert.ok(h.find(n=>n.props?.role==='alert'));
+  fail=false;
+  await h.find(n=>n.props?.['aria-label']==='确认移除机器').props.onClick();
+  assert.deepEqual(calls,['alpha','beta','gamma','beta']);assert.equal(h.closed,1);
 });
 
 test('removing waits for success and ignores repeated confirmation clicks',async()=>{

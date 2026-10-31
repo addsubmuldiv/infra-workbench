@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-close-desktop"
+description = "Close the desktop window after its unsaved-edit guard allows it."
+commands.allow = ["close_desktop"]

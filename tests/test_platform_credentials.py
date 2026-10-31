@@ -147,7 +147,7 @@ assert callable(backend.credentials.create_credential_store)
     assert completed.returncode==0,completed.stderr
 
 
-def test_app_defaults_use_factory_three_times_and_preserve_explicit_vaults(tmp_path,monkeypatch):
+def test_app_defaults_use_separate_vaults_and_preserve_explicit_vaults(tmp_path,monkeypatch):
     mac_module()
     import backend.app as module
     from test_server_import_routes import Vault
@@ -156,11 +156,12 @@ def test_app_defaults_use_factory_three_times_and_preserve_explicit_vaults(tmp_p
         calls.append(namespace);return Vault()
     monkeypatch.setattr(module,'create_credential_store',factory)
     app=module.create_app(tmp_path/'defaults',start_poll=False)
-    assert calls==['InfraWorkbench/ssh/','InfraWorkbench/sudo/','InfraWorkbench/mail/']
+    assert calls==['InfraWorkbench/ssh/','InfraWorkbench/sudo/','InfraWorkbench/mail/','InfraWorkbench/agent/']
     assert app.state.ssh_passwords.vault is not app.state.mail.vault
+    assert app.state.agent_api.vault is not app.state.mail.vault
     calls.clear();vault=Vault()
-    app=module.create_app(tmp_path/'injected',start_poll=False,credential_store=vault,email_credential_store=vault,ssh_credential_store=vault)
-    assert calls==[] and app.state.mail.vault is vault and app.state.ssh_passwords.vault is vault
+    app=module.create_app(tmp_path/'injected',start_poll=False,credential_store=vault,email_credential_store=vault,ssh_credential_store=vault,agent_credential_store=vault)
+    assert calls==[] and app.state.mail.vault is vault and app.state.ssh_passwords.vault is vault and app.state.agent_api.vault is vault
 
 
 def test_backend_loader_selects_only_mac_backend_without_keyring_autodetection(monkeypatch):

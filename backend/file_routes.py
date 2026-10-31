@@ -22,6 +22,7 @@ class SearchRequest(LogLocation):
 
 
 class UploadRequest(LogLocation):
+    kind:Literal['file','folder']='file'
     name:str=Field(min_length=1,max_length=255)
     size:int=Field(ge=0,le=MAX_UPLOAD)
 
@@ -57,7 +58,7 @@ def register_file_routes(app,ssh,find):
 
     @app.get('/api/files/capabilities')
     async def capabilities():
-        return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,folder_download=True,
+        return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,folder_download=True,folder_upload=True,
                     operations=['read','save','copy','move','mkdir','create'],text_limit=1024*1024,copy_limit=64*1024*1024,upload_limit=MAX_UPLOAD)
 
     @app.post('/api/files/search')
@@ -77,7 +78,7 @@ def register_file_routes(app,ssh,find):
 
     @app.post('/api/files/uploads')
     async def upload_create(body:UploadRequest):
-        return transfers.create(find(body.host_id),body.path,body.name,body.size)
+        return transfers.create(find(body.host_id),body.path,body.name,body.size,body.kind)
 
     @app.put('/api/files/uploads/{upload_id}')
     async def upload_body(upload_id:str,request:Request):
