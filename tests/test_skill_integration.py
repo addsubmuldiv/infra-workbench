@@ -106,4 +106,3 @@ def test_real_graph_can_create_validate_install_then_use_next_turn(tmp_path):
         assert probes.calls==[]
         chat.store.db.close()
     asyncio.run(run())
-
