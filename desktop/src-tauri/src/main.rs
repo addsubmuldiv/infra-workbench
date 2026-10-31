@@ -114,7 +114,7 @@ fn main() {
             app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
-                .drag_and_drop(false) // Keep HTML file/folder upload handlers in the shared UI.
+                .disable_drag_drop_handler() // Keep HTML file/folder upload handlers in the shared UI.
                 .on_navigation(|url| {
                     if is_service_url(url) || bootstrap_url(url) { return true; }
                     if matches!(url.scheme(), "http" | "https") { let _ = open::that(url.as_str()); }
