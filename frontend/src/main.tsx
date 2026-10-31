@@ -16,6 +16,8 @@ import {Reservations,ReservationDialog,type ReservationDraft} from './Reservatio
 import type {Reservation} from './reservations';
 import {MailSettingsPage} from './MailSettingsPage';
 import {singleFlight} from './requests';
+import {deviceUsage} from './hostUsage';
+import {HOST_CATEGORIES,filterHosts,type HostCategory} from './hostList';
 const bootPreferences=loadPreferences(browserStorage());
 document.documentElement.dataset.theme=bootPreferences.theme;
 
@@ -49,6 +51,7 @@ function App(){
   const [reservationDraft,setReservationDraft]=useState<ReservationDraft|null>(null);
   const [preferences,setPreferences]=useState(()=>loadPreferences(browserStorage()));
   const [hostSearch,setHostSearch]=useState('');
+  const [hostCategory,setHostCategory]=useState<HostCategory>('全部');
   const [sudoHost,setSudoHost]=useState<Host|null>(null);
   const [fileHost,setFileHost]=useState<{host:Host;requestId:string;path?:string}|null>(null);
   const [terminalRequest,setTerminalRequest]=useState<TerminalRequest|null>(null);
@@ -98,9 +101,10 @@ function App(){
     setNotice(notifyRef.current?'浏览器通知已开启；请保持页面和本地服务运行。':'浏览器通知未开启，事件仍显示在页面中。');
   };
   const scope=scopedHosts(state.hosts,preferences.hostIds);
-  const devices=scope.flatMap(h=>h.snapshot.devices),online=scope.filter(h=>h.snapshot.fresh).length;
+  const devices=state.hosts.flatMap(h=>h.snapshot.devices),online=state.hosts.filter(h=>h.snapshot.fresh).length;
   const matches=(h:Host)=>h.snapshot.fresh?h.snapshot.devices.filter(d=>(filter==='全部'||d.kind===filter)&&isEligible(d,minimum,clear)):[];
   const candidates=scope.filter(h=>matches(h).length>=count);
+  const globalCandidates=state.hosts.filter(h=>matches(h).length>=count);
   const shown=scope.filter(h=>filter==='全部'||h.snapshot.devices.some(d=>d.kind===filter)||!h.snapshot.devices.length);
   const detailHost=state.hosts.find(h=>h.id===detail?.host),detailDevice=detailHost?.snapshot.devices.find(d=>d.id===detail?.device);
   const toggle=(h:string,d:string)=>setSelected(old=>({...old,[h]:(old[h]||[]).includes(d)?old[h].filter(i=>i!==d):[...(old[h]||[]),d]}));
@@ -114,18 +118,21 @@ function App(){
   const inspect=(host:Host,d:Device)=>{setDetail({host:host.id,device:d.id});setCheck(null)};
   const pageTitle=page==='overview'?'算力总览':page==='connections'?'机器连接':page==='precision'?'训练精度对比':page==='reservations'?'卡预约':page==='settings'?'设置':'资源监控';
   useEffect(()=>{document.title=pageTitle+' · Infra Workbench'},[pageTitle]);
+  const listedHosts=filterHosts(state.hosts,hostCategory,hostSearch);
   const hostList=<div className="host-picker">
     <div className="host-picker-heading"><span>机器列表</span><span>{scope.length} / {state.hosts.length}</span></div>
     <div className="host-search"><Search size={14}/><input aria-label="搜索机器列表" placeholder="搜索机器…" value={hostSearch} onChange={e=>setHostSearch(e.target.value)}/></div>
-    <div className="host-picker-actions"><button onClick={()=>selectHosts(null)} className={preferences.hostIds===null?'selected':''}>全部</button><button onClick={()=>selectHosts([])}>清空</button><span>点击名称查看设备，勾选多选</span></div>
-    <div className="host-picker-items">{state.hosts.filter(h=>h.target.toLowerCase().includes(hostSearch.toLowerCase())).map(h=>{
+    <div className="host-category-filter" role="group" aria-label="机器分类">{HOST_CATEGORIES.map(category=><button key={category} type="button" aria-label={category==='全部'?'显示全部类型的机器':'只显示'+category+'机器'} aria-pressed={hostCategory===category} className={hostCategory===category?'selected':''} onClick={()=>setHostCategory(category)}>{category}<b>{filterHosts(state.hosts,category).length}</b></button>)}</div>
+    <div className="host-picker-actions"><button title="选择全部机器，包括其他分类" onClick={()=>selectHosts(null)} className={preferences.hostIds===null?'selected':''}>全选</button><button onClick={()=>selectHosts([])}>清空</button><span>点击名称查看设备，勾选多选</span></div>
+    <div className="host-picker-items">{listedHosts.map(h=>{
       const checked=preferences.hostIds===null||preferences.hostIds.includes(h.id);
+      const usage=deviceUsage(h.snapshot);
       return <div className={'host-picker-row '+(checked?'selected':'')} key={h.id}>
         <input type="checkbox" aria-label={'显示机器 '+h.target} checked={checked} onChange={()=>selectHosts(toggleHost(preferences.hostIds,h.id,state.hosts.map(h=>h.id)))}/>
-        <button aria-label={'只看机器 '+h.target} title="查看此机器的设备" onClick={()=>selectHosts([h.id],true)}><span className={'host-dot '+(h.snapshot.fresh?'online':'')}/><span><strong>{h.target}</strong><small>{h.snapshot.devices.length} 个设备 · {h.snapshot.fresh?'在线':h.snapshot.status==='error'?'采集失败':'等待采集'}</small></span><ChevronRight size={13}/></button>
+        <button aria-label={'只看机器 '+h.target} title="查看此机器的设备" onClick={()=>selectHosts([h.id],true)}><span className={'host-dot '+(h.snapshot.fresh?'online':'')}/><span><strong>{h.target}</strong><small>{usage.total} 卡 · {h.snapshot.fresh?'在线':h.snapshot.status==='error'?'采集失败':'等待采集'}</small><small className="host-usage" title="按设备数统计（多芯片卡每个 die 单独计数）。有计算进程计为占用；确认无计算进程且无 Alarm 计为空闲，不受显存筛选影响。">{h.snapshot.fresh&&usage.total>0?<><span className="occupied">占用 <b>{usage.occupied}</b></span><span className="idle">空闲 <b>{usage.idle}</b></span>{usage.unknown>0&&<span>未知 <b>{usage.unknown}</b></span>}{usage.abnormal>0&&<span className="abnormal">异常 <b>{usage.abnormal}</b></span>}</>:<span>{usage.total?'状态待更新':'等待设备信息'}</span>}</small></span><ChevronRight size={13}/></button>
       </div>})}
       {state.hosts.length===0&&<p className="subtle">添加机器后会出现在这里。</p>}
-      {state.hosts.length>0&&!state.hosts.some(h=>h.target.toLowerCase().includes(hostSearch.toLowerCase()))&&<p className="subtle">没有匹配的机器。</p>}
+      {state.hosts.length>0&&!listedHosts.length&&<p className="subtle">{hostSearch.trim()?'没有匹配的机器。':`暂无${hostCategory==='全部'?'':' '+hostCategory+' '}机器。`}</p>}
     </div><small className="saved-hint"><Check size={11}/>自动记住本次选择</small>
   </div>;
   return <div className="shell">
@@ -142,14 +149,14 @@ function App(){
         <button className={'icon-button '+(notify?'teal':'')} aria-label="开启浏览器通知" onClick={enableNotifications}><Bell size={18}/></button><span className="avatar small">本</span>
       </div></header>
     {preferences.theme==='frieren'&&<JourneyArt/>}
-    <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='connections'?'CONNECTIONS':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':'RESOURCE GUARD'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?'跨机器读取训练日志，自动提取指标并按真实步数对齐。':page==='watch'?'关注准备使用的设备，在资源变化时收到提醒。':page==='reservations'?'预约指定设备，等它们连续空闲后收到提醒。':page==='settings'?'管理邮件通知与发件邮箱。':`正在查看 ${scope.length} 台机器 · 从左侧列表选择你关注的资源`}</p></div><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button></div>
+    <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='connections'?'CONNECTIONS':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':'RESOURCE GUARD'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?'跨机器读取训练日志，自动提取指标并按真实步数对齐。':page==='watch'?'关注准备使用的设备，在资源变化时收到提醒。':page==='reservations'?'预约指定设备，等它们连续空闲后收到提醒。':page==='settings'?'管理邮件通知与发件邮箱。':page==='overview'?`全部 ${state.hosts.length} 台机器的资源概况 · 左侧选择仅影响下方详情`:`正在查看 ${scope.length} 台机器 · 从左侧列表选择你关注的资源`}</p></div><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button></div>
     <details className="mobile-hosts" ref={mobileHosts}><summary><Server size={15}/>选择机器 · {scope.length} / {state.hosts.length}</summary>{hostList}</details>
     {error&&<div className="error-banner">{error}</div>}
     {precisionMounted&&<div className="precision-cache" hidden={page!=='precision'}><PrecisionCompare hosts={state.hosts}/></div>}
-    {page==='overview'&&<><div className="stats"><div><span>所选机器<Server size={16}/></span><strong>{online}<small>/ {scope.length}</small></strong><p><i className="dot"/>在线 / 已选择</p></div><div><span>加速设备<Cpu size={16}/></span><strong>{devices.length}<small>个设备</small></strong><p>{devices.filter(d=>d.kind==='NPU').length} NPU <b>·</b> {devices.filter(d=>d.kind==='GPU').length} GPU</p></div><div><span>满足筛选条件<ShieldCheck size={16}/></span><strong className="teal">{candidates.length}<small>台机器</small></strong><p>至少 {count} 个设备 · 每个 ≥ {minimum} GiB</p></div><div><span>监控中的规则<Radio size={16}/></span><strong>{state.rules.length}<small>条</small></strong><p>占用变化与资源恢复提醒</p></div></div>
-      <section className="finder"><div className="finder-label"><Search size={18}/><div>寻找训练资源<small>仅在所选机器内匹配</small></div></div><label>需要设备数<select aria-label="需要设备数" value={count} onChange={e=>setCount(+e.target.value)}>{Array.from({length:Math.max(8,count,...scope.map(h=>h.snapshot.devices.length))},(_,i)=>i+1).map(i=><option key={i} value={i}>{i} 个</option>)}</select></label><label>剩余显存<div className="input-unit"><input aria-label="每个设备剩余显存" type="number" min="0" max="100000" value={minimum} onChange={e=>setMinimum(Math.max(0,+e.target.value))}/><span>GiB</span></div></label><label className="checkbox-label"><input type="checkbox" checked={clear} onChange={e=>setClear(e.target.checked)}/>无可见计算进程</label><div className="match-count"><strong>{candidates.length}</strong> 台匹配<ArrowUpRight size={17}/></div></section>
+    {page==='overview'&&<><div className="stats" aria-label="全部机器资源总览"><div><span>全部机器<Server size={16}/></span><strong>{online}<small>/ {state.hosts.length}</small></strong><p><i className="dot"/>在线 / 已添加</p></div><div><span>加速设备<Cpu size={16}/></span><strong>{devices.length}<small>个设备</small></strong><p>{devices.filter(d=>d.kind==='NPU').length} NPU <b>·</b> {devices.filter(d=>d.kind==='GPU').length} GPU</p></div><div><span title="根据当前设备数量、类型、显存和进程条件，在全部机器中统计，不受左侧选择影响">全局符合条件<ShieldCheck size={16}/></span><strong className="teal">{globalCandidates.length}<small>台机器</small></strong><p>至少 {count} 个设备 · 每个 ≥ {minimum} GiB</p></div><div><span>监控中的规则<Radio size={16}/></span><strong>{state.rules.length}<small>条</small></strong><p>占用变化与资源恢复提醒</p></div></div>
+      <section className="finder"><div className="finder-label"><Search size={18}/><div>寻找训练资源<small>仅在所选 {scope.length} 台机器内匹配</small></div></div><label>需要设备数<select aria-label="需要设备数" value={count} onChange={e=>setCount(+e.target.value)}>{Array.from({length:Math.max(8,count,...scope.map(h=>h.snapshot.devices.length))},(_,i)=>i+1).map(i=><option key={i} value={i}>{i} 个</option>)}</select></label><label>剩余显存<div className="input-unit"><input aria-label="每个设备剩余显存" type="number" min="0" max="100000" value={minimum} onChange={e=>setMinimum(Math.max(0,+e.target.value))}/><span>GiB</span></div></label><label className="checkbox-label"><input type="checkbox" checked={clear} onChange={e=>setClear(e.target.checked)}/>无可见计算进程</label><div className="match-count"><strong>{candidates.length}</strong> 台匹配（所选范围）<ArrowUpRight size={17}/></div></section>
     </>}
-    {(page==='overview'||page==='connections')&&<div className="two-columns"><div className="machines"><div className="section-heading"><h2>设备详情<span>{shown.length} 台机器</span></h2><div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
+    {(page==='overview'||page==='connections')&&<div className="two-columns"><div className="machines"><div className="section-heading"><h2>所选机器详情<span>{shown.length} 台机器</span></h2><div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
       {shown.length===0&&<div className="empty"><Server size={32}/><h3>{state.hosts.length===0?'连接第一台机器':scope.length===0?'选择要查看的机器':'没有符合设备类型的机器'}</h3><p>{state.hosts.length===0?'从本机 SSH 配置选择，或输入主机和账号密码。':'在机器列表中点击名称单选，或勾选多台机器。'}</p>{state.hosts.length===0?<button className="primary" onClick={()=>setAdding(true)}><Plus size={16}/>添加机器</button>:<button className="secondary" onClick={()=>{selectHosts(null);setFilter('全部')}}>显示全部机器</button>}</div>}
       {shown.map(host=>{const snapshot=host.snapshot,ids=selected[host.id]||[];return <section className="machine" key={host.id} aria-label={'机器详情 '+host.target}>
         <div className="machine-heading"><span className="machine-icon"><Server size={20}/></span><div className="machine-name"><h3>{host.target}<Badge tone={snapshot.fresh?'green':'amber'}>{snapshot.fresh?'在线':snapshot.status==='error'?'采集失败':snapshot.status==='connecting'?'连接中':'数据过期'}</Badge></h3><p>{machineSummary(snapshot.devices)} <span>·</span> SSH {host.auth==='password_session'?'密码会话':'免密连接'}</p></div><button className="ssh-open" aria-label={'浏览 '+host.target+' 文件'} onClick={()=>setFileHost({host,requestId:crypto.randomUUID()})}><Database size={15}/><span>文件</span></button><button className="ssh-open" aria-label={'打开 '+host.target+' 终端'} onClick={()=>setTerminalRequest({id:crypto.randomUUID(),host})}><Terminal size={15}/><span>终端</span></button><button className={'sudo-button '+(host.sudo?.enabled?'enabled':'')} title={host.sudo?.message||'设置 sudo 进程详情'} aria-label={host.target+' sudo 设置'} onClick={()=>setSudoHost(host)}><ShieldCheck size={15}/><span>sudo</span></button><button className="icon-button" aria-label={'刷新 '+host.target} disabled={busy===host.id} onClick={()=>act(host.id,()=>api('/hosts/'+host.id+'/refresh','POST'))}><RefreshCw size={16} className={busy===host.id?'spin':''}/></button><button className="icon-button" aria-label={'移除 '+host.target} onClick={()=>act('remove',()=>api('/hosts/'+host.id,'DELETE'))}><Trash2 size={15}/></button></div>
