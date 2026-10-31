@@ -170,3 +170,24 @@ def test_deep_yaml_and_bad_url_are_validation_errors(skills):
     for body in ['---\nname: my-check\ndescription: Check\nmetadata: '+('['*2000)+(']'*2000)+'\n---\nDo it.', files(body='[x](http://[bad)')['SKILL.md']]:
         draft=skills.create_draft({'SKILL.md':body})
         assert not skills.validate_draft(draft['id'],1,[])['valid']
+
+
+def test_ui_private_tool_dependency_rejected_by_embedded_catalog(tmp_path):
+    from fastapi.testclient import TestClient
+    from backend.app import create_app
+    app=create_app(tmp_path,start_poll=False)
+    with TestClient(app) as client:
+        draft=client.post('/api/skills/import?filename=private.md',headers={'X-IWB':'1'},content=files(metadata='metadata:\n  workbench-required-tools: get_ssh_password\n')['SKILL.md'].encode()).json()
+        report=client.post('/api/skills/drafts/'+draft['id']+'/validate',headers={'X-IWB':'1'},json={'revision':1}).json()
+        assert report['missing_tools']==['get_ssh_password'] and not report['valid']
+        assert client.post('/api/skills/drafts/'+draft['id']+'/install',headers={'X-IWB':'1'},json={'revision':1}).status_code==400
+
+
+def test_builtin_cache_tracks_added_and_modified_files(skills):
+    assert skills.catalog()==[]
+    root=skills.builtin_root/'my-check';root.mkdir(parents=True)
+    path=root/'SKILL.md';path.write_text(files()['SKILL.md'],encoding='utf-8')
+    first=skills.read('my-check')
+    assert skills.read('my-check')['created']==first['created']
+    path.write_text(files(body='Changed instructions')['SKILL.md'],encoding='utf-8')
+    assert skills.read('my-check')['hash']!=first['hash']

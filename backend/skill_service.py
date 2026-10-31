@@ -1,5 +1,6 @@
 """Transactional, application-owned user skill packages. No imported code executes."""
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -50,6 +51,19 @@ def text_files(raw):
         except UnicodeError:
             pass
     return result
+
+
+def package_view(raw):
+    """Decode each file once for both the text editor and manifest."""
+    files, manifest = {}, []
+    for path, encoded in raw.items():
+        data=base64.b64decode(encoded)
+        try:
+            text=data.decode('utf-8-sig')
+            if '\x00' not in text:files[path]=text
+        except UnicodeError:pass
+        manifest.append(dict(path=path,size=len(data),text=path in files))
+    return dict(files=files,file_manifest=manifest)
 
 
 def encode_files(files):
@@ -110,12 +124,19 @@ class SkillService:
         self.builtin_root = Path(builtin_root) if builtin_root is not None else Path(__file__).with_name('skills')
         if not hasattr(store, 'skill_lock'): store.skill_lock = threading.RLock()
         self.lock = store.skill_lock
+        self._builtin_cache = None
         with self.db:
             self.db.execute('CREATE TABLE IF NOT EXISTS user_skills (name TEXT PRIMARY KEY, incarnation TEXT NOT NULL, active INTEGER NOT NULL, enabled INTEGER NOT NULL)')
             self.db.execute('CREATE TABLE IF NOT EXISTS skill_versions (name TEXT NOT NULL, version INTEGER NOT NULL, incarnation TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(name,version))')
             self.db.execute('CREATE TABLE IF NOT EXISTS skill_drafts (id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
 
     def _builtins(self):
+        paths=[]
+        for entry in sorted(self.builtin_root.glob('*/SKILL.md')):
+            paths.extend(p for p in sorted(entry.parent.rglob('*')) if p.is_file() and not p.is_symlink())
+        signature=tuple((str(p),p.stat().st_mtime_ns,p.stat().st_size) for p in paths)
+        if self._builtin_cache is not None and self._builtin_cache[0]==signature:
+            return copy.deepcopy(self._builtin_cache[1])
         result = {}
         for path in sorted(self.builtin_root.glob('*/SKILL.md')):
             root = path.parent
@@ -123,7 +144,8 @@ class SkillService:
             meta = parse_skill(text_files(raw))
             if meta['name'] != root.name: raise SkillError('内置技能名称与目录不一致')
             result[root.name] = self._payload(raw, meta, 1, 'builtin')
-        return result
+        self._builtin_cache=(signature,result)
+        return copy.deepcopy(result)
 
     def _payload(self, raw, meta, version, source='user'):
         canonical = json.dumps(raw,sort_keys=True,separators=(',',':')).encode()
@@ -169,7 +191,7 @@ class SkillService:
                 versions=[self._metadata(json.loads(r[0])) for r in self.db.execute('SELECT payload FROM skill_versions WHERE name=? AND incarnation=? ORDER BY version DESC',(name,current[0])).fetchall()]
                 if not any(v['version']==payload['version'] for v in versions):raise SkillError('此版本属于已卸载的技能',404)
             result=self._metadata(payload)
-            result.update(files=text_files(payload['raw']), file_manifest=[dict(path=p,size=len(base64.b64decode(b)),text=p in text_files(payload['raw'])) for p,b in payload['raw'].items()],versions=versions)
+            result.update(package_view(payload['raw']),versions=versions)
             return result
 
     def snapshot(self):
@@ -194,7 +216,8 @@ class SkillService:
                 if not current:raise SkillError('要更新的用户技能不存在',404)
                 if base_version != current[1]:raise SkillError('技能版本已变化，请重新读取',409,'SKILL_CONFLICT')
                 previous_raw=self._version(skill_name,base_version)['raw']
-                inherited={p:b for p,b in previous_raw.items() if p not in text_files(previous_raw)}
+                previous_text=text_files(previous_raw)
+                inherited={p:b for p,b in previous_raw.items() if p not in previous_text}
                 inherited.update(raw)
                 raw=encode_files({p:base64.b64decode(b) for p,b in inherited.items()})
             elif base_version is not None:raise SkillError('更新技能必须指定 skill_name')
@@ -212,7 +235,7 @@ class SkillService:
 
     def _draft_view(self,draft):
         result={k:v for k,v in draft.items() if k not in ('raw','incarnation')}
-        result.update(files=text_files(draft['raw']),file_manifest=[dict(path=p,size=len(base64.b64decode(b)),text=p in text_files(draft['raw'])) for p,b in draft['raw'].items()])
+        result.update(package_view(draft['raw']))
         return result
 
     def read_draft(self,draft_id):
@@ -234,7 +257,8 @@ class SkillService:
         with self.lock:
             draft=self._draft(draft_id,revision)
             # The text editor cannot silently delete opaque binary attachments.
-            raw={p:b for p,b in draft['raw'].items() if p not in text_files(draft['raw'])}
+            previous_text=text_files(draft['raw'])
+            raw={p:b for p,b in draft['raw'].items() if p not in previous_text}
             raw.update(encode_files(files))
             raw=encode_files({p:base64.b64decode(b) for p,b in raw.items()})
             draft.update(raw=raw,revision=revision+1)
