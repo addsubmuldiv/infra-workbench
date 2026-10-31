@@ -9,6 +9,7 @@ import subprocess
 import sys
 import shlex
 import time
+from .terminal_tmux import tmux_command,tmux_response
 from ctypes import wintypes
 
 from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -39,10 +40,19 @@ def directory_command(cwd):
     return 'exec /bin/sh -c '+shlex.quote(script)
 
 
-def terminal_arguments(ssh, host, cwd=None):
+def terminal_arguments(ssh, host, cwd=None,command=None,config=None):
     args = ssh.arguments(host)
     args = [arg for arg in args if arg!='-T']
     result=args[:-1]+['-tt','-o','EscapeChar=none']+[args[-1]]
+    if config:
+        alias=config.get('hostkeyalias')
+        if alias in (None,'none'):alias=config['hostname'] if int(config.get('port',22))==22 else '['+config['hostname']+']:'+str(config['port'])
+        pinned=['-o','HostName='+config['hostname'],'-o','User='+config['user'],'-o','Port='+str(config.get('port',22)),'-o','CanonicalizeHostname=no','-o','HostKeyAlias='+alias]
+        if config.get('proxyjump') not in (None,'none'):pinned+=['-o','ProxyJump='+config['proxyjump']]
+        elif config.get('proxycommand') not in (None,'none'):pinned+=['-o','ProxyCommand='+config['proxycommand']]
+        else:pinned+=['-o','ProxyCommand=none']
+        result=result[:-1]+pinned+[result[-1]]
+    if command is not None:return result+[command]
     return result+[directory_command(cwd)] if cwd is not None else result
 
 
@@ -133,14 +143,35 @@ class AsyncTerminal:
 
 
 class TerminalManager:
-    def __init__(self,ssh):
+    def __init__(self,ssh,workspace=None,sudo=None):
         self.ssh, self.tickets, self.active = ssh, TerminalTickets(), {}
+        self.workspace,self.sudo=workspace,sudo
 
-    async def open_channel(self,host,cols,rows,cwd=None):
-        command=directory_command(cwd) if cwd is not None else None
+    async def workspace_state(self,host_id,identity):
+        message=dict(type='workspace',**self.workspace.view(host_id,identity))
+        targets=[v['websocket'] for v in self.active.values() if v['host_id']==host_id and v.get('identity')==identity and 'websocket' in v]
+        await asyncio.gather(*(socket.send_json(message) for socket in targets),return_exceptions=True)
+
+    async def watch_persistent(self,hosts):
+        async def check(host):
+            profile=self.workspace.profiles.get(host['id'])
+            if not profile or not profile.get('sessions'):return
+            try:
+                identity=self.sudo.identity(await self.ssh.effective(host))
+                if profile.get('identity')!=identity:return
+                sessions=profile['sessions'][:]
+                states=tmux_response(*await self.ssh.run(host,tmux_command('status',ids=[s['id'] for s in sessions])))
+                for item in states:self.workspace.result(host,identity,item['id'],item.get('state',{}).get('result'))
+            except Exception:pass # Connection churn must remain silent.
+        while True:
+            await asyncio.gather(*(check(host) for host in list(hosts)))
+            await asyncio.sleep(15)
+
+    async def open_channel(self,host,cols,rows,cwd=None,command=None,config=None):
+        command=command if command is not None else directory_command(cwd) if cwd is not None else None
         conn=self.ssh.sessions.get(host['id'])
         if conn and not conn.is_closed():
-            current=await self.ssh.effective(host)
+            current=config or await self.ssh.effective(host)
             original=self.ssh.connection_configs.get(conn)
             keys=('hostname','port','user','proxyjump','proxycommand','hostkeyalias')
             if original is None or any(current.get(key)!=original.get(key) for key in keys):
@@ -150,7 +181,7 @@ class TerminalManager:
             return AsyncTerminal(process)
         if os.name!='nt':
             raise ValueError('原生 SSH 交互终端目前仅支持 Windows')
-        return await NativeTerminal.spawn(terminal_arguments(self.ssh,host,cwd),cols,rows)
+        return await NativeTerminal.spawn(terminal_arguments(self.ssh,host,cwd,command,config),cols,rows)
 
     async def close_host(self,host_id=None):
         tasks=[v['task'] for v in self.active.values() if host_id is None or v['host_id']==host_id]
@@ -173,29 +204,74 @@ class TerminalManager:
                 raise ValueError('终端初始化消息无效')
             cols,rows=dimensions(initial)
             cwd=initial.get('cwd')
-            if cwd is not None:
+            protocol=None;identity=None
+            persistent=None
+            if initial.get('enhanced') is True and self.workspace is not None:
+                from .terminal_shell import ShellProtocol,bootstrap_command
+                cfg=await self.ssh.effective(host);identity=self.sudo.identity(cfg)
+                self.active[session_id].update(identity=identity,websocket=websocket)
+                if initial.get('session'):
+                    persistent=next((s for s in self.workspace.profile(host['id'],identity)['sessions'] if s['id']==initial['session']),None)
+                    if not persistent:raise ValueError('找不到此账号的持久会话')
+                    if any(v.get('persistent')==persistent['id'] and v['host_id']==host['id'] for v in self.active.values()):raise ValueError('此持久会话已在其他标签中打开')
+                    self.active[session_id]['persistent']=persistent['id']
+                protocol=ShellProtocol(persistent['token'] if persistent else session_id)
+                command=tmux_command('attach',session=persistent) if persistent else bootstrap_command(session_id,cwd)
+                channel=await self.open_channel(host,cols,rows,command=command,config=cfg)
+            elif cwd is not None:
                 directory_command(cwd)
                 channel=await self.open_channel(host,cols,rows,cwd=cwd)
             else:
                 channel=await self.open_channel(host,cols,rows)
             windows_pty=getattr(channel,'windows_pty',None)
             await websocket.send_json(dict(type='ready',**({'windowsPty':windows_pty} if windows_pty else {})))
+            if protocol:
+                await websocket.send_json(dict(type='workspace',**self.workspace.view(host['id'],identity)))
             current_size=(cols,rows)
             credits=asyncio.Semaphore(8)
             pending=0
+            sudo_waiting=False;sudo_attempted=False
+            from .terminal_workspace import CommandCompletion
+            completion=CommandCompletion()
+
+            async def sudo_state():
+                available=False
+                if sudo_waiting and not sudo_attempted and self.workspace.profile(host['id'],identity)['settings'].get('sudo_reuse'):
+                    with contextlib.suppress(Exception):available=bool(self.sudo.password(host,identity))
+                await websocket.send_json(dict(type='sudo',waiting=sudo_waiting,available=available))
 
             async def output():
-                nonlocal pending
+                nonlocal pending,sudo_waiting,sudo_attempted
                 while True:
                     data=await channel.read()
                     if not data: return
+                    if protocol:
+                        data,events=protocol.feed(data)
+                        for event in events:
+                            result=self.workspace.result(host,identity,persistent['id'],event.get('result')) if persistent else completion.feed(event)
+                            if result:
+                                await websocket.send_json(dict(type='completion',**result))
+                                settings=self.workspace.profile(host['id'],identity)['settings']
+                                if not persistent and settings.get('notify_enabled',True) and result['seconds']>=settings.get('notify_seconds',60):
+                                    self.workspace.store.event(host['target'],f"终端命令已结束 · 用时 {result['seconds']} 秒 · 退出码 {result['status']}")
+                            if event['kind']=='sudo_prompt':
+                                sudo_waiting=True
+                                await sudo_state()
+                            elif event['kind'] in ('sudo_done','prompt'):
+                                sudo_waiting=False
+                                if event['kind']=='prompt':sudo_attempted=False
+                                await sudo_state()
+                            if event['kind']=='start':self.workspace.record(host['id'],identity,event.get('command',''),event['cwd'])
+                            safe_event={key:value for key,value in event.items() if key!='command'}
+                            await websocket.send_json(dict(type='shell',**safe_event))
+                            if event['kind']=='start':await self.workspace_state(host['id'],identity)
                     for offset in range(0,len(data),4096):
                         await credits.acquire()
                         pending+=1
                         await websocket.send_json(dict(type='output',data=data[offset:offset+4096]))
 
             async def inputs():
-                nonlocal pending,current_size
+                nonlocal pending,current_size,sudo_waiting,sudo_attempted
                 while True:
                     message=await websocket.receive_json()
                     if not isinstance(message,dict): raise ValueError('终端消息格式无效')
@@ -206,7 +282,22 @@ class TerminalManager:
                         if len(data)>16384:
                             await websocket.send_json(dict(type='warning',message='本次输入过长，未发送到远端；连接已保留，请分段粘贴'))
                             continue
+                        if sudo_waiting and data:
+                            sudo_waiting=False
+                            await sudo_state()
                         await channel.write(data)
+                    elif kind=='sudo' and protocol:
+                        current=self.sudo.identity(await self.ssh.effective(host))
+                        enabled=self.workspace.profile(host['id'],identity)['settings'].get('sudo_reuse')
+                        password=None
+                        if enabled and current==identity:
+                            with contextlib.suppress(Exception):password=self.sudo.password(host,identity)
+                        if not sudo_waiting or sudo_attempted or not password:
+                            await websocket.send_json(dict(type='warning',message='未发送密码：请确认已开启密码复用，且当前 sudo 正在等待密码'))
+                            continue
+                        sudo_waiting=False;sudo_attempted=True
+                        await channel.write(password+'\n')
+                        await sudo_state()
                     elif kind=='resize':
                         size=dimensions(message)
                         if size!=current_size:
@@ -216,6 +307,13 @@ class TerminalManager:
                         if pending>0:
                             pending-=1
                             credits.release()
+                    elif kind=='workspace' and protocol:
+                        try:
+                            self.workspace.update(host['id'],identity,message)
+                            await self.workspace_state(host['id'],identity)
+                            await sudo_state()
+                        except ValueError as exc:
+                            await websocket.send_json(dict(type='warning',message=str(exc)))
                     elif kind=='close': return
                     else: raise ValueError('不支持的终端消息')
 
@@ -240,9 +338,48 @@ class TerminalManager:
                 await websocket.close()
 
 
-def register_terminal_routes(app,hosts,ssh):
-    manager=TerminalManager(ssh)
+def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
+    from .terminal_workspace import TerminalWorkspace
+    workspace=TerminalWorkspace(store) if store else None
+    manager=TerminalManager(ssh,workspace,sudo)
     app.state.terminals=manager
+
+    async def resolve(host_id):
+        host=next((h for h in hosts if h['id']==host_id),None)
+        if host is None:raise HTTPException(404,'找不到机器')
+        identity=sudo.identity(await ssh.effective(host))
+        return host,identity
+
+    @app.get('/api/hosts/{host_id}/terminal-workspace')
+    async def get_workspace(host_id:str):
+        host,identity=await resolve(host_id)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(workspace.view(host_id,identity),headers={'Cache-Control':'no-store'})
+
+    @app.post('/api/hosts/{host_id}/terminal-sessions')
+    async def create_session(host_id:str,request:Request):
+        host,identity=await resolve(host_id);body=await request.json()
+        if not isinstance(body,dict):raise HTTPException(400,'会话设置无效')
+        profile=workspace.profile(host_id,identity)
+        if len(profile['sessions'])>=12:raise HTTPException(400,'每台机器最多保留 12 个持久会话，请先结束不用的会话')
+        session=dict(id=secrets.token_hex(16),token=secrets.token_hex(16),created=time.time())
+        profile['sessions'].append(session);workspace.save()
+        try:
+            tmux_response(*await ssh.run(host,tmux_command('create',session=session,cwd=body.get('cwd'))))
+        except Exception as exc:
+            profile['sessions']=[s for s in profile['sessions'] if s['id']!=session['id']];workspace.save()
+            raise HTTPException(400,str(exc) if isinstance(exc,ValueError) else '无法创建持久会话，请检查 SSH 连接') from None
+        return dict(id=session['id'],created=session['created'])
+
+    @app.delete('/api/hosts/{host_id}/terminal-sessions/{session_id}')
+    async def end_session(host_id:str,session_id:str):
+        host,identity=await resolve(host_id);profile=workspace.profile(host_id,identity)
+        session=next((s for s in profile['sessions'] if s['id']==session_id),None)
+        if not session:raise HTTPException(404,'找不到持久会话')
+        try:tmux_response(*await ssh.run(host,tmux_command('end',session=session)))
+        except ValueError as exc:raise HTTPException(400,str(exc)) from None
+        profile['sessions']=[s for s in profile['sessions'] if s['id']!=session_id];workspace.save()
+        return dict(ok=True)
 
     @app.post('/api/hosts/{host_id}/terminal-ticket')
     async def ticket(host_id:str,request:Request):
@@ -252,7 +389,7 @@ def register_terminal_routes(app,hosts,ssh):
         except ValueError as exc:
             raise HTTPException(429,str(exc)) from None
         from fastapi.responses import JSONResponse
-        return JSONResponse(dict(ticket=token),headers={'Cache-Control':'no-store'})
+        return JSONResponse(dict(ticket=token,**({'workspace':True,'shellHistorySync':True} if workspace else {})),headers={'Cache-Control':'no-store'})
 
     @app.websocket('/api/terminal/{host_id}')
     async def terminal(websocket:WebSocket,host_id:str):

@@ -241,7 +241,11 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def lifespan(app):
         task = asyncio.create_task(poll()) if start_poll else None
         mail_task = asyncio.create_task(mail.run()) if start_poll else None
+        terminal_task=asyncio.create_task(app.state.terminals.watch_persistent(hosts)) if start_poll else None
         yield
+        if terminal_task:
+            terminal_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):await terminal_task
         if mail_task:
             mail_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -260,7 +264,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     app.state.sudo = sudo
     app.state.mail = mail
     register_mail_routes(app, mail)
-    register_terminal_routes(app,hosts,ssh)
+    register_terminal_routes(app,hosts,ssh,store,sudo)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.middleware('http')

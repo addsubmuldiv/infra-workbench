@@ -2,10 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
+import headless from '@xterm/headless';
 
 // Execute the real component's handlers. Only browser/PTY boundaries are replaced;
 // actual rendering and pixel geometry are checked in the live browser as well.
-function harness(t,{tabs=null}={}){
+function harness(t,{tabs=null,initialStates={}}={}){
   const effects=[],updates=[],phases=[],terminals=[],sockets=[],listeners=new Map(),observers=[];
   const dimensions={cols:100,rows:20};
   const cleanup=[];
@@ -15,12 +16,12 @@ function harness(t,{tabs=null}={}){
     createElement:(type,props,...children)=>({type,props:{...props,children}}),
     forwardRef:fn=>fn,
     useRef:current=>({current}),
-    useState:initial=>{const index=stateIndex++;return [index===0&&tabs!==null?tabs:typeof initial==='function'?initial():initial,value=>updates.push({index,value})]},
+    useState:initial=>{const index=stateIndex++;return [index in initialStates?initialStates[index]:index===0&&tabs!==null?tabs:typeof initial==='function'?initial():initial,value=>updates.push({index,value})]},
     useEffect:fn=>effects.push(fn),
     useImperativeHandle:(ref,fn)=>{ref.current=fn()},
   };
   class Terminal {
-    cols=80;rows=24;output=[];bottomCalls=0;
+    cols=80;rows=24;output=[];writes=[];bottomCalls=0;
     constructor(options){this.options=options;terminals.push(this)}
     loadAddon(){} open(){} focus(){} clear(){} dispose(){}
     onData(fn){this.input=fn;return {dispose(){}}}
@@ -30,8 +31,8 @@ function harness(t,{tabs=null}={}){
     registerLinkProvider(provider){this.links=provider;return {dispose(){}}}
     getSelection(){return this.selection||''}
     paste(text){const normalized=text.replace(/\r?\n/g,'\r');this.input(this.bracketedPaste&&!this.options.ignoreBracketedPasteMode?'\x1b[200~'+normalized+'\x1b[201~':normalized)}
-    write(text,callback){this.output.push(text);callback?.()}
-    writeln(text){this.output.push(text)}
+    write(text,callback){this.output.push(text);this.writes.push(text);callback?.()}
+    writeln(text){this.output.push(text);this.writes.push(text+'\r\n')}
     scrollToBottom(){this.bottomCalls++}
   }
   class Socket {
@@ -63,11 +64,13 @@ function harness(t,{tabs=null}={}){
   const exports={};
   const require=name=>{
     if(name==='react')return react;
+    if(name==='./TerminalCommands')return ()=>null;
     if(name==='@xterm/xterm')return {Terminal};
+    if(name==='@xterm/addon-search')return {SearchAddon:class {onDidChangeResults(){return {dispose(){}}}clearDecorations(){}}};
     if(name==='@xterm/addon-fit')return {FitAddon:class {fit(){}proposeDimensions(){return dimensions}}};
-    if(name==='./terminalPaths'){
+    if(name==='./terminalPaths'||name==='./terminalSuggestions'){
       const pathExports={};
-      const source=fs.readFileSync(new URL('../src/terminalPaths.ts',import.meta.url),'utf8');
+      const source=fs.readFileSync(new URL('../src/'+name.slice(2)+'.ts',import.meta.url),'utf8');
       const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
       new Function('exports',compiled)(pathExports);
       return pathExports;
@@ -86,7 +89,7 @@ const liveTab={id:'tab',host,phase:'running',generation:0};
 async function view(t,onDirectory,cwd){
   const h=harness(t),ref={current:null},clipboardListeners=new Map();
   const tree=h.TerminalView({tab:{...liveTab,cwd},active:true,font:13,onPhase:p=>h.phases.push(p),onDirectory},ref);
-  tree.props.ref.current={clientWidth:800,clientHeight:400,classList:{contains:()=>true},addEventListener:(name,handler)=>clipboardListeners.set(name,handler),removeEventListener:name=>clipboardListeners.delete(name)};
+  find(tree,host.target+' SSH 交互终端').props.ref.current={clientWidth:800,clientHeight:400,classList:{contains:()=>true},addEventListener:(name,handler)=>clipboardListeners.set(name,handler),removeEventListener:name=>clipboardListeners.delete(name)};
   h.mount();
   await new Promise(resolve=>setImmediate(resolve));
   h.sockets[0].onopen();h.sockets[0].message({type:'ready'});
@@ -264,4 +267,128 @@ test('opening a terminal in a directory creates a new tab and preserves existing
   h.TerminalDock({request:{id:'request',host,cwd:'/data'},hosts:[host]});h.mount();
   let tabs=[liveTab];for(const update of h.updates.filter(value=>value.index===0))tabs=typeof update.value==='function'?update.value(tabs):update.value;
   assert.equal(tabs.length,2);assert.equal(tabs[0],liveTab);assert.equal(tabs[1].cwd,'/data');
+});
+
+
+test('history completion only fills a suffix at a confirmed prompt and never executes',async t=>{
+  const {term,socket}=await view(t);
+  socket.message({type:'workspace',settings:{history_enabled:true},history:[{command:'python train.py'}]});
+  term.input('py');
+  assert.equal(term.keyHandler({type:'keydown',key:'ArrowRight',preventDefault(){}}),true);
+  socket.message({type:'shell',kind:'prompt',cwd:'/tmp',status:0});term.input('py');
+  assert.equal(term.keyHandler({type:'keydown',key:'ArrowRight',preventDefault(){}}),false);
+  assert.equal(socket.sent.at(-1).data,'thon train.py');
+  assert.ok(!socket.sent.at(-1).data.includes('\r'));
+  term.input('\r');assert.equal(term.keyHandler({type:'keydown',key:'ArrowRight',preventDefault(){}}),true);
+});
+
+test('Ctrl+F stays local and Alt+Enter only requests a server-approved sudo fill',async t=>{
+  const {term,socket}=await view(t);const count=socket.sent.length;
+  assert.equal(term.keyHandler({type:'keydown',key:'f',ctrlKey:true,preventDefault(){}}),false);
+  assert.equal(term.keyHandler({type:'keydown',key:'Enter',altKey:true,preventDefault(){}}),false);
+  assert.equal(socket.sent.length,count);
+  socket.message({type:'sudo',available:true,waiting:true});
+  term.keyHandler({type:'keydown',key:'Enter',altKey:true,preventDefault(){}});
+  assert.deepEqual(socket.sent.at(-1),{type:'sudo'});
+});
+
+test('closing a persistent tab detaches without the ordinary-session termination confirmation',t=>{
+  const tab={...liveTab,session:'persistent-test'};const h=harness(t,{tabs:[tab]});
+  const tree=h.TerminalDock({request:null,hosts:[host]});find(tree,'关闭 '+host.target+' 终端').props.onClick();
+  assert.ok(h.updates.some(u=>Array.isArray(u.value)&&u.value.length===0));
+});
+
+test('Escape closes local search without writing an escape byte to SSH',async t=>{
+  const h=harness(t,{initialStates:{6:true}}),ref={current:null};
+  const tree=h.TerminalView({tab:liveTab,active:true,font:13,onPhase(){}},ref);
+  find(tree,host.target+' SSH 交互终端').props.ref.current={clientWidth:800,clientHeight:400,classList:{contains:()=>true},addEventListener(){},removeEventListener(){}};
+  h.mount();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.terminals[0].options.allowProposedApi,true,'SearchAddon highlights require decoration API');
+  let prevented=false;h.listeners.get('keydown')({key:'Escape',preventDefault(){prevented=true},stopPropagation(){}});
+  assert.ok(prevented);assert.ok(h.updates.some(update=>update.index===6&&update.value===false));
+  assert.ok(!h.sockets[0].sent.some(frame=>frame.type==='input'));
+});
+
+test('a disconnected terminal reconnects on one key, keeps output and never forwards that key',async t=>{
+  const {term,socket,sockets,phases,ref}=await view(t);const cwd='/data/中文 ; $(literal)';
+  socket.message({type:'shell',kind:'prompt',cwd,status:0});socket.message({type:'output',data:'OLD-OUTPUT'});
+  socket.message({type:'exit'});socket.onclose({code:1000});
+  assert.equal(term.output.filter(text=>text.includes('按任意键重新连接')).length,1);
+  assert.equal(term.keyHandler({type:'keydown',key:'Shift',preventDefault(){}}),true);
+  assert.equal(sockets.length,1);
+  assert.equal(term.keyHandler({type:'keydown',key:'a',preventDefault(){}}),false);
+  term.input('a');ref.current.reconnect(); // Repeated input while opening cannot start another connection.
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(sockets.length,2);
+  const next=sockets[1];next.onopen();next.message({type:'ready'});
+  assert.equal(next.sent[0].cwd,cwd);assert.equal(next.sent.filter(frame=>frame.type==='input').length,0);
+  socket.onclose({code:1006});assert.equal(phases.at(-1),'running');
+  term.input('pwd\r');assert.deepEqual(next.sent.filter(frame=>frame.type==='input').map(frame=>frame.data),['pwd\r']);
+  assert.ok(term.output.includes('OLD-OUTPUT'));assert.ok(term.output.includes('\x1b[?1049l\x1b[!p'));
+  next.message({type:'ready',windowsPty:{backend:'conpty',buildNumber:26100}});next.message({type:'ready'});assert.equal(term.options.windowsPty,undefined);
+});
+
+test('copying selected output and searching remain local while disconnected; paste does not reconnect',async t=>{
+  const {term,socket,sockets,clipboardListeners}=await view(t);socket.onclose({code:1006});
+  let copied='';const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async text=>{copied=text}}}});t.after(()=>{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator});
+  term.selection='old output';term.keyHandler({type:'keydown',key:'c',code:'KeyC',ctrlKey:true,preventDefault(){}});assert.equal(copied,'old output');
+  term.keyHandler({type:'keydown',key:'f',ctrlKey:true,preventDefault(){}});
+  clipboardListeners.get('paste')({clipboardData:{getData:()=> 'must-not-run\r'},preventDefault(){},stopPropagation(){}});
+  assert.equal(sockets.length,1);
+});
+
+for(const alternate of [false,true])test(`reconnect gives a new PTY a clean origin and preserves normal scrollback (alternate=${alternate})`,async t=>{
+  const {term,socket,sockets,ref}=await view(t);
+  const old='OLD-IP: 192.168.122.1\r\nOLD-PROMPT$ \x1b[15;1HOLD-BELOW-CURSOR\x1b[2;1H';
+  socket.message({type:'output',data:old+(alternate?'\x1b[?1049hFULLSCREEN\x1b[4;10r\x1b[?6h':'')});
+  socket.onclose({code:1006});ref.current.reconnect();
+  await new Promise(resolve=>setImmediate(resolve));
+  // Replay the component's actual escape sequences through xterm's parser and
+  // buffer, rather than checking that a particular reset string was emitted.
+  const display=new headless.Terminal({cols:term.cols,rows:term.rows,allowProposedApi:true,windowsPty:{backend:'conpty',buildNumber:26100}});
+  t.after(()=>display.dispose());
+  const write=data=>new Promise(resolve=>display.write(data,resolve));
+  await write(term.writes.join(''));
+  const buffer=display.buffer.active;
+  assert.deepEqual([buffer.cursorX,buffer.cursorY],[0,0],'new PTY coordinates start at the top left');
+  const lines=(start,count)=>Array.from({length:count},(_,i)=>buffer.getLine(start+i)?.translateToString(true)||'');
+  assert.ok(lines(0,buffer.baseY).join('\n').includes('OLD-IP: 192.168.122.1'),'old screen remains in scrollback');
+  assert.ok(lines(0,buffer.baseY).join('\n').includes('OLD-BELOW-CURSOR'),'old content below the cursor is preserved too');
+  assert.ok(lines(buffer.baseY,term.rows).every(line=>!line),'the new viewport is empty');
+  const offset=term.writes.length,next=sockets[1];next.onopen();next.message({type:'ready'});
+  next.message({type:'output',data:'NEW-LOGIN\r\n\x1b[2;1HREADY$ '});
+  socket.message({type:'output',data:'STALE-OUTPUT'});socket.onclose({code:1006});
+  await write(term.writes.slice(offset).join(''));
+  assert.deepEqual(lines(buffer.baseY,2),['NEW-LOGIN','READY$ ']);
+  assert.deepEqual([buffer.cursorX,buffer.cursorY],[7,1]);
+  assert.ok(!lines(buffer.baseY,term.rows).join('\n').includes('STALE-OUTPUT'));
+});
+
+function terminalNode(node,component){
+  if(!node||typeof node!=='object')return;
+  if(node.type===component)return node;
+  return (node.props?.children||[]).flat(Infinity).map(child=>terminalNode(child,component)).find(Boolean);
+}
+function updatedTabs(h,initial){let tabs=initial;for(const update of h.updates.filter(value=>value.index===0))tabs=typeof update.value==='function'?update.value(tabs):update.value;return tabs}
+
+test('duplicate opens an independent tab in the latest confirmed cwd and keeps the source alive',t=>{
+  const original={...liveTab,cwd:'/original'};const h=harness(t,{tabs:[original],initialStates:{1:'tab'}});
+  const tree=h.TerminalDock({request:null,hosts:[host]});terminalNode(tree,h.TerminalView).props.ref({cwd:()=>'/current/中文 ; $(literal)'});
+  find(tree,'复制当前终端').props.onClick();const tabs=updatedTabs(h,[original]);
+  assert.equal(tabs.length,2);assert.equal(tabs[0],original);assert.equal(tabs[1].host.id,host.id);assert.equal(tabs[1].cwd,'/current/中文 ; $(literal)');assert.equal(tabs[1].session,undefined);assert.notEqual(tabs[1].id,original.id);
+});
+
+test('duplicate never guesses a home directory when the shell cwd is unavailable',t=>{
+  const h=harness(t,{tabs:[liveTab],initialStates:{1:'tab'}});const tree=h.TerminalDock({request:null,hosts:[host]});terminalNode(tree,h.TerminalView).props.ref({cwd:()=>undefined});
+  find(tree,'复制当前终端').props.onClick();assert.equal(updatedTabs(h,[liveTab]).length,1);assert.ok(h.updates.some(value=>value.index===7&&value.value.includes('目录')));
+});
+
+test('duplicating tmux creates a separate persistent session in the same cwd',async t=>{
+  const original={...liveTab,session:'source-session'};const h=harness(t,{tabs:[original],initialStates:{1:'tab'}});const calls=[];
+  globalThis.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({id:'new-session'})}};
+  const tree=h.TerminalDock({request:null,hosts:[host]});terminalNode(tree,h.TerminalView).props.ref({cwd:()=>'/data/training'});find(tree,'复制当前终端').props.onClick();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(JSON.parse(calls[0].options.body).cwd,'/data/training');const tabs=updatedTabs(h,[original]);assert.equal(tabs.length,2);assert.equal(tabs[1].session,'new-session');assert.equal(tabs[0].session,'source-session');assert.equal(tabs[1].cwd,'/data/training');
+});
+
+test('unsupported shell metadata cannot replace cwd with the fallback placeholder',async t=>{
+  const {socket,ref}=await view(t);socket.message({type:'shell',kind:'prompt',cwd:'/real/path',status:0});assert.equal(ref.current.cwd(),'/real/path');socket.message({type:'shell',kind:'unsupported',cwd:'/',status:0});assert.equal(ref.current.cwd(),undefined);
 });
