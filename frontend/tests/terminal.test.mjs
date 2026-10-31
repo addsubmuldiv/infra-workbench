@@ -222,6 +222,27 @@ test('Ctrl+V allows native browser paste without emitting the shell literal-inpu
   term.paste('ordinary clipboard text');assert.equal(socket.sent.at(-1).data,'ordinary clipboard text');
 });
 
+test('Windows clipboard history synthetic Ctrl+V works without KeyboardEvent.code and pastes only once',async t=>{
+  const {term,socket,clipboardListeners}=await view(t);term.bracketedPaste=true;
+  for(const event of [{code:'',key:'v',keyCode:86},{code:'',key:'Unidentified',keyCode:86},{key:'V',keyCode:86}]){
+    let prevented=false;
+    assert.equal(term.keyHandler({...event,type:'keydown',ctrlKey:true,shiftKey:false,altKey:false,preventDefault(){prevented=true}}),false);
+    assert.equal(prevented,false); // Keep Chromium's default paste action enabled.
+  }
+  assert.equal(socket.sent.filter(message=>message.type==='input').length,0);
+  clipboardListeners.get('paste')({clipboardData:{getData:()=> 'IWB_HISTORY_SELECTED'},preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(socket.sent.filter(message=>message.type==='input').map(message=>message.data),['IWB_HISTORY_SELECTED']);
+});
+
+test('synthetic Ctrl+C still copies a selection and preserves shell interrupt when unselected',async t=>{
+  const original=Object.getOwnPropertyDescriptor(globalThis,'navigator'),copied=[];
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async text=>copied.push(text)}}});
+  t.after(()=>{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator});
+  const {term}=await view(t);const event={type:'keydown',ctrlKey:true,altKey:false,code:'',key:'Unidentified',keyCode:67,preventDefault(){}};
+  term.selection='selected';assert.equal(term.keyHandler(event),false);assert.deepEqual(copied,['selected']);
+  term.selection='';assert.equal(term.keyHandler(event),true);
+});
+
 test('directory clicks carry the terminal host identity instead of the currently selected machine',async t=>{
   const opened=[],{term}=await view(t,(id,path)=>opened.push({id,path}));
   const text='/tmp',line={isWrapped:false,length:4,translateToString:()=>text,getCell:index=>({getChars:()=>text[index],getWidth:()=>1})};

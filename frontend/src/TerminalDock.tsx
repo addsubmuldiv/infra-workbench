@@ -12,6 +12,8 @@ type Phase='connecting'|'running'|'closed'|'error';
 type Tab={id:string;host:Host;phase:Phase;generation:number;cwd?:string};
 type Handle={clear:()=>void;copy:()=>void;focus:()=>void;scrollToBottom:()=>void};
 const labels:Record<Phase,string>={connecting:'正在连接',running:'会话运行中',closed:'连接已结束',error:'连接失败'};
+// Windows clipboard-history injection can omit code on its synthetic Ctrl+V.
+const clipboardKey=(event:KeyboardEvent,key:'c'|'v')=>event.code==='Key'+key.toUpperCase()||(!event.code&&(event.key?.toLowerCase()===key||event.keyCode===key.toUpperCase().charCodeAt(0)));
 
 function palette(){
   const css=getComputedStyle(document.documentElement);
@@ -74,11 +76,11 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
     const container=element.current!;
     container.addEventListener('paste',clipboardPaste,true);
     term.attachCustomKeyEventHandler(event=>{
-      if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&event.code==='KeyC'){
+      if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&clipboardKey(event,'c')){
         const selected=term.getSelection();
         if(selected||event.shiftKey){event.preventDefault();if(selected)navigator.clipboard.writeText(selected).catch(()=>{});return false}
       }
-      if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&event.code==='KeyV'){
+      if(event.type==='keydown'&&event.ctrlKey&&!event.altKey&&clipboardKey(event,'v')){
         if(!event.shiftKey)return false; // Let the browser paste event feed xterm; do not send the shell's Ctrl+V byte.
         event.preventDefault();navigator.clipboard.readText().then(text=>{if(!disposed)paste(text)}).catch(()=>{});return false;
       }
