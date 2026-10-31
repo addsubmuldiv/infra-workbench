@@ -1,5 +1,5 @@
-export type Page='overview'|'connections'|'watch'|'precision'|'reservations'|'settings';
-const pages:Page[]=['overview','connections','watch','precision','reservations','settings'];
+export type Page='overview'|'precision'|'reservations'|'settings';
+const pages:Page[]=['overview','precision','reservations','settings'];
 export function pageFromHash(hash:string):Page{
   const page=hash.replace(/^#/,'').split('?')[0] as Page;
   return pages.includes(page)?page:'overview';
@@ -13,7 +13,4 @@ export function hostLocationFromHash(hash:string):HostLocation|null{
 }
 export function notificationLocation(value?:string):string{
   return value&&hostLocationFromHash(value)?value:'#reservations';
-}
-export function hostSelectionPage(current:Page,direct=false):Page{
-  return direct||current!=='connections'?'overview':'connections';
 }

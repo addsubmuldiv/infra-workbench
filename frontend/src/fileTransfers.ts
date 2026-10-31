@@ -1,4 +1,4 @@
-export type TransferProgress={stage:'receiving'|'sending'|'verifying'|'done'|'download_remote'|'download_browser';loaded:number;total:number|null};
+export type TransferProgress={stage:'packing'|'receiving'|'sending'|'verifying'|'done'|'download_remote'|'download_browser';loaded:number;total:number|null};
 type UploadStatus={id:string;status:string;total:number;received:number;sent:number;error?:string;path?:string};
 const aborted=()=>new DOMException('传输已取消','AbortError');
 async function jsonRequest(url:string,options:RequestInit={},fetcher:typeof fetch=fetch){

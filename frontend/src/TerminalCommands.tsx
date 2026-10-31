@@ -3,6 +3,7 @@ import {createPortal} from 'react-dom';
 import {examples,variables,renderTemplate,type Snippet} from './terminalTemplates';
 import {fitFileWindow,moveFileWindow,type WindowFrame} from './fileWindow';
 import type {HistoryCommand} from './terminalSuggestions';
+import {activateFloatingWindow,registerFloatingWindow} from './windowLayers';
 
 const frameKey='iwb-terminal-command-window';
 const viewport=()=>({width:window.innerWidth,height:window.innerHeight});
@@ -65,7 +66,7 @@ export default function TerminalCommands({host,workspace,action,insert,close}:{h
   const dimensions=minimized?{left:Math.max(8,Math.min(frame.x,window.innerWidth-328)),top:frame.y,width:Math.min(320,window.innerWidth-16),height:56}:maximized?{left:12,top:12,width:window.innerWidth-24,height:window.innerHeight-24}:{left:frame.x,top:frame.y,width:frame.width,height:frame.height};
   const editing=item&&(section==='commands'||section==='templates');
 
-  return createPortal(<section className={'terminal-tools '+(minimized?'minimized':'')} role="dialog" aria-modal="false" aria-label={host+' 命令与设置'} style={dimensions} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
+  return createPortal(<section data-floating-window="commands" ref={registerFloatingWindow} onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow} className={'terminal-tools '+(minimized?'minimized':'')} role="dialog" aria-modal="false" aria-label={host+' 命令与设置'} style={dimensions} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
     <header className="terminal-tools-heading" onPointerDown={event=>startGesture(event,'move')} onDoubleClick={event=>{if(!(event.target as HTMLElement).closest('button')){setMaximized(!maximized);setMinimized(false)}}}>
       <div><strong>{host} · 命令与设置</strong>{!minimized&&<small>拖动标题移动 · 右下角拉伸大小</small>}</div>
       <div className="terminal-tools-window-actions"><button aria-label={minimized?'恢复命令窗口':'最小化命令窗口'} onClick={()=>setMinimized(!minimized)}>{minimized?'恢复':'最小化'}</button>{!minimized&&<button aria-label={maximized?'还原命令窗口':'最大化命令窗口'} onClick={()=>setMaximized(!maximized)}>{maximized?'还原':'最大化'}</button>}<button onClick={close}>关闭</button></div>

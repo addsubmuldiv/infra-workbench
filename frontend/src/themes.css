@@ -35,9 +35,7 @@ main{margin-left:258px;width:calc(100% - 258px)}
 .brand{color:var(--text);font-size:22px;gap:11px}
 .brand span:not(.brand-icon){color:var(--muted)}
 .brand-icon{color:var(--accent);border-color:var(--line);background:var(--accent-bg)}
-.workspace{margin:24px 0 23px;background:var(--panel2);border-color:var(--line);padding:11px}
-.workspace small,.nav-label{color:var(--muted)}
-.workspace .avatar{flex-shrink:0}
+.nav-label{color:var(--muted);margin-top:24px}
 .avatar{color:var(--accent);background:var(--accent-bg)}
 nav{gap:4px}
 nav button{color:var(--muted);padding:10px 13px;font-size:12px}

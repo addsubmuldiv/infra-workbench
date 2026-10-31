@@ -14,13 +14,13 @@ function host(id,kind,count,fresh=true){return {id,target:id,user:null,auth:'key
 const hosts=[host('alpha','NPU',8),host('beta','GPU',4),host('offline','GPU',2,false)];
 hosts[1].snapshot.devices.slice(1).forEach(d=>d.processes=[{pid:123,user:'test'}]);
 
-function harness(t){
+function harness(t,hash='#overview'){
   const values=[],storage=new Map();let cursor=0,tree;
   const state={hosts,rules:[],reservations:[],events:[],server_time:100};
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),lazy:()=>()=>null,Suspense:'suspense',StrictMode:'strict',
     useState:initial=>{const index=cursor++;if(!(index in values))values[index]=index===0?state:typeof initial==='function'?initial():initial;return [values[index],value=>{values[index]=typeof value==='function'?value(values[index]):value}]},
     useRef:initial=>{const index=cursor++;if(!(index in values))values[index]={current:initial};return values[index]},useEffect(){}};
-  for(const [name,value] of Object.entries({window:{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},scrollTo(){}},document:{documentElement:{dataset:{}},getElementById:()=>({})},location:{hash:'#overview'}})){
+  for(const [name,value] of Object.entries({window:{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},scrollTo(){}},document:{documentElement:{dataset:{}},getElementById:()=>({})},location:{hash}})){
     const original=Object.getOwnPropertyDescriptor(globalThis,name);Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});t.after(()=>{if(original)Object.defineProperty(globalThis,name,original);else delete globalThis[name]});
   }
   const source=fs.readFileSync(new URL('../src/main.tsx',import.meta.url),'utf8')+'\nexport {App};';
@@ -42,6 +42,40 @@ test('overview remains global when selecting a different machine or clearing the
   h.button('只看机器 alpha').props.onClick();h.render();assert.deepEqual(h.metrics(),['2/ 3','14个设备','2台机器','0条']);assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 alpha'));assert.equal(h.find(n=>n.props?.['aria-label']==='机器详情 beta'),undefined);
   h.button('只看机器 beta').props.onClick();h.render();assert.deepEqual(h.metrics(),['2/ 3','14个设备','2台机器','0条']);assert.equal(h.find(n=>n.props?.['aria-label']==='机器详情 alpha'),undefined);assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 beta'));
   h.button('清空').props.onClick();h.render();assert.deepEqual(h.metrics(),['2/ 3','14个设备','2台机器','0条']);assert.equal(h.finderCount(),'0');
+});
+
+test('legacy connections page displays overview without a duplicate navigation entry',t=>{
+  const h=harness(t,'#connections');h.render();
+  assert.ok(h.button('算力总览'));assert.equal(h.button('机器连接'),undefined);
+  assert.deepEqual(h.metrics(),['2/ 3','14个设备','2台机器','0条']);
+});
+
+test('machine names and checkboxes open overview from other workspace pages',t=>{
+  const h=harness(t);h.render();
+  for(const label of ['卡预约','精度对比','设置']){
+    h.button(label).props.onClick();h.render();
+    h.button('只看机器 beta').props.onClick();h.render();
+    assert.equal(h.button('算力总览').props['aria-current'],'page');
+    assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 beta'));
+    h.button(label).props.onClick();h.render();
+    h.find(n=>n.props?.['aria-label']==='显示机器 alpha').props.onChange();h.render();
+    assert.equal(h.button('算力总览').props['aria-current'],'page');
+    assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 alpha'));
+  }
+});
+
+test('monitoring moves into the notification center without a separate navigation page',t=>{
+  const h=harness(t);h.render();
+  assert.equal(h.button('资源监控'),undefined);
+  const center=h.find(n=>n.type==='NotificationCenter');assert.ok(center);
+  center.props.setTab('messages');h.render();assert.equal(h.find(n=>n.type==='NotificationCenter').props.tab,'messages');
+  assert.equal(h.button('算力总览').props['aria-current'],'page');
+});
+
+test('legacy monitoring links open the notification center on overview',t=>{
+  const h=harness(t,'#watch');h.render();
+  assert.equal(h.button('算力总览').props['aria-current'],'page');
+  assert.equal(h.find(n=>n.type==='NotificationCenter').props.tab,'messages');
 });
 
 test('global condition matching and the selected-machine finder use their own scopes',t=>{

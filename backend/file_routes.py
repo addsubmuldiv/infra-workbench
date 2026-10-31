@@ -57,7 +57,7 @@ def register_file_routes(app,ssh,find):
 
     @app.get('/api/files/capabilities')
     async def capabilities():
-        return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,
+        return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,folder_download=True,
                     operations=['read','save','copy','move','mkdir','create'],text_limit=1024*1024,copy_limit=64*1024*1024,upload_limit=MAX_UPLOAD)
 
     @app.post('/api/files/search')
@@ -155,4 +155,22 @@ def register_file_routes(app,ssh,find):
                 return response
             except BaseException as exc:
                 job.update(status='error',error='下载失败或已取消')
+                raise
+
+    @app.post('/api/files/download-folder')
+    async def download_folder(body:DownloadRequest,request:Request):
+        host=find(body.host_id)
+        async with downloads:
+            job=None
+            try:
+                if body.transfer_id:job,progress=transfers.begin_download(body.transfer_id)
+                else:progress=None
+                response=await original_log_response(ssh,host,body.path,request,label='文件夹',on_progress=progress,folder=True)
+                if job:job.update(status='remote_done',task=None)
+                return response
+            except asyncio.CancelledError:
+                if job:job.update(status='cancelled',error='文件夹下载已取消',task=None)
+                raise
+            except Exception:
+                if job:job.update(status='error',error='文件夹下载失败或已取消',task=None)
                 raise

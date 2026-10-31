@@ -17,8 +17,8 @@ from starlette.background import BackgroundTask
 MAX_DOWNLOAD=512*1024*1024
 
 
-def download_script(path):
-    source=(Path(__file__).parent/'log_download_probe.py').read_text(encoding='utf-8')
+def download_script(path,folder=False):
+    source=(Path(__file__).parent/('folder_download_probe.py' if folder else 'log_download_probe.py')).read_text(encoding='utf-8')
     return source+'\nmain(json.loads('+repr(json.dumps(dict(path=path),ensure_ascii=True))+'))\n'
 
 
@@ -96,11 +96,11 @@ async def open_download(ssh,host,source):
             with contextlib.suppress(asyncio.CancelledError,Exception): await error_task
 
 
-async def original_log_response(ssh,host,path,request:Request,label='日志',on_progress=None):
+async def original_log_response(ssh,host,path,request:Request,label='日志',on_progress=None,folder=False):
     target=tempfile.TemporaryFile(mode='w+b')
     try:
         async def transfer():
-            async with open_download(ssh,host,download_script(path)) as (reader,wait):
+            async with open_download(ssh,host,download_script(path,folder)) as (reader,wait):
                 metadata=await receive_file(reader,target,request.is_disconnected,on_progress)
                 if await wait()!=0: raise ValueError('下载期间日志发生变化或连接断开，请重试；未保存部分文件')
                 return metadata
@@ -121,8 +121,10 @@ async def original_log_response(ssh,host,path,request:Request,label='日志',on_
         finally:
             target.close()
     filename=download_filename(host['target'],path)
-    return StreamingResponse(body(),media_type='application/octet-stream',
+    if folder:filename=filename[:176]+'.zip'
+    return StreamingResponse(body(),media_type='application/zip' if folder else 'application/octet-stream',
         headers={'Content-Length':str(metadata['size']),
-                 'Content-Disposition':"attachment; filename=\"training.log\"; filename*=UTF-8''"+quote(filename,safe=''),
+                 'Content-Disposition':"attachment; filename=\""+('folder.zip' if folder else 'training.log')+"\"; filename*=UTF-8''"+quote(filename,safe=''),
+                 **({'X-IWB-Skipped-Entries':str(metadata.get('skipped',0))} if folder else {}),
                  'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'},
         background=BackgroundTask(target.close))

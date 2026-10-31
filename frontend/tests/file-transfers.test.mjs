@@ -41,6 +41,11 @@ test('downloads report byte progress while preserving original binary data',asyn
   assert.deepEqual(new Uint8Array(await result.blob.arrayBuffer()),raw);
   assert.deepEqual(seen[0],{loaded:0,total:4});assert.deepEqual(seen.at(-1),{loaded:4,total:4});
 });
+
+test('folder downloads preserve ZIP filename and skipped-entry details',async()=>{
+  const result=await downloadOriginalLog({host_id:'h',path:'/data/folder'},async()=>new Response('zip-bytes',{headers:{'Content-Disposition':"attachment; filename*=UTF-8''folder.zip",'X-IWB-Skipped-Entries':'2'}}),'/api/files/download-folder');
+  assert.equal(result.filename,'folder.zip');assert.equal(result.skipped,2);
+});
 test('search defaults to indexed-first and explicit real-time search bypasses it',async()=>{
   let body;
   const fetcher=async(url,options)=>{assert.equal(url,'/api/files/search');body=JSON.parse(options.body);return Response.json({entries:[],engine:'find'})};
