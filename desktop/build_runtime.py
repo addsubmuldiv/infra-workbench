@@ -24,7 +24,10 @@ def main():
             '--distpath', str(work/'dist'), '--workpath', str(work/'build'), '--specpath', str(work),
             '--paths', str(ROOT), '--collect-submodules', 'backend', '--collect-submodules', 'uvicorn',
             '--add-data', str(ROOT/'frontend'/'dist')+os.pathsep+'frontend/dist',
-            '--add-data', str(ROOT/'backend'/'assets')+os.pathsep+'backend/assets']
+            '--add-data', str(ROOT/'backend'/'assets')+os.pathsep+'backend/assets',
+            '--add-data', str(ROOT/'backend'/'skills')+os.pathsep+'backend/skills',
+            '--collect-submodules', 'deepagents', '--collect-submodules', 'langchain',
+            '--collect-submodules', 'langgraph', '--recursive-copy-metadata', 'deepagents']
     # SSH/file probes read their own source to send it to the remote interpreter.
     # Only explicit .py files are included, never backend caches or user data.
     for source in sorted((ROOT/'backend').glob('*.py')):

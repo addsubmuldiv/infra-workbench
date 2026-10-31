@@ -24,7 +24,8 @@ import {NotificationCenter,type NotificationTab} from './NotificationCenter';
 import {Reservations,ReservationDialog,type ReservationDraft} from './ReservationPanel';
 import {reservationDraft as draftFromReservation,reservationLocation,type Reservation} from './reservations';
 const SettingsPage=React.lazy(()=>import('./SettingsPage'));
-const InfraAssistant=React.lazy(()=>import('./InfraAssistantPage').then(module=>({default:module.InfraAssistant})));
+const AssistantWindow=React.lazy(()=>import('./AssistantWindow').then(module=>({default:module.AssistantWindow})));
+import {ASSISTANT_OPEN_KEY,loadAssistantOpen} from './assistantLayout';
 import {Sparkles} from 'lucide-react';
 import {singleFlight,reuseStateSnapshot} from './requests';
 import {SSHPasswordDialog} from './SSHPasswordDialog';
@@ -73,12 +74,15 @@ function App(){
   const [terminalRequest,setTerminalRequest]=useState<TerminalRequest|null>(null);
   const [notificationTab,setNotificationTab]=useState<NotificationTab>(()=>location.hash.split('?')[0]==='#watch'?'messages':null);
   const [precisionMounted,setPrecisionMounted]=useState(()=>pageFromHash(location.hash)==='precision');
-  const [page,setPage]=useState<Page>(()=>pageFromHash(location.hash)),[filter,setFilter]=useState('全部'),[count,setCount]=useState(1),[minimum,setMinimum]=useState(16),[clear,setClear]=useState(true);
+  const [assistantOpen,setAssistantOpen]=useState(()=>location.hash.split('?')[0]==='#assistant'||loadAssistantOpen(browserStorage())),[assistantWidth,setAssistantWidth]=useState(0);
+  useEffect(()=>{try{browserStorage()?.setItem(ASSISTANT_OPEN_KEY,String(assistantOpen))}catch{}},[assistantOpen]);
+  const [page,setPage]=useState<Page>(()=>pageFromHash(location.hash)==='assistant'?'overview':pageFromHash(location.hash)),[filter,setFilter]=useState('全部'),[count,setCount]=useState(1),[minimum,setMinimum]=useState(16),[clear,setClear]=useState(true);
   const [resourceKind,setResourceKind]=useState('全部'),[selectedScope,setSelectedScope]=useState(false),[deviceOverview,setDeviceOverview]=useState(false);
   const [adding,setAdding]=useState(false),[detail,setDetail]=useState<{host:string;device:string}|null>(null),[selected,setSelected]=useState<Record<string,string[]>>({});
   const [notice,setNotice]=useState(''),[error,setError]=useState(''),[notify,setNotify]=useState(false),[busy,setBusy]=useState(''),[port,setPort]=useState(29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
   const lastEvent=useRef<number|null>(null),notifyRef=useRef(false),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
   const navigate=(next:Page)=>{
+    if(next==='assistant'){setAssistantOpen(true);return}
     setPage(next);if(next==='precision')setPrecisionMounted(true);
     setDetail(null);setCheck(null);
     if(themeMenu.current)themeMenu.current.open=false;
@@ -86,9 +90,9 @@ function App(){
     if(next!==page)window.scrollTo({top:0});
   };
   useEffect(()=>{
-    const sync=()=>{setPendingLocation(hostLocationFromHash(location.hash));const next=pageFromHash(location.hash);setPage(next);if(next==='precision')setPrecisionMounted(true);setDetail(null);setCheck(null);window.scrollTo({top:0})};
+    const sync=()=>{setPendingLocation(hostLocationFromHash(location.hash));const requested=pageFromHash(location.hash);const next=requested==='assistant'?'overview':requested;if(requested==='assistant'){setAssistantOpen(true);window.history.replaceState(window.history.state,'','#overview')}setPage(next);if(next==='precision')setPrecisionMounted(true);setDetail(null);setCheck(null);window.scrollTo({top:0})};
     const syncLegacy=()=>{const legacy=location.hash.split('?')[0];if(legacy==='#watch')setNotificationTab('messages');if(legacy==='#connections'||legacy==='#watch')window.history.replaceState(window.history.state,'',location.hash.replace(/^#(?:connections|watch)/,'#overview'));sync()};
-    if(['#connections','#watch'].includes(location.hash.split('?')[0]))syncLegacy();
+    if(['#connections','#watch','#assistant'].includes(location.hash.split('?')[0]))syncLegacy();
     window.addEventListener('hashchange',syncLegacy);return()=>window.removeEventListener('hashchange',syncLegacy);
   },[]);
   useEffect(()=>{
@@ -223,11 +227,11 @@ function App(){
       {state.hosts.length>0&&!listedHosts.length&&<p className="subtle">{hostSearch.trim()?'没有匹配的机器。':`暂无${hostCategory==='全部'?'':' '+hostCategory+' '}机器。`}</p>}
     </div>
   </div>;
-  return <WorkspaceLayout onClickCapture={event=>{
+  return <WorkspaceLayout assistantWidth={assistantWidth} onClickCapture={event=>{
     if(deviceOverview&&event.target instanceof Element&&!event.target.closest('#device-overview,[aria-controls="device-overview"]'))setDeviceOverview(false);
   }}>
     <aside className="sidebar"><div className="brand"><span className="brand-icon"><Cpu size={23}/></span><div>Infra<span>WORKBENCH</span></div></div>
-      <div className="nav-label">工作台</div><nav>{[["overview","算力总览",LayoutGrid],["reservations","卡预约",CalendarClock],["precision","精度对比",Activity],["assistant","AI 助手",Sparkles],["settings","设置",Settings]].map(([key,label,Icon])=><button key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&state.reservations.some(r=>r.status!=='ready')&&<span className="nav-count">{state.reservations.filter(r=>r.status!=='ready').length}</span>}</button>)}</nav>
+      <div className="nav-label">工作台</div><nav>{[["overview","算力总览",LayoutGrid],["reservations","卡预约",CalendarClock],["precision","精度对比",Activity],["assistant","AI 助手",Sparkles],["settings","设置",Settings]].map(([key,label,Icon])=><button key={String(key)} title={String(label)} aria-label={String(label)} className={(key==='assistant'?assistantOpen:page===key)?'active':''} aria-current={page===key?'page':undefined} aria-pressed={key==='assistant'?assistantOpen:undefined} onClick={()=>key==='assistant'?setAssistantOpen(value=>!value):navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&state.reservations.some(r=>r.status!=='ready')&&<span className="nav-count">{state.reservations.filter(r=>r.status!=='ready').length}</span>}</button>)}</nav>
       <div className="sidebar-hosts">{hostList}</div>
       <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title="自动保存机器选择，下次打开时恢复（需浏览器允许本地存储）。通过 SSH 连接远端机器，无需远端常驻 Agent。"><i aria-hidden="true"/>本地服务{error?'未连接':'已连接'}</div></div>
     </aside>
@@ -269,9 +273,11 @@ function App(){
       <div className="footnote"><CircleHelp size={14}/>低利用率不代表空闲。筛选结果反映资源指标，不代表资源授权或预留。</div>
     </div></div>}
     {page==='settings'&&<React.Suspense fallback={<p role="status">正在加载设置…</p>}><SettingsPage/></React.Suspense>}
-    {page==='assistant'&&<React.Suspense fallback={<p role="status">正在加载 AI 助手…</p>}><InfraAssistant selectedHostIds={scope.map(host=>host.id)} openSettings={()=>navigate('settings')} locate={(hostId,devices)=>{if(!state.hosts.some(host=>host.id===hostId)){setNotice('这台机器已不在当前列表中。');return}showMachines([hostId]);setSelected({[hostId]:devices});navigate('overview')}} openTerminal={hostId=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setTerminalRequest({id:browserId(),host});else setNotice('这台机器已不在当前列表中。')}}/></React.Suspense>}
+
     {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} edit={item=>setReservationDraft(draftFromReservation(item,true))} rebook={item=>setReservationDraft(draftFromReservation(item,false))} locate={locateReservation} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} enableNotifications={enableNotifications} notify={notify}/>}
     <footer className="page-footer"><span><ShieldCheck size={13}/>私钥留在本机 · sudo 密码可选存入系统凭据管理器</span><span>LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
+    <React.Suspense fallback={<p role="status">正在加载 AI 助手…</p>}><AssistantWindow open={assistantOpen} onClose={()=>setAssistantOpen(false)} onDockWidthChange={setAssistantWidth} selectedHostIds={scope.map(host=>host.id)} openSettings={()=>navigate('settings')} locate={(hostId,devices)=>{if(!state.hosts.some(host=>host.id===hostId)){setNotice('这台机器已不在当前列表中。');return}showMachines([hostId]);setSelected({[hostId]:devices});navigate('overview')}} openTerminal={hostId=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setTerminalRequest({id:browserId(),host});else setNotice('这台机器已不在当前列表中。')}}/></React.Suspense>
+    {!assistantOpen&&<button className="assistant-reopen" aria-label="展开 AI 助手" title="展开 AI 助手" onClick={()=>setAssistantOpen(true)}><Sparkles size={18}/><span>AI 助手</span></button>}
     <TerminalBoundary close={()=>setTerminalRequest(null)}><React.Suspense fallback={<div className="terminal-loading" role="status">正在加载终端…</div>}>{terminalRequest&&<TerminalDock request={terminalRequest} hosts={state.hosts} onDirectory={(hostId,path)=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setFileHost({host,path,requestId:browserId()})}}/>}</React.Suspense></TerminalBoundary>
     {notice&&<div role="status" className="toast"><Check size={17}/>{notice}<button className="icon-button" aria-label="关闭提示" onClick={()=>setNotice('')}><X size={15}/></button></div>}
     {adding&&<AddMachine close={()=>setAdding(false)} imported={async ids=>{setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,...ids])]}));await load()}} connected={async(message,hostId)=>{if(hostId)setPreferences(old=>({...old,hostIds:old.hostIds===null?null:[...new Set([...old.hostIds,hostId])]}));setNotice(message);setAdding(false);await load()}}/>}

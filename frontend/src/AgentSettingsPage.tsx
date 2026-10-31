@@ -36,6 +36,7 @@ export function AgentSettingsPage(){
     void act('save',async()=>{
       const value=await agentRequest<AgentView>('','PUT',agentPayload(form,key,remember));
       apply(value);setKey('');setMessage('Agent 设置已保存。填写模型名称后，可以测试连接。');
+      window.dispatchEvent(new Event('infra-workbench:agent-settings-changed'));
     });
   };
   const fetchModels=()=>act('models',async()=>{
@@ -79,7 +80,7 @@ export function AgentSettingsPage(){
         <p className="settings-help">{dirty?'填写或修改后请先保存，再测试连接。':'测试会向当前服务发送一条简短消息，可能产生少量 API 费用。不会发送服务器、进程或终端内容。'}</p>
       </form>
       <aside className="settings-aside">
-        <div className="settings-card"><h3><ShieldCheck size={17}/>API key 保存在本机</h3><p>key 不写入数据库、浏览器存储或项目文件，读取设置时也不会返回。</p><div className="settings-credential">{saved?.api_key_saved?'已保存到系统安全存储':saved?.has_api_key?'仅本次后台运行中可用':'尚未配置 API key'}</div><button className="secondary wide" disabled={!!pending||!saved?.has_api_key} onClick={()=>act('forget',async()=>{apply(await agentRequest<AgentView>('/api-key','DELETE'));setKey('');setModels([]);setMessage('API key 已删除。')})}><Trash2 size={14}/>删除 API key</button></div>
+        <div className="settings-card"><h3><ShieldCheck size={17}/>API key 保存在本机</h3><p>key 不写入数据库、浏览器存储或项目文件，读取设置时也不会返回。</p><div className="settings-credential">{saved?.api_key_saved?'已保存到系统安全存储':saved?.has_api_key?'仅本次后台运行中可用':'尚未配置 API key'}</div><button className="secondary wide" disabled={!!pending||!saved?.has_api_key} onClick={()=>act('forget',async()=>{apply(await agentRequest<AgentView>('/api-key','DELETE'));setKey('');setModels([]);setMessage('API key 已删除。');window.dispatchEvent(new Event('infra-workbench:agent-settings-changed'))})}><Trash2 size={14}/>删除 API key</button></div>
         <div className="settings-card"><h3>连接测试</h3>{result?<div className="agent-test-result" role="status"><strong className={result.ok?'agent-test-ok':''}>{result.ok?'已收到模型回复':'连接测试失败'}</strong>{result.protocol&&<span>{protocolNames[result.protocol]} · {result.model}</span>}{result.elapsed_ms!==undefined&&<span>耗时 {(result.elapsed_ms/1000).toFixed(2)} 秒</span>}{result.preview&&<pre>{result.preview}</pre>}<small>{new Date(result.updated*1000).toLocaleString('zh-CN')}</small></div>:<p>{pending==='test'?'正在等待模型返回文本…':'保存设置后点击「测试连接」，检查当前协议、模型和 key 是否可用。'}</p>}</div>
         <div className="settings-card"><h3>与外部 Agent 的区别</h3><p>这里配置工作台调用的模型 API。Codex、Claude Code 等外部 Agent 连接工作台时，使用下方的 MCP 设置。</p><p>左侧「AI 助手」使用这里的模型进行跨机器查找和资源变化归纳，模型只在你主动查询时调用。</p></div>
       </aside>

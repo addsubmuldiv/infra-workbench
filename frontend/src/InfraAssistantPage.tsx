@@ -7,16 +7,20 @@ import {AssistantChat} from './AssistantChat';
 const examples=['我的 vLLM 在哪台机器？','找 4 个空闲 NPU，每个至少 40 GiB','我开的 tmux 在哪里？'];
 const stamp=(value:number|null|undefined)=>value?new Date(value*1000).toLocaleString('zh-CN'):'尚无记录';
 
-export function InfraAssistant({locate,openTerminal,openSettings,selectedHostIds=[]}:{locate:(hostId:string,devices:string[])=>void;openTerminal:(hostId:string)=>void;openSettings:()=>void;selectedHostIds?:string[]}){
+export function InfraAssistant({locate,openTerminal,openSettings,selectedHostIds=[],compact=false}:{compact?:boolean;locate:(hostId:string,devices:string[])=>void;openTerminal:(hostId:string)=>void;openSettings:()=>void;selectedHostIds?:string[]}){
   const [tab,setTab]=useState<'chat'|'search'|'changes'>('chat'),[status,setStatus]=useState<AssistantStatus|null>(null);
   const [query,setQuery]=useState(''),[refresh,setRefresh]=useState(false),[search,setSearch]=useState<SearchResult|null>(null);
   const [hours,setHours]=useState(1),[history,setHistory]=useState<ChangeHistory|null>(null),[summary,setSummary]=useState<ResourceSummary|null>(null);
   const [pending,setPending]=useState(''),[error,setError]=useState(''),[historyError,setHistoryError]=useState('');
   const controller=useRef<AbortController|null>(null),[highlight,setHighlight]=useState<number[]>([]);
   useEffect(()=>{
-    const request=new AbortController();
-    assistantRequest<AssistantStatus>('/status','GET',undefined,request.signal).then(setStatus).catch(e=>{if(e.name!=='AbortError')setError(e.message)});
-    return()=>{request.abort();controller.current?.abort()};
+    let request:AbortController;
+    const refresh=()=>{
+      request?.abort();const next=new AbortController();request=next;
+      assistantRequest<AssistantStatus>('/status','GET',undefined,next.signal).then(value=>{if(!next.signal.aborted){setStatus(value);setError('')}}).catch(e=>{if(!next.signal.aborted)setError(e.message)});
+    };
+    refresh();window.addEventListener('infra-workbench:agent-settings-changed',refresh);
+    return()=>{request.abort();controller.current?.abort();window.removeEventListener('infra-workbench:agent-settings-changed',refresh)};
   },[]);
   useEffect(()=>{
     const request=new AbortController();setHistory(null);setSummary(null);setHighlight([]);setHistoryError('');
@@ -37,14 +41,14 @@ export function InfraAssistant({locate,openTerminal,openSettings,selectedHostIds
   });
   const reloadHistory=()=>act('history',async signal=>{setHistory(await assistantRequest<ChangeHistory>('/changes?hours='+hours,'GET',undefined,signal));setSummary(null);setHighlight([]);setHistoryError('')});
 
-  return <section className="infra-assistant" aria-label="AI 资源助手">
-    <div className="assistant-intro"><span className="assistant-mark"><Sparkles size={23}/></span><div><h2>用对话查询和检查服务器</h2><p>{status?.configured?`${status.model} · ${status.host_count} 台已添加机器`:'使用设置中配置的模型，不需要指定项目或日志路径。'}</p></div><button className="secondary" onClick={openSettings}>模型设置 <ArrowUpRight size={14}/></button></div>
+  return <section className={"infra-assistant"+(compact?" compact":"")} aria-label="AI 资源助手">
+    {compact?<div className="assistant-model-row"><span>{status?.configured?`${status.model} · ${status.host_count} 台机器`:'配置模型后开始对话'}</span><button className="text-button" onClick={openSettings}>模型设置 <ArrowUpRight size={12}/></button></div>:<div className="assistant-intro"><span className="assistant-mark"><Sparkles size={23}/></span><div><h2>用对话查询和检查服务器</h2><p>{status?.configured?`${status.model} · ${status.host_count} 台已添加机器`:'使用设置中配置的模型，不需要指定项目或日志路径。'}</p></div><button className="secondary" onClick={openSettings}>模型设置 <ArrowUpRight size={14}/></button></div>}
     <div className="assistant-tabs" role="tablist" aria-label="助手功能"><button role="tab" aria-selected={tab==='chat'} onClick={()=>setTab('chat')}><Sparkles size={16}/>对话</button><button role="tab" aria-selected={tab==='search'} onClick={()=>setTab('search')}><Search size={16}/>跨机器查找</button><button role="tab" aria-selected={tab==='changes'} onClick={()=>setTab('changes')}><History size={16}/>资源变化摘要</button></div>
     {error&&<div className="assistant-error" role="alert">{error}</div>}
     {status&&!status.configured&&<div className="assistant-note">请先在模型设置中配置接口和模型名称。采样记录不依赖模型，仍会持续积累。</div>}
     {status?.credential_error&&<div className="assistant-error">{status.credential_error}</div>}
-    <div hidden={tab!=='chat'}><AssistantChat configured={!!status?.configured} selectedHostIds={selectedHostIds}/></div>
-    <div hidden={tab!=='search'}>
+    <div className="assistant-tab-content assistant-chat-tab" hidden={tab!=='chat'}><AssistantChat configured={!!status?.configured} selectedHostIds={selectedHostIds}/></div>
+    <div className="assistant-tab-content assistant-scroll-tab" hidden={tab!=='search'}>
       <form className="assistant-query" onSubmit={submit}><label htmlFor="fleet-query">你想找什么？</label><div className="assistant-query-input"><textarea id="fleet-query" aria-label="跨机器查找问题" rows={2} maxLength={1000} value={query} onChange={event=>setQuery(event.target.value)} placeholder="例如：我的推理服务在哪台机器？" disabled={!!pending}/><button className="primary" disabled={!!pending||!status?.configured||!query.trim()}>{pending==='search'?<LoaderCircle size={17} className="spin"/>:<Search size={17}/ >}{pending==='search'?'正在查找…':'查找'}</button></div><div className="assistant-query-options"><label><input type="checkbox" checked={refresh} disabled={!!pending} onChange={event=>setRefresh(event.target.checked)}/>查询前重新采集（最多等待 25 秒）</label><span>仅发送你的问题给模型；实际匹配在本机完成。</span></div><div className="assistant-examples">{examples.map(example=><button type="button" key={example} disabled={!!pending} onClick={()=>setQuery(example)}>{example}</button>)}</div></form>
       {search&&<div className="assistant-results" aria-live="polite"><div className="assistant-result-heading"><div><h3>找到 {search.total} 项匹配结果</h3><p>问题：{search.query}</p></div><span>{search.model} · {(search.elapsed_ms/1000).toFixed(2)} 秒</span></div>
         <div className="assistant-conditions">{search.plan.scope==='resources'?`同机至少 ${search.plan.count} 个 ${search.plan.kind||'同类型设备'} · 每个剩余 ≥ ${search.plan.min_free_gib} GiB${search.plan.idle?' · 无可见计算进程':''}`:`${search.plan.scope==='sessions'?'tmux 会话':search.plan.scope==='hosts'?'机器':'占卡进程'}${search.plan.keywords.length?' · 关键字：'+search.plan.keywords.join(' / '):''}${search.plan.owner?' · 用户：'+(search.plan.owner==='__self__'?'各机器当前 SSH 账号':search.plan.owner):''}`}{search.plan.host&&` · 机器：${search.plan.host}`}</div>
@@ -55,7 +59,7 @@ export function InfraAssistant({locate,openTerminal,openSettings,selectedHostIds
       </div>}
       {!search&&<div className="assistant-empty"><Search size={25}/><p>查找占卡进程、空闲设备、tmux 会话或已添加的机器。</p><small>模型只理解条件，不生成或执行远端命令。</small></div>}
     </div>
-    <div hidden={tab!=='changes'}>
+    <div className="assistant-tab-content assistant-scroll-tab" hidden={tab!=='changes'}>
       <div className="assistant-history-toolbar"><label>时间范围<select aria-label="资源变化时间范围" value={hours} disabled={!!pending} onChange={event=>setHours(Number(event.target.value))}><option value={1}>最近 1 小时</option><option value={6}>最近 6 小时</option><option value={24}>最近 24 小时</option><option value={168}>最近 7 天</option></select></label><div><button className="secondary" disabled={!!pending} onClick={reloadHistory}>刷新记录</button><button className="primary" disabled={!!pending||!history||!status?.configured||history.event_count===0} onClick={summarize}>{pending==='summary'?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/ >}{pending==='summary'?'正在归纳…':'生成变化摘要'}</button></div></div>
       {historyError&&<div className="assistant-error" role="alert">{historyError}</div>}
       {history&&<><div className="assistant-history-meta"><span><Clock size={14}/>开始记录：{stamp(history.recording_started_at)}</span><span>最近采样：{stamp(history.last_observed_at)}</span><span>{history.event_count} 条变化</span></div>{history.error&&<div className="assistant-note">{history.error}</div>}

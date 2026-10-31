@@ -90,6 +90,8 @@ def self_test(destination):
             # Import both desktop modules; macOS Cocoa itself stays lazy.
             importlib.import_module('backend.desktop')
             importlib.import_module('backend.desktop_macos')
+            from backend.agent_runtime import bundled_files
+            result['builtin_skills'] = len(bundled_files())
             async def check_native_pty():
                 if sys.platform == 'win32':
                     from backend.terminal import NativeTerminal as Terminal

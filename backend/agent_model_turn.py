@@ -17,11 +17,13 @@ def response_input(messages):
     return result
 
 
-async def model_turn(service,instructions,messages,tools):
+async def model_turn(service,instructions,messages,tools,*,on_text=None):
     config=dict(service.config)
     if not config.get('model'):
         raise ValueError('请先在设置中配置模型接口')
     key=service.key_for(config)
+    from .agent_provider_stream import TextSink, request_stream
+    sink=TextSink(on_text,key) if on_text is not None else None
     protocols=['responses','chat_completions'] if config['protocol']=='auto' else [config['protocol']]
     for index,protocol in enumerate(protocols):
         if protocol=='responses':
@@ -35,7 +37,11 @@ async def model_turn(service,instructions,messages,tools):
         if urlsplit(config['base_url']).hostname=='open.bigmodel.cn' and config['model'].startswith('glm-'):
             payload.update(reasoning=dict(effort='none')) if protocol=='responses' else payload.update(thinking=dict(type='disabled'))
         try:
-            data=await service.request(config,key,path,payload)
+            if sink is not None:
+                payload['stream']=True
+                data=await request_stream(config,key,path,payload,protocol,sink)
+            else:
+                data=await service.request(config,key,path,payload)
         except ProviderFailure as exc:
             if exc.unsupported and index+1<len(protocols):continue
             raise
@@ -64,6 +70,12 @@ async def model_turn(service,instructions,messages,tools):
         for call in calls:
             if not all(isinstance(call[field],str) and 0<len(call[field])<=limit for field,limit in (('id',200),('name',100),('arguments',12000))):
                 raise ProviderFailure('模型工具调用格式无效，本轮未执行')
+            if sink is not None:
+                try:
+                    arguments=json.loads(call['arguments'])
+                    if not isinstance(arguments,dict):raise ValueError()
+                except ValueError:
+                    raise ProviderFailure('模型工具调用参数不完整或无效，本轮未执行') from None
             normalized.append(dict(id=call['id'],type='function',function=dict(name=call['name'],arguments=call['arguments'])))
         content=''.join(text)
         if key:
@@ -74,5 +86,6 @@ async def model_turn(service,instructions,messages,tools):
                     call['function'][field]=call['function'][field].replace(key,'[已隐藏 API key]')
         if not content.strip() and not normalized:
             raise ProviderFailure('模型未返回文本或工具调用，请重试')
+        if sink is not None:content=sink.emit(content,final=True)
         return dict(message=dict(role='assistant',content=content,**({'tool_calls':normalized} if normalized else {})),
                     model=config['model'],protocol=protocol)
