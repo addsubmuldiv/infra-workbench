@@ -42,7 +42,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckOnly
 
 需要在安装后进入控制台，可使用 `install.cmd -Console`；只希望后台启动但暂不打开页面，可使用 `install.cmd -NoBrowser`。这些参数供排障和自动化使用，日常双击即可。
 
-日常后台使用推荐双击 **background.cmd**：系统托盘提供桌面通知、打开工作台、通知开关及可选的登录启动。关闭网页后继续监控，无需浏览器通知权限。登录启动默认关闭，在托盘右键菜单中手动勾选。详细说明见 [系统托盘与后台监控](BACKGROUND.md)。
+日常仍使用 **`运行.cmd`** 即可；`background.cmd` 是后台启动入口。系统托盘提供桌面通知、打开工作台、通知开关及可选的登录启动。关闭网页后继续监控，无需浏览器通知权限。登录启动默认关闭，在托盘右键菜单中手动勾选。详细说明见 [系统托盘与后台监控](BACKGROUND.md)。
 
 进入“添加机器”，可从 `%USERPROFILE%\.ssh\config` 及 Include 文件导入别名，也可以手动填写。每位同事使用自己的账号、SSH 配置和授权，不要复制你的 `data` 给别人。
 
@@ -50,9 +50,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckOnly
 
 ## 更新与修复
 
-先在原服务窗口按 Ctrl+C 停止服务。
+更新前先保存文件编辑内容，并妥善结束或保留网页 SSH 终端中的任务。托盘模式从托盘菜单退出并停止后台；控制台模式在原服务窗口按 Ctrl+C。若托盘接入的是已有服务，还需要停止原来的服务入口。
 
-- Git 用户：执行 `git pull --ff-only`，再双击 `install.cmd`。
+- Git 用户：执行 `git pull --ff-only`，再双击 `运行.cmd`。
 - ZIP 用户：解压新版本到新目录。需要迁移机器与规则时，由本人把旧版 `data` 复制到新版相同位置，不覆盖自己的 SSH 配置。不要把它加入分享包。
 - 在原目录更新且保留 `data` 时，机器与规则继续保留。浏览器偏好与访问地址、浏览器有关。
 
