@@ -43,6 +43,97 @@ class Remote:
                     'command':'python train.py','detail_status':'ok','errors':{}}}}), ''
 
 
+class OutdatedRemote(Remote):
+    def __init__(self):
+        super().__init__()
+        self.outdated = set()
+
+    async def run(self, host, command, source=None):
+        if 'IWB_HELPER_VALIDATE' in command and host['id'] in self.outdated:
+            self.calls.append((host['id'], command, source))
+            return 0, json.dumps({'state': 'version_mismatch'}), ''
+        result = await super().run(host, command, source)
+        if 'IWB_HELPER_INSTALL' in command and result[0] == 0:
+            self.outdated.discard(host['id'])
+        return result
+
+
+@pytest.mark.parametrize('idle', [False, True])
+def test_reopening_automatically_updates_each_configured_host_using_saved_credentials(idle):
+    async def scenario():
+        remote, vault = OutdatedRemote(), Vault()
+        initial = SudoService(remote, vault)
+        hosts = [dict(id=name, target=name) for name in ('one', 'two')]
+        for host in hosts:
+            await initial.configure(host, True, 'test-sudo-password', True)
+        remote.outdated.update(host['id'] for host in hosts)
+        remote.calls.clear()
+        reopened = SudoService(remote, vault)
+        for host in hosts:
+            details = await reopened.enrich(host, [] if idle else [4308], None if idle else 1000)
+            assert reopened.view(host)['status'] == 'ready'
+            assert details == {} if idle else details['4308']['cwd'] == '/project'
+        assert not remote.outdated
+        installed = [host_id for host_id, command, source in remote.calls
+                     if 'IWB_HELPER_INSTALL' in command and source is not None]
+        assert installed == ['one', 'two']
+        assert set(vault.values) == {'one', 'two'}
+        remote.calls.clear()
+        for host in hosts:
+            await reopened.enrich(host, [4308], 1000)
+        assert not any('IWB_HELPER_INSTALL' in command for _, command, _ in remote.calls)
+    asyncio.run(scenario())
+
+
+def test_automatic_helper_update_supports_passwordless_sudo():
+    async def scenario():
+        remote = OutdatedRemote()
+        remote.nopasswd = True
+        svc = SudoService(remote, Vault())
+        host = dict(id='one', target='one')
+        await svc.configure(host, True)
+        remote.outdated.add('one')
+        assert (await svc.enrich(host, [4308], 1000))['4308']['cwd'] == '/project'
+        assert all(source is None for _, _, source in remote.calls)
+    asyncio.run(scenario())
+
+
+def test_rejected_password_during_automatic_update_stops_retries_and_keeps_saved_entry():
+    async def scenario():
+        remote, vault = OutdatedRemote(), Vault()
+        svc = SudoService(remote, vault)
+        host = dict(id='one', target='one')
+        await svc.configure(host, True, 'test-sudo-password', True)
+        remote.outdated.add('one')
+        vault.values['one']['password'] = 'expired-password'
+        svc = SudoService(remote, vault)
+        assert await svc.enrich(host, [4308], 1000) == {}
+        assert svc.view(host)['status'] == 'denied'
+        count = len(remote.calls)
+        assert await svc.enrich(host, [4308], 1000) == {}
+        assert len(remote.calls) == count
+        assert vault.values['one']['password'] == 'expired-password'
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('state', ['missing', 'unsafe', 'error'])
+def test_automatic_update_does_not_install_missing_or_untrusted_helpers(state):
+    async def scenario():
+        remote = Remote()
+        remote.nopasswd = True
+        svc = SudoService(remote, Vault())
+        host = dict(id='one', target='one')
+        await svc.configure(host, True)
+        async def helper_state(host, config):
+            return state
+        svc.helper_state = helper_state
+        remote.calls.clear()
+        assert await svc.enrich(host, [4308], 1000) == {}
+        assert svc.view(host)['status'] == state
+        assert not remote.calls
+    asyncio.run(scenario())
+
+
 def test_per_host_password_and_forgetting_clear_persistent_and_memory():
     async def scenario():
         remote, vault = Remote(), Vault()
@@ -120,6 +211,39 @@ def test_privileged_helper_only_accepts_numeric_pid_requests():
     assert '--inspect 1000 4308' in helper_command([4308],1000,False)
     assert 'bash' not in helper_command([4308],1000,False)
     compile(helper_source(), '<privileged-helper>', 'exec')
+
+
+def test_helper_version_is_independent_of_unrelated_monitoring_changes(monkeypatch):
+    baseline = helper_source()
+    original = Path.read_text
+
+    def with_new_monitor(path, *args, **kwargs):
+        source = original(path, *args, **kwargs)
+        if path.name == 'remote_probe.py':
+            source = source.replace('\ndef main():', '\ndef unrelated_monitor():\n    return 42\n\ndef main():')
+        return source
+
+    monkeypatch.setattr(Path, 'read_text', with_new_monitor)
+    assert helper_source() == baseline
+
+
+def test_generated_helper_reads_process_details_with_all_dependencies(tmp_path, monkeypatch):
+    from backend.remote_probe import read_process_details
+    from test_process_details import stat_line
+
+    folder = tmp_path/'4308'
+    folder.mkdir()
+    (folder/'stat').write_text(stat_line(4308, 100))
+    (folder/'status').write_text('Uid:\t1001\t1001\t1001\t1001\nPPid:\t4000\n')
+    (folder/'cmdline').write_bytes(b'python\x00train.py\x00--password\x00hidden\x00')
+    monkeypatch.setattr(os, 'readlink', lambda path: '/project')
+    namespace = {'__name__': 'helper_test'}
+    source = helper_source()
+    exec(compile(source, '<privileged-helper>', 'exec'), namespace)
+    assert namespace['read_process_details'](4308, tmp_path, 200) == read_process_details(4308, tmp_path, 200)
+    assert 'hidden' not in namespace['read_process_details'](4308, tmp_path, 200)['command']
+    assert 'def tmux_sessions(' not in source
+    assert 'def system_metrics(' not in source
 
 
 def test_saved_password_rejection_does_not_retry_every_poll():
