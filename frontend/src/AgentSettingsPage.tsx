@@ -1,6 +1,7 @@
+import {AgentProfilePicker} from './AgentProfilePicker';
 import React,{useEffect,useState} from 'react';
 import {Bot,Check,ChevronDown,LoaderCircle,Plug,ShieldCheck,Trash2} from 'lucide-react';
-import {agentDirty,agentPayload,agentRequest,defaultAgentConfig,protocolNames,type AgentConfig,type AgentTest,type AgentView} from './agentSettings';
+import {agentDirty,agentPayload,agentRequest,defaultAgentConfig,protocolNames,type ContextCapacity,type AgentConfig,type AgentTest,type AgentView} from './agentSettings';
 import './settings.css';
 import './agentSettings.css';
 
@@ -8,23 +9,35 @@ export function AgentSettingsPage(){
   const [form,setForm]=useState<AgentConfig>(defaultAgentConfig);
   const [saved,setSaved]=useState<AgentView|null>(null),[key,setKey]=useState(''),[remember,setRemember]=useState(true);
   const [pending,setPending]=useState('load'),[error,setError]=useState(''),[message,setMessage]=useState('');
+  const [capacity,setCapacity]=useState<ContextCapacity|null>(null);
   const [models,setModels]=useState<string[]>([]),[result,setResult]=useState<AgentTest|null>(null);
   const apply=(value:AgentView)=>{
-    setSaved(value);
-    setForm({base_url:value.base_url,protocol:value.protocol,model:value.model,timeout_seconds:value.timeout_seconds});
+    setSaved(value);setKey('');setModels([]);setCapacity(null);
+    setForm({profile_id:value.active_id,base_url:value.base_url,protocol:value.protocol,model:value.model,timeout_seconds:value.timeout_seconds,context_window:value.context_window||null});
     setRemember(value.can_remember&&(value.api_key_saved||!value.has_api_key));
     setResult(value.last_test);
   };
   useEffect(()=>{
     let alive=true;
-    agentRequest<AgentView>().then(value=>{if(alive)apply(value)}).catch(e=>{if(alive)setError(e.message)})
+    agentRequest<AgentView>().then(async value=>{if(alive){apply(value);if(value.model){const context=await agentRequest<ContextCapacity>('/context','POST');if(alive)setCapacity(context)}}}).catch(e=>{if(alive)setError(e.message)})
       .finally(()=>{if(alive)setPending('')});
     return()=>{alive=false};
   },[]);
   const dirty=agentDirty(form,saved,key,remember);
+  useEffect(()=>{
+    let alive=true;
+    const refresh=()=>{void agentRequest<AgentView>().then(value=>{
+      if(!alive||value.active_id===saved?.active_id)return;
+      if(dirty){setError('接口已在其他窗口切换。请重新加载设置后再编辑。');return}
+      apply(value);setError('');
+    }).catch(e=>{if(alive)setError(e.message)})};
+    window.addEventListener('infra-workbench:agent-settings-changed',refresh);window.addEventListener('focus',refresh);
+    return()=>{alive=false;window.removeEventListener('infra-workbench:agent-settings-changed',refresh);window.removeEventListener('focus',refresh)};
+  },[dirty,saved?.active_id]);
   const change=<K extends keyof AgentConfig>(name:K,value:AgentConfig[K])=>{
-    setForm(old=>({...old,[name]:value}));setMessage('');setError('');setResult(null);
+    setForm(old=>({...old,...(name==='model'||name==='base_url'?{context_window:null}:{}),[name]:value}));setMessage('');setError('');setResult(null);
     if(name==='base_url')setModels([]);
+    if(name==='base_url'||name==='model'||name==='context_window')setCapacity(null);
   };
   const act=async(name:string,action:()=>Promise<void>)=>{
     setPending(name);setError('');setMessage('');
@@ -37,6 +50,7 @@ export function AgentSettingsPage(){
       const value=await agentRequest<AgentView>('','PUT',agentPayload(form,key,remember));
       apply(value);setKey('');setMessage('Agent 设置已保存。填写模型名称后，可以测试连接。');
       window.dispatchEvent(new Event('infra-workbench:agent-settings-changed'));
+      if(value.model)setCapacity(await agentRequest<ContextCapacity>('/context','POST'));
     });
   };
   const fetchModels=()=>act('models',async()=>{
@@ -46,12 +60,13 @@ export function AgentSettingsPage(){
   });
   const test=()=>act('test',async()=>{
     setResult(null);
-    try{setResult(await agentRequest<AgentTest>('/test','POST'))}
-    catch(e){const view=await agentRequest<AgentView>();setSaved(view);setResult(view.last_test);throw e}
+    try{setResult(await agentRequest<AgentTest>('/test?profile_id='+encodeURIComponent(saved!.active_id),'POST'))}
+    catch(e){const view=await agentRequest<AgentView>();if(view.active_id===saved?.active_id){setSaved(view);setResult(view.last_test)}throw e}
   });
 
   return <section className="settings-page agent-settings" aria-label="Agent 模型接口">
     <div className="settings-section-title"><Bot size={20}/><div><h2>Agent 模型接口</h2><p>连接你选择的模型服务，供工作台内置的 AI 功能使用。</p></div><span className="agent-protocol-badge">OpenAI 兼容</span></div>
+    <AgentProfilePicker manage disabled={!!pending||dirty} onChange={value=>{apply(value);setMessage('已切换接口配置。');setError('')}}/>
     <div className="settings-layout">
       <form className="settings-card" onSubmit={save}>
         <div className="agent-form-heading"><Plug size={18}/><div><h3>连接设置</h3><p>支持 OpenAI 官方接口、兼容网关和本地模型服务。</p></div></div>
@@ -70,10 +85,14 @@ export function AgentSettingsPage(){
           <datalist id="agent-model-options">{models.map(model=><option key={model} value={model}/>)}</datalist>
           {models.length>0&&<label className="form-label">已获取的模型<select aria-label="选择已获取的模型" value={models.includes(form.model)?form.model:''} onChange={event=>{if(event.target.value)change('model',event.target.value)}}><option value="">请选择模型</option>{models.map(model=><option key={model} value={model}>{model}</option>)}</select></label>}
           <p className="settings-help">可以直接输入模型 ID；不支持获取模型列表的服务仍可手动配置。</p>
+          <label className="form-label">上下文容量（token，可选）<input aria-label="模型上下文容量" type="number" min={4096} max={20000000} step={1} placeholder="自动从当前模型服务读取" value={form.context_window||''} onChange={event=>change('context_window',event.target.value?Number(event.target.value):null)}/></label>
+          <p className="settings-help">留空时自动读取服务商的模型容量；接口没有提供容量或部署限制更小时，可手动填写。手动值优先生效。</p>
+          <div className="settings-help" role="status">{capacity?`${capacity.source==='provider'?'服务商返回':capacity.source==='manual'?'手动设置':'无法自动识别，暂用保守值'}：${capacity.tokens.toLocaleString()} token；约 ${capacity.trigger_tokens.toLocaleString()} token 时自动压缩。${capacity.source==='fallback'?'请核对服务商文档并填写实际容量。':''}`:dirty?'保存后读取当前模型容量。':pending?'正在读取模型容量…':'尚未读取模型容量。'}</div>
+          <button type="button" className="text-button" disabled={!!pending||dirty||!saved?.model} onClick={()=>act('context',async()=>setCapacity(await agentRequest<ContextCapacity>('/context','POST')))}>重新读取模型容量</button>
           <label className="form-label agent-timeout">请求超时（秒）<input aria-label="Agent 请求超时" type="number" required min={5} max={120} value={form.timeout_seconds} onChange={event=>change('timeout_seconds',Number(event.target.value))}/></label>
         </fieldset>
         {saved?.credential_error&&<div className="settings-error" role="alert">{saved.credential_error}</div>}
-        {error&&<div className="settings-error" role="alert">{error}</div>}
+        {error&&<div className="settings-error" role="alert">{error}<button type="button" className="text-button" disabled={!!pending} onClick={()=>act('load',async()=>{apply(await agentRequest<AgentView>());setError('')})}>重新加载设置（放弃未保存修改）</button></div>}
         {message&&<div className="settings-success" role="status"><Check size={15}/>{message}</div>}
         <div className="settings-save"><button className="primary" disabled={!!pending||!saved}>{pending==='save'?'正在保存…':'保存 Agent 设置'}</button><button type="button" className="secondary" disabled={!!pending||!saved||dirty||!saved.model} onClick={test}>{pending==='test'?<LoaderCircle size={15} className="spin"/>:<Plug size={15}/ >}{pending==='test'?'正在测试…':'测试连接'}</button>
           {!saved&&pending!=='load'&&<button type="button" className="secondary" onClick={()=>act('load',async()=>apply(await agentRequest<AgentView>()))}>重新加载</button>}
@@ -81,9 +100,9 @@ export function AgentSettingsPage(){
         <p className="settings-help">{dirty?'填写或修改后请先保存，再测试连接。':'测试会向当前服务发送一条简短消息，可能产生少量 API 费用。不会发送服务器、进程或终端内容。'}</p>
       </form>
       <aside className="settings-aside">
-        <div className="settings-card"><h3><ShieldCheck size={17}/>API key 保存在本机</h3><p>key 不写入数据库、浏览器存储或项目文件，读取设置时也不会返回。</p><div className="settings-credential">{saved?.api_key_saved?'已保存到系统安全存储':saved?.has_api_key?'仅本次后台运行中可用':'尚未配置 API key'}</div><button className="secondary wide" disabled={!!pending||!saved?.has_api_key} onClick={()=>act('forget',async()=>{apply(await agentRequest<AgentView>('/api-key','DELETE'));setKey('');setModels([]);setMessage('API key 已删除。');window.dispatchEvent(new Event('infra-workbench:agent-settings-changed'))})}><Trash2 size={14}/>删除 API key</button></div>
+        <div className="settings-card"><h3><ShieldCheck size={17}/>API key 保存在本机</h3><p>key 不写入数据库、浏览器存储或项目文件，读取设置时也不会返回。</p><div className="settings-credential">{saved?.api_key_saved?'已保存到系统安全存储':saved?.has_api_key?'仅本次后台运行中可用':'尚未配置 API key'}</div><button className="secondary wide" disabled={!!pending||!saved?.has_api_key} onClick={()=>act('forget',async()=>{apply(await agentRequest<AgentView>('/api-key?profile_id='+encodeURIComponent(saved!.active_id),'DELETE'));setKey('');setModels([]);setMessage('API key 已删除。');window.dispatchEvent(new Event('infra-workbench:agent-settings-changed'))})}><Trash2 size={14}/>删除 API key</button></div>
         <div className="settings-card"><h3>连接测试</h3>{result?<div className="agent-test-result" role="status"><strong className={result.ok?'agent-test-ok':''}>{result.ok?'已收到模型回复':'连接测试失败'}</strong>{result.protocol&&<span>{protocolNames[result.protocol]} · {result.model}</span>}{result.elapsed_ms!==undefined&&<span>耗时 {(result.elapsed_ms/1000).toFixed(2)} 秒</span>}{result.preview&&<pre>{result.preview}</pre>}<small>{new Date(result.updated*1000).toLocaleString('zh-CN')}</small></div>:<p>{pending==='test'?'正在等待模型返回文本…':'保存设置后点击「测试连接」，检查当前协议、模型和 key 是否可用。'}</p>}</div>
-        <div className="settings-card"><h3>与外部 Agent 的区别</h3><p>这里配置工作台调用的模型 API。Codex、Claude Code 等外部 Agent 连接工作台时，使用下方的 MCP 设置。</p><p>左侧「AI 助手」使用这里的模型进行跨机器查找和资源变化归纳，模型只在你主动查询时调用。</p></div>
+        <div className="settings-card"><h3>与外部 Agent 的区别</h3><p>这里配置工作台调用的模型 API。Codex、Claude Code 等外部 Agent 连接工作台时，使用下方的 MCP 设置。</p><p>「AI 助手」使用这里的模型理解请求，并按需读取技能、调用工作台工具。</p></div>
       </aside>
     </div>
   </section>;

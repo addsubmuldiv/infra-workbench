@@ -44,8 +44,8 @@ test('streamed content remains visible, persists only ID changes and follows onl
 
 test('switching chats aborts its subscription without cancelling server work and unmount aborts the active read',async t=>{
   const h=harness(t);await h.loaded();const old=h.streams[0];
-  await h.find(n=>n.type==='select').props.onChange({target:{value:'b'.repeat(32)}});h.render();await tick();h.render();
+  await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));h.render();await tick();h.render();
   assert.equal(old.signal.aborted,true);assert.equal(h.text(),'开始');assert.equal(h.streams.length,1);assert.equal(h.writes.at(-1)[1],'b'.repeat(32));
-  await h.find(n=>n.type==='select').props.onChange({target:{value:'a'.repeat(32)}});h.render();await tick();h.render();assert.equal(h.streams.length,2);
+  await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('a'.repeat(32));h.render();await tick();h.render();assert.equal(h.streams.length,2);
   h.unmount();assert.equal(h.streams[1].signal.aborted,true);assert.equal(h.requests.some(request=>request.url.endsWith('/cancel')),false);
 });

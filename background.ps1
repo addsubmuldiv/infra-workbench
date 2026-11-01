@@ -20,6 +20,13 @@ try {
             throw ('Background startup failed (exit ' + $process.ExitCode + '). Check data\desktop.log or run start.cmd for details.')
         }
         if ((Get-WorkbenchHealth) -and (Test-WorkbenchTrayReady)) { $ready = $true; break }
+        # A duplicate may exit successfully while the old tray is still shutting
+        # down. Once that child exits, retry inside the existing deadline.
+        # Never stop another process or launch concurrently with our live child.
+        if ($process.HasExited -and $process.ExitCode -eq 0) {
+            Start-Sleep -Milliseconds 500
+            $process = Start-Process -FilePath $pythonw -ArgumentList $desktopArguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
+        }
         Start-Sleep -Milliseconds 500
     } while ([DateTime]::UtcNow -lt $deadline)
     if (-not $ready) { throw 'The service or tray did not become ready. Check data\desktop.log or run start.cmd for details. No existing process was stopped.' }

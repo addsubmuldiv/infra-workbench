@@ -1,4 +1,6 @@
 """OpenAI-compatible provider settings and bounded, backend-only model requests."""
+import copy
+import uuid
 import asyncio
 import hashlib
 import json
@@ -36,12 +38,14 @@ def normalize_url(value: str) -> str:
 
 class AgentAPISettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
+    profile_id: str | None = Field(default=None, max_length=64)
     base_url: str = Field(default='https://api.openai.com/v1', max_length=2048)
     protocol: Literal['auto', 'responses', 'chat_completions'] = 'auto'
     model: str = Field(default='', max_length=200)
     timeout_seconds: int = Field(default=45, ge=5, le=120)
     api_key: SecretStr | None = Field(default=None, max_length=2048)
     remember: bool = True
+    context_window: int | None = Field(default=None, ge=4096, le=20000000)
 
     @field_validator('base_url')
     @classmethod
@@ -82,32 +86,122 @@ class AgentAPIService:
 
     def __init__(self, store, vault):
         self.store, self.vault = store, vault
-        self.config = store.load('agent_api_settings', AgentAPISettings().model_dump(exclude={'api_key', 'remember'}))
+        self.config = store.load('agent_api_settings', AgentAPISettings().model_dump(exclude={'api_key', 'remember', 'profile_id'}))
+        collection = store.load('agent_api_profiles', None)
+        self.profiles = collection['profiles'] if collection else {'legacy': dict(name='GLM' if 'glm' in self.config.get('model','').lower() else '现有模型配置', config=dict(self.config))}
+        self.active_id = collection.get('default_id', collection['active_id']) if collection else 'legacy'
+        self.default_id = collection.get('default_id', self.active_id) if collection else 'legacy'
+        self.config = dict(self.profiles[self.active_id]['config'])
+        self.memories = {}
         self.memory = None
         self.last_test = None
         self.lock = asyncio.Lock()
 
+    def credential_slot(self):
+        return 'provider' if self.active_id == 'legacy' else 'provider' + self.active_id
+
+    def persist(self, *, config=None, profiles=None, active_id=None, default_id=None):
+        profiles = copy.deepcopy(profiles if profiles is not None else self.profiles)
+        if config is not None:
+            profiles[self.active_id]['config'] = dict(config)
+        active_id = active_id or self.active_id
+        default_id = default_id or self.default_id
+        self.store.save('agent_api_profiles', dict(profiles=profiles, active_id=active_id, default_id=default_id))
+        self.profiles, self.active_id, self.default_id = profiles, active_id, default_id
+
+    def snapshot(self):
+        frozen = copy.copy(self)
+        frozen.config = dict(self.config)
+        secret = self.key_for(frozen.config)
+        # Freeze credentials too: editing/deleting a profile must not affect a running turn.
+        frozen.credential = lambda config=None: dict(identity=credential_identity(frozen.config), api_key=secret) if secret else None
+        frozen.lock = asyncio.Lock()
+        return frozen
+
+    def activate(self, id):
+        if id not in self.profiles:
+            raise ValueError('配置不存在，请刷新列表')
+        self.memories[self.active_id] = self.memory
+        self.persist(active_id=id)
+        self.config = dict(self.profiles[id]['config'])
+        self.memory = self.memories.get(id)
+        self.last_test = None
+        return self.view()
+
+    def create_profile(self, name):
+        if len(self.profiles) >= 50:
+            raise ValueError('最多保存 50 套接口配置')
+        id = uuid.uuid4().hex
+        profiles = copy.deepcopy(self.profiles)
+        profiles[id] = dict(name=name, config=AgentAPISettings().model_dump(exclude={'api_key','remember','profile_id'}))
+        previous_id, previous_memory = self.active_id, self.memory
+        self.persist(profiles=profiles, active_id=id)
+        self.memories[previous_id] = previous_memory
+        self.config = dict(profiles[id]['config'])
+        self.memory = None
+        self.last_test = None
+        return self.view()
+
+    def update_profile(self, id, name, default):
+        if id not in self.profiles:
+            raise ValueError('配置不存在，请刷新列表')
+        profiles = copy.deepcopy(self.profiles)
+        profiles[id]['name'] = name
+        self.persist(profiles=profiles, default_id=id if default else self.default_id)
+        return self.view()
+
+    def delete_profile(self, id):
+        if id not in self.profiles:
+            raise ValueError('配置不存在，请刷新列表')
+        if len(self.profiles) == 1:
+            raise ValueError('请至少保留一套配置')
+        old_active = self.active_id
+        old_memory = self.memory
+        profiles = copy.deepcopy(self.profiles)
+        del profiles[id]
+        active = next(iter(profiles)) if self.active_id == id else self.active_id
+        default = active if self.default_id == id else self.default_id
+        slot = 'provider' if id == 'legacy' else 'provider' + id
+        previous = self.vault.get(slot)
+        self.vault.delete(slot)
+        try:
+            self.persist(profiles=profiles, active_id=active, default_id=default)
+        except Exception:
+            if previous: self.vault.put(slot, previous)
+            raise
+        self.memories.pop(id, None)
+        self.config = dict(self.profiles[active]['config'])
+        self.memory = old_memory if active == old_active else self.memories.get(active)
+        self.last_test = None
+        return self.view()
+
     def credential(self, config=None):
         config = config or self.config
-        value = self.memory or self.vault.get('provider')
+        value = self.memory or self.vault.get(self.credential_slot())
         return value if value and value.get('identity') == credential_identity(config) else None
 
     def view(self):
         try:
-            saved = self.vault.get('provider')
+            saved = self.vault.get(self.credential_slot())
             saved = bool(saved and saved.get('identity') == credential_identity(self.config))
             available, error = bool(self.credential()), ''
         except Exception:
             saved, available, error = False, False, '无法读取 API key，请检查系统安全存储或重新填写'
-        return dict(self.config, has_api_key=available, api_key_saved=saved,
+        return dict(self.config, profile_id=self.active_id, active_id=self.active_id, default_id=self.default_id,
+                    profiles=[dict(id=id, name=p['name'], model=p['config'].get('model','')) for id,p in self.profiles.items()], has_api_key=available, api_key_saved=saved,
                     can_remember=bool(getattr(self.vault, 'supported', True)),
                     credential_error=error, last_test=self.last_test)
 
+    def check_profile(self, body):
+        if body and body.profile_id is not None and body.profile_id != self.active_id:
+            raise ValueError('当前接口配置已切换，请重新加载设置后操作')
+
     def configure(self, body):
-        config = body.model_dump(exclude={'api_key', 'remember'})
+        self.check_profile(body)
+        config = body.model_dump(exclude={'api_key', 'remember', 'profile_id'})
         try:
             old = self.credential()
-            previous = self.vault.get('provider')
+            previous = self.vault.get(self.credential_slot())
         except Exception:
             raise ValueError('无法读取 API key，请检查系统安全存储') from None
         if old and config['base_url'] != self.config['base_url'] and body.api_key is None:
@@ -118,17 +212,17 @@ class AgentAPIService:
             raise ValueError('当前系统不支持持久保存 API key，请取消记住选项')
         try:
             if value and body.remember:
-                self.vault.put('provider', value)
+                self.vault.put(self.credential_slot(), value)
             else:
-                self.vault.delete('provider')
-            self.store.save('agent_api_settings', config)
+                self.vault.delete(self.credential_slot())
+            self.persist(config=config)
         except Exception:
             # A failed save must not leave the old endpoint paired with a new key.
             try:
                 if previous:
-                    self.vault.put('provider', previous)
+                    self.vault.put(self.credential_slot(), previous)
                 else:
-                    self.vault.delete('provider')
+                    self.vault.delete(self.credential_slot())
             except Exception:
                 pass
             raise ValueError('无法保存 Agent 设置，请检查系统安全存储和本地数据目录') from None
@@ -139,7 +233,7 @@ class AgentAPIService:
 
     def forget(self):
         try:
-            self.vault.delete('provider')
+            self.vault.delete(self.credential_slot())
         except Exception:
             raise ValueError('无法删除 API key，请检查系统安全存储') from None
         self.memory = None
@@ -256,12 +350,18 @@ class AgentAPIService:
                 result = result.replace(key, '[已隐藏 API key]')
             return dict(text=result, protocol=protocol, model=config['model'])
 
+    async def context_capacity(self, *, refresh=False):
+        from .agent_context import resolve_context
+        return await resolve_context(self, refresh=refresh)
+
     async def turn(self,instructions,messages,tools,*,on_text=None):
         from .agent_model_turn import model_turn
         return await model_turn(self,instructions,messages,tools,on_text=on_text)
 
-    async def test(self):
+    async def test(self, *, profile_id=None):
         async with self.lock:
+            if profile_id is not None and profile_id != self.active_id:
+                raise ValueError('当前接口配置已切换，请重新加载设置后操作')
             started = time.monotonic()
             try:
                 result = await self.generate('请用中文回复一句简短问候，确认连接正常。')
@@ -275,7 +375,8 @@ class AgentAPIService:
 
     async def models(self, body=None):
         async with self.lock:
-            config = body.model_dump(exclude={'api_key', 'remember'}) if body else dict(self.config)
+            self.check_profile(body)
+            config = body.model_dump(exclude={'api_key', 'remember', 'profile_id'}) if body else dict(self.config)
             key = self.key_for(config, body.api_key if body else None)
             data = await self.request(config, key, '/models')
             # OpenAI / DeepSeek / Kimi: data[].id; GLM Responses: models[].slug.
@@ -303,7 +404,46 @@ class AgentAPIService:
             return dict(models=names[:500], truncated=len(names) > 500 or partial)
 
 
+class ProfileDetails(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: str = Field(min_length=1, max_length=100)
+    default: bool = False
+
+    @field_validator('name')
+    @classmethod
+    def valid_name(cls, value):
+        value = value.strip()
+        if not value or any(ord(c) < 32 for c in value):
+            raise ValueError('请输入有效的配置名称')
+        return value
+
+
 def register_agent_api_routes(app, service):
+    async def profile_action(action):
+        async with service.lock:
+            try:
+                return action()
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+            except Exception:
+                raise HTTPException(400, '无法保存配置，请检查本地存储') from None
+
+    @app.post('/api/settings/agent/profiles')
+    async def create_profile(body: ProfileDetails):
+        return await profile_action(lambda: service.create_profile(body.name))
+
+    @app.post('/api/settings/agent/profiles/{id}/activate')
+    async def activate_profile(id: str):
+        return await profile_action(lambda: service.activate(id))
+
+    @app.put('/api/settings/agent/profiles/{id}')
+    async def update_profile(id: str, body: ProfileDetails):
+        return await profile_action(lambda: service.update_profile(id, body.name, body.default))
+
+    @app.delete('/api/settings/agent/profiles/{id}')
+    async def delete_profile(id: str):
+        return await profile_action(lambda: service.delete_profile(id))
+
     @app.get('/api/settings/agent')
     async def settings():
         return service.view()
@@ -319,17 +459,26 @@ def register_agent_api_routes(app, service):
                 raise HTTPException(400, '无法保存 Agent 设置，请检查系统安全存储') from None
 
     @app.delete('/api/settings/agent/api-key')
-    async def forget():
+    async def forget(profile_id: str | None = None):
         async with service.lock:
             try:
+                if profile_id is not None and profile_id != service.active_id:
+                    raise ValueError('当前接口配置已切换，请重新加载设置后操作')
                 return service.forget()
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
 
-    @app.post('/api/settings/agent/test')
-    async def test():
+    @app.post('/api/settings/agent/context')
+    async def context_capacity():
         try:
-            return await service.test()
+            return await service.context_capacity(refresh=True)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.post('/api/settings/agent/test')
+    async def test(profile_id: str | None = None):
+        try:
+            return await service.test(profile_id=profile_id)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
 

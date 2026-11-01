@@ -143,6 +143,16 @@ def test_framework_summarizes_long_history_and_persists_summary_without_displayi
         chat, model, tools = service(tmp_path)
         view = chat.create()
         saved = chat.get(view['id'])
+        compaction_states = []
+        original_save = chat.save
+        def capture_save(value):
+            if value['turns']:
+                compaction_states.append(value['turns'][-1].get('context_compaction', {}).get('status'))
+            original_save(value)
+        chat.save = capture_save
+        # Cross the former 20-round barrier while retaining the visible transcript.
+        saved['turns'] = [dict(id=f'old-{i}', role='user' if i % 2 == 0 else 'assistant',
+                               content=f'历史消息 {i}', created=1) for i in range(40)]
         saved['messages'] = [dict(role='user', content='old history ' * 25000), dict(role='assistant', content='old answer')]
         chat.save(saved)
         model.replies = [dict(message=dict(role='assistant', content='INTERNAL-SUMMARY')),
@@ -153,6 +163,16 @@ def test_framework_summarizes_long_history_and_persists_summary_without_displayi
         assert saved['turns'][-1]['status'] == 'completed'
         assert saved['turns'][-1]['content'] == '可见回答'
         assert 'INTERNAL-SUMMARY' in json.dumps(saved['deep_state'])
+        assert len(saved['turns']) == 42
+        assert saved['turns'][0]['content'] == '历史消息 0'
+        assert 'running' in compaction_states
+        assert 'completed' in compaction_states
+        usage = saved['turns'][-1]['context_usage']
+        assert usage['phase'] == 'response' and usage['estimated'] is True
+        assert 0 < usage['used_tokens'] < 20000
+        assert usage['total_tokens'] == 32000
+        assert saved['turns'][-1]['context_compaction']['status'] == 'completed'
+        assert saved['turns'][-1]['context_compaction']['finished'] >= saved['turns'][-1]['context_compaction']['started']
         assert saved['deep_state']['_summarization_event']
         assert any(path.startswith('/conversation_history/') for path in saved['deep_state']['files'])
         # Restore the framework's private summarization state as well as messages.
@@ -282,5 +302,30 @@ def test_final_answer_keeps_an_innocent_suffix_matching_the_start_of_the_key(tmp
         saved = chat.get(view['id'])
         assert saved['turns'][-1]['content'] == '检查 loss'
         assert saved['messages'][-1]['content'] == '检查 loss'
+        chat.store.db.close()
+    asyncio.run(run())
+
+
+def test_runtime_uses_detected_larger_window_instead_of_fixed_32k(tmp_path):
+    async def run():
+        chat, model, tools = service(tmp_path)
+        async def capacity():
+            return dict(tokens=200000, source='provider', trigger_tokens=170000)
+        model.context_capacity = capacity
+        view = chat.create()
+        saved = chat.get(view['id'])
+        # This same history forces compaction with the former 32k profile.
+        saved['messages'] = [dict(role='user', content='old history ' * 25000), dict(role='assistant', content='old answer')]
+        chat.save(saved)
+        model.replies = [dict(message=dict(role='assistant', content='继续回复，无须压缩'))]
+        result = chat.begin(view['id'], ChatMessageRequest(content='继续'))
+        await chat.runs[result['active_run']]
+        saved = chat.get(view['id'])
+        assert saved['turns'][-1]['status'] == 'completed'
+        assert saved['turns'][-1]['context_capacity']['tokens'] == 200000
+        assert 27200 < saved['turns'][-1]['context_usage']['used_tokens'] < 170000
+        assert saved['turns'][-1]['context_usage']['total_tokens'] == 200000
+        assert 'context_compaction' not in saved['turns'][-1]
+        assert len(model.contexts) == 1
         chat.store.db.close()
     asyncio.run(run())

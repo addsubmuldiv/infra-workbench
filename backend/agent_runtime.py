@@ -181,8 +181,33 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
         instructions += '\n用户明确选择本轮技能，请先读取对应 SKILL.md，再结合任务使用：' + json.dumps(selected, ensure_ascii=False)
     async with gateway.session(chat['state'], allowed, skill_details) as client:
         mcp_tools = await discover_tools(client, secret)
-        model = WorkbenchChatModel(provider, on_start=model_start, on_text=on_text, sanitize=sanitize)
-        summary_model = WorkbenchChatModel(provider, sanitize=sanitize)
+        capacity = await provider.context_capacity() if hasattr(provider, 'context_capacity') else dict(tokens=32000, source='fallback', trigger_tokens=27200)
+        turn['context_capacity'] = capacity
+        def context_usage(tokens, phase):
+            turn['context_usage'] = dict(used_tokens=tokens, total_tokens=capacity['tokens'],
+                                         trigger_tokens=capacity['trigger_tokens'], source=capacity['source'],
+                                         model=provider.config.get('model', ''), estimated=True,
+                                         phase=phase, updated=time.time())
+            # Response counters are persisted by the next graph/tool checkpoint.
+            if phase == 'request':
+                save()
+        model = WorkbenchChatModel(provider, on_start=model_start, on_text=on_text, sanitize=sanitize,
+                                   context_window=capacity['tokens'], on_context=context_usage)
+        class SummaryModel(WorkbenchChatModel):
+            async def _agenerate(self, *args, **kwargs):
+                turn['context_compaction'] = dict(status='running', started=time.time())
+                save()
+                try:
+                    result = await super()._agenerate(*args, **kwargs)
+                except BaseException:
+                    turn['context_compaction'].update(status='failed', finished=time.time())
+                    save()
+                    raise
+                turn['context_compaction'].update(status='completed', finished=time.time())
+                save()
+                return result
+
+        summary_model = SummaryModel(provider, sanitize=sanitize, context_window=capacity['tokens'])
         backend = StateBackend()
         saver = InMemorySaver()
         graph = create_deep_agent(

@@ -4,6 +4,7 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import PrivateAttr
@@ -43,10 +44,12 @@ class WorkbenchChatModel(BaseChatModel):
     _on_start: Any = PrivateAttr(default=None)
     _on_text: Any = PrivateAttr(default=None)
     _sanitize: Any = PrivateAttr(default=None)
+    _on_context: Any = PrivateAttr(default=None)
 
-    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None):
-        super().__init__(profile={'max_input_tokens': 32000})
+    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None, context_window=32000, on_context=None):
+        super().__init__(profile={'max_input_tokens': context_window})
         self._provider = provider
+        self._on_context = on_context
         self._on_start, self._on_text = on_start, on_text
         if sanitize is not None:
             self._sanitize = sanitize
@@ -77,6 +80,8 @@ class WorkbenchChatModel(BaseChatModel):
         display = self._tools is not None
         if display and self._on_start:
             self._on_start()
+        if display and self._on_context:
+            self._on_context(count_tokens_approximately(messages, tools=self._tools), 'request')
         instructions = '\n\n'.join(text_content(m.content) for m in messages if isinstance(m, SystemMessage))
         options = {}
         if display and self._on_text and getattr(self._provider, 'supports_streaming', False):
@@ -101,7 +106,10 @@ class WorkbenchChatModel(BaseChatModel):
         content = self._sanitize(raw.get('content', '')) if self._sanitize else raw.get('content', '')
         if display and self._on_text:
             self._on_text(content, final=True)
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content, tool_calls=calls))])
+        reply = AIMessage(content=content, tool_calls=calls)
+        if display and self._on_context:
+            self._on_context(count_tokens_approximately([*messages, reply], tools=self._tools), 'response')
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
     def get_num_tokens(self, text):
         # Conservative local estimate; never downloads a tokenizer at runtime.

@@ -19,7 +19,7 @@
 - **界面偏好**：多套亮色、暗色主题，可调整侧栏宽度，自动记住上次选择的机器。
 - **MCP 接入**：本地或远端 agent 可发现机器、筛选资源、取得 SSH 配置或已保存密码，由 agent 自行连接服务器。
 - **AI 助手**：用中文查找多台机器上的占卡进程、空闲设备和 tmux 会话；查看资源变化记录，并按需生成带原始记录引用的摘要。不需要配置项目路径。
-- **Agent 模型接口**：在设置中配置 URL、API key 和模型，支持 OpenAI Responses / Chat Completions、获取模型列表和文本连接测试。
+- **Agent 模型接口**：在设置中保存多套 URL、API key 和模型配置，在助手顶部切换 GLM、DeepSeek 等兼容接口；支持 OpenAI Responses / Chat Completions、获取模型列表和文本连接测试。
 
 ## 开始使用
 

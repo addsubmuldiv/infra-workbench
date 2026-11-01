@@ -28,6 +28,7 @@ RULES='''你是 Infra Workbench 中面向用户的服务器助手，使用自然
 
 class ChatMessageRequest(BaseModel):
     model_config=ConfigDict(extra='forbid')
+    profile_id:str|None=Field(default=None,max_length=64)
     content:str=Field(min_length=1,max_length=4000)
     selected_host_ids:list[str]=Field(default_factory=list,max_length=128)
     restrict_to_selected:bool=False
@@ -165,12 +166,14 @@ class AgentChat:
 
     def begin(self,chat_id,body):
         chat=self.get(chat_id)
+        if body.profile_id is not None and body.profile_id != getattr(self.provider,'active_id',None):
+            raise HTTPException(409,'模型接口已在其他窗口切换，请重新选择接口后发送')
         if chat['active_run']:raise HTTPException(409,'这段会话正在处理上一条消息')
         if sum(not task.done() for task in self.runs.values())>=2:raise HTTPException(409,'已有两个对话正在处理，请稍后重试')
-        if len(chat['turns'])>=40:raise HTTPException(409,'当前会话已达 20 轮，请新建对话')
         if not self.provider.config.get('model'):raise HTTPException(400,'请先配置模型接口')
         try:secret=self.provider.key_for(self.provider.config)
         except ValueError as exc:raise HTTPException(400,str(exc)) from None
+        provider=self.provider.snapshot() if hasattr(self.provider,'snapshot') else self.provider
         known={host['id'] for host in self.tools.inventory()}
         if set(body.selected_host_ids)-known:raise HTTPException(400,'所选机器已变化，请刷新页面')
         if body.restrict_to_selected and not body.selected_host_ids:raise HTTPException(400,'请先选择允许检查的机器')
@@ -179,14 +182,14 @@ class AgentChat:
         text=scrub(body.content,secret)
         run_id=uuid.uuid4().hex
         chat['turns'].extend([dict(id=uuid.uuid4().hex,role='user',content=text,created=time.time()),
-                              dict(id=run_id,role='assistant',content='',created=time.time(),status='running',tools=[],selected_skill_names=list(dict.fromkeys(body.selected_skill_names)))])
+                              dict(id=run_id,role='assistant',content='',created=time.time(),status='running',tools=[],model=provider.config.get('model',''),profile_name=getattr(provider,'profiles',{}).get(getattr(provider,'active_id',''),{}).get('name',''),selected_skill_names=list(dict.fromkeys(body.selected_skill_names)))])
         chat['messages'].append(dict(role='user',content=text))
         if len(chat['turns'])==2:chat['title']=text[:60]
         chat['active_run']=run_id
         self.save(chat)
         self.live[chat_id]=chat
         allowed=set(body.selected_host_ids) if body.restrict_to_selected else None
-        task=asyncio.create_task(self.run(chat,allowed,body.selected_host_ids,secret))
+        task=asyncio.create_task(self.run(chat,allowed,body.selected_host_ids,secret,provider))
         self.runs[run_id]=task
         def done(task):
             self.runs.pop(run_id,None)
@@ -195,7 +198,7 @@ class AgentChat:
         task.add_done_callback(done)
         return self.view(chat)
 
-    async def run(self,chat,allowed,selected,secret):
+    async def run(self,chat,allowed,selected,secret,provider):
         turn=chat['turns'][-1];state=chat['state']
         status='completed';note=''
         started=time.monotonic()
@@ -216,7 +219,7 @@ class AgentChat:
                 self.save(chat);last_checkpoint=time.monotonic()
         try:
             async with asyncio.timeout(180):
-                await run_deep_agent(chat,self.provider,self.tools,allowed,instructions,secret,
+                await run_deep_agent(chat,provider,self.tools,allowed,instructions,secret,
                                      lambda:self.save(chat),start_text,on_text,
                                      lambda text:visible_stream_text(text,secret,final=True), skills=self.skills)
         except RunLimit as exc:

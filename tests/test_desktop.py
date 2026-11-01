@@ -203,3 +203,31 @@ def test_tray_refuses_to_attach_to_independent_backend(monkeypatch):
     with pytest.raises(RuntimeError,match='独立后台'):
         host.ensure()
     assert host.server is None and not host.owned
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Windows PowerShell launcher')
+def test_background_launcher_retries_duplicate_that_exits_before_service_is_ready(tmp_path):
+    fixture=tmp_path/'retry launcher'
+    (fixture/'scripts').mkdir(parents=True)
+    (fixture/'frontend'/'dist').mkdir(parents=True)
+    (fixture/'frontend'/'dist'/'index.html').write_text('ok')
+    (fixture/'.venv'/'Scripts').mkdir(parents=True)
+    (fixture/'.venv'/'Scripts'/'pythonw.exe').write_text('mocked')
+    root=Path(__file__).resolve().parents[1]
+    (fixture/'background.ps1').write_bytes((root/'background.ps1').read_bytes())
+    (fixture/'scripts'/'windows-common.ps1').write_text("""
+$script:launches = 0
+function Test-Installed { return $true }
+function Get-WorkbenchHealth { return ($script:launches -ge 2) }
+function Test-WorkbenchTrayReady { return ($script:launches -ge 2) }
+function Start-Process {
+    param($FilePath,$ArgumentList,$WorkingDirectory,$WindowStyle,[switch]$PassThru)
+    $script:launches += 1
+    Write-Host ('launch-count=' + $script:launches)
+    return [pscustomobject]@{HasExited=($script:launches -eq 1);ExitCode=0}
+}
+""",encoding='utf-8')
+    result=subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(fixture/'background.ps1'),'-NoBrowser'],capture_output=True,timeout=8)
+    assert result.returncode==0,result.stdout+result.stderr
+    assert b'launch-count=2' in result.stdout
+    assert b'launch-count=3' not in result.stdout
