@@ -1,6 +1,6 @@
 import {assistantRequest} from './infraAssistant.ts';
 export type ChatTool={id:string;name:string;target?:string;status:string;arguments:string;output:string;started:number;finished?:number};
-export type ChatTurn={id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];skills_read?:{name:string;version:number|string;source:string}[]};
+export type ChatTurn={id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
 export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null};
 export type ChatItem=Pick<Chat,'id'|'title'|'created'|'updated'|'active_run'>;
 export const toolNames:Record<string,string>={create_reservation:'创建预约',update_reservation:'修改预约',cancel_reservation:'取消预约',create_rule:'创建监控',delete_rule:'删除监控',get_workbench_state:'查看机器与预约',preflight:'训练前检查',file_operation:'操作服务器文件',read_training_log:'解析训练日志',compare_training_logs:'对比训练日志',get_log_record:'核对日志记录',save_log_comparison:'保存对比配置',search_hosts:'筛选机器',refresh_host:'刷新采样',search_server_files:'搜索服务器文件',create_upload:'准备上传',get_upload:'查询上传进度',download_server_file:'准备文件下载',download_server_folder:'准备目录下载',list_hosts:'列出机器',search_fleet:'查找资源与进程',get_resources:'查看设备资源',read_directory:'浏览目录',read_file:'读取技能与上下文',read_server_directory:'浏览服务器目录',read_server_file:'读取服务器文件',ls:'浏览技能与上下文',glob:'查找技能文件',grep:'搜索技能内容',compact_conversation:'整理对话上下文',ssh_check:'SSH 只读检查',read_changes:'读取资源变化'};
@@ -103,4 +103,15 @@ export async function watchChat(id:string,{signal,onEvent,onError,request=fetch,
     finally{signal.removeEventListener('abort',cancel);await reader?.cancel().catch(()=>{});reader?.releaseLock()}
     if(!signal.aborted)await retryChatStream(retryMs,signal);
   }
+}
+
+export function toolPresentation(tool:ChatTool){
+  if(tool.status==='failed'||tool.status==='succeeded'){
+    try{
+      const result=JSON.parse(tool.output);
+      if(result?.error?.code==='STALE_SNAPSHOT')return {status:'warning',label:'未取得有效采样'};
+      if(result?.partial===true)return {status:'warning',label:'已返回部分结果'};
+    }catch{}
+  }
+  return {status:tool.status,label:tool.status==='failed'?'调用失败':toolStatus[tool.status]||tool.status};
 }
