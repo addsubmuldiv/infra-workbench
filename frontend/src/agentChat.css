@@ -25,3 +25,21 @@
 .chat-markdown table{width:100%;border-collapse:collapse;font-size:12px;line-height:1.7}.chat-markdown th,.chat-markdown td{padding:9px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-width:90px;text-align:left}.chat-markdown th{font-weight:600;background:var(--panel2)}.chat-markdown tr:last-child td{border-bottom:0}.chat-markdown th:last-child,.chat-markdown td:last-child{border-right:0}
 .chat-markdown hr{border:0;border-top:1px solid var(--line);margin:20px 0}.chat-markdown img{max-width:100%;height:auto;border-radius:6px}
 .chat-markdown .contains-task-list{list-style:none;padding-left:4px}.chat-markdown .task-list-item input{width:13px;height:13px;margin:0 7px 0 0;padding:0;vertical-align:middle;cursor:default}
+
+.chat-markdown .katex{font-size:1.12em;white-space:normal;overflow-wrap:normal}
+.chat-markdown .katex-display{max-width:100%;overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:14px 0}
+.chat-markdown .katex-display>.katex{white-space:nowrap}
+.chat-markdown .katex-error{color:var(--muted);white-space:pre-wrap}
+.chat-markdown .hljs-keyword,.chat-markdown .hljs-selector-tag,.chat-markdown .hljs-literal{color:#b065c8}
+.chat-markdown .hljs-string,.chat-markdown .hljs-attr,.chat-markdown .hljs-template-tag{color:#41936b}
+.chat-markdown .hljs-number,.chat-markdown .hljs-built_in,.chat-markdown .hljs-type{color:#c58338}
+.chat-markdown .hljs-title,.chat-markdown .hljs-function{color:var(--accent)}
+.chat-markdown .hljs-comment,.chat-markdown .hljs-quote{color:var(--muted);font-style:italic}
+
+.chat-mermaid{margin:14px 0;border:1px solid var(--line);border-radius:8px;background:var(--panel2);overflow:hidden}
+.chat-mermaid-canvas{padding:16px;overflow:auto;max-height:650px;background:#fff;color:#222}
+.chat-mermaid-canvas svg{display:block;min-width:280px;max-width:none!important;width:auto;height:auto;margin:auto}
+.chat-mermaid .chat-mermaid-status{padding:12px;margin:0;color:var(--muted);font-size:12px}
+.chat-mermaid details{padding:8px 12px;border-top:1px solid var(--line)}
+.chat-mermaid summary{cursor:pointer;color:var(--muted);font-size:12px}
+.chat-mermaid details pre{margin-bottom:4px}
