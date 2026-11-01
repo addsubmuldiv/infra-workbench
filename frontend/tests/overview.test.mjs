@@ -79,13 +79,24 @@ test('legacy connections page displays overview without a duplicate navigation e
   assert.deepEqual(h.metrics(),['2/ 3','14个设备','2台机器','0条']);
 });
 
-test('AI navigation toggles the side window without leaving the current workspace page',t=>{
-  const h=harness(t);h.render();h.button('卡预约').props.onClick();h.render();
-  assert.equal(h.button('AI 助手').props['aria-pressed'],true);
-  h.button('AI 助手').props.onClick();h.render();assert.equal(h.button('AI 助手').props['aria-pressed'],false);
-  assert.equal(h.button('卡预约').props['aria-current'],'page');
-  h.button('展开 AI 助手').props.onClick();h.render();assert.equal(h.button('AI 助手').props['aria-pressed'],true);
-  assert.equal(h.button('卡预约').props['aria-current'],'page');
+test('header AI toggle sits beside notifications and never selects a second navigation page',t=>{
+  const h=harness(t);h.render();
+  for(const label of ['精度对比','卡预约','设置','算力总览']){
+    h.button(label).props.onClick();h.render();
+    const nav=h.find(n=>n.type==='nav');
+    assert.ok(!h.text(nav).includes('AI 助手'));
+    assert.equal(nav.props.children.flat(Infinity).filter(n=>n.props.className==='active').length,1);
+    assert.equal(h.button(label).props['aria-current'],'page');
+    assert.ok(h.find(n=>n.props.className==='header-panel-tools').props.children.includes(h.button('AI 助手')));
+    assert.equal(h.button('AI 助手').props['aria-controls'],'infra-assistant-panel');
+    assert.equal(h.button('AI 助手').props['aria-expanded'],true);
+    h.button('AI 助手').props.onClick();h.render();
+    assert.equal(h.button('AI 助手').props['aria-expanded'],false);
+    assert.equal(h.button(label).props['aria-current'],'page');
+    h.button('AI 助手').props.onClick();h.render();
+    assert.equal(h.button('AI 助手').props['aria-expanded'],true);
+    assert.equal(h.button(label).props['aria-current'],'page');
+  }
 });
 
 test('machine names and checkboxes open overview from other workspace pages',t=>{

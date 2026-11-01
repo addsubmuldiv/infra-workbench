@@ -9,12 +9,12 @@
     "file": "assets/AppConfirm-BFIFCPIk.css",
     "src": "_AppConfirm-BFIFCPIk.css"
   },
-  "_AppConfirm-Cor15zyi.js": {
-    "file": "assets/AppConfirm-Cor15zyi.js",
+  "_AppConfirm-CXUsmvgc.js": {
+    "file": "assets/AppConfirm-CXUsmvgc.js",
     "name": "AppConfirm",
     "imports": [
       "index.html",
-      "_index-rk75EQK6.js"
+      "_index-Br3ZxKea.js"
     ],
     "css": [
       "assets/AppConfirm-BFIFCPIk.css"
@@ -24,19 +24,19 @@
     "file": "assets/FileBrowser-BXzIsreW.css",
     "src": "_FileBrowser-BXzIsreW.css"
   },
-  "_FileBrowser-DI3k5zXD.js": {
-    "file": "assets/FileBrowser-DI3k5zXD.js",
+  "_FileBrowser-DZLnbpih.js": {
+    "file": "assets/FileBrowser-DZLnbpih.js",
     "name": "FileBrowser",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_logDownload-CD7B3KM8.js",
-      "_index-rk75EQK6.js",
+      "_logDownload-C8przars.js",
+      "_index-Br3ZxKea.js",
       "_windowLayers-C9W3NSUA.js",
-      "_minus-D_OwgYGT.js",
-      "_minimize-2-P7q-r9In.js",
-      "_upload-Dj-Bdv89.js",
-      "_download-DM1t-VH3.js"
+      "_minus-Br768K2w.js",
+      "_minimize-2-BPhz8LEJ.js",
+      "_upload-De6xfvoX.js",
+      "_download-BTfdmKLx.js"
     ],
     "dynamicImports": [
       "src/TextEditor.tsx"
@@ -45,36 +45,36 @@
       "assets/FileBrowser-BXzIsreW.css"
     ]
   },
-  "_download-DM1t-VH3.js": {
-    "file": "assets/download-DM1t-VH3.js",
+  "_download-BTfdmKLx.js": {
+    "file": "assets/download-BTfdmKLx.js",
     "name": "download",
     "imports": [
       "index.html"
     ]
   },
-  "_index-rk75EQK6.js": {
-    "file": "assets/index-rk75EQK6.js",
+  "_index-Br3ZxKea.js": {
+    "file": "assets/index-Br3ZxKea.js",
     "name": "index",
     "imports": [
       "index.html"
     ]
   },
-  "_logDownload-CD7B3KM8.js": {
-    "file": "assets/logDownload-CD7B3KM8.js",
+  "_logDownload-C8przars.js": {
+    "file": "assets/logDownload-C8przars.js",
     "name": "logDownload",
     "imports": [
       "index.html"
     ]
   },
-  "_minimize-2-P7q-r9In.js": {
-    "file": "assets/minimize-2-P7q-r9In.js",
+  "_minimize-2-BPhz8LEJ.js": {
+    "file": "assets/minimize-2-BPhz8LEJ.js",
     "name": "minimize-2",
     "imports": [
       "index.html"
     ]
   },
-  "_minus-D_OwgYGT.js": {
-    "file": "assets/minus-D_OwgYGT.js",
+  "_minus-Br768K2w.js": {
+    "file": "assets/minus-Br768K2w.js",
     "name": "minus",
     "imports": [
       "index.html"
@@ -84,8 +84,8 @@
     "file": "assets/skills-Bai-pFQW.css",
     "src": "_skills-Bai-pFQW.css"
   },
-  "_skills-DNqrYhv8.js": {
-    "file": "assets/skills-DNqrYhv8.js",
+  "_skills-vZgacFpi.js": {
+    "file": "assets/skills-vZgacFpi.js",
     "name": "skills",
     "imports": [
       "index.html"
@@ -94,8 +94,8 @@
       "assets/skills-Bai-pFQW.css"
     ]
   },
-  "_upload-Dj-Bdv89.js": {
-    "file": "assets/upload-Dj-Bdv89.js",
+  "_upload-De6xfvoX.js": {
+    "file": "assets/upload-De6xfvoX.js",
     "name": "upload",
     "imports": [
       "index.html"
@@ -106,13 +106,13 @@
     "name": "windowLayers"
   },
   "index.html": {
-    "file": "assets/index-zS2t9d4T.js",
+    "file": "assets/index-jGTUXi-w.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
       "src/PrecisionCompare.tsx",
-      "_FileBrowser-DI3k5zXD.js",
+      "_FileBrowser-DZLnbpih.js",
       "src/TerminalDock.tsx",
       "src/ServerImport.tsx",
       "src/SettingsPage.tsx",
@@ -123,78 +123,78 @@
     ]
   },
   "src/AssistantWindow.tsx": {
-    "file": "assets/AssistantWindow-KdnFnNHk.js",
+    "file": "assets/AssistantWindow-D7YeDZUm.js",
     "name": "AssistantWindow",
     "src": "src/AssistantWindow.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_AppConfirm-Cor15zyi.js",
-      "_skills-DNqrYhv8.js",
-      "_index-rk75EQK6.js",
+      "_AppConfirm-CXUsmvgc.js",
+      "_skills-vZgacFpi.js",
+      "_index-Br3ZxKea.js",
       "_windowLayers-C9W3NSUA.js",
-      "_minus-D_OwgYGT.js"
+      "_minus-Br768K2w.js"
     ],
     "css": [
-      "assets/AssistantWindow-EFTO_488.css"
+      "assets/AssistantWindow-J674X_P5.css"
     ]
   },
   "src/PrecisionCompare.tsx": {
-    "file": "assets/PrecisionCompare-DfvTCJyY.js",
+    "file": "assets/PrecisionCompare-BntRxfBc.js",
     "name": "PrecisionCompare",
     "src": "src/PrecisionCompare.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_logDownload-CD7B3KM8.js",
-      "_download-DM1t-VH3.js"
+      "_logDownload-C8przars.js",
+      "_download-BTfdmKLx.js"
     ],
     "css": [
       "assets/PrecisionCompare-lD65XQ0C.css"
     ]
   },
   "src/ServerImport.tsx": {
-    "file": "assets/ServerImport-CGwUuR_N.js",
+    "file": "assets/ServerImport-D4NhM3Un.js",
     "name": "ServerImport",
     "src": "src/ServerImport.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_download-DM1t-VH3.js",
-      "_upload-Dj-Bdv89.js"
+      "_download-BTfdmKLx.js",
+      "_upload-De6xfvoX.js"
     ],
     "css": [
       "assets/ServerImport-C32AXzxq.css"
     ]
   },
   "src/SettingsPage.tsx": {
-    "file": "assets/SettingsPage-xzyW-0CE.js",
+    "file": "assets/SettingsPage-Bvj-d1h2.js",
     "name": "SettingsPage",
     "src": "src/SettingsPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_index-rk75EQK6.js",
-      "_skills-DNqrYhv8.js",
-      "_AppConfirm-Cor15zyi.js",
-      "_upload-Dj-Bdv89.js",
-      "_download-DM1t-VH3.js"
+      "_index-Br3ZxKea.js",
+      "_skills-vZgacFpi.js",
+      "_AppConfirm-CXUsmvgc.js",
+      "_upload-De6xfvoX.js",
+      "_download-BTfdmKLx.js"
     ],
     "css": [
       "assets/SettingsPage-DWaHV1pn.css"
     ]
   },
   "src/TerminalDock.tsx": {
-    "file": "assets/TerminalDock-Dfi3P3wM.js",
+    "file": "assets/TerminalDock-DMgoCILb.js",
     "name": "TerminalDock",
     "src": "src/TerminalDock.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_index-rk75EQK6.js",
+      "_index-Br3ZxKea.js",
       "_windowLayers-C9W3NSUA.js",
-      "_AppConfirm-Cor15zyi.js",
-      "_minimize-2-P7q-r9In.js"
+      "_AppConfirm-CXUsmvgc.js",
+      "_minimize-2-BPhz8LEJ.js"
     ],
     "dynamicImports": [
       "../../../../../Documents/Codex/2026-10-30/new-chat/outputs/infra-workbench/frontend/node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs"
@@ -204,20 +204,20 @@
     ]
   },
   "src/TextEditor.tsx": {
-    "file": "assets/TextEditor-B46FGGyG.js",
+    "file": "assets/TextEditor-CDAZWG_9.js",
     "name": "TextEditor",
     "src": "src/TextEditor.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_FileBrowser-DI3k5zXD.js",
-      "_logDownload-CD7B3KM8.js",
-      "_index-rk75EQK6.js",
+      "_FileBrowser-DZLnbpih.js",
+      "_logDownload-C8przars.js",
+      "_index-Br3ZxKea.js",
       "_windowLayers-C9W3NSUA.js",
-      "_minus-D_OwgYGT.js",
-      "_minimize-2-P7q-r9In.js",
-      "_upload-Dj-Bdv89.js",
-      "_download-DM1t-VH3.js"
+      "_minus-Br768K2w.js",
+      "_minimize-2-BPhz8LEJ.js",
+      "_upload-De6xfvoX.js",
+      "_download-BTfdmKLx.js"
     ]
   }
 }

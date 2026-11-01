@@ -12,7 +12,6 @@
 .assistant-dock-resizer:hover,.assistant-dock-resizer:focus-visible{background:color-mix(in srgb,var(--accent) 20%,transparent)}
 .assistant-dock-hint{position:fixed;right:12px;top:50%;z-index:1;display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--accent);color:var(--panel);border-radius:8px;box-shadow:var(--shadow);pointer-events:none;font-size:12px}
 .assistant-window.dock-preview{outline:2px solid var(--accent)}
-.assistant-reopen{position:fixed;right:0;top:42%;z-index:35;display:flex;flex-direction:column;gap:9px;padding:14px 10px;border:1px solid var(--line);border-right:0;border-radius:10px 0 0 10px;color:var(--accent);background:var(--panel);box-shadow:var(--shadow);font-size:11px}.assistant-reopen span{writing-mode:vertical-rl;letter-spacing:2px}
 .shell.assistant-docked>main{margin-right:var(--assistant-width);width:calc(100% - var(--sidebar-width,258px) - var(--assistant-width));container-type:inline-size;container-name:workspace-main}
 @container workspace-main (max-width:760px){
   .content{padding:22px 18px 0}.page-heading{flex-wrap:wrap;gap:16px}.page-heading h1{font-size:23px}.page-heading-actions{flex-wrap:wrap}
@@ -34,3 +33,9 @@
 @media(max-width:1099px){.assistant-window.docked{box-shadow:var(--shadow),-12px 0 40px #0002}}
 @media(max-width:600px){.assistant-window-header{height:54px;min-height:54px;padding:0 12px}.assistant-window.docked{top:8px!important;right:8px!important;height:calc(100dvh - 16px)!important;border:1px solid var(--line);border-radius:12px}.compact .chat-scope>span{display:none}.compact .chat-composer-bottom>small{max-height:30px;overflow:auto}}
 @media(max-height:600px){.assistant-window-header{height:48px;min-height:48px}.compact .assistant-model-row{padding-top:6px}.compact .assistant-tabs{margin-top:4px}.compact .assistant-tabs button{padding:7px 4px}.compact .chat-toolbar{padding:6px 12px}.compact .chat-scope{padding:5px 12px}.compact .chat-scope>span,.compact .chat-shortcut{display:none}.compact .chat-composer{padding:8px 12px}.compact .chat-composer textarea{min-height:48px;height:48px}.compact .chat-composer-bottom>small{max-height:30px;overflow:auto}}
+
+.header-panel-tools{display:flex;align-items:center;gap:8px}
+.assistant-toggle{display:inline-flex;align-items:center;gap:6px;height:32px;padding:5px 9px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);white-space:nowrap;font-size:12px}
+.assistant-toggle:hover{background:var(--hover);color:var(--text)}
+.assistant-toggle.active{background:var(--accent-bg);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 24%,transparent)}
+@media(max-width:600px){.assistant-toggle{width:32px;padding:5px}.assistant-toggle span{display:none}.header-panel-tools{gap:4px}}
