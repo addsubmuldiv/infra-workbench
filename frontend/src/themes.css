@@ -292,6 +292,8 @@ header{background:var(--panel);border-color:var(--line);position:sticky;top:0;z-
 .host-picker-row>.host-remove-button:hover svg,.host-picker-row>.host-remove-button:focus-visible svg,.remove-host-button{color:var(--danger)}
 @media(hover:none){.host-picker-row>.host-remove-button{opacity:.7;pointer-events:auto}}
 .remove-host-button:hover{color:var(--danger);background:var(--danger-bg);border-color:var(--danger)}
+.machine-heading>.remove-host-button{color:var(--muted)}
+.machine-heading>.remove-host-button:hover{color:var(--danger)}
 .remove-host-modal{width:min(480px,calc(100vw - 32px))}
 .remove-host-modal>p{line-height:1.9;overflow-wrap:anywhere}.remove-host-description{margin-top:14px;font-size:12px}
 .page-heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
