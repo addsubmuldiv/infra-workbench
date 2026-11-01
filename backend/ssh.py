@@ -167,7 +167,11 @@ class SSHService:
         folder.mkdir(mode=0o700, exist_ok=True)
         if os.name == 'nt':
             _, who, _ = await self.command(['whoami'])
-            code, _, err = await self.command(['icacls', str(folder), '/inheritance:r', '/grant:r', who.strip()+':(OI)(CI)F'])
+            # Python on Windows may create an explicit OWNER RIGHTS ACE for
+            # mode=0700 directories. OpenSSH rejects keys inheriting that SID.
+            code, _, err = await self.command(['icacls', str(folder), '/inheritance:r',
+                                               '/grant:r', who.strip()+':(OI)(CI)F',
+                                               '/remove:g', '*S-1-3-4'])
             if code:
                 raise RuntimeError('无法限制本机私钥目录权限：'+err)
         else:
