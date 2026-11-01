@@ -224,3 +224,19 @@ def test_missing_utilization_never_completes_fixed_booking(tmp_path):
     assert book.items[0]['idle_since'] is None
     assert store.db.execute('SELECT count(*) FROM events').fetchone()[0] == 0
     store.db.close()
+
+
+def test_thirty_second_polling_allows_collection_latency_but_resets_real_gaps(tmp_path):
+    book = ReservationBook(Store(tmp_path/'test.db'), max_sample_gap=45)
+    book.add(HOST, [device()], 120, 1, now=1000)
+    for now in (1000, 1031, 1062, 1093, 1124):
+        observe(book, now)
+    assert book.view(1124)[0]['status'] == 'ready'
+
+    book = ReservationBook(Store(tmp_path/'gap.db'), max_sample_gap=45)
+    book.add(HOST, [device()], 120, 1, now=1000)
+    observe(book, 1000)
+    observe(book, 1031)
+    assert book.view(1077)[0]['status'] == 'unknown'
+    observe(book, 1077)
+    assert book.view(1077)[0]['idle_seconds'] == 0

@@ -44,7 +44,7 @@ type SudoSettings = {enabled:boolean;password_saved:boolean|null;credential_erro
 type Host = {id:string; target:string; user:string|null; port:number|null; manual:boolean; auth:string; sudo?:SudoSettings; ssh_password?:{password_saved:boolean|null;can_remember:boolean;error?:string|null}; snapshot:{status:string; fresh:boolean; collected_at:number|null; error?:string; error_stage?:string; system?:SystemMetrics|null; devices:Device[]}};
 type Rule = {id:string; host_id:string; devices:string[]; minimum_gib:number; port:number; status?:string};
 type Event = {id:number; created:number; host:string; message:string; notify?:boolean; url?:string};
-type State = {hosts:Host[]; rules:Rule[]; reservations:Reservation[]; reservation_modes?:string[]; events:Event[]; server_time:number};
+type State = {refresh_interval_seconds?:number;hosts:Host[]; rules:Rule[]; reservations:Reservation[]; reservation_modes?:string[]; events:Event[]; server_time:number};
 const gib=(n:number|null|undefined)=>n==null?'—':(n/1024**3).toFixed(1);
 const clock=(n:number)=>new Date(n*1000).toLocaleTimeString('zh-CN',{hour12:false});
 const displayId=(d:Device|undefined)=>d?.display_id??d?.id??'已失效';
@@ -122,7 +122,9 @@ function App(){
     }catch{if(!controller.signal.aborted)setError('本地服务未连接，请检查启动窗口。')}
     finally{if(stateRequest.current===controller)stateRequest.current=null}
   }));
-  useEffect(()=>{load();const timer=setInterval(load,2000);return()=>{clearInterval(timer);stateRequest.current?.abort()}},[]);
+  const refreshInterval=state.refresh_interval_seconds??10;
+  useEffect(()=>{load();const timer=setInterval(load,refreshInterval*1000);return()=>clearInterval(timer)},[refreshInterval]);
+  useEffect(()=>()=>stateRequest.current?.abort(),[]);
   useEffect(()=>{
     document.documentElement.dataset.theme=preferences.theme;
     if(!savePreferences(browserStorage(),preferences)&&!storageWarning.current){storageWarning.current=true;setNotice('工作空间偏好暂时无法保存，请检查本地后台连接。')}
@@ -243,7 +245,7 @@ function App(){
       <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title="机器选择保存在本机后台，其他窗口会同步更新。通过 SSH 连接远端机器，无需远端常驻 Agent。"><i aria-hidden="true"/>本地服务{error?'未连接':'已连接'}</div></div>
     </aside>
     <main onClick={clearDeviceSelection}>{workspaceError&&<div role="alert" className="assistant-error">工作空间状态同步失败，正在重试；未保存时请勿关闭页面。</div>}<header><div className="breadcrumb">工作空间 <ChevronRight size={13}/>{pageTitle}</div>
-      <div className="header-tools"><span className="live"><i/>10s 实时采集</span>
+      <div className="header-tools"><label className="live refresh-control" title="同时调整后台采集与页面刷新频率，设置对本工作台的所有窗口生效"><i/><select aria-label="刷新间隔" value={refreshInterval} disabled={busy==='refresh-interval'||!state.server_time} onChange={async event=>{const interval=Number(event.target.value);setBusy('refresh-interval');try{const result=await api('/settings/refresh','PUT',{interval_seconds:interval});setState(old=>({...old,refresh_interval_seconds:result.interval_seconds}));setNotice('刷新间隔已保存')}catch(error){setNotice(error instanceof Error?error.message:'刷新间隔保存失败')}finally{setBusy('')}}}>{[5,10,20,30].map(seconds=><option key={seconds} value={seconds}>每 {seconds} 秒刷新</option>)}</select></label>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>主题</span></summary><div className="theme-options"><h3>选择界面主题</h3><p>主题偏好由本机后台统一保存</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{t.name}</strong><small>{t.mode==='light'?'亮色':'暗色'} · {t.description}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
         <div className="header-panel-tools"><NotificationCenter events={state.events} rules={state.rules} hosts={state.hosts} tab={notificationTab} setTab={setNotificationTab} notify={notify} busy={!!busy} enableNotifications={enableNotifications} removeRule={id=>act('rule',()=>api('/rules/'+encodeURIComponent(id),'DELETE'))} locate={locateEvent}/><button className={'assistant-toggle'+(assistantOpen?' active':'')} aria-label="AI 助手" title={assistantOpen?'收起 AI 助手':'展开 AI 助手'} aria-expanded={assistantOpen} aria-controls="infra-assistant-panel" onClick={()=>setAssistantOpen(value=>!value)}><Sparkles size={17}/><span>AI 助手</span></button></div>

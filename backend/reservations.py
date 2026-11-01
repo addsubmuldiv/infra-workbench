@@ -20,7 +20,8 @@ def known_utilization(device):
 
 
 class ReservationBook:
-    def __init__(self, store, mail=None):
+    def __init__(self, store, mail=None, *, max_sample_gap=MAX_SAMPLE_GAP):
+        self.max_sample_gap = max_sample_gap
         self.store = store
         self.mail = mail
         self.items = store.load('reservations', [])
@@ -134,7 +135,7 @@ class ReservationBook:
         by_id = {device['id']: device for device in snapshot.get('devices', [])}
         collected = snapshot.get('collected_at')
         fresh = (snapshot.get('status') == 'online' and collected is not None
-                 and 0 <= now-collected <= MAX_SAMPLE_GAP)
+                 and 0 <= now-collected <= self.max_sample_gap)
         for item in active:
             devices = [by_id.get(device_id) for device_id in item['devices']]
             count_mode = item.get('mode') == 'count'
@@ -160,7 +161,7 @@ class ReservationBook:
                 status = 'settling'
             previous = item['last_observed']
             if (status != 'settling' or item['idle_since'] is None or previous is None
-                    or not 0 <= now-previous <= MAX_SAMPLE_GAP):
+                    or not 0 <= now-previous <= self.max_sample_gap):
                 item['idle_since'] = now if status == 'settling' else None
             item.update(status=status, last_observed=now if fresh else None)
             if status == 'settling' and now-item['idle_since'] >= item['wait_seconds']:
@@ -198,7 +199,7 @@ class ReservationBook:
             item['url'] = reservation_link(item)
             item['email'] = mail_statuses.get(item['id'])
             if (item['status'] not in ('ready', 'needs_selection') and item['last_observed'] is not None
-                    and not 0 <= now-item['last_observed'] <= MAX_SAMPLE_GAP):
+                    and not 0 <= now-item['last_observed'] <= self.max_sample_gap):
                 item.update(status='unknown', idle_since=None)
                 if item.get('mode') == 'count':
                     item['available_count'] = None

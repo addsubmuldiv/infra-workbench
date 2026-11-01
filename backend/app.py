@@ -45,6 +45,17 @@ from .server_import_matching import find_existing,prepare_existing,new_import_ho
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class RefreshSettings(BaseModel):
+    interval_seconds: int = Field(strict=True)
+
+    @field_validator('interval_seconds')
+    @classmethod
+    def valid_interval(cls, value):
+        if value not in (5, 10, 20, 30):
+            raise ValueError('刷新间隔必须为 5、10、20 或 30 秒')
+        return value
+
+
 class ConnectionRequest(BaseModel):
     target: str = Field(min_length=1, max_length=253)
     user: str | None = Field(default=None, max_length=100)
@@ -148,12 +159,19 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     ssh = SSHService(data)
     ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else create_credential_store('InfraWorkbench/ssh/'))
     sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store())
+    refresh_interval = store.load('refresh_interval_seconds', 10)
+    if type(refresh_interval) is int and refresh_interval == 60:
+        refresh_interval = 30
+        store.save('refresh_interval_seconds', refresh_interval)
+    if type(refresh_interval) is not int or refresh_interval not in (5, 10, 20, 30):
+        refresh_interval = 10
+    refresh_changed = asyncio.Event()
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
     mail = MailService(store, email_credential_store if email_credential_store is not None else create_credential_store('InfraWorkbench/mail/'))
     agent_api = AgentAPIService(store, agent_credential_store if agent_credential_store is not None else create_credential_store('InfraWorkbench/agent/'))
     resource_history = ResourceHistory(store)
-    reservations = ReservationBook(store, mail)
+    reservations = ReservationBook(store, mail, max_sample_gap=max(30, refresh_interval + 15))
     snapshots, locks = {}, {}
     collect_tasks = {}
     tracker = TransitionTracker()
@@ -268,8 +286,18 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def poll():
         async def loop(host):
             while host in hosts:
+                started = time.monotonic()
                 await collect(host)
-                await asyncio.sleep(10)
+                deadline = started + refresh_interval
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    try:
+                        await asyncio.wait_for(refresh_changed.wait(), remaining)
+                    except asyncio.TimeoutError:
+                        break
+                    deadline = started + refresh_interval
         jobs = {}
         try:
             while True:
@@ -384,22 +412,33 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def health():
         return {'name': 'infra-workbench', 'version': '0.1.0'}
 
+    @app.put('/api/settings/refresh')
+    async def set_refresh(settings: RefreshSettings):
+        nonlocal refresh_interval, refresh_changed
+        store.save('refresh_interval_seconds', settings.interval_seconds)
+        refresh_interval = settings.interval_seconds
+        reservations.max_sample_gap = max(30, refresh_interval + 15)
+        previous_changed = refresh_changed
+        refresh_changed = asyncio.Event()
+        previous_changed.set()
+        return dict(interval_seconds=refresh_interval)
+
     @app.get('/api/state')
     async def state():
         now = time.time()
         items = []
         for host in hosts:
             snap = snapshots.get(host['id'], dict(status='connecting', devices=[], collected_at=None))
-            fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= 30 and snap['status'] == 'online')
+            fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= reservations.max_sample_gap and snap['status'] == 'online')
             items.append(dict(**host, sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), snapshot=dict(snap, fresh=fresh)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})
             device_ids = {d['id'] for d in snap.get('devices', [])}
-            fresh = snap.get('status') == 'online' and now-(snap.get('collected_at') or 0) <= 30
+            fresh = snap.get('status') == 'online' and now-(snap.get('collected_at') or 0) <= reservations.max_sample_gap
             status = ('active' if all(i in device_ids for i in rule['devices']) else 'needs_selection') if fresh else 'pending'
             visible_rules.append(dict(rule, status=status))
-        return dict(hosts=items, rules=visible_rules, reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
+        return dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
     async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None):
         if body.remember_password and not body.password:
@@ -623,7 +662,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     def reservation_selection(body):
         host = find(body.host_id)
         snap = snapshots.get(host['id'], {})
-        if snap.get('status') != 'online' or not 0 <= time.time()-(snap.get('collected_at') or 0) <= 30:
+        if snap.get('status') != 'online' or not 0 <= time.time()-(snap.get('collected_at') or 0) <= reservations.max_sample_gap:
             raise HTTPException(409, '请先成功刷新机器，再选择设备预约')
         by_id = {device['id']: device for device in snap.get('devices', [])}
         kind = body.kind
