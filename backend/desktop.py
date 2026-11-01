@@ -240,6 +240,18 @@ class ServiceHost:
             self.thread.join(timeout=20)
 
 
+def ensure_tray_icon(shell, icon_data):
+    """A missing shell icon must be added again, even if its process is alive."""
+    icon_data.flags = 7
+    if shell.Shell_NotifyIconW(1, ctypes.byref(icon_data)):
+        return True
+    if shell.Shell_NotifyIconW(0, ctypes.byref(icon_data)):
+        logging.info('Tray icon restored')
+        return True
+    logging.error('Tray icon recovery failed; will retry')
+    return False
+
+
 def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=None):
     register_notification_identity()
     from ctypes import wintypes as w
@@ -274,6 +286,8 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
         'TranslateMessage':([ctypes.POINTER(w.MSG)],w.BOOL),'DispatchMessageW':([ctypes.POINTER(w.MSG)],LRESULT),
         'GetCursorPos':([ctypes.POINTER(w.POINT)],w.BOOL),'PostQuitMessage':([ctypes.c_int],None),
         'RegisterWindowMessageW':([w.LPCWSTR],w.UINT),
+        'SetTimer':([w.HWND,ctypes.c_size_t,w.UINT,ctypes.c_void_p],ctypes.c_size_t),
+        'KillTimer':([w.HWND,ctypes.c_size_t],w.BOOL),
         'MessageBoxW':([w.HWND,w.LPCWSTR,w.LPCWSTR,w.UINT],ctypes.c_int),
     }
     for name,(args,result) in signatures.items():
@@ -342,7 +356,10 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
     def callback(hwnd,message,wp,lp):
         try:
             if message==taskbar_created:
-                icon_data.flags=7;shell.Shell_NotifyIconW(0,ctypes.byref(icon_data));return 0
+                logging.info('Taskbar recreated; restoring tray icon')
+                ensure_tray_icon(shell,icon_data);return 0
+            if message==0x113 and wp==1:
+                ensure_tray_icon(shell,icon_data);return 0
             if message==WM_TRAY:
                 if lp==0x203: webbrowser.open(URL)
                 elif lp==0x405:
@@ -357,6 +374,8 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
             if message==WM_DELIVER:
                 return 0
             if message==2:
+                logging.info('Tray window destroyed')
+                user.KillTimer(hwnd,1)
                 stop.set();shell.Shell_NotifyIconW(2,ctypes.byref(icon_data));user.PostQuitMessage(0);return 0
         except Exception:
             logging.exception('Desktop action failed')
@@ -375,6 +394,10 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
         user.DestroyWindow(hwnd)
         raise RuntimeError('无法创建 Windows 托盘图标')
     receipt['icon_created']=True
+    logging.info('Tray ready pid=%s hwnd=%s service_owned=%s',os.getpid(),hwnd,service.owned)
+    if not user.SetTimer(hwnd,1,200 if smoke_test else 5000,None):
+        user.DestroyWindow(hwnd)
+        raise ctypes.WinError(ctypes.get_last_error())
 
     def monitor():
         cursor=EventCursor(started_at)
@@ -425,7 +448,7 @@ def main(argv=None):
     if os.name!='nt': raise SystemExit('系统托盘目前支持 Windows 10/11')
     DATA.mkdir(parents=True,exist_ok=True)
     from logging.handlers import RotatingFileHandler
-    logging.basicConfig(handlers=[RotatingFileHandler(DATA/'desktop.log',maxBytes=256000,backupCount=1,encoding='utf-8')],level=logging.ERROR)
+    logging.basicConfig(handlers=[RotatingFileHandler(DATA/'desktop.log',maxBytes=256000,backupCount=1,encoding='utf-8')],level=logging.INFO)
     from ctypes import wintypes as w
     kernel=ctypes.WinDLL('kernel32',use_last_error=True)
     kernel.CreateMutexW.argtypes=[ctypes.c_void_p,w.BOOL,w.LPCWSTR];kernel.CreateMutexW.restype=w.HANDLE
@@ -436,6 +459,7 @@ def main(argv=None):
     duplicate=ctypes.get_last_error()==183
     service=ServiceHost()
     try:
+        logging.info('Desktop launch pid=%s duplicate=%s',os.getpid(),duplicate)
         if duplicate:
             if not args.no_browser: webbrowser.open(URL)
             return
@@ -447,6 +471,7 @@ def main(argv=None):
         ctypes.windll.user32.MessageBoxW(None,str(exc),'Infra Workbench',0x10)
         raise SystemExit(1)
     finally:
+        logging.info('Desktop exiting pid=%s',os.getpid())
         service.stop()
         kernel.CloseHandle(mutex)
 

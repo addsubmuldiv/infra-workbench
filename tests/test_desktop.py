@@ -148,12 +148,52 @@ function Start-Process {
 
 
 @pytest.mark.skipif(os.name!='nt' or os.environ.get('IWB_TEST_TRAY')!='1',reason='Opt-in real Windows tray smoke test')
-def test_native_tray_registers_notifies_and_cleans_up(tmp_path):
+def test_native_tray_registers_notifies_and_cleans_up(tmp_path, monkeypatch):
     from backend.desktop import run_tray
     class NoStartupChanges:
         def enabled(self): return False
+    import ctypes
+    from backend import desktop
+    original = desktop.ensure_tray_icon
+    restored = []
+    def simulate_lost_icon(shell, data):
+        if not restored:
+            assert shell.Shell_NotifyIconW(2, ctypes.byref(data))
+            assert not shell.Shell_NotifyIconW(1, ctypes.byref(data))
+            assert original(shell, data)
+            assert shell.Shell_NotifyIconW(1, ctypes.byref(data))
+            restored.append(True)
+            return True
+        return original(shell, data)
+    monkeypatch.setattr(desktop, 'ensure_tray_icon', simulate_lost_icon)
     receipt=run_tray(ServiceHost(),DesktopSettings(tmp_path/'desktop.json'),NoStartupChanges(),False,smoke_test=True)
+    assert restored == [True]
     assert receipt==dict(icon_created=True,notification_accepted=True,icon_removed=True)
+
+
+def test_tray_recovery_readds_missing_icon_and_retries_failure():
+    import ctypes
+    from backend.desktop import ensure_tray_icon
+    class Data(ctypes.Structure):
+        _fields_ = [('flags', ctypes.c_uint)]
+    class Shell:
+        def __init__(self, results):
+            self.results = iter(results)
+            self.calls = []
+        def Shell_NotifyIconW(self, action, data):
+            self.calls.append(action)
+            return next(self.results)
+    data = Data()
+    missing = Shell([False, True])
+    assert ensure_tray_icon(missing, data)
+    assert missing.calls == [1, 0]
+    failing = Shell([False, False, False, True])
+    assert not ensure_tray_icon(failing, data)
+    assert ensure_tray_icon(failing, data)
+    assert failing.calls == [1, 0, 1, 0]
+    existing = Shell([True])
+    assert ensure_tray_icon(existing, data)
+    assert existing.calls == [1]
 
 
 def test_tray_refuses_to_attach_to_independent_backend(monkeypatch):
