@@ -191,6 +191,13 @@ class AgentAPIService:
                         raise ProviderFailure('接口没有返回 JSON 对象，请确认填写的是 API 地址')
                     if data.get('error'):
                         raise ProviderFailure('模型服务返回错误，请检查模型名称、权限和额度')
+                    # Some providers report authentication failures inside an HTTP 200 envelope.
+                    base_resp = data.get('base_resp')
+                    code = base_resp.get('status_code') if isinstance(base_resp, dict) else data.get('code')
+                    if data.get('success') is False or (code is not None and str(code) not in ('0', '200')):
+                        if str(code) in ('1001', '1002', '1004', '401', '403'):
+                            raise ProviderFailure('认证失败或没有模型权限，请检查 API key 和账号权限')
+                        raise ProviderFailure('模型服务返回错误，请检查接口地址、账号权限和额度')
                     return data
         except (httpx.TimeoutException, TimeoutError):
             raise ProviderFailure('请求超时，请检查网络或增加请求超时时间') from None
@@ -271,11 +278,29 @@ class AgentAPIService:
             config = body.model_dump(exclude={'api_key', 'remember'}) if body else dict(self.config)
             key = self.key_for(config, body.api_key if body else None)
             data = await self.request(config, key, '/models')
-            if not isinstance(data.get('data'), list):
-                raise ValueError('接口不支持标准模型列表，请手动填写服务商提供的模型名称')
-            names = sorted({item['id'] for item in data['data'] if isinstance(item, dict) and isinstance(item.get('id'), str) and 0 < len(item['id']) <= 200})
+            # OpenAI / DeepSeek / Kimi: data[].id; GLM Responses: models[].slug.
+            # Also accept model/name identifiers used by compatible local services.
+            envelope = data.get('data') if isinstance(data.get('data'), dict) else data
+            items = envelope.get('data')
+            if not isinstance(items, list):
+                items = envelope.get('models')
+            if not isinstance(items, list):
+                raise ValueError('接口未返回可识别的模型列表（需要 data 或 models 数组），请确认服务商的 API 地址；也可手动填写模型 ID')
+            names = set()
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                name = next((item[field] for field in ('id', 'slug', 'model', 'name')
+                             if isinstance(item.get(field), str) and item[field].strip()), '')
+                name = name.strip()
+                if 0 < len(name) <= 200 and not any(ord(char) < 32 or ord(char) == 127 for char in name):
+                    names.add(name)
+            if items and not names:
+                raise ValueError('模型列表中没有可识别的模型 ID，请确认接口地址或手动填写模型 ID')
+            names = sorted(names)
             names = [name.replace(key, '[已隐藏 API key]') if key else name for name in names]
-            return dict(models=names[:500], truncated=len(names) > 500)
+            partial = bool(envelope.get('has_more') or envelope.get('nextPageToken') or data.get('has_more'))
+            return dict(models=names[:500], truncated=len(names) > 500 or partial)
 
 
 def register_agent_api_routes(app, service):

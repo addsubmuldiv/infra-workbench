@@ -154,3 +154,12 @@ def test_native_tray_registers_notifies_and_cleans_up(tmp_path):
         def enabled(self): return False
     receipt=run_tray(ServiceHost(),DesktopSettings(tmp_path/'desktop.json'),NoStartupChanges(),False,smoke_test=True)
     assert receipt==dict(icon_created=True,notification_accepted=True,icon_removed=True)
+
+
+def test_tray_refuses_to_attach_to_independent_backend(monkeypatch):
+    from backend import desktop
+    monkeypatch.setattr(desktop,'get_api',lambda _: {'name':'infra-workbench'})
+    host=ServiceHost()
+    with pytest.raises(RuntimeError,match='独立后台'):
+        host.ensure()
+    assert host.server is None and not host.owned

@@ -249,3 +249,50 @@ def test_glm_fast_requests_disable_reasoning_without_changing_other_providers(cl
     save(client,'https://compatible.example/v1',protocol='responses',model='other-model')
     asyncio.run(service.generate('请解析查询条件',fast=True))
     assert 'reasoning' not in calls[-1]
+
+@pytest.mark.parametrize('data,expected', [
+    ({'models':[{'slug':'glm-5.3-flash'},{'slug':'glm-5.3'}]}, ['glm-5.3','glm-5.3-flash']),
+    ({'models':[{'name':'local-model'},{'model':'other-model'}]}, ['local-model','other-model']),
+    ({'data':{'models':[{'id':'MiniMax-M2.7'}]}}, ['MiniMax-M2.7']),
+])
+def test_provider_model_list_formats(client, data, expected):
+    with provider(lambda _: (200, data)) as (url, calls):
+        response=client.post('/api/settings/agent/models', headers=HEADERS, json=settings(url))
+        assert response.status_code == 200, response.text
+        assert response.json()['models'] == expected
+        assert len(calls) == 1
+
+
+def test_http_200_provider_error_is_not_an_unsupported_list(client):
+    with provider(lambda _: (200, {'success':False,'code':1001,'msg':KEY})) as (url, calls):
+        response=client.post('/api/settings/agent/models', headers=HEADERS, json=settings(url))
+        assert response.status_code == 400
+        assert '认证' in response.json()['detail']
+        assert KEY not in response.text
+
+
+def test_partial_model_list_is_marked_truncated(client):
+    with provider(lambda _: (200, {'data':[{'id':'a'}],'has_more':True})) as (url, calls):
+        response=client.post('/api/settings/agent/models', headers=HEADERS, json=settings(url))
+        assert response.json()['truncated'] is True
+
+@pytest.mark.parametrize('base_url,model', [
+    ('https://api.openai.com/v1','gpt-test'),
+    ('https://api.deepseek.com','deepseek-test'),
+    ('https://api.moonshot.cn/v1','kimi-test'),
+    ('https://api.minimaxi.com/v1','MiniMax-test'),
+    ('https://open.bigmodel.cn/api/paas/v4','glm-test'),
+])
+def test_mainstream_provider_standard_routes(client, monkeypatch, base_url, model):
+    import httpx
+    original = httpx.AsyncClient
+    seen=[]
+    def handle(request):
+        seen.append(request)
+        return httpx.Response(200,json={'data':[{'id':model}]})
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kwargs: original(**kwargs,transport=httpx.MockTransport(handle)))
+    response=client.post('/api/settings/agent/models',headers=HEADERS,json=settings(base_url))
+    assert response.status_code == 200, response.text
+    assert response.json()['models'] == [model]
+    assert str(seen[0].url) == base_url+'/models'
+    assert seen[0].headers['Authorization'] == 'Bearer '+KEY

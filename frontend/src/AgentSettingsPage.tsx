@@ -42,7 +42,7 @@ export function AgentSettingsPage(){
   const fetchModels=()=>act('models',async()=>{
     const value=await agentRequest<{models:string[];truncated:boolean}>('/models','POST',agentPayload(form,key,remember));
     setModels(value.models);
-    setMessage(value.models.length?`已获取 ${value.models.length} 个模型，可在模型名称输入框中选择。${value.truncated?'列表仅显示前 500 个。':''}`:'接口没有提供可选模型，请手动填写模型名称。');
+    setMessage(value.models.length?`已获取 ${value.models.length} 个模型，请在下方列表中选择。${value.truncated?'当前仅显示部分模型，仍可手动填写其他模型 ID。':''}`:'接口没有提供可选模型，请手动填写模型名称。');
   });
   const test=()=>act('test',async()=>{
     setResult(null);
@@ -68,6 +68,7 @@ export function AgentSettingsPage(){
           <div className="agent-model-heading"><label className="form-label" htmlFor="agent-model-name">模型名称</label><button type="button" className="text-button" onClick={fetchModels} disabled={!form.base_url.trim()}>{pending==='models'?<LoaderCircle size={13} className="spin"/>:<ChevronDown size={13}/>}获取模型</button></div>
           <input className="agent-model-input" id="agent-model-name" aria-label="Agent 模型名称" list="agent-model-options" maxLength={200} autoComplete="off" value={form.model} placeholder="填写服务商提供的模型 ID" onChange={event=>change('model',event.target.value)}/>
           <datalist id="agent-model-options">{models.map(model=><option key={model} value={model}/>)}</datalist>
+          {models.length>0&&<label className="form-label">已获取的模型<select aria-label="选择已获取的模型" value={models.includes(form.model)?form.model:''} onChange={event=>{if(event.target.value)change('model',event.target.value)}}><option value="">请选择模型</option>{models.map(model=><option key={model} value={model}>{model}</option>)}</select></label>}
           <p className="settings-help">可以直接输入模型 ID；不支持获取模型列表的服务仍可手动配置。</p>
           <label className="form-label agent-timeout">请求超时（秒）<input aria-label="Agent 请求超时" type="number" required min={5} max={120} value={form.timeout_seconds} onChange={event=>change('timeout_seconds',Number(event.target.value))}/></label>
         </fieldset>

@@ -26,6 +26,23 @@
 
 ## 兼容范围
 
+模型列表使用当前地址的 `GET /models`，与所选的 Responses/Chat Completions 协议无关。支持 OpenAI、DeepSeek、Kimi、MiniMax 和 GLM 标准接口的 `data[].id`，以及 GLM Responses 接口的 `models[].slug`；兼容网关也可返回 `models` 数组中的 `id`、`model` 或 `name`。不会用展示名称替代已提供的模型 ID，也不会擅自更换域名或发送密钥到其他地址。
+
+常用基础地址（请以账号及套餐文档为准）：
+
+| 服务 | 基础地址 |
+| --- | --- |
+| OpenAI | `https://api.openai.com/v1` |
+| GLM Responses | `https://open.bigmodel.cn/api/v1` |
+| GLM 标准接口 | `https://open.bigmodel.cn/api/paas/v4` |
+| DeepSeek | `https://api.deepseek.com` |
+| Kimi | `https://api.moonshot.cn/v1` |
+| MiniMax | `https://api.minimax.cn/v1`（旧域名 `https://api.minimaxi.com/v1`） |
+
+获取成功后会显示可选择的模型下拉框，也保留手动输入。列表最多显示 500 个；服务端声明还有后续页面时会提示列表不完整。列表成功不代表账号有权调用每个模型，仍需保存后测试连接。HTTP 200 中的业务错误也会明确报错，不显示为“不支持列表”。未提供列表接口的服务仍需手动填写，不会以固定模型名单冒充实时结果。
+
+参考：[OpenAI 模型列表](https://developers.openai.com/api/reference/resources/models/methods/list)、[DeepSeek 模型列表](https://api-docs.deepseek.com/zh-cn/api/list-models/)、[MiniMax OpenAI SDK](https://platform.minimax.cn/docs/api-reference/text-openai-api)。GLM Responses 的 `models[].slug` 格式已用配置地址实测。
+
 当前支持 Bearer 认证或无认证的 OpenAI Responses 与 Chat Completions 文本接口，可用于实现相应协议的网关和本地服务。不是所有服务商的原生协议都能直接接入；Anthropic 原生 Messages、自定义认证头、Azure 查询参数等尚未实现，可以通过 OpenAI 兼容网关接入。
 
 URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；密钥会发给填写的服务地址，使用远端服务时应采用 HTTPS。HTTPS 保持证书验证，网络请求沿用后台进程的代理环境变量。

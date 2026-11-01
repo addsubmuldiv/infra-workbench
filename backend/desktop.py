@@ -215,7 +215,7 @@ class ServiceHost:
             health=get_api('health')
             if health.get('name')!='infra-workbench':
                 raise RuntimeError('8765 端口被其他程序占用，未停止任何进程')
-            return
+            raise RuntimeError('检测到独立后台占用 8765 端口，请先退出该后台，再启动托盘；托盘必须在自己的进程内运行后台服务')
         except (URLError,TimeoutError,OSError):
             pass
         import uvicorn
@@ -322,7 +322,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                                           (3,'登录 Windows 时启动',startup.enabled()),(4,'发送测试通知',False)]:
                 user.AppendMenuW(popup,8 if checked else 0,command,label)
             user.AppendMenuW(popup,0x800,0,None)
-            user.AppendMenuW(popup,0,5,'退出托盘并停止后台监控' if service.owned else '退出托盘（已有服务继续运行）')
+            user.AppendMenuW(popup,0,5,'退出托盘并停止后台监控')
             point=w.POINT();user.GetCursorPos(ctypes.byref(point));user.SetForegroundWindow(hwnd)
             selected=user.TrackPopupMenu(popup,0x100|2,point.x,point.y,0,hwnd,None)
             if selected==1: webbrowser.open(URL)
