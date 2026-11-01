@@ -1,3 +1,4 @@
+import {workspaceMock} from './workspace-mock.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -17,7 +18,7 @@ function harness(t,{stored=null,viewport=1400}={}){
   t.after(()=>{cleanups.forEach(fn=>fn?.());if(old)Object.defineProperty(globalThis,'window',old);else delete globalThis.window});
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/AssistantWindow.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const Assistant=()=>null,exports={};
-  new Function('require','exports',js)(name=>name==='react'?react:name==='./assistantLayout'?layout:name==='./fileWindow'?frames:name==='./InfraAssistantPage'?{InfraAssistant:Assistant}:name==='./windowLayers'?{activateFloatingWindow(){},registerFloatingWindow(){}}:{},exports);
+  new Function('require','exports',js)(name=>workspaceMock(name,react)??(name==='react'?react:name==='./assistantLayout'?layout:name==='./fileWindow'?frames:name==='./InfraAssistantPage'?{InfraAssistant:Assistant}:name==='./windowLayers'?{activateFloatingWindow(){},registerFloatingWindow(){}}:{}),exports);
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const onDockWidthChange=value=>reserved.push(value);
   const render=()=>{slot=0;tree=exports.AssistantWindow({open,onClose:()=>{open=false},onDockWidthChange,selectedHostIds:[],locate(){},openTerminal(){},openSettings(){}});effects.splice(0).forEach(fn=>fn());return tree};

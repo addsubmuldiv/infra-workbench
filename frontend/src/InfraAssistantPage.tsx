@@ -1,3 +1,4 @@
+import {useWorkspaceValue} from './workspaceHooks';
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowUpRight,Clock,History,LoaderCircle,Search,Server,Sparkles,Terminal} from 'lucide-react';
 import {assistantRequest,rowTitle,type AssistantStatus,type ChangeHistory,type ResourceSummary,type SearchResult} from './infraAssistant';
@@ -8,9 +9,9 @@ const examples=['我的 vLLM 在哪台机器？','找 4 个空闲 NPU，每个�
 const stamp=(value:number|null|undefined)=>value?new Date(value*1000).toLocaleString('zh-CN'):'尚无记录';
 
 export function InfraAssistant({locate,openTerminal,openSettings,selectedHostIds=[],compact=false}:{compact?:boolean;locate:(hostId:string,devices:string[])=>void;openTerminal:(hostId:string)=>void;openSettings:()=>void;selectedHostIds?:string[]}){
-  const [tab,setTab]=useState<'chat'|'search'|'changes'>('chat'),[status,setStatus]=useState<AssistantStatus|null>(null);
-  const [query,setQuery]=useState(''),[refresh,setRefresh]=useState(false),[search,setSearch]=useState<SearchResult|null>(null);
-  const [hours,setHours]=useState(1),[history,setHistory]=useState<ChangeHistory|null>(null),[summary,setSummary]=useState<ResourceSummary|null>(null);
+  const [tab,setTab]=useWorkspaceValue<'chat'|'search'|'changes'>('workspace:assistant-tab','chat'),[status,setStatus]=useState<AssistantStatus|null>(null);
+  const [query,setQuery]=useWorkspaceValue('workspace:assistant-query',''),[refresh,setRefresh]=useWorkspaceValue('workspace:assistant-refresh',false),[search,setSearch]=useState<SearchResult|null>(null);
+  const [hours,setHours]=useWorkspaceValue('workspace:assistant-hours',1),[history,setHistory]=useState<ChangeHistory|null>(null),[summary,setSummary]=useState<ResourceSummary|null>(null);
   const [pending,setPending]=useState(''),[error,setError]=useState(''),[historyError,setHistoryError]=useState('');
   const controller=useRef<AbortController|null>(null),[highlight,setHighlight]=useState<number[]>([]);
   useEffect(()=>{

@@ -1,3 +1,5 @@
+import {workspaceStorage} from './workspaceState';
+import {useWorkspaceValue} from './workspaceHooks';
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Check,TriangleAlert,ChevronDown,LoaderCircle,MessageSquare,Plus,Send,Square,Trash2} from 'lucide-react';
 import {applyChatEvent,chatRequest,loadChatId,saveChatId,shouldFollowChat,watchChat,toolNames,toolPresentation,type Chat,type ChatItem,type ChatTool} from './agentChat';
@@ -10,9 +12,9 @@ import {SkillMessageInput} from './SkillMessageInput';
 
 const suggestions=['找出我正在运行的推理服务','检查当前机器的系统和 Python 环境','读取指定机器上的配置文件并解释'];
 export function AssistantChat({configured,selectedHostIds}:{configured:boolean;selectedHostIds:string[]}){
-  const [items,setItems]=useState<ChatItem[]>([]),[chat,setChat]=useState<Chat|null>(null),[text,setText]=useState('');
-  const [busy,setBusy]=useState('load'),[error,setError]=useState(''),[restricted,setRestricted]=useState(false),[subscriptionVersion,setSubscriptionVersion]=useState(0);
-  const [skills,setSkills]=useState<SkillMeta[]>([]),[selectedSkills,setSelectedSkills]=useState<string[]>([]),[skillError,setSkillError]=useState('');
+  const [items,setItems]=useState<ChatItem[]>([]),[chat,setChat]=useState<Chat|null>(null),[text,setText]=useWorkspaceValue('workspace:chat-draft','');
+  const [busy,setBusy]=useState('load'),[error,setError]=useState(''),[restricted,setRestricted]=useWorkspaceValue('workspace:chat-restricted',false),[subscriptionVersion,setSubscriptionVersion]=useState(0);
+  const [skills,setSkills]=useState<SkillMeta[]>([]),[selectedSkills,setSelectedSkills]=useWorkspaceValue<string[]>('workspace:chat-skills',[]),[skillError,setSkillError]=useState('');
   const request=useRef<AbortController|null>(null),subscription=useRef<AbortController|null>(null),transcript=useRef<HTMLDivElement>(null),follow=useRef(true);
   const chatValue=useRef<Chat|null>(null);
   const current=useRef<string|null>(null),alive=useRef(true);
@@ -25,6 +27,10 @@ export function AssistantChat({configured,selectedHostIds}:{configured:boolean;s
     setItems(old=>[value,...old.filter(item=>item.id!==value.id)].slice(0,30));
   };
   useEffect(()=>{if(chat?.id)saveChatId(chat.id)},[chat?.id]);
+  useEffect(()=>workspaceStorage.subscribe('iwb-assistant-chat',()=>{
+    const id=loadChatId();if(!id||id===current.current)return;
+    void chatRequest<Chat>('/'+id).then(value=>{if(alive.current&&loadChatId()===id){subscription.current?.abort();apply(value)}}).catch(()=>{});
+  }),[]);
   useEffect(()=>{
     let disposed=false;let controller:AbortController|undefined;
     const load=()=>{controller?.abort();controller=new AbortController();const active=controller;void skillRequest<{items:SkillMeta[]}>('','GET',undefined,active.signal).then(value=>{if(!disposed&&!active.signal.aborted){const enabled=value.items.filter(skill=>skill.enabled);setSkills(enabled);setSelectedSkills(old=>old.filter(name=>enabled.some(skill=>skill.name===name)));setSkillError('')}}).catch(e=>{if(!disposed&&!active.signal.aborted)setSkillError(e.message)})};

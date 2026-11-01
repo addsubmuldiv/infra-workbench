@@ -1,3 +1,5 @@
+import {useWorkspaceRestore} from './workspaceHooks';
+import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {examples,variables,renderTemplate,type Snippet} from './terminalTemplates';
@@ -11,7 +13,7 @@ function initialFrame():WindowFrame{
   const size=viewport();
   const fallback={x:(size.width-900)/2,y:Math.max(24,(size.height-640)/2),width:900,height:640};
   try{
-    const value=JSON.parse(localStorage.getItem(frameKey)||'null');
+    const value=JSON.parse(workspaceStorage.getItem(frameKey)||'null');
     if(value&&['x','y','width','height'].every(key=>typeof value[key]==='number'&&Number.isFinite(value[key])))return fitFileWindow(value,size);
   }catch{}
   return fitFileWindow(fallback,size);
@@ -21,6 +23,7 @@ export default function TerminalCommands({host,workspace,action,insert,close}:{h
   const [item,setItem]=useState<Snippet|null>(null),[values,setValues]=useState<Record<string,string>>({}),[section,setSection]=useState('commands');
   const [source,setSource]=useState('new'),[pending,setPending]=useState<{item:Snippet;baseline:unknown}|null>(null),[message,setMessage]=useState('');
   const [frame,setFrame]=useState(initialFrame),[maximized,setMaximized]=useState(false),[minimized,setMinimized]=useState(false);
+  const remoteFrame=useWorkspaceRestore(frameKey,initialFrame,setFrame);
   const gesture=useRef<{pointer:number;kind:'move'|'resize';x:number;y:number;frame:WindowFrame}|null>(null);
   const preview=renderTemplate(item?.command||'',values),settings=workspace.settings;
   const select=(value:Snippet,origin='new')=>{setItem({...value});setValues({});setSource(origin);setMessage('')};
@@ -32,7 +35,7 @@ export default function TerminalCommands({host,workspace,action,insert,close}:{h
     const resize=()=>setFrame(old=>fitFileWindow(old,viewport()));
     window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);
   },[]);
-  useEffect(()=>{try{localStorage.setItem(frameKey,JSON.stringify(frame))}catch{}},[frame]);
+  useEffect(()=>{if(remoteFrame?.current){remoteFrame.current=false;return}try{workspaceStorage.setItem(frameKey,JSON.stringify(frame))}catch{}},[frame]);
   useEffect(()=>{
     if(!pending||workspace.snippets===pending.baseline)return;
     const saved=workspace.snippets.find((value:Snippet)=>value.name===pending.item.name&&value.command===pending.item.command&&(!pending.item.id||value.id===pending.item.id));

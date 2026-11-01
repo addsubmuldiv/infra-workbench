@@ -1,3 +1,5 @@
+import {useWorkspaceRestore} from './workspaceHooks';
+import {workspaceStorage} from './workspaceState';
 import {browserId} from './browserId';
 import React,{forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
 import {Terminal as XTerminal} from '@xterm/xterm';
@@ -15,7 +17,7 @@ import {TERMINAL_FRAME_KEY,fitTerminalFrame,loadTerminalFrame,moveTerminalFrame,
 import {activateFloatingWindow,registerFloatingWindow} from './windowLayers';
 
 const terminalViewport=()=>({width:window.innerWidth||1200,height:window.innerHeight||900});
-function terminalStorage(){try{return window.localStorage??null}catch{return null}}
+function terminalStorage(){try{return workspaceStorage??null}catch{return null}}
 
 type Host={id:string;target:string;user:string|null};
 export type TerminalRequest={id:string;host:Host;cwd?:string};
@@ -218,6 +220,7 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
 export function TerminalDock({request,hosts,onDirectory}:{request:TerminalRequest|null;hosts:Host[];onDirectory?:(hostId:string,path:string)=>void}){
   const [tabs,setTabs]=useState<Tab[]>([]),[active,setActive]=useState(''),[collapsed,setCollapsed]=useState(false),[maximized,setMaximized]=useState(false);
   const [frame,setFrame]=useState(()=>loadTerminalFrame(terminalStorage(),terminalViewport())),[font,setFont]=useState(13),[picker,setPicker]=useState(false),[hint,setHint]=useState('');
+  const remoteFrame=useWorkspaceRestore(TERMINAL_FRAME_KEY,()=>loadTerminalFrame(terminalStorage(),terminalViewport()),setFrame);
   const [savedSessions,setSavedSessions]=useState<Record<string,{id:string;created:number}[]>>({}),[sessionBusy,setSessionBusy]=useState(false);
   const [dragging,setDragging]=useState(false);
   const {confirm,confirmation}=useAppConfirm();
@@ -234,7 +237,7 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
     const resize=()=>{setFrame(old=>fitTerminalFrame(old,terminalViewport()));gesture.current=null;setDragging(false)};
     window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);
   },[]);
-  useEffect(()=>{if(dragging)return;try{terminalStorage()?.setItem(TERMINAL_FRAME_KEY,JSON.stringify(frame))}catch{}},[frame,dragging]);
+  useEffect(()=>{if(dragging)return;if(remoteFrame?.current){remoteFrame.current=false;return}try{terminalStorage()?.setItem(TERMINAL_FRAME_KEY,JSON.stringify(frame))}catch{}},[frame,dragging]);
   useEffect(()=>{if(!hint)return;const timer=setTimeout(()=>setHint(''),12000);return()=>clearTimeout(timer)},[hint]);
   useEffect(()=>{
     if(!hasLiveSessions)return;

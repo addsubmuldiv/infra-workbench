@@ -1,3 +1,5 @@
+import {useWorkspaceRestore} from './workspaceHooks';
+import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useRef,useState} from 'react';
 import {GripHorizontal,Minus,PanelRightClose,PanelRightOpen,PanelsTopLeft,Sparkles} from 'lucide-react';
 import {InfraAssistant} from './InfraAssistantPage';
@@ -8,15 +10,17 @@ import './assistantWindow.css';
 
 const viewport=()=>({width:window.document?.documentElement.clientWidth||window.innerWidth,height:window.innerHeight});
 const fitFrame=(frame:WindowFrame,size:ReturnType<typeof viewport>)=>fitFileWindow({...frame,height:Math.max(520,frame.height)},size);
-function storage(){try{return window.localStorage}catch{return null}}
+function storage(){try{return workspaceStorage}catch{return null}}
 type Props={open:boolean;onClose:()=>void;onDockWidthChange:(width:number)=>void;selectedHostIds:string[];locate:(hostId:string,devices:string[])=>void;openTerminal:(hostId:string)=>void;openSettings:()=>void};
 type Gesture={id:number;kind:string;x:number;y:number;layout:AssistantLayout;frame:WindowFrame;moved:boolean;dock:boolean};
 
 export function AssistantWindow({open,onClose,onDockWidthChange,...assistantProps}:Props){
   const [size,setSize]=useState(viewport);
   const [layout,setLayout]=useState(()=>{const value=loadAssistantLayout(storage(),viewport());return {...value,frame:fitFrame(value.frame,viewport())}});
+  useWorkspaceRestore('infra-workbench:assistant-window:v1',()=>loadAssistantLayout(storage(),viewport()),setLayout);
   const [preview,setPreview]=useState(false),[dragging,setDragging]=useState(false);
   const current=useRef(layout),gesture=useRef<Gesture|null>(null),element=useRef<HTMLElement>(null);
+  current.current=layout;
   const update=(next:AssistantLayout)=>{current.current=next;setLayout(next)};
   const persist=(next:AssistantLayout)=>{update(next);saveAssistantLayout(storage(),next)};
   const dockWidth=fitAssistantDockWidth(layout.dockWidth,size.width),floating=layout.mode==='floating';

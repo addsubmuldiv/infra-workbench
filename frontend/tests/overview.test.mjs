@@ -1,3 +1,4 @@
+import {workspaceMock} from './workspace-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -27,8 +28,8 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts){
   }
   const source=fs.readFileSync(new URL('../src/main.tsx',import.meta.url),'utf8')+'\nexport {App};';
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};const mocks={'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':preferences,'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
-  new Function('require','exports',js)(name=>mocks[name]||new Proxy({},{get:(_,key)=>key}),exports);
+  const exports={};const mocks={'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':{...preferences,browserStorage:()=>window.localStorage},'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
+  new Function('require','exports',js)(name=>workspaceMock(name,react)??(mocks[name]||new Proxy({},{get:(_,key)=>key})),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);
   const text=node=>node==null||node===false?'':typeof node!=='object'?String(node):(node.props?.children||[]).flat(Infinity).map(text).join('');

@@ -1,3 +1,4 @@
+import {workspaceMock} from './workspace-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -63,6 +64,7 @@ function harness(t,{tabs=null,initialStates={}}={}){
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const exports={};
   const require=name=>{
+    const mock=workspaceMock(name,react);if(mock)return mock;
     if(name==='react')return react;
     if(name==='./TerminalCommands')return ()=>null;
     if(name==='./AppConfirm')return {useAppConfirm:()=>({confirm:async()=>false,confirmation:null})};

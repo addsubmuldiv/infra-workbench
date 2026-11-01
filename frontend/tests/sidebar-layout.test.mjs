@@ -1,3 +1,4 @@
+import {workspaceMock} from './workspace-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -17,7 +18,7 @@ function harness(t,{stored=null,viewport=1400,storageFails=false}={}){
   const cleanups=[];t.after(()=>{cleanups.forEach(fn=>fn?.());if(original)Object.defineProperty(globalThis,'window',original);else delete globalThis.window});
   const source=fs.readFileSync(new URL('../src/WorkspaceLayout.tsx',import.meta.url),'utf8');
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./sidebarLayout'?layout:{},exports);
+  const exports={};new Function('require','exports',js)(name=>workspaceMock(name,react)??(name==='react'?react:name==='./sidebarLayout'?layout:{}),exports);
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const render=()=>{slot=0;tree=exports.WorkspaceLayout({children:'workspace'});effects.splice(0).forEach(fn=>cleanups.push(fn()));return tree};
   const divider=()=>nodes(tree).find(n=>n.props?.role==='separator');

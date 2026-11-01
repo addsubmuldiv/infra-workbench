@@ -1,3 +1,4 @@
+import {workspaceMock} from './workspace-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,7 +19,7 @@ function harness(t,snippets=[]){
     useRef:initial=>{const key=index++;if(!(key in slots))slots[key]={current:initial};return slots[key]},
     useEffect:(fn,deps)=>{const key=index++;if(!dependencies[key]||!deps||deps.some((v,i)=>v!==dependencies[key][i])){effects.push(()=>{cleanups[key]?.();cleanups[key]=fn()});dependencies[key]=deps}}};
   const compiled=ts.transpileModule(fs.readFileSync(new URL('../src/TerminalCommands.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',compiled)(name=>name==='react'?react:name==='react-dom'?{createPortal:node=>node}:name==='./fileWindow'?frames:name==='./terminalTemplates'?templates:{},exports);
+  const exports={};new Function('require','exports',compiled)(name=>workspaceMock(name,react)??(name==='react'?react:name==='react-dom'?{createPortal:node=>node}:name==='./fileWindow'?frames:name==='./terminalTemplates'?templates:{}),exports);
   const render=()=>{index=0;tree=exports.default({host:'test',workspace,action:value=>actions.push(value),insert:value=>{inserted.push(value);return true},close:()=>closed++});for(const effect of effects.splice(0))effect();return tree};
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(child=>nodes(child))];
   const find=predicate=>nodes(tree).find(predicate);

@@ -1,3 +1,4 @@
+import {workspaceStorage} from './workspaceState.ts';
 import {assistantRequest} from './infraAssistant.ts';
 export type ChatTool={id:string;name:string;target?:string;status:string;arguments:string;output:string;started:number;finished?:number};
 export type ChatTurn={id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
@@ -6,8 +7,8 @@ export type ChatItem=Pick<Chat,'id'|'title'|'created'|'updated'|'active_run'>;
 export const toolNames:Record<string,string>={create_reservation:'创建预约',update_reservation:'修改预约',cancel_reservation:'取消预约',create_rule:'创建监控',delete_rule:'删除监控',get_workbench_state:'查看机器与预约',preflight:'训练前检查',file_operation:'操作服务器文件',read_training_log:'解析训练日志',compare_training_logs:'对比训练日志',get_log_record:'核对日志记录',save_log_comparison:'保存对比配置',search_hosts:'筛选机器',refresh_host:'刷新采样',search_server_files:'搜索服务器文件',create_upload:'准备上传',get_upload:'查询上传进度',download_server_file:'准备文件下载',download_server_folder:'准备目录下载',list_hosts:'列出机器',search_fleet:'查找资源与进程',get_resources:'查看设备资源',read_directory:'浏览目录',read_file:'读取技能与上下文',read_server_directory:'浏览服务器目录',read_server_file:'读取服务器文件',ls:'浏览技能与上下文',glob:'查找技能文件',grep:'搜索技能内容',compact_conversation:'整理对话上下文',ssh_check:'SSH 只读检查',read_changes:'读取资源变化'};
 export const toolStatus:Record<string,string>={running:'正在执行',succeeded:'已返回结果',failed:'未完成',cancelled:'已取消',interrupted:'已中断'};
 Object.assign(toolNames,{list_skills:'查询技能',read_skill:'读取技能说明',create_skill_draft:'创建技能草稿',update_skill_draft:'修改技能草稿',validate_skill_draft:'校验技能草稿',install_skill_draft:'安装技能',set_skill_enabled:'启停技能',rollback_skill:'回退技能版本'});
-export function loadChatId():string|null{try{const id=localStorage.getItem('iwb-assistant-chat');return id&&/^[a-f0-9]{32}$/.test(id)?id:null}catch{return null}}
-export function saveChatId(id:string){try{localStorage.setItem('iwb-assistant-chat',id)}catch{}}
+export function loadChatId(storage:Pick<Storage,'getItem'>=workspaceStorage):string|null{try{const id=storage.getItem('iwb-assistant-chat');return id&&/^[a-f0-9]{32}$/.test(id)?id:null}catch{return null}}
+export function saveChatId(id:string,storage:Pick<Storage,'setItem'>=workspaceStorage){try{storage.setItem('iwb-assistant-chat',id)}catch{}}
 export function chatRequest<T>(path='',method='GET',body?:unknown,signal?:AbortSignal):Promise<T>{return assistantRequest<T>('/chats'+path,method,body,signal)}
 
 export type ChatEvent=

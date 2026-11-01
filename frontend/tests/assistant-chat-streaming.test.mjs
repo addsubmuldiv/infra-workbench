@@ -24,7 +24,7 @@ function harness(t){
     return Response.json(chat(url.endsWith('b'.repeat(32))?'b':'a',url.endsWith('b'.repeat(32))?null:'run1'));
   };
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/AssistantChat.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./agentChat'?api:name==='./skills'?skills:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{},exports);
+  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./workspaceState'?{workspaceStorage:{subscribe:()=>()=>{}}}:name==='./workspaceHooks'?{useWorkspaceValue:(_key,value)=>react.useState(value)}:name==='./agentChat'?{...api,loadChatId:()=>null,saveChatId:id=>writes.push(['iwb-assistant-chat',id])}:name==='./skills'?skills:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{},exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=predicate=>nodes(tree).find(predicate);
   const render=()=>{slot=0;tree=exports.AssistantChat({configured:true,selectedHostIds:[]});const node=find(n=>n.props.className==='chat-transcript');node.props.ref.current=view;for(const effect of effects.splice(0))effect();return tree};

@@ -1,3 +1,4 @@
+import {workspaceStorage} from './workspaceState.ts';
 export const THEMES = [
   {id:'daylight',name:'晴空',mode:'light',description:'浅灰与蓝绿',swatches:['#f3f6fa','#ffffff','#177b70']},
   {id:'paper',name:'暖纸',mode:'light',description:'米白与暖棕',swatches:['#f5f1e9','#fffdf7','#8d6840']},
@@ -11,7 +12,7 @@ type StorageReader = Pick<Storage,'getItem'> | null;
 type StorageWriter = Pick<Storage,'setItem'> | null;
 const KEY='infra-workbench:preferences:v1';
 const defaults:Preferences={theme:'daylight',hostIds:null};
-export function browserStorage():Storage|null{try{return window.localStorage}catch{return null}}
+export function browserStorage(){try{return workspaceStorage}catch{return null}}
 export function loadPreferences(storage:StorageReader):Preferences{
   try{
     const value=JSON.parse(storage?.getItem(KEY)??'null');

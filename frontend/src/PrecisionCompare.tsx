@@ -1,3 +1,5 @@
+import {useWorkspaceRestore} from './workspaceHooks';
+import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useState} from 'react';
 import {Activity,ArrowUp,Check,Download,FileText,FolderOpen,LoaderCircle,RefreshCw,Save,Trash2,X} from 'lucide-react';
 import './precision.css';
@@ -17,7 +19,7 @@ type Config=Draft&{id:string};
 type Directory={path:string;parent:string;entries:{name:string;path:string;directory:boolean;size:number}[];truncated:boolean};
 const KEY='iwb.precision.draft.v1';
 const empty:Draft={name:'',baseline:{host_id:'',path:''},candidate:{host_id:'',path:''},metrics:['loss','grad_norm'],baseline_group:null,candidate_group:null,duplicate_policy:'error',start:null,end:null};
-function restore():Draft{try{const d=JSON.parse(localStorage.getItem(KEY)||'null');if(d&&typeof d.baseline?.path==='string'&&typeof d.candidate?.path==='string'&&Array.isArray(d.metrics))return {...empty,...d}}catch{}return {...empty}}
+function restore():Draft{try{const d=JSON.parse(workspaceStorage.getItem(KEY)||'null');if(d&&typeof d.baseline?.path==='string'&&typeof d.candidate?.path==='string'&&Array.isArray(d.metrics))return {...empty,...d}}catch{}return {...empty}}
 async function api(path:string,method='GET',body?:unknown){const r=await fetch('/api/logs'+path,{method,headers:{'Content-Type':'application/json','X-IWB':'1'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:'操作失败');return data}
 const num=(n:number|null|undefined)=>n==null?'—':n===0?'0':Math.abs(n)<0.0001||Math.abs(n)>=1000000?n.toExponential(8):Number(n.toPrecision(12)).toString();
 const axisNum=(n:number)=>n===0?'0':Math.abs(n)<.001||Math.abs(n)>=10000?n.toExponential(2):Number(n.toPrecision(4)).toString();
@@ -25,13 +27,14 @@ const groupOf=(s:Snapshot|null,key:string|null)=>s?.groups.find(g=>g.key===key)|
 
 export function PrecisionCompare({hosts}:{hosts:Host[]}){
   const [draft,setDraft]=useState<Draft>(restore),[configs,setConfigs]=useState<Config[]>([]);
+  useWorkspaceRestore(KEY,restore,setDraft);
   const [a,setA]=useState<Snapshot|null>(null),[b,setB]=useState<Snapshot|null>(null),[result,setResult]=useState<Result|null>(null);
   const [busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[readAt,setReadAt]=useState('');
   const [active,setActive]=useState('loss'),[sort,setSort]=useState('error'),[picked,setPicked]=useState<Point|null>(null);
   const [source,setSource]=useState<{baseline:RecordRow;candidate:RecordRow}|null>(null);
   const [browser,setBrowser]=useState<'baseline'|'candidate'|null>(null),[directory,setDirectory]=useState<Directory|null>(null),[folder,setFolder]=useState('~');
   useEffect(()=>{api('/configs').then(setConfigs).catch(e=>setError(e.message))},[]);
-  useEffect(()=>{try{localStorage.setItem(KEY,JSON.stringify(draft))}catch{}},[draft]);
+  useEffect(()=>{try{workspaceStorage.setItem(KEY,JSON.stringify(draft))}catch{}},[draft]);
   const clearResult=()=>{setResult(null);setPicked(null);setSource(null)};
   const update=(change:Partial<Draft>)=>{setDraft(d=>({...d,...change}));clearResult()};
   const setLocation=(side:'baseline'|'candidate',change:Partial<Location>)=>{update({[side]:{...draft[side],...change},[side+'_group']:null});if(side==='baseline')setA(null);else setB(null)};

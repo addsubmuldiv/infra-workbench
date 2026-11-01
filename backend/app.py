@@ -372,6 +372,9 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             return JSONResponse({'detail': '请检查接口 URL、协议、模型名称、API key 和超时时间；URL 不能包含账号、查询参数或片段'}, status_code=422)
         return JSONResponse({'detail': '输入格式不正确，请检查主机、用户名、端口及设备选择'}, status_code=422)
 
+    from .workspace_state import register_workspace_state
+    register_workspace_state(app, store)
+
     @app.get('/api/config-hosts')
     async def config_hosts():
         config = Path.home()/'.ssh'/'config'

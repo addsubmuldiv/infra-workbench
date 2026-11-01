@@ -1,10 +1,13 @@
+import {useWorkspaceRestore} from './workspaceHooks';
+import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useRef,useState} from 'react';
 import {DEFAULT_SIDEBAR_WIDTH,MIN_SIDEBAR_WIDTH,MOBILE_BREAKPOINT,fitSidebarWidth,loadSidebarWidth,saveSidebarWidth,sidebarMaximum} from './sidebarLayout';
 
-function storage(){try{return window.localStorage}catch{return null}}
+function storage(){try{return workspaceStorage}catch{return null}}
 
 export function WorkspaceLayout({children,onClickCapture,assistantWidth=0}:{children:React.ReactNode;onClickCapture?:React.MouseEventHandler<HTMLDivElement>;assistantWidth?:number}){
   const [preferred,setPreferred]=useState(()=>loadSidebarWidth(storage()));
+  useWorkspaceRestore('infra-workbench:sidebar-width:v1',()=>loadSidebarWidth(storage()),setPreferred);
   const [viewport,setViewport]=useState(()=>window.innerWidth),[dragging,setDragging]=useState(false);
   const gesture=useRef<{id:number;x:number;width:number}|null>(null),lastWidth=useRef(preferred);
   const maximum=Math.min(sidebarMaximum(viewport),Math.max(MIN_SIDEBAR_WIDTH,viewport-assistantWidth-420));

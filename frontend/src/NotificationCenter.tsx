@@ -1,3 +1,4 @@
+import {useWorkspaceRestore} from './workspaceHooks';
 import React,{useEffect,useRef,useState} from 'react';
 import {Bell,Check,Radio,Trash2,X} from 'lucide-react';
 import {browserStorage} from './preferences';
@@ -11,6 +12,7 @@ type Props={events:NotificationRecord[];rules:Rule[];hosts:{id:string;target:str
 export function NotificationCenter({events,rules,hosts,tab,setTab,notify,busy,enableNotifications,removeRule,locate}:Props){
   const root=useRef<HTMLDivElement>(null),bell=useRef<HTMLButtonElement>(null),panel=useRef<HTMLElement>(null);
   const [read,setRead]=useState(()=>loadReadEvent(browserStorage()));
+  useWorkspaceRestore('infra-workbench:notifications:read:v1',()=>loadReadEvent(browserStorage()),setRead);
   const unread=unreadEvents(events,read);
   const close=()=>{setTab(null);bell.current?.focus()};
   useEffect(()=>{

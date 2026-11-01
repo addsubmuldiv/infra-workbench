@@ -1,3 +1,4 @@
+import {workspaceMock} from './workspace-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -16,7 +17,7 @@ function harness(t,storage=new Map()){
   const source=fs.readFileSync(new URL('../src/NotificationCenter.tsx',import.meta.url),'utf8');
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const mocks={'react':react,'./preferences':{browserStorage:()=>store},'./notifications':notifications};const exports={};
-  new Function('require','exports',js)(name=>mocks[name]||new Proxy({},{get:(_,key)=>key}),exports);
+  new Function('require','exports',js)(name=>workspaceMock(name,react)??(mocks[name]||new Proxy({},{get:(_,key)=>key})),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const render=()=>{cursor=0;tree=exports.NotificationCenter(props)};
   const find=fn=>nodes(tree).find(fn),button=label=>find(n=>n.type==='button'&&(n.props['aria-label']===label||n.props.children.includes(label)));

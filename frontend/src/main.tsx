@@ -1,3 +1,5 @@
+import {initializeWorkspace,workspaceStorage} from './workspaceState';
+import {useWorkspaceRestore,useWorkspaceValue} from './workspaceHooks';
 import {browserId} from './browserId';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -32,7 +34,7 @@ import {SSHPasswordDialog} from './SSHPasswordDialog';
 import {RemoveHostDialog} from './RemoveHostDialog';
 import {deviceUsage} from './hostUsage';
 import {HOST_CATEGORIES,filterHosts,type HostCategory} from './hostList';
-const bootPreferences=loadPreferences(browserStorage());
+let bootPreferences=loadPreferences(browserStorage());
 document.documentElement.dataset.theme=bootPreferences.theme;
 
 type Proc = {pid:number; name:string; user:string|null; memory_used:number|null; uid?:number|null; effective_uid?:number|null; parent_pid?:number|null; cwd?:string|null; executable?:string|null; command?:string|null; command_truncated?:boolean; identity_verified?:boolean; detail_status?:string; detail_source?:string; errors?:Record<string,string>};
@@ -65,8 +67,9 @@ function App(){
   const [reservationDraft,setReservationDraft]=useState<ReservationDraft|null>(null);
   const [pendingLocation,setPendingLocation]=useState(()=>hostLocationFromHash(location.hash));
   const [preferences,setPreferences]=useState(()=>loadPreferences(browserStorage()));
-  const [hostSearch,setHostSearch]=useState('');
-  const [hostCategory,setHostCategory]=useState<HostCategory>('全部');
+  useWorkspaceRestore('infra-workbench:preferences:v1',()=>loadPreferences(browserStorage()),setPreferences);
+  const [hostSearch,setHostSearch]=useWorkspaceValue('workspace:host-search','');
+  const [hostCategory,setHostCategory]=useWorkspaceValue<HostCategory>('workspace:host-category','全部');
   const [sudoHost,setSudoHost]=useState<Host|null>(null);
   const [sshPasswordHost,setSSHPasswordHost]=useState<Host|null>(null);
   const [removalHosts,setRemovalHosts]=useState<Host[]>([]);
@@ -75,12 +78,16 @@ function App(){
   const [notificationTab,setNotificationTab]=useState<NotificationTab>(()=>location.hash.split('?')[0]==='#watch'?'messages':null);
   const [precisionMounted,setPrecisionMounted]=useState(()=>pageFromHash(location.hash)==='precision');
   const [assistantOpen,setAssistantOpen]=useState(()=>location.hash.split('?')[0]==='#assistant'||loadAssistantOpen(browserStorage())),[assistantWidth,setAssistantWidth]=useState(0);
+  useWorkspaceRestore(ASSISTANT_OPEN_KEY,()=>loadAssistantOpen(browserStorage()),setAssistantOpen);
   useEffect(()=>{try{browserStorage()?.setItem(ASSISTANT_OPEN_KEY,String(assistantOpen))}catch{}},[assistantOpen]);
-  const [page,setPage]=useState<Page>(()=>pageFromHash(location.hash)==='assistant'?'overview':pageFromHash(location.hash)),[filter,setFilter]=useState('全部'),[count,setCount]=useState(1),[minimum,setMinimum]=useState(16),[clear,setClear]=useState(true);
-  const [resourceKind,setResourceKind]=useState('全部'),[selectedScope,setSelectedScope]=useState(false),[deviceOverview,setDeviceOverview]=useState(false);
-  const [adding,setAdding]=useState(false),[detail,setDetail]=useState<{host:string;device:string}|null>(null),[selected,setSelected]=useState<Record<string,string[]>>({});
-  const [notice,setNotice]=useState(''),[error,setError]=useState(''),[notify,setNotify]=useState(false),[busy,setBusy]=useState(''),[port,setPort]=useState(29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
+  const [page,setPage]=useWorkspaceValue<Page>('workspace:page',pageFromHash(location.hash)==='assistant'?'overview':pageFromHash(location.hash)),[filter,setFilter]=useWorkspaceValue('workspace:filter','全部'),[count,setCount]=useWorkspaceValue('workspace:count',1),[minimum,setMinimum]=useWorkspaceValue('workspace:minimum',16),[clear,setClear]=useWorkspaceValue('workspace:clear',true);
+  const [resourceKind,setResourceKind]=useWorkspaceValue('workspace:resourceKind','全部'),[selectedScope,setSelectedScope]=useWorkspaceValue('workspace:selectedScope',false),[deviceOverview,setDeviceOverview]=useWorkspaceValue('workspace:deviceOverview',false);
+  const [adding,setAdding]=useState(false),[detail,setDetail]=useState<{host:string;device:string}|null>(null),[selected,setSelected]=useWorkspaceValue<Record<string,string[]>>('workspace:selected-devices',{});
+  const [notice,setNotice]=useState(''),[error,setError]=useState(''),[notify,setNotify]=useState(false),[busy,setBusy]=useState(''),[port,setPort]=useWorkspaceValue('workspace:port',29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
   const lastEvent=useRef<number|null>(null),notifyRef=useRef(false),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
+  useEffect(()=>{if(page==='precision')setPrecisionMounted(true);if(pageFromHash(location.hash)!==page&&!hostLocationFromHash(location.hash))window.history.replaceState(window.history.state,'','#'+page)},[page]);
+  const [workspaceError,setWorkspaceError]=useState(false);
+  useEffect(()=>{const status=(event:globalThis.Event)=>setWorkspaceError((event as unknown as CustomEvent<boolean>).detail);window.addEventListener('workspace-save-status',status as EventListener);return()=>window.removeEventListener('workspace-save-status',status as EventListener)},[]);
   const navigate=(next:Page)=>{
     if(next==='assistant'){setAssistantOpen(true);return}
     setPage(next);if(next==='precision')setPrecisionMounted(true);
@@ -118,7 +125,7 @@ function App(){
   useEffect(()=>{load();const timer=setInterval(load,2000);return()=>{clearInterval(timer);stateRequest.current?.abort()}},[]);
   useEffect(()=>{
     document.documentElement.dataset.theme=preferences.theme;
-    if(!savePreferences(browserStorage(),preferences)&&!storageWarning.current){storageWarning.current=true;setNotice('浏览器不允许保存偏好，主题与机器选择在关闭页面后将无法恢复。')}
+    if(!savePreferences(browserStorage(),preferences)&&!storageWarning.current){storageWarning.current=true;setNotice('工作空间偏好暂时无法保存，请检查本地后台连接。')}
   },[preferences]);
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),7000);return()=>clearTimeout(t)},[notice]);
   useEffect(()=>{
@@ -233,13 +240,13 @@ function App(){
     <aside className="sidebar"><div className="brand"><span className="brand-icon"><Cpu size={23}/></span><div>Infra<span>WORKBENCH</span></div></div>
       <div className="nav-label">工作台</div><nav>{[["overview","算力总览",LayoutGrid],["reservations","卡预约",CalendarClock],["precision","精度对比",Activity],["settings","设置",Settings]].map(([key,label,Icon])=><button key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&state.reservations.some(r=>r.status!=='ready')&&<span className="nav-count">{state.reservations.filter(r=>r.status!=='ready').length}</span>}</button>)}</nav>
       <div className="sidebar-hosts">{hostList}</div>
-      <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title="自动保存机器选择，下次打开时恢复（需浏览器允许本地存储）。通过 SSH 连接远端机器，无需远端常驻 Agent。"><i aria-hidden="true"/>本地服务{error?'未连接':'已连接'}</div></div>
+      <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title="机器选择保存在本机后台，其他窗口会同步更新。通过 SSH 连接远端机器，无需远端常驻 Agent。"><i aria-hidden="true"/>本地服务{error?'未连接':'已连接'}</div></div>
     </aside>
-    <main onClick={clearDeviceSelection}><header><div className="breadcrumb">工作空间 <ChevronRight size={13}/>{pageTitle}</div>
+    <main onClick={clearDeviceSelection}>{workspaceError&&<div role="alert" className="assistant-error">工作空间状态同步失败，正在重试；未保存时请勿关闭页面。</div>}<header><div className="breadcrumb">工作空间 <ChevronRight size={13}/>{pageTitle}</div>
       <div className="header-tools"><span className="live"><i/>10s 实时采集</span>
-        <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>主题</span></summary><div className="theme-options"><h3>选择界面主题</h3><p>主题偏好自动保存在本机</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
+        <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>主题</span></summary><div className="theme-options"><h3>选择界面主题</h3><p>主题偏好由本机后台统一保存</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{t.name}</strong><small>{t.mode==='light'?'亮色':'暗色'} · {t.description}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
-        <div className="header-panel-tools"><NotificationCenter events={state.events} rules={state.rules} hosts={state.hosts} tab={notificationTab} setTab={setNotificationTab} notify={notify} busy={!!busy} enableNotifications={enableNotifications} removeRule={id=>act('rule',()=>api('/rules/'+encodeURIComponent(id),'DELETE'))} locate={locateEvent}/><button className={'assistant-toggle'+(assistantOpen?' active':'')} aria-label="AI 助手" title={assistantOpen?'收起 AI 助手':'展开 AI 助手'} aria-expanded={assistantOpen} aria-controls="infra-assistant-panel" onClick={()=>setAssistantOpen(value=>!value)}><Sparkles size={17}/><span>AI 助手</span></button></div><span className="avatar small">本</span>
+        <div className="header-panel-tools"><NotificationCenter events={state.events} rules={state.rules} hosts={state.hosts} tab={notificationTab} setTab={setNotificationTab} notify={notify} busy={!!busy} enableNotifications={enableNotifications} removeRule={id=>act('rule',()=>api('/rules/'+encodeURIComponent(id),'DELETE'))} locate={locateEvent}/><button className={'assistant-toggle'+(assistantOpen?' active':'')} aria-label="AI 助手" title={assistantOpen?'收起 AI 助手':'展开 AI 助手'} aria-expanded={assistantOpen} aria-controls="infra-assistant-panel" onClick={()=>setAssistantOpen(value=>!value)}><Sparkles size={17}/><span>AI 助手</span></button></div>
       </div></header>
     {preferences.theme==='frieren'&&<JourneyArt/>}
     <div className="content"><div className="page-heading"><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':page==='assistant'?'AI ASSISTANT':'OVERVIEW'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?'跨机器读取训练日志，自动提取指标并按真实步数对齐。':page==='reservations'?'预约指定设备，等它们连续空闲后收到提醒。':page==='settings'?'管理模型接口、外部 Agent 接入和邮件通知。':page==='assistant'?'查找多台机器上的任务与会话，了解资源发生了哪些变化。':`全部 ${state.hosts.length} 台机器的资源概况 · 左侧勾选用于查看详情和批量删除`}</p></div><div className="page-heading-actions"><button className="primary" onClick={()=>setAdding(true)}><Plus size={17}/>添加机器</button><button className="secondary machine-delete-action" aria-label="删除机器" title={scope.length?`删除选中的 ${scope.length} 台机器`:'请先在左侧勾选机器'} disabled={scope.length===0} onClick={()=>setRemovalHosts([...scope])}><Trash2 size={15}/>删除机器{scope.length>0&&<span className="machine-delete-count">{scope.length}</span>}</button></div></div>
@@ -361,4 +368,9 @@ function AddMachine({close,connected,imported}:{close:()=>void;connected:(messag
     <label className="provision-option"><input type="checkbox" checked={provision} onChange={e=>setProvision(e.target.checked)}/><div><strong>登录后自动配置免密连接</strong><p>生成本机专用密钥，向远端追加公钥，再验证无密码登录。需要提供本次登录密码。</p></div><ShieldCheck size={20}/></label><label className="checkbox-label"><input aria-label="记住 SSH 登录密码" type="checkbox" checked={rememberPassword} disabled={!canRemember||loading} onChange={e=>setRememberPassword(e.target.checked)}/>记住 SSH 登录密码，供 MCP 工具 读取</label><div className="privacy-note"><ShieldCheck size={14}/>{rememberPassword?'登录成功后保存到当前用户的系统凭据管理器，可在机器的 SSH 密码设置中删除。':'未勾选记住时不保存 SSH 密码；免密配置不覆盖已有公钥。'}</div>
     {error&&<div role="alert" className="connection-error">{error}</div>}<div className="modal-footer"><span>{target?<><i className="dot"/>{target}</>:'选择一台机器开始'}</span><button className="primary" disabled={loading||!target||((provision||rememberPassword)&&!password)}>{loading?<LoaderCircle size={16} className="spin"/>:<ArrowUpRight size={16}/ >}{loading?'正在连接…':'连接机器'}</button></div></form>}</section></div>
 }
-createRoot(document.getElementById('root')!).render(<App/>);
+async function boot(){
+ const root=document.getElementById('root')!;root.textContent='正在读取工作空间状态…';
+ try{await initializeWorkspace();bootPreferences=loadPreferences(workspaceStorage);document.documentElement.dataset.theme=bootPreferences.theme;createRoot(root).render(<App/>)}
+ catch{root.textContent='无法读取工作空间状态，请确认后台已更新并运行。';const retry=document.createElement('button');retry.textContent='重试';retry.onclick=()=>{void boot()};root.append(retry)}
+}
+void boot();
