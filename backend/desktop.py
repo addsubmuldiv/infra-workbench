@@ -21,6 +21,7 @@ from backend.notifications import should_notify
 from backend.reminder_links import event_link
 URL = 'http://127.0.0.1:8765/'
 APP_ID = 'InfraWorkbench.Desktop'
+BACKEND_STARTUP_TIMEOUT = 60
 DATA = Path(os.environ.get('IWB_DATA', str(ROOT/'data')))
 OPENER = build_opener(ProxyHandler({}))  # Never send local process data through a proxy.
 
@@ -209,6 +210,16 @@ class ServiceHost:
         self.server=None
         self.thread=None
         self.owned=False
+        self.startup_failure=None
+
+    def _run_server(self):
+        try:
+            self.server.run()
+        except BaseException as exc:
+            # Uvicorn uses SystemExit for startup failures. pythonw has no stderr,
+            # and threading's default hook silently ignores SystemExit.
+            self.startup_failure=f'{type(exc).__name__}: {exc}'
+            logging.exception('Backend thread failed started=%s',self.server.started)
 
     def ensure(self):
         try:
@@ -222,17 +233,29 @@ class ServiceHost:
         # Run in this process, rather than leave an orphaned python.exe child.
         self.server=uvicorn.Server(uvicorn.Config('backend.app:app',host='127.0.0.1',port=8765,
                                                 access_log=False,log_config=None,log_level='error'))
-        self.thread=threading.Thread(target=self.server.run,name='iwb-server',daemon=True)
+        self.startup_failure=None
+        self.thread=threading.Thread(target=self._run_server,name='iwb-server',daemon=True)
         self.owned=True
+        started=time.monotonic()
+        logging.info('Backend startup beginning timeout=%ss',BACKEND_STARTUP_TIMEOUT)
         self.thread.start()
-        for _ in range(100):
-            if self.server.started:
+        deadline=started+BACKEND_STARTUP_TIMEOUT
+        while time.monotonic()<deadline:
+            if self.server.started and self.thread.is_alive():
+                logging.info('Backend ready elapsed=%.3fs',time.monotonic()-started)
                 return
             if not self.thread.is_alive():
                 break
             time.sleep(.1)
+        elapsed=time.monotonic()-started
+        failure=self.startup_failure
+        if not self.thread.is_alive():
+            reason=f'后台线程提前退出（{failure or "未返回就绪状态"}）'
+        else:
+            reason=f'等待后台就绪超过 {BACKEND_STARTUP_TIMEOUT} 秒'
+        logging.error('Backend not ready elapsed=%.3fs reason=%s',elapsed,reason)
         self.stop()
-        raise RuntimeError('后台服务未能启动，请用 start.cmd 查看具体错误；未停止已有服务')
+        raise RuntimeError(reason+'；详细原因见 data/desktop.log。未停止其他后台。')
 
     def stop(self):
         if self.owned and self.server:
@@ -448,7 +471,10 @@ def main(argv=None):
     if os.name!='nt': raise SystemExit('系统托盘目前支持 Windows 10/11')
     DATA.mkdir(parents=True,exist_ok=True)
     from logging.handlers import RotatingFileHandler
-    logging.basicConfig(handlers=[RotatingFileHandler(DATA/'desktop.log',maxBytes=256000,backupCount=1,encoding='utf-8')],level=logging.INFO)
+    logging.basicConfig(handlers=[RotatingFileHandler(DATA/'desktop.log',maxBytes=256000,backupCount=1,encoding='utf-8')],level=logging.INFO,
+                        format='%(asctime)s %(levelname)s [%(threadName)s] %(name)s: %(message)s')
+    # Keep Uvicorn's bind/lifespan diagnostics in the same file under pythonw.
+    logging.getLogger('uvicorn.error').propagate=True
     from ctypes import wintypes as w
     kernel=ctypes.WinDLL('kernel32',use_last_error=True)
     kernel.CreateMutexW.argtypes=[ctypes.c_void_p,w.BOOL,w.LPCWSTR];kernel.CreateMutexW.restype=w.HANDLE

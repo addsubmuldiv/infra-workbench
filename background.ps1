@@ -13,7 +13,9 @@ try {
     # Let this launcher open the page after readiness, including duplicate launches.
     $desktopArguments = @(('"' + $desktopScript + '"'), '--no-browser')
     $process = Start-Process -FilePath $pythonw -ArgumentList $desktopArguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -PassThru
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    # The desktop host allows 60 seconds for cold imports and application startup.
+    # Leave additional time for the old tray to exit and the new tray to register.
+    $deadline = [DateTime]::UtcNow.AddSeconds(90)
     $ready = $false
     do {
         if ($process.HasExited -and $process.ExitCode -ne 0) {
