@@ -29,6 +29,8 @@ def wire_messages(messages):
         item = dict(role=role, content=text_content(message.content))
         if role == 'tool':
             item['tool_call_id'] = message.tool_call_id
+        if role == 'assistant' and isinstance(message.additional_kwargs.get('reasoning_content'),str):
+            item['reasoning_content']=message.additional_kwargs['reasoning_content']
         if role == 'assistant' and message.tool_calls:
             item['tool_calls'] = [dict(id=c['id'], type='function', function=dict(
                 name=c['name'], arguments=json.dumps(c['args'], ensure_ascii=False))) for c in message.tool_calls]
@@ -106,7 +108,8 @@ class WorkbenchChatModel(BaseChatModel):
         content = self._sanitize(raw.get('content', '')) if self._sanitize else raw.get('content', '')
         if display and self._on_text:
             self._on_text(content, final=True)
-        reply = AIMessage(content=content, tool_calls=calls)
+        reply = AIMessage(content=content, tool_calls=calls, additional_kwargs=(
+            {'reasoning_content':self._clean_arguments(raw['reasoning_content'])} if raw.get('reasoning_content') else {}))
         if display and self._on_context:
             self._on_context(count_tokens_approximately([*messages, reply], tools=self._tools), 'response')
         return ChatResult(generations=[ChatGeneration(message=reply)])

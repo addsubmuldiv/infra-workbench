@@ -71,3 +71,11 @@ def test_switching_model_does_not_reuse_previous_capacity(client):
         save(client, url, model='larger-model')
         assert asyncio.run(service.context_capacity())['tokens'] == 1000000
         assert len(calls) == 2
+
+
+@pytest.mark.parametrize('model',['deepseek-flash','deepseek-v4-pro'])
+def test_deepseek_context_window_is_not_confused_with_output_budget(client,model):
+    with provider(lambda path:(200,{'data':[{'id':model,'context_window':1048576,'max_output_tokens':393216}]})) as (url,calls):
+        save(client,url,model=model,protocol='responses')
+        value=client.post('/api/settings/agent/context',headers=HEADERS).json()
+        assert value=={'tokens':1048576,'source':'provider','trigger_tokens':891289}

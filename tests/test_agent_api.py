@@ -206,6 +206,25 @@ def test_settings_mutations_require_local_page_header(client):
     assert client.post('/api/settings/agent/test').status_code == 403
     assert client.delete('/api/settings/agent/api-key').status_code == 403
     assert client.post('/api/settings/agent/models', headers={**HEADERS, 'Origin':'https://foreign.example'}).status_code == 403
+    assert client.put('/api/settings/agent/model', json={'model':'test-model'}).status_code == 403
+
+
+def test_assistant_model_switch_keeps_endpoint_key_and_rereads_capacity(client):
+    from backend.agent_api import AgentAPIService
+    with provider(lambda _: (200, {'data':[{'id':'model-a'},{'id':'model-b'}]})) as (url, calls):
+        save(client, url, context_window=123456)
+        response = client.put('/api/settings/agent/model', headers=HEADERS, json={'model':' model-b '})
+        assert response.status_code == 200, response.text
+        value = response.json()
+        assert value['model'] == 'model-b'
+        # The manual window belonged to the old model; capacity is resolved again for the new one.
+        assert value['context_window'] is None
+        assert value['base_url'] == url and value['has_api_key'] and value['api_key_saved']
+        assert AgentAPIService(client.app.state.agent_api.store, client.app.state.agent_api.vault).view()['model'] == 'model-b'
+        stale = client.put('/api/settings/agent/model', headers=HEADERS, json={'model':'model-a', 'profile_id':'no-such-profile'})
+        assert stale.status_code == 400
+        assert client.put('/api/settings/agent/model', headers=HEADERS, json={'model':'   '}).status_code == 400
+        assert client.get('/api/settings/agent').json()['model'] == 'model-b'
 
 
 def test_full_endpoint_at_host_root_preserves_the_exact_route(client):
@@ -296,3 +315,20 @@ def test_mainstream_provider_standard_routes(client, monkeypatch, base_url, mode
     assert response.json()['models'] == [model]
     assert str(seen[0].url) == base_url+'/models'
     assert seen[0].headers['Authorization'] == 'Bearer '+KEY
+
+
+def test_mismatched_saved_credential_is_reported_before_model_list_request(client, monkeypatch):
+    from backend.agent_api import credential_identity
+    service = client.app.state.agent_api
+    service.vault.put('provider', dict(identity=credential_identity({'base_url':'https://previous.example/v1'}), api_key=KEY))
+    called=[]
+    async def unexpected(*args, **kwargs):
+        called.append(True)
+        raise AssertionError('must not make an unauthenticated provider request')
+    monkeypatch.setattr(service, 'request', unexpected)
+    view=client.get('/api/settings/agent').json()
+    assert '\u4e0d\u5339\u914d' in view['credential_error']
+    response=client.post('/api/settings/agent/models', headers=HEADERS)
+    assert response.status_code==400
+    assert '\u4e0d\u5339\u914d' in response.json()['detail']
+    assert not called

@@ -4,12 +4,14 @@ from urllib.parse import urlsplit
 from .agent_api import ProviderFailure
 
 
-def response_input(messages):
+def response_input(messages, *, reasoning=False):
     result=[]
     for message in messages:
         if message['role']=='tool':
             result.append(dict(type='function_call_output',call_id=message['tool_call_id'],output=message['content']))
         else:
+            if reasoning and message.get('reasoning_content'):
+                result.append(dict(type='reasoning',content=[dict(type='reasoning_text',text=message['reasoning_content'])]))
             if message.get('content'):
                 result.append(dict(role=message['role'],content=message['content']))
             for call in message.get('tool_calls',[]):
@@ -21,17 +23,19 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
     config=dict(service.config)
     if not config.get('model'):
         raise ValueError('请先在设置中配置模型接口')
+    deepseek=urlsplit(config['base_url']).hostname=='api.deepseek.com'
     key=service.key_for(config)
     from .agent_provider_stream import TextSink, request_stream
     sink=TextSink(on_text,key) if on_text is not None else None
     protocols=['responses','chat_completions'] if config['protocol']=='auto' else [config['protocol']]
     for index,protocol in enumerate(protocols):
         if protocol=='responses':
-            payload=dict(model=config['model'],instructions=instructions,input=response_input(messages),store=False,stream=False,max_output_tokens=2400)
+            payload=dict(model=config['model'],instructions=instructions,input=response_input(messages,reasoning=deepseek),store=False,stream=False,max_output_tokens=16384 if deepseek else 2400)
             if tools:payload.update(tools=[dict(type='function',**tool) for tool in tools],tool_choice='auto')
+            if deepseek:payload['reasoning']=dict(effort='high')
             path='/responses'
         else:
-            payload=dict(model=config['model'],messages=[dict(role='system',content=instructions)]+messages,stream=False)
+            payload=dict(model=config['model'],messages=[dict(role='system',content=instructions)]+[{k:v for k,v in m.items() if k!='reasoning_content' or deepseek} for m in messages],stream=False)
             if tools:payload.update(tools=[dict(type='function',function=tool) for tool in tools],tool_choice='auto')
             path='/chat/completions'
         if urlsplit(config['base_url']).hostname=='open.bigmodel.cn' and config['model'].startswith('glm-'):
@@ -45,12 +49,14 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
         except ProviderFailure as exc:
             if exc.unsupported and index+1<len(protocols):continue
             raise
-        text=[];calls=[]
+        text=[];calls=[];reasoning=[]
         if protocol=='responses':
             if data.get('status') not in (None,'completed'):
                 raise ProviderFailure('模型响应被中断或未完成，本轮未能完成')
             for item in data.get('output',[]) if isinstance(data.get('output'),list) else []:
                 if not isinstance(item,dict):continue
+                if deepseek and item.get('type')=='reasoning':
+                    reasoning.extend(p['text'] for p in item.get('content',[]) if isinstance(p,dict) and p.get('type')=='reasoning_text' and isinstance(p.get('text'),str))
                 if item.get('type')=='function_call':
                     calls.append(dict(id=item.get('call_id'),name=item.get('name'),arguments=item.get('arguments')))
                 elif item.get('type')=='message':
@@ -60,6 +66,7 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
             choices=data.get('choices')
             message=choices[0].get('message') if isinstance(choices,list) and choices and isinstance(choices[0],dict) else None
             if isinstance(message,dict):
+                if deepseek and isinstance(message.get('reasoning_content'),str):reasoning.append(message['reasoning_content'])
                 if isinstance(message.get('content'),str):text.append(message['content'])
                 for call in message.get('tool_calls',[]) if isinstance(message.get('tool_calls'),list) else []:
                     function=call.get('function') if isinstance(call,dict) else None
@@ -87,5 +94,7 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
         if not content.strip() and not normalized:
             raise ProviderFailure('模型未返回文本或工具调用，请重试')
         if sink is not None:content=sink.emit(content,final=True)
-        return dict(message=dict(role='assistant',content=content,**({'tool_calls':normalized} if normalized else {})),
+        reasoning_text=''.join(reasoning)
+        if key:reasoning_text=reasoning_text.replace(key,'[redacted]')
+        return dict(message=dict(role='assistant',content=content,**({'reasoning_content':reasoning_text} if reasoning_text else {}),**({'tool_calls':normalized} if normalized else {})),
                     model=config['model'],protocol=protocol)

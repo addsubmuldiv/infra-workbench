@@ -36,6 +36,13 @@ def normalize_url(value: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc.lower(), path, '', ''))
 
 
+def clean_model_name(value: str) -> str:
+    value = value.strip()
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError('模型名称包含不支持的字符')
+    return value
+
+
 class AgentAPISettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
     profile_id: str | None = Field(default=None, max_length=64)
@@ -55,10 +62,7 @@ class AgentAPISettings(BaseModel):
     @field_validator('model')
     @classmethod
     def valid_model(cls, value):
-        value = value.strip()
-        if any(ord(char) < 32 or ord(char) == 127 for char in value):
-            raise ValueError('模型名称包含不支持的字符')
-        return value
+        return clean_model_name(value)
 
     @field_validator('api_key')
     @classmethod
@@ -185,6 +189,8 @@ class AgentAPIService:
             saved = self.vault.get(self.credential_slot())
             saved = bool(saved and saved.get('identity') == credential_identity(self.config))
             available, error = bool(self.credential()), ''
+            if not available and self.vault.get(self.credential_slot()):
+                error = '已保存的 API key 与当前接口地址不匹配，请在模型设置中核对地址并重新保存 API key'
         except Exception:
             saved, available, error = False, False, '无法读取 API key，请检查系统安全存储或重新填写'
         return dict(self.config, profile_id=self.active_id, active_id=self.active_id, default_id=self.default_id,
@@ -240,6 +246,21 @@ class AgentAPIService:
         self.last_test = None
         return self.view()
 
+    def set_model(self, body):
+        self.check_profile(body)
+        model = clean_model_name(body.model)
+        if not model:
+            raise ValueError('请填写模型名称')
+        # Switching models re-reads capacity for the new model, like the settings form does.
+        config = dict(self.config, model=model, context_window=None)
+        try:
+            self.persist(config=config)
+        except Exception:
+            raise ValueError('无法保存模型设置，请检查本地数据目录') from None
+        self.config = config
+        self.last_test = None
+        return self.view()
+
     def key_for(self, config, new_key=None):
         if new_key:
             return new_key.get_secret_value()
@@ -250,6 +271,8 @@ class AgentAPIService:
             raise ValueError('无法读取 API key，请重新填写或检查系统安全存储') from None
         if not value and existing and config['base_url'] != self.config['base_url']:
             raise ValueError('更换接口地址后请重新填写 API key，原密钥不会发送到新地址')
+        if not value and (self.memory or self.vault.get(self.credential_slot())):
+            raise ValueError('已保存的 API key 与当前接口地址不匹配，请在模型设置中核对地址并重新保存 API key')
         return value['api_key'] if value else ''
 
     async def request(self, config, key, path, payload=None):
@@ -418,6 +441,17 @@ class ProfileDetails(BaseModel):
         return value
 
 
+class ModelSwitch(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    profile_id: str | None = Field(default=None, max_length=64)
+    model: str = Field(max_length=200)
+
+    @field_validator('model')
+    @classmethod
+    def valid_model(cls, value):
+        return clean_model_name(value)
+
+
 def register_agent_api_routes(app, service):
     async def profile_action(action):
         async with service.lock:
@@ -457,6 +491,16 @@ def register_agent_api_routes(app, service):
                 raise HTTPException(400, str(exc)) from None
             except Exception:
                 raise HTTPException(400, '无法保存 Agent 设置，请检查系统安全存储') from None
+
+    @app.put('/api/settings/agent/model')
+    async def switch_model(body: ModelSwitch):
+        async with service.lock:
+            try:
+                return service.set_model(body)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+            except Exception:
+                raise HTTPException(400, '无法保存模型设置，请检查本地数据目录') from None
 
     @app.delete('/api/settings/agent/api-key')
     async def forget(profile_id: str | None = None):

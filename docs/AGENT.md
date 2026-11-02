@@ -139,3 +139,14 @@ SSH 工具执行预先定义的检查，不能接收任意 Shell、写文件、�
 切换后下一条消息使用新配置。正在运行的回复（包括工具调用和上下文压缩）仍沿用发起时的接口和密钥。每条新回复记录实际模型名称。已有对话可以继续，下一轮按新模型容量处理上下文。
 
 配置是工作台全局设置。多个窗口切换时会在窗口重新获得焦点后刷新；陈旧表单的保存、连接测试、密钥删除和聊天发送会检查配置 ID，避免误操作另一套配置。编辑内容尚未保存时先保存，或点击重新加载放弃修改。
+
+
+## DeepSeek Responses
+
+DeepSeek profile: `https://api.deepseek.com`, protocol `responses`, model `deepseek-flash` (or `deepseek-v4-pro`), timeout 120 seconds. Each API profile keeps its own credential.
+
+DeepSeek Responses is stateless. The workbench resends history and paired function calls/results; it does not rely on `previous_response_id`. The adapter preserves returned plain-text reasoning across tool follow-ups, including framework checkpoints. For the official DeepSeek endpoint, Responses uses `reasoning.effort=high` and a 16,384-token per-call output budget (including reasoning), rather than the generic 2,400-token budget. This is a workbench limit, not the provider maximum.
+
+Context capacity remains metadata-driven: current `/models` returns `context_window=1048576` for both models, separately from `max_output_tokens=393216`. Manual overrides take priority. At 85%, the compression trigger is 891,289 tokens. Unknown models without capacity metadata retain the conservative fallback.
+
+Sources checked 2026-11-01: https://api-docs.deepseek.com/zh-cn/guides/responses_api/ and https://api-docs.deepseek.com/zh-cn/quick_start/pricing/ . Live Responses streaming/function-call follow-up and `/models` capacity were verified with the configured DeepSeek credential.

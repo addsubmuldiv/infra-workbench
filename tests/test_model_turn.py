@@ -32,3 +32,33 @@ def test_chat_completions_uses_system_and_tool_roles(client):
         assert result['message']['tool_calls'][0]['id']=='call-chat'
         assert calls[0]['body']['messages'][0]==dict(role='system',content='规则')
         assert calls[0]['body']['tools'][0]['function']['name']=='inspect'
+
+
+def test_deepseek_responses_preserves_reasoning_for_tool_followup(client, monkeypatch):
+    from backend.agent_api import AgentAPISettings
+    service=client.app.state.agent_api
+    service.config=AgentAPISettings(base_url='https://api.deepseek.com',model='deepseek-flash',protocol='responses').model_dump(exclude={'api_key','remember','profile_id'})
+    calls=[]
+    async def request(config,key,path,payload):
+        calls.append(payload)
+        return {'status':'completed','output':[{'type':'reasoning','content':[{'type':'reasoning_text','text':'internal context'}]},{'type':'function_call','call_id':'probe','name':'inspect','arguments':'{}'}]}
+    monkeypatch.setattr(service,'request',request)
+    async def run():
+        first=await service.turn('rules',[{'role':'user','content':'check'}],[])
+        assert first['message']['reasoning_content']=='internal context'
+        await service.turn('rules',[first['message'],{'role':'tool','tool_call_id':'probe','content':'ok'}],[])
+    asyncio.run(run())
+    assert calls[0]['reasoning']=={'effort':'high'}
+    assert calls[0]['max_output_tokens']==16384
+    assert calls[1]['input'][0]=={'type':'reasoning','content':[{'type':'reasoning_text','text':'internal context'}]}
+
+
+def test_framework_roundtrip_keeps_reasoning_in_internal_metadata():
+    from backend.agent_langchain import WorkbenchChatModel,wire_messages
+    from langchain_core.messages import HumanMessage
+    class Provider:
+        async def turn(self,*args,**kwargs):
+            return {'message':{'role':'assistant','content':'done','reasoning_content':'internal context'}}
+    reply=asyncio.run(WorkbenchChatModel(Provider()).ainvoke([HumanMessage(content='check')]))
+    assert reply.content=='done'
+    assert wire_messages([reply])[0]['reasoning_content']=='internal context'
