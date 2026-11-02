@@ -60,11 +60,16 @@ try {
     Write-Host 'Installation complete. Next time, double-click the Run launcher.' -ForegroundColor Green
     Write-Host 'MCP endpoint (after service startup): http://127.0.0.1:8765/mcp'
     if (-not $NoLaunch) {
-        $launcher = if ($Console) { 'start.ps1' } else { 'background.ps1' }
-        $launchArguments = @{}
-        if ($NoBrowser) { $launchArguments.NoBrowser = $true }
-        & (Join-Path $PSScriptRoot $launcher) @launchArguments
-        exit $LASTEXITCODE
+        if ($Console -or $NoBrowser) {
+            $launcher = if ($Console) { 'start.ps1' } else { 'background.ps1' }
+            & (Join-Path $PSScriptRoot $launcher) -NoBrowser
+            exit $LASTEXITCODE
+        }
+        $gui = Join-Path $PSScriptRoot 'Infra Workbench.exe'
+        if (-not (Test-Path -LiteralPath $gui)) {
+            & (Join-Path $PSScriptRoot 'scripts\build-launcher.ps1') -DesktopShortcut
+        }
+        Start-Process -FilePath $gui -WorkingDirectory $PSScriptRoot
     }
     exit 0
 } catch {

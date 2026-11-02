@@ -10,39 +10,17 @@
 
 不要直接在 ZIP 预览窗口里运行，不要放在 Program Files 等受保护目录，也不要放在多人共享或自动同步的目录：`data` 可能包含专用 SSH 私钥。
 
-## 首次安装
+## 安装与日常启动
 
-拿到仓库或 ZIP，完整保留目录结构，双击根目录的 **`运行.cmd`**。无需打开终端或手工输入命令，首次安装和后续启动都使用这一个入口。
+双击根目录的 **Infra Workbench.exe** 或桌面同名快捷方式。日常只有这一个启动入口，不需要区分 start、background 或桌面版。
 
-脚本会依次检查系统和 OpenSSH、寻找 Python、创建 `.venv`、安装 `requirements.txt` 中的固定版本依赖、检查依赖，再启动系统托盘。确认本地服务就绪后打开浏览器，安装窗口自动关闭；程序继续在后台监控。没有 Python 时，CMD 入口会尝试用 WinGet 的 `Python.Python.3.12` 包以当前用户身份安装，不修改全局 PowerShell 执行策略。[WinGet 参数说明](https://learn.microsoft.com/windows/package-manager/winget/install)
+默认打开浏览器界面。进入「设置 → 启动与桌面浮窗」，可以改为桌面窗口；启动时只打开其中一种。桌面浮窗默认开启，也可在设置或托盘菜单关闭。
 
-安装失败时窗口保留错误。解决网络或依赖问题后，再次运行即可。只有全部依赖检查通过才会写入安装成功标记，已有虚拟环境不代表安装成功。
+已有依赖时，启动程序只运行隐藏的 Python 后台和选中的图形界面，不创建命令行窗口。首次缺少依赖、依赖版本更新或前端缺失时，才打开安装窗口；安装成功后继续启动选定界面。安装失败会显示图形错误提示，可检查数据目录中的 launch.log 与 desktop.log。
 
-重复双击会复用完整的安装环境，依赖文件变化时才重新安装依赖。已有托盘和本地服务会被复用，不会启动第二套监控或清空机器、规则。`install.cmd` 是等效的兼容入口。
+从 Git 源码克隆后若没有图形启动程序，运行一次 `install.cmd`，它会安装依赖、生成带图标的入口和桌面快捷方式。`install.cmd -NoLaunch` 可只安装，`install.cmd -Repair` 用于修复依赖。内部 start.ps1、background.ps1 仅供排障，不再是日常入口。
 
-只安装、不启动：
-
-```powershell
-.\install.cmd -NoLaunch
-```
-
-只检查环境、不安装软件或启动服务：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckOnly
-```
-
-直接调用 PS1 时，自动安装 Python 是可选参数 `-InstallPython`；CMD 入口默认启用。其余安装不提升系统权限。
-
-## 日常启动与连接
-
-双击 **`运行.cmd`**，直接打开界面并保持托盘运行。新启动时只监听 `127.0.0.1:8765`，不要改成 `0.0.0.0` 给其他人共享。
-
-`start.cmd` 用于控制台模式，保持启动窗口运行，按 Ctrl+C 停止服务。
-
-需要在安装后进入控制台，可使用 `install.cmd -Console`；只希望后台启动但暂不打开页面，可使用 `install.cmd -NoBrowser`。这些参数供排障和自动化使用，日常双击即可。
-
-日常仍使用 **`运行.cmd`** 即可；`background.cmd` 是后台启动入口。系统托盘提供桌面通知、打开工作台、通知开关及可选的登录启动。关闭网页后继续监控，无需浏览器通知权限。登录启动默认关闭，在托盘右键菜单中手动勾选。详细说明见 [系统托盘与后台监控](BACKGROUND.md)。
+关闭网页或桌面窗口后，托盘继续采集，浮窗也可继续显示。退出托盘才会停止后台。已有托盘会复用，不启动第二套后台，不清空机器、规则或主题。
 
 进入“添加机器”，可从 `%USERPROFILE%\.ssh\config` 及 Include 文件导入别名，也可以手动填写。每位同事使用自己的账号、SSH 配置和授权，不要复制你的 `data` 给别人。
 
@@ -87,3 +65,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -CheckOnly
 停止服务后，按需自行备份 `data`。其中数据库保存机器和规则，`data/keys` 可能保存专用私钥，备份应妥善保管。
 
 删除项目文件夹即可移除项目环境，不会卸载系统 Python 或修改原有 `.ssh/config`。如果启用过自动免密，删除项目不会撤销服务器上的公钥，需要本人核对后撤销相应 `authorized_keys` 条目。若使用过“记住 sudo 密码”，先在软件中删除相应已保存密码；Windows 凭据不在项目文件夹中。
+
+## 启动耗时
+
+启动前使用 100ms 上限的本机 TCP 探测判断端口是否开始监听，端口存在后仍校验完整 HTTP 健康响应。这样避免 Windows 上不存在的服务每次花约两秒等待连接失败。模型框架在首次执行 AI 对话时加载，不阻塞资源总览首屏；第一次对话可能需要额外初始化时间。`data/launch.log` 记录界面打开前的等待耗时。
+
+隔离测试命令：`.venv\Scripts\python.exe scripts/benchmark-cold-start.py`。测试使用临时数据和临时端口，不停止当前后台；结果只代表后台 HTTP 就绪，不包含浏览器 / WebView 打开及远端首次采集。

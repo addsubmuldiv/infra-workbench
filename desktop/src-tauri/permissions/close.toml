@@ -1,4 +1,19 @@
 [[permission]]
 identifier = "allow-close-desktop"
-description = "Close the desktop window after its unsaved-edit guard allows it."
+description = "Hide the desktop window while preserving its WebView state."
 commands.allow = ["close_desktop"]
+
+[[permission]]
+identifier = "allow-desktop-ready"
+description = "Show the local workbench only after its first interface has mounted."
+commands.allow = ["desktop_ready"]
+
+[[permission]]
+identifier = "allow-quick-window-action"
+description = "Control only the calling local machine tool window."
+commands.allow = ["quick_window_action"]
+
+[[permission]]
+identifier = "allow-open-quick-tool"
+description = "Open a local machine tool in a separate desktop window."
+commands.allow = ["open_quick_tool"]

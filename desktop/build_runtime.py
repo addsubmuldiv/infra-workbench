@@ -28,12 +28,14 @@ def main():
             '--add-data', str(ROOT/'backend'/'skills')+os.pathsep+'backend/skills',
             '--collect-submodules', 'deepagents', '--collect-submodules', 'langchain',
             '--collect-submodules', 'langgraph', '--recursive-copy-metadata', 'deepagents']
+    for theme_file in ('themes.css', 'journey.css'):
+        args += ['--add-data', str(ROOT/'frontend'/'src'/theme_file)+os.pathsep+'frontend/src']
     # SSH/file probes read their own source to send it to the remote interpreter.
     # Only explicit .py files are included, never backend caches or user data.
     for source in sorted((ROOT/'backend').glob('*.py')):
         args += ['--add-data', str(source)+os.pathsep+'backend']
     if sys.platform == 'win32':
-        args += ['--windowed', '--hidden-import', 'winpty', '--collect-binaries', 'winpty',
+        args += ['--windowed', '--hidden-import', 'tkinter', '--hidden-import', 'winpty', '--collect-binaries', 'winpty',
                  '--collect-data', 'winpty', '--exclude-module', 'winpty.tests',
                  '--icon', str(ROOT/'backend'/'assets'/'workbench.ico')]
     else:

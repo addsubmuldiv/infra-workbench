@@ -19,7 +19,7 @@ try {
     $ready = $false
     do {
         if ($process.HasExited -and $process.ExitCode -ne 0) {
-            throw ('Background startup failed (exit ' + $process.ExitCode + '). Check data\desktop.log or run start.cmd for details.')
+            throw ('Background startup failed (exit ' + $process.ExitCode + '). Check data\desktop.log or run start.ps1 for details.')
         }
         if ((Get-WorkbenchHealth) -and (Test-WorkbenchTrayReady)) { $ready = $true; break }
         # A duplicate may exit successfully while the old tray is still shutting
@@ -31,7 +31,7 @@ try {
         }
         Start-Sleep -Milliseconds 500
     } while ([DateTime]::UtcNow -lt $deadline)
-    if (-not $ready) { throw 'The service or tray did not become ready. Check data\desktop.log or run start.cmd for details. No existing process was stopped.' }
+    if (-not $ready) { throw 'The service or tray did not become ready. Check data\desktop.log or run start.ps1 for details. No existing process was stopped.' }
     if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:8765/' }
     Write-Host 'Infra Workbench is ready: http://127.0.0.1:8765/. You may close this window.' -ForegroundColor Green
     Write-Host 'Right-click the tray icon to open the dashboard, manage notifications or enable startup.'

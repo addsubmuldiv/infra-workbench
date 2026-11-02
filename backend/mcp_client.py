@@ -7,7 +7,6 @@ import asyncio
 import json
 from contextlib import asynccontextmanager, suppress
 
-from langchain_core.tools import StructuredTool
 from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 
@@ -77,6 +76,7 @@ def gateway_for(tools):
 
 
 async def discover_tools(client, secret):
+    from langchain_core.tools import StructuredTool
     specs, cursor = [], None
     from mcp import types
     while True:

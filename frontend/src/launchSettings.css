@@ -1,0 +1,5 @@
+.launch-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
+.launch-option{display:flex;align-items:center;gap:12px;padding:18px;text-align:left;border:1px solid var(--line);border-radius:14px;background:var(--panel2);color:var(--text);min-height:88px}
+.launch-option>span{flex:1}.launch-option strong{display:block;font-size:13px}.launch-option small{display:block;color:var(--muted);font-size:11px;line-height:1.6;margin-top:5px}
+.launch-option.selected{border-color:var(--accent);background:var(--accent-bg)}.launch-option.selected>svg{color:var(--accent)}.launch-option:disabled{opacity:.55;cursor:default}.launch-save{display:flex;justify-content:flex-end;margin-top:18px}
+@media(max-width:560px){.launch-options{grid-template-columns:1fr}}

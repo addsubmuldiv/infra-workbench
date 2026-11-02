@@ -38,3 +38,9 @@ desktop/src-tauri/icons/*
 
 # Local screenshots, validation scripts and temporary build receipts.
 /output/
+
+# Generated unified Windows launcher; built from scripts/WorkbenchLauncher.cs.
+/Infra Workbench.exe
+
+# Local build and UI verification artifacts.
+/outputs/

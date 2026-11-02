@@ -36,10 +36,8 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $fixture 'frontend\dist') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $root 'install.ps1') -Destination $fixture
     Copy-Item -LiteralPath (Join-Path $root 'start.ps1') -Destination $fixture
-    $runLauncher = -join @([char]0x8FD0, [char]0x884C, '.cmd')
-    Copy-Item -LiteralPath (Join-Path $root $runLauncher) -Destination $fixture
+    $runLauncher = 'install.cmd'
     Copy-Item -LiteralPath (Join-Path $root 'install.cmd') -Destination $fixture
-    Copy-Item -LiteralPath (Join-Path $root 'background.cmd') -Destination $fixture
     $fakeBackground = @'
 param([switch]$NoBrowser)
 Add-Content -LiteralPath (Join-Path $PSScriptRoot 'commands.log') -Value 'tray-launch'
@@ -49,9 +47,11 @@ Write-Host 'Fixture tray is ready.'
     Set-Content -LiteralPath (Join-Path $fixture 'background.ps1') -Value $fakeBackground -Encoding ASCII
     Set-Content -LiteralPath (Join-Path $fixture 'frontend\dist\index.html') -Value '<html>test</html>'
     Set-Content -LiteralPath (Join-Path $fixture 'requirements.txt') -Value 'test-package==1'
+    Set-Content -LiteralPath (Join-Path $fixture 'Infra Workbench.exe') -Value 'mock graphical executable'
     # Simulate external Python/pip only; run the actual installer and startup scripts.
     $fakeCommon = @'
 $fixtureRoot = Split-Path -Parent $PSScriptRoot
+function Start-Process { param([string]$FilePath,[string]$WorkingDirectory) Add-Content -LiteralPath (Join-Path $fixtureRoot 'commands.log') -Value 'gui-launch'; Write-Host 'Fixture GUI is ready.' }
 function Find-Python { return 'mock-python' }
 function Get-RequirementsHash {
     param([string]$Root)
@@ -113,7 +113,7 @@ function Test-PortAvailable { return $false }
     Pass 'a repaired dependency check can complete installation'
     $before = Count-Pip
     Run-Fixture -Arguments @()
-    Assert-True ($runExit -eq 0 -and $runOutput.Contains('Fixture tray is ready.') -and (Count-Pip) -eq $before) ('Default install must start the tray without reinstalling: ' + $runOutput)
+    Assert-True ($runExit -eq 0 -and $runOutput.Contains('Fixture GUI is ready.') -and (Count-Pip) -eq $before) ('Default install must use the unified GUI without reinstalling: ' + $runOutput)
     Pass 'one command installs and launches the tray by default'
     Run-Fixture -Arguments @('-NoBrowser')
     Assert-True ($runExit -eq 0 -and (Get-Content -LiteralPath (Join-Path $fixture 'commands.log')) -contains 'no-browser') 'NoBrowser must reach the tray launcher.'
@@ -171,13 +171,14 @@ function Test-PortAvailable { return $false }
     Copy-Item -LiteralPath (Join-Path $root 'scripts\release-windows.ps1') -Destination (Join-Path $fixture 'scripts')
     New-Item -ItemType Directory -Path (Join-Path $fixture 'docs') -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $fixture 'install.cmd') -Value '@echo test'
-    Set-Content -LiteralPath (Join-Path $fixture 'start.cmd') -Value '@echo test'
+    foreach ($folder in @('backend','backend\assets')) { New-Item -ItemType Directory -Path (Join-Path $fixture $folder) -Force | Out-Null }
+    foreach ($file in @('scripts\WorkbenchLauncher.cs','scripts\build-launcher.ps1','backend\launcher.py','backend\assets\workbench.ico')) { Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $fixture $file) }
     Set-Content -LiteralPath (Join-Path $fixture 'README.md') -Value '# Fixture'
     Set-Content -LiteralPath (Join-Path $fixture 'docs\WINDOWS.md') -Value '# Fixture setup'
     New-Item -ItemType Directory -Path (Join-Path $fixture 'data') -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $fixture 'data\private-test.txt') -Value 'synthetic-private-data'
     Invoke-Checked git.exe @('-C', $fixture, 'init', '-b', 'main', '--quiet')
-    Invoke-Checked git.exe @('-C', $fixture, 'add', '--', $runLauncher, 'install.cmd', 'install.ps1', 'start.cmd', 'start.ps1', 'background.cmd', 'background.ps1', 'scripts', 'frontend/dist/index.html', 'README.md', 'docs')
+    Invoke-Checked git.exe @('-C', $fixture, 'add', '--', 'install.cmd', 'install.ps1', 'start.ps1', 'background.ps1', 'backend', 'scripts', 'frontend/dist/index.html', 'README.md', 'docs')
     Invoke-Checked git.exe @('-C', $fixture, '-c', 'user.name=Installer Test', '-c', 'user.email=installer-test@example.invalid', 'commit', '--quiet', '-m', 'Test fixture')
     Run-Fixture -Script 'scripts/release-windows.ps1' -Arguments @()
     Assert-True ($runExit -eq 0) ('Release generation failed: ' + $runOutput)
@@ -186,7 +187,7 @@ function Test-PortAvailable { return $false }
     try {
         $names = @($archive.Entries | ForEach-Object { $_.FullName })
         Assert-True ($names -contains 'infra-workbench/install.cmd') 'Release is missing the installer.'
-        Assert-True ($names -contains ('infra-workbench/'+$runLauncher)) 'Release is missing the double-click entry.'
+        Assert-True ($names -contains 'infra-workbench/Infra Workbench.exe') 'Release is missing the graphical entry.'
         Assert-True (-not ($names -match '/(data|\.venv|\.git)/')) 'Untracked private/generated files leaked into the release.'
     } finally { $archive.Dispose() }
     Pass 'Git release contains the installer and excludes untracked private data'

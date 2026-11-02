@@ -372,7 +372,7 @@ function AddMachine({close,connected,imported}:{close:()=>void;connected:(messag
 }
 async function boot(){
  const root=document.getElementById('root')!;root.textContent='正在读取工作空间状态…';
- try{await initializeWorkspace();bootPreferences=loadPreferences(workspaceStorage);document.documentElement.dataset.theme=bootPreferences.theme;createRoot(root).render(<App/>)}
+ try{await initializeWorkspace();bootPreferences=loadPreferences(workspaceStorage);document.documentElement.dataset.theme=bootPreferences.theme;if(new URLSearchParams(location.search).has('tool')){const {QuickWindow}=await import('./QuickWindow');createRoot(root).render(<QuickWindow/>)}else createRoot(root).render(<App/>)}
  catch{root.textContent='无法读取工作空间状态，请确认后台已更新并运行。';const retry=document.createElement('button');retry.textContent='重试';retry.onclick=()=>{void boot()};root.append(retry)}
 }
 void boot();

@@ -26,6 +26,11 @@ DATA = Path(os.environ.get('IWB_DATA', str(ROOT/'data')))
 OPENER = build_opener(ProxyHandler({}))  # Never send local process data through a proxy.
 
 
+def open_workbench():
+    from backend.launcher import open_preferred_interface
+    open_preferred_interface(DATA,ROOT)
+
+
 def register_notification_identity(registry=None,shell=None,shortcut=None):
     """Give Windows a stable per-user app identity instead of pythonw.exe's."""
     if registry is None:
@@ -53,6 +58,10 @@ def register_notification_identity(registry=None,shell=None,shortcut=None):
 
 
 def get_api(path):
+    if path=='health':
+        from backend.local_service import loopback_listening
+        from urllib.parse import urlsplit
+        if not loopback_listening(port=urlsplit(URL).port or 80):raise URLError('Local service is not listening')
     with OPENER.open(Request(URL+'api/'+path), timeout=3) as response:
         return json.load(response)
 
@@ -351,24 +360,30 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 raise RuntimeError('Windows 未接受桌面通知请求')
             receipt['notification_accepted']=True
 
+    from backend.floating_monitor import get_monitor_controller
+    floating_monitor = get_monitor_controller() if not smoke_test else None
+
     def menu(hwnd):
         popup=user.CreatePopupMenu()
         if not popup: return
         try:
             for command,label,checked in [(1,'打开工作台',False),(2,'桌面通知',settings.notifications),
+                                          (6,'显示浮窗',bool(floating_monitor and floating_monitor.enabled)),
                                           (3,'登录 Windows 时启动',startup.enabled()),(4,'发送测试通知',False)]:
                 user.AppendMenuW(popup,8 if checked else 0,command,label)
             user.AppendMenuW(popup,0x800,0,None)
             user.AppendMenuW(popup,0,5,'退出托盘并停止后台监控')
             point=w.POINT();user.GetCursorPos(ctypes.byref(point));user.SetForegroundWindow(hwnd)
             selected=user.TrackPopupMenu(popup,0x100|2,point.x,point.y,0,hwnd,None)
-            if selected==1: webbrowser.open(URL)
+            if selected==1: open_workbench()
             elif selected==2:
                 settings.notifications=not settings.notifications;settings.save()
             elif selected==3:
                 startup.set(not startup.enabled())
             elif selected==4:
                 messages.put(('Infra Workbench','桌面通知测试：关闭浏览器后，托盘仍会提醒监控规则的资源变化。'))
+            elif selected==6:
+                floating_monitor.set_enabled(not floating_monitor.enabled)
             elif selected==5:
                 user.DestroyWindow(hwnd)
             user.PostMessageW(hwnd,0,0,0)
@@ -384,7 +399,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
             if message==0x113 and wp==1:
                 ensure_tray_icon(shell,icon_data);return 0
             if message==WM_TRAY:
-                if lp==0x203: webbrowser.open(URL)
+                if lp==0x203: open_workbench()
                 elif lp==0x405:
                     with notification_lock:
                         destination=clicks.target
@@ -399,6 +414,10 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
             if message==2:
                 logging.info('Tray window destroyed')
                 user.KillTimer(hwnd,1)
+                if floating_monitor: floating_monitor.shutdown()
+                if not smoke_test:
+                    from backend.launcher import shutdown_desktop
+                    shutdown_desktop(ROOT)
                 stop.set();shell.Shell_NotifyIconW(2,ctypes.byref(icon_data));user.PostQuitMessage(0);return 0
         except Exception:
             logging.exception('Desktop action failed')
@@ -444,7 +463,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
         messages.put(('Infra Workbench · 通知测试','这是系统托盘功能的测试通知，测试图标将自动退出。'))
     worker=threading.Thread(target=monitor,name='iwb-notifications',daemon=True)
     worker.start()
-    if open_browser: webbrowser.open(URL)
+    if open_browser: open_workbench()
     if smoke_test:
         threading.Timer(1,lambda:user.PostMessageW(hwnd,0x10,0,0)).start()
     try:
@@ -487,7 +506,7 @@ def main(argv=None):
     try:
         logging.info('Desktop launch pid=%s duplicate=%s',os.getpid(),duplicate)
         if duplicate:
-            if not args.no_browser: webbrowser.open(URL)
+            if not args.no_browser: open_workbench()
             return
         started_at=time.time()
         service.ensure()

@@ -1,6 +1,27 @@
 use reqwest::Url;
 use serde_json::Value;
 
+use std::sync::atomic::{AtomicBool,Ordering};
+
+pub struct DesktopSession { ready:AtomicBool, requested:AtomicBool }
+impl Default for DesktopSession {
+    fn default()->Self { Self {ready:AtomicBool::new(false),requested:AtomicBool::new(true)} }
+}
+impl DesktopSession {
+    pub fn request_show(&self)->bool { self.requested.store(true,Ordering::SeqCst);self.ready.load(Ordering::SeqCst) }
+    pub fn hide(&self) { self.requested.store(false,Ordering::SeqCst); }
+    pub fn mark_ready(&self)->bool { self.ready.store(true,Ordering::SeqCst);self.requested.load(Ordering::SeqCst) }
+}
+
+pub fn fade_duration_ms(visible:bool,animations_enabled:bool)->Option<u64> {
+    if !visible && animations_enabled {Some(300)} else {None}
+}
+pub fn fade_alpha(elapsed:u64,duration:u64)->u8 {
+    if duration==0 {return 255;}
+    let progress=(elapsed as f64/duration as f64).clamp(0.0,1.0);
+    (255.0*(progress*progress*(3.0-2.0*progress))).round() as u8
+}
+
 pub const SERVICE_URL: &str = "http://127.0.0.1:8765/";
 
 pub fn is_service_url(url: &Url) -> bool {
@@ -46,5 +67,43 @@ mod tests {
         for value in ["blob:https://evil.test/123", "blob:null/123", "https://evil.test/test.zip", "file:///tmp/test"] {
             assert!(!is_download_url(&Url::parse(value).unwrap()), "{value}");
         }
+    }
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::DesktopSession;
+    #[test]
+    fn cold_window_waits_for_ready_but_reopening_reuses_ready_view() {
+        let state=DesktopSession::default();
+        assert!(!state.request_show());
+        assert!(state.mark_ready());
+        state.hide();
+        assert!(state.request_show());
+    }
+    #[test]
+    fn closing_while_loading_does_not_reopen_unexpectedly() {
+        let state=DesktopSession::default();
+        state.hide();
+        assert!(!state.mark_ready());
+        assert!(state.request_show());
+    }
+}
+
+#[cfg(test)]
+mod fade_tests {
+    use super::{fade_duration_ms,fade_alpha};
+    #[test]
+    fn fade_only_when_hidden_and_system_animations_enabled() {
+        assert_eq!(fade_duration_ms(false,true),Some(300));
+        assert_eq!(fade_duration_ms(true,true),None);
+        assert_eq!(fade_duration_ms(false,false),None);
+    }
+    #[test]
+    fn fade_finishes_opaque_and_progresses_monotonically() {
+        assert_eq!(fade_alpha(0,150),0);
+        assert_eq!(fade_alpha(150,150),255);
+        let values:Vec<_>=(0..=150).map(|time|fade_alpha(time,150)).collect();
+        assert!(values.windows(2).all(|pair|pair[0]<=pair[1]));
     }
 }

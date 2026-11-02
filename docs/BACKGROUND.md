@@ -2,7 +2,7 @@
 
 本文介绍 Windows 托盘。macOS 菜单栏和通知差异见 [macOS 说明](MACOS.md#菜单栏与通知)。
 
-日常使用双击根目录的 **`运行.cmd`**，安装完成后工作台会在 Windows 系统托盘中运行。`background.cmd` 也可用于后台启动。首次运行会检查并安装项目运行环境，不需要额外安装托盘库，也不需要管理员权限。
+日常使用双击根目录的 **`Infra Workbench.exe`**，安装完成后工作台会在 Windows 系统托盘中运行。`Infra Workbench.exe` 也可用于后台启动。首次运行会检查并安装项目运行环境，不需要额外安装托盘库，也不需要管理员权限。
 
 ## 托盘菜单
 
@@ -32,9 +32,9 @@ SSH 断开、重连，以及采集或本地服务失败、恢复均不发送系�
 
 ## 与现有控制台服务共存
 
-后台启动会先检查本地服务。已有工作台服务时直接接入，不重启、不修改 SSH 会话；原来运行服务的窗口仍需保留。如果关闭那个窗口，页面会显示服务断开，托盘不会反复弹通知。希望完全脱离控制台运行时，先自行结束旧服务，再运行 background.cmd；托盘自己启动的服务不需要控制台窗口。
+后台启动会先检查本地服务。已有工作台服务时直接接入，不重启、不修改 SSH 会话；原来运行服务的窗口仍需保留。如果关闭那个窗口，页面会显示服务断开，托盘不会反复弹通知。希望完全脱离控制台运行时，先自行结束旧服务，再运行 Infra Workbench.exe；托盘自己启动的服务不需要控制台窗口。
 
-重复运行 background.cmd 只打开工作台，不会增加第二个托盘图标或第二套通知。
+重复运行 Infra Workbench.exe 只打开工作台，不会增加第二个托盘图标或第二套通知。
 
 ## 开机启动与卸载
 
@@ -44,4 +44,4 @@ SSH 断开、重连，以及采集或本地服务失败、恢复均不发送系�
 
 托盘错误日志保存在 `data/desktop.log`，最多保留两份各约 256 KB。运行后台入口后没有图标时，用 start.cmd 检查服务能否启动，并检查此日志。
 
-通知使用独立的 `InfraWorkbench.Desktop` 应用身份，显示名称和图标取自工作台本身。首次启动会注册当前用户的 `HKCU\Software\Classes\AppUserModelId\InfraWorkbench.Desktop`，并建立「开始菜单 → Infra Workbench」应用快捷方式，绑定相同的 AppUserModelID，让 Windows 能解析友好名称与图标。不会修改 Python 或其他程序的身份，也不会因此启用开机启动。更新前已经显示的旧通知不会被改写；退出旧托盘并重新运行 background.cmd 后，新通知使用新身份。卸载时可一并删除这份开始菜单快捷方式。
+通知使用独立的 `InfraWorkbench.Desktop` 应用身份，显示名称和图标取自工作台本身。首次启动会注册当前用户的 `HKCU\Software\Classes\AppUserModelId\InfraWorkbench.Desktop`，并建立「开始菜单 → Infra Workbench」应用快捷方式，绑定相同的 AppUserModelID，让 Windows 能解析友好名称与图标。不会修改 Python 或其他程序的身份，也不会因此启用开机启动。更新前已经显示的旧通知不会被改写；退出旧托盘并重新运行 Infra Workbench.exe 后，新通知使用新身份。卸载时可一并删除这份开始菜单快捷方式。

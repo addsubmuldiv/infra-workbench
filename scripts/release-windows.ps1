@@ -9,8 +9,7 @@ try {
     if ($files -match '(^|/)(data|\.venv|node_modules|__pycache__|\.git)(/|$)|(^|/)\.env($|\.)|\.(pem|key|db|sqlite)$|(^|/)id_(rsa|ed25519)') {
         throw 'Sensitive or generated local files are tracked. Remove them from Git before releasing.'
     }
-    $runLauncher = -join @([char]0x8FD0, [char]0x884C, '.cmd')
-    foreach ($required in @($runLauncher, 'install.cmd', 'install.ps1', 'background.cmd', 'background.ps1', 'start.cmd', 'scripts/windows-common.ps1', 'frontend/dist/index.html', 'README.md', 'docs/WINDOWS.md')) {
+    foreach ($required in @('scripts/WorkbenchLauncher.cs', 'scripts/build-launcher.ps1', 'backend/launcher.py', 'backend/assets/workbench.ico', 'install.cmd', 'install.ps1', 'scripts/windows-common.ps1', 'frontend/dist/index.html', 'README.md', 'docs/WINDOWS.md')) {
         & git cat-file -e ('HEAD:'+$required) 2>$null
         if ($LASTEXITCODE -ne 0) { throw "Required release file is not committed: $required" }
     }
@@ -26,6 +25,11 @@ try {
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
     & git archive --format=zip --prefix=infra-workbench/ -o $target HEAD
     if ($LASTEXITCODE -ne 0) { throw 'git archive failed.' }
+    & (Join-Path $root 'scripts\build-launcher.ps1')
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::Open($target, [IO.Compression.ZipArchiveMode]::Update)
+    try { [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $root 'Infra Workbench.exe'), 'infra-workbench/Infra Workbench.exe') | Out-Null } finally { $archive.Dispose() }
     Write-Host ('Release: ' + $target)
     Get-FileHash -LiteralPath $target -Algorithm SHA256 | Format-List
 } catch {

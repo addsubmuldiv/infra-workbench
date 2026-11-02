@@ -28,8 +28,7 @@ register_harness_profile('infra_workbench:configured', HarnessProfile(
     general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)))
 
 
-class RunLimit(ValueError):
-    pass
+from .agent_limits import RunLimit
 
 
 def pack_state(value):

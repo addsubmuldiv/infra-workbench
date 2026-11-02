@@ -10,7 +10,13 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel,ConfigDict,Field,field_validator
 from .chat_tools import scrub
-from .agent_runtime import RunLimit, run_deep_agent
+from .agent_limits import RunLimit
+
+async def run_deep_agent(*args,**kwargs):
+    # Resource monitoring and the first page do not need the model framework.
+    from .agent_runtime import run_deep_agent as execute
+    return await execute(*args,**kwargs)
+
 
 RULES='''你是 Infra Workbench 中面向用户的服务器助手，使用自然简洁的中文。
 业务流程优先读取匹配的已启用 skill；以 MCP tools/list 公开的工具和参数为准。

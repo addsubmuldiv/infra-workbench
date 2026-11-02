@@ -390,3 +390,53 @@ def test_windows_credential_roundtrip_in_app_owned_test_entry():
     finally:
         vault.delete(key)
     assert vault.get(key) is None
+
+@pytest.mark.parametrize('failure', [
+    (255, '', 'ssh: Connection reset by peer'),
+    (1, '', 'Traceback: remote helper temporarily unavailable'),
+    (1, '', 'sudo: PAM account management error: System error'),
+])
+def test_reopened_saved_sudo_recovers_after_transient_command_failure(failure):
+    async def scenario():
+        remote, vault = Remote(), Vault()
+        initial = SudoService(remote, vault)
+        host = dict(id='one', target='one')
+        await initial.configure(host, True, 'test-sudo-password', True)
+        reopened = SudoService(remote, vault)
+        original = remote.run
+        failed = False
+        async def flaky(host, command, source=None):
+            nonlocal failed
+            if '--inspect' in command and source is not None and not failed:
+                failed = True
+                return failure
+            return await original(host, command, source)
+        remote.run = flaky
+        assert await reopened.enrich(host, [4308], 1000) == {}
+        assert reopened.view(host)['status'] == 'error'
+        details = await reopened.enrich(host, [4308], 1000)
+        assert details['4308']['cwd'] == '/project'
+        assert reopened.view(host)['status'] == 'ready'
+        assert vault.values['one']['password'] == 'test-sudo-password'
+    asyncio.run(scenario())
+
+
+def test_explicit_sudo_policy_denial_stops_automatic_password_attempts():
+    async def scenario():
+        remote, vault = Remote(), Vault()
+        svc = SudoService(remote, vault)
+        host = dict(id='one', target='one')
+        await svc.configure(host, True, 'test-sudo-password', True)
+        original = remote.run
+        async def denied(host, command, source=None):
+            if '--inspect' in command:
+                remote.calls.append((host['id'], command, source))
+                return 1, '', 'sudo: alice is not allowed to execute this command as root'
+            return await original(host, command, source)
+        remote.run = denied
+        assert await svc.enrich(host, [4308], 1000) == {}
+        assert svc.view(host)['status'] == 'denied'
+        count = len(remote.calls)
+        assert await svc.enrich(host, [4308], 1000) == {}
+        assert len(remote.calls) == count
+    asyncio.run(scenario())

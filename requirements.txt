@@ -16,3 +16,5 @@ rumps==0.4.0; sys_platform == 'darwin'
 pyobjc-core==13.0; sys_platform == 'darwin'
 pyobjc-framework-Cocoa==13.0; sys_platform == 'darwin'
 PyYAML==6.0.3
+
+Pillow==13.0.0

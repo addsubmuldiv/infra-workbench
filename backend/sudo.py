@@ -135,7 +135,7 @@ MESSAGES = {
     'version_mismatch':'采集程序需要更新，请勾选安装后再保存',
     'unsafe':'远端采集程序或目录的所有者、权限不符合要求',
     'identity_changed':'SSH 目标或账号已变化，请重新验证 sudo 设置',
-    'error':'sudo 采集暂时失败，普通监控仍可使用',
+    'error':'sudo 采集暂时失败，将在后续采集时重试；普通监控仍可使用',
     'pending':'已启用，等待 sudo 采集验证',
 }
 
@@ -187,7 +187,22 @@ class SudoService:
     async def invoke(self, host, command, password, config):
         code, out, err = await self.run(host, command, password+'\n' if password is not None else None, config)
         if code:
-            status = 'password_required' if password is None and ('password' in err.lower() or 'terminal' in err.lower()) else 'denied'
+            # SSH, PAM infrastructure and helper failures are not evidence of
+            # rejected credentials. Only explicit sudo authentication/policy
+            # refusals may latch denied and stop future password attempts.
+            lines = [line.strip().lower() for line in err.splitlines()
+                     if line.strip().lower().startswith('sudo:')]
+            rejected = any(any(marker in line for marker in (
+                'incorrect password', 'authentication failure',
+                'not in the sudoers', 'not allowed to execute',
+                'may not run sudo', 'is not allowed to run sudo',
+            )) for line in lines)
+            needs_password = any(any(marker in line for marker in (
+                'a password is required', 'a terminal is required',
+                'no tty present', 'must have a tty',
+            )) for line in lines)
+            status = ('error' if code == 255 else 'denied' if rejected else
+                      'password_required' if password is None and needs_password else 'error')
             self.status(host,status)
             return None
         return out

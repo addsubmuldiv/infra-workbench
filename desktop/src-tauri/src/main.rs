@@ -1,8 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use infra_workbench_desktop::{is_download_url, is_service_url, valid_health, SERVICE_URL};
+use infra_workbench_desktop::{is_download_url, is_service_url, valid_health, DesktopSession, SERVICE_URL};
 use std::{path::PathBuf, process::{Command, Stdio}, sync::atomic::{AtomicBool, Ordering}, time::{Duration, Instant}};
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+mod window_fade;
+mod quick_window;
+use window_fade::restore_window;
 
 #[derive(Default)]
 struct Connecting(AtomicBool);
@@ -86,7 +89,10 @@ fn connect(window: WebviewWindow) {
             window.navigate(SERVICE_URL.parse().unwrap()).map_err(|e| e.to_string())?;
             Ok(())
         })();
-        if let Err(error) = result { status(&window, &error); }
+        if let Err(error) = result {
+            status(&window, &error);
+            if handle.state::<DesktopSession>().mark_ready() { restore_window(&window,false); }
+        }
         handle.state::<Connecting>().0.store(false, Ordering::SeqCst);
     });
 }
@@ -95,25 +101,68 @@ fn connect(window: WebviewWindow) {
 fn close_desktop(window: WebviewWindow) -> Result<(), String> {
     let url = window.url().map_err(|e| e.to_string())?;
     if !is_service_url(&url) && !bootstrap_url(&url) { return Err("不允许的页面".into()); }
-    window.app_handle().exit(0);
+    window.state::<DesktopSession>().hide();
+    window.hide().map_err(|error|error.to_string())
+}
+
+#[tauri::command]
+fn desktop_ready(window: WebviewWindow) -> Result<(), String> {
+    if !window.url().map(|url|is_service_url(&url)).unwrap_or(false) { return Err("不允许的页面".into()); }
+    if window.label().starts_with("quick-") { restore_window(&window,false);return Ok(()); }
+    if window.state::<DesktopSession>().mark_ready() {
+        restore_window(&window,false);
+    }
     Ok(())
 }
+
+const READY_SCRIPT: &str = r#"
+(() => {
+  if (location.origin !== 'http://127.0.0.1:8765') return;
+  let pending=false;
+  const observer=new MutationObserver(ready);
+  function ready() {
+    const root=document.getElementById('root');
+    if (pending || !root || !(root.querySelector('.shell') || (location.search.includes('tool=') ? root.querySelector('.terminal-dock,.file-browser,[role=alert]') : root.querySelector('button')))) return;
+    pending=true;
+    // Hidden WebViews can suspend animation frames; do not wait on requestAnimationFrame.
+    setTimeout(() => {
+      const invoke=window.__TAURI_INTERNALS__?.invoke;
+      if (!invoke) { pending=false;setTimeout(ready,50);return; }
+      invoke('desktop_ready').then(()=>observer.disconnect()).catch(()=>{pending=false;setTimeout(ready,100)});
+    },100);
+  }
+  observer.observe(document,{childList:true,subtree:true});
+  ready();
+})();
+"#;
 
 fn main() {
     tauri::Builder::default()
         .manage(Connecting::default())
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        .manage(DesktopSession::default())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if args.iter().any(|arg|arg=="--quit-desktop") { app.exit(0);return; }
+            if let Some((tool,host))=quick_window::request(&args) { let _=quick_window::open(app,&tool,&host);return; }
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus();
+                if app.state::<DesktopSession>().request_show() {
+                    restore_window(&window,true);
+                }
             }
         }))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![close_desktop])
+        .plugin(tauri_plugin_window_state::Builder::default()
+            .with_filter(|label|label=="main")
+            .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE | tauri_plugin_window_state::StateFlags::POSITION | tauri_plugin_window_state::StateFlags::MAXIMIZED).build())
+        .invoke_handler(tauri::generate_handler![close_desktop, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
         .setup(|app| {
+            if std::env::args().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
+            if let Some((tool,host))=quick_window::request(&std::env::args().collect::<Vec<_>>()) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
             #[cfg(target_os = "macos")]
             app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
+                .visible(false)
+                .background_color(tauri::window::Color(242,245,249,255))
+                .initialization_script(READY_SCRIPT)
                 .disable_drag_drop_handler() // Keep HTML file/folder upload handlers in the shared UI.
                 .on_navigation(|url| {
                     if is_service_url(url) || bootstrap_url(url) { return true; }
@@ -153,17 +202,9 @@ fn main() {
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    if close_window.url().map(|url| !is_service_url(&url)).unwrap_or(true) {
-                        close_window.app_handle().exit(0);
-                        return;
-                    }
-                    // Reuse existing editor beforeunload guards, including on WKWebView.
-                    let _ = close_window.eval(r#"(() => {
-                      const event = new Event('beforeunload', {cancelable:true});
-                      const clean = window.dispatchEvent(event);
-                      if (clean || window.confirm('存在未保存的修改。关闭窗口会丢弃修改，是否继续？'))
-                        window.__TAURI_INTERNALS__.invoke('close_desktop');
-                    })()"#);
+                    // Hiding does not unload the WebView, discard editors or close SSH tabs.
+                    close_window.state::<DesktopSession>().hide();
+                    let _ = close_window.hide();
                 }
             });
             Ok(())
@@ -173,7 +214,10 @@ fn main() {
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
                 api.prevent_exit();
-                if let Some(window) = app.get_webview_window("main") { let _ = window.close(); }
+                if let Some(window) = app.get_webview_window("main") {
+                    app.state::<DesktopSession>().hide();
+                    let _ = window.hide();
+                }
             }
         });
 }

@@ -24,6 +24,8 @@ class StatePatch(BaseModel):
 def register_workspace_state(app, store):
     lock = threading.RLock()
     key = 'workspace_ui_state_v1'
+    from .floating_theme import update_shared_theme
+    update_shared_theme(store.load(key, {'revision':0,'values':{}}))
 
     @app.get('/api/workspace-state')
     async def read_workspace_state(response: Response):
@@ -51,4 +53,5 @@ def register_workspace_state(app, store):
             if values != state['values']:
                 state = {'revision': state['revision'] + 1, 'values': values}
                 store.save(key, state)
+                update_shared_theme(state)
             return state

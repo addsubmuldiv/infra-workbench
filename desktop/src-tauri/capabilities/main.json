@@ -2,7 +2,19 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
   "description": "The shared UI has no filesystem, shell or process plugin access.",
-  "windows": ["main"],
-  "remote": { "urls": ["http://127.0.0.1:8765/*"] },
-  "permissions": ["allow-close-desktop"]
+  "windows": [
+    "main",
+    "quick-*"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:8765/*"
+    ]
+  },
+  "permissions": [
+    "allow-close-desktop",
+    "allow-desktop-ready",
+    "allow-quick-window-action",
+    "allow-open-quick-tool"
+  ]
 }

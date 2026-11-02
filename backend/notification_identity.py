@@ -52,8 +52,10 @@ def ensure_shortcut(root,app_id):
                                    ctypes.byref(Guid('000214f9-0000-0000-c000-000000000046')),ctypes.byref(link)))
         pointers.append(link)
         # IShellLinkW vtable: SetPath, SetArguments, SetWorkingDirectory, SetDescription.
-        arguments=['--no-browser'] if frozen else [str(root/'backend'/'desktop.py')]
-        for index,value in ((20,str(pythonw)),(11,subprocess.list2cmdline(arguments)),
+        gui=root/'Infra Workbench.exe'
+        arguments=[] if gui.is_file() else (['--no-browser'] if frozen else [str(root/'backend'/'desktop.py')])
+        target=gui if gui.is_file() else pythonw
+        for index,value in ((20,str(target)),(11,subprocess.list2cmdline(arguments)),
                             (9,str(root)),(7,'Infra Workbench - GPU / NPU resource workspace')):
             check(method(link,index,[w.LPCWSTR])(link,value))
         check(method(link,17,[w.LPCWSTR,ctypes.c_int])(link,str(root/'backend'/'assets'/'workbench.ico'),0))
