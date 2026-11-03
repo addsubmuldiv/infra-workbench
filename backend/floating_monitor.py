@@ -65,6 +65,17 @@ def device_status(device, fresh):
     return 'idle' if device.get('processes_known') is True else 'unknown'
 
 
+def process_tooltip_lines(processes):
+    """Include available /proc paths without truncating process details."""
+    lines = []
+    for process in processes:
+        lines.append(f"PID {process.get('pid','?')} · {process.get('user') or '?'} · {process.get('name') or '?'}")
+        for key, label in (('cwd', '工作目录'), ('executable', '可执行文件')):
+            if process.get(key):
+                lines.append(f'{label}  {process[key]}')
+    return lines
+
+
 class MonitorSettings:
     def __init__(self, path):
         self.path = Path(path)
@@ -964,9 +975,7 @@ class FloatingMonitor:
             processes=device.get('processes',[])
             if processes:
                 lines.append(f'进程  {len(processes)} 个')
-                for process in processes[:3]:
-                    lines.append(f"PID {process.get('pid','?')} · {process.get('user') or '?'} · {str(process.get('name',''))[:70]}")
-                if len(processes)>3:lines.append(f'另有 {len(processes)-3} 个进程')
+                lines.extend(process_tooltip_lines(processes))
             else:lines.append('无进程' if device.get('processes_known') else '进程信息未知')
             tip=self.tk.Toplevel(self.root)
             self._tooltip_window=tip
@@ -978,7 +987,7 @@ class FloatingMonitor:
             body.pack(fill='both',expand=True,padx=1,pady=1)
             self.label(body,f"{host['target']} · {device.get('display_id',device_id)} · {status}",fg=color,
                        font=('Microsoft YaHei UI',9,'bold'),wraplength=round(300*self.dpi_scale),justify='left').pack(anchor='w',padx=12,pady=(10,5))
-            self.label(body,'\n'.join(line for line in lines if line),wraplength=round(300*self.dpi_scale),justify='left').pack(anchor='w',padx=12,pady=(0,10))
+            self.label(body,'\n'.join(line for line in lines if line),wraplength=round(480*self.dpi_scale),justify='left').pack(anchor='w',padx=12,pady=(0,10))
             tip.update_idletasks()
             left,top,width,height=self.desktop_bounds()
             px=x if x+tip.winfo_reqwidth()<=left+width else x-24-tip.winfo_reqwidth()

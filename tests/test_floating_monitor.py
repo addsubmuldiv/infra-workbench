@@ -3,6 +3,18 @@ import json
 from backend.floating_monitor import MonitorSettings, device_status
 
 
+def test_hover_process_details_preserve_paths_and_all_processes():
+    from backend.floating_monitor import process_tooltip_lines
+    path = '/home/miniconda3/envs/' + 'training_environment_' * 8 + '/bin/python3.12'
+    processes = [dict(pid=i, user='root', name='python', cwd='/tmp/training/worktree',
+                      executable=path) for i in range(5)]
+    text = '\n'.join(process_tooltip_lines(processes))
+    assert path in text
+    assert '工作目录  /tmp/training/worktree' in text
+    assert 'PID 4 · root · python' in text
+    assert 'None' not in '\n'.join(process_tooltip_lines([dict(pid=9, name='python')]))
+
+
 def test_unknown_is_never_idle():
     assert device_status({'processes': [], 'processes_known': True}, False) == 'unknown'
     assert device_status({'processes': [], 'processes_known': False}, True) == 'unknown'
