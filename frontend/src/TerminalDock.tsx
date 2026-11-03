@@ -9,6 +9,7 @@ import {toolText as tt} from './toolI18n';
 import {useWorkspaceRestore} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
 import {browserId} from './browserId';
+import {TERMINAL_INPUT_EVENT,TERMINAL_TARGETS_EVENT,prepareTerminalInput} from './terminalInput';
 import React,{forwardRef,useEffect,useImperativeHandle,useRef,useState} from 'react';
 import {Terminal as XTerminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
@@ -31,7 +32,7 @@ type Host={id:string;target:string;user:string|null};
 export type TerminalRequest={id:string;host:Host;cwd?:string};
 type Phase='connecting'|'running'|'closed'|'error';
 type Tab={id:string;host:Host;phase:Phase;generation:number;cwd?:string;session?:string};
-type Handle={capture:(source:TerminalAttachment['source'])=>TerminalAttachment|null;clear:()=>void;copy:()=>void;focus:()=>void;scrollToBottom:()=>void;search:()=>void;cwd:()=>string|undefined;reconnect:()=>void};
+type Handle={insert:(text:string)=>boolean;capture:(source:TerminalAttachment['source'])=>TerminalAttachment|null;clear:()=>void;copy:()=>void;focus:()=>void;scrollToBottom:()=>void;search:()=>void;cwd:()=>string|undefined;reconnect:()=>void};
 const labels=():Record<Phase,string>=>({connecting:tt("正在连接"),running:tt("会话运行中"),closed:tt("连接已结束"),error:tt("连接失败")});
 // Windows clipboard-history injection can omit code on its synthetic Ctrl+V.
 const clipboardKey=(event:KeyboardEvent,key:'c'|'v')=>event.code==='Key'+key.toUpperCase()||(!event.code&&(event.key?.toLowerCase()===key||event.keyCode===key.toUpperCase().charCodeAt(0)));
@@ -61,7 +62,7 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
   const rendererRef=useRef<ReturnType<typeof terminalRenderer>|null>(null);
   const cwdRef=useRef<string|undefined>(tab.cwd),reconnectRef=useRef<(()=>void)|null>(null);
   const directoryRef=useRef(onDirectory);directoryRef.current=onDirectory;
-  useImperativeHandle(ref,()=>({capture:source=>terminal.current?captureTerminal(terminal.current,{host_id:tab.host.id,label:tab.host.target,terminal_id:tab.id,session_id:tab.session,cwd:cwdRef.current},source):null,cwd:()=>cwdRef.current,reconnect:()=>reconnectRef.current?.(),search:()=>setSearchOpen(true),clear:()=>terminal.current?.clear(),focus:()=>terminal.current?.focus(),scrollToBottom:()=>terminal.current?.scrollToBottom(),copy:()=>{
+  useImperativeHandle(ref,()=>({insert:text=>{const term=terminal.current;if(!term||!pasteRef.current||socketRef.current?.readyState!==WebSocket.OPEN)return false;if(/[\r\n]/.test(text)&&!term.modes.bracketedPasteMode)return false;pasteRef.current(text);term.focus();return true},capture:source=>terminal.current?captureTerminal(terminal.current,{host_id:tab.host.id,label:tab.host.target,terminal_id:tab.id,session_id:tab.session,cwd:cwdRef.current},source):null,cwd:()=>cwdRef.current,reconnect:()=>reconnectRef.current?.(),search:()=>setSearchOpen(true),clear:()=>terminal.current?.clear(),focus:()=>terminal.current?.focus(),scrollToBottom:()=>terminal.current?.scrollToBottom(),copy:()=>{
     const text=terminal.current?.getSelection();if(text)navigator.clipboard.writeText(text).catch(()=>{});
   }}),[]);
   useEffect(()=>{
@@ -253,6 +254,19 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   const add=(host:Host,cwd?:string,session?:string)=>{if(session){const existing=tabs.find(t=>t.host.id===host.id&&t.session===session);if(existing){if(['closed','error'].includes(existing.phase))setTabs(old=>old.map(t=>t.id===existing.id?{...t,generation:t.generation+1,phase:'connecting'}:t));setActive(existing.id);setCollapsed(false);setPicker(false);return}}if(tabs.length>=12){setHint(tt("最多同时打开 12 个终端"));return}const id=browserId();setTabs(old=>[...old,{id,host,phase:'connecting',generation:0,cwd,session}]);setActive(id);setCollapsed(false);setPicker(false)};
   useEffect(()=>{if(request){const existing=request.cwd===undefined?tabs.find(tab=>tab.host.id===request.host.id):undefined;if(existing){setActive(existing.id);setCollapsed(false)}else add(request.host,request.cwd)}},[request]);
   useEffect(()=>{setTabs(old=>old.filter(tab=>hosts.some(host=>host.id===tab.host.id)))},[hosts.map(host=>host.id).join(',')]);
+  useEffect(()=>{
+    const targets=(event:Event)=>(event as CustomEvent).detail(tabs.map((tab,index)=>({terminal_id:tab.id,label:tab.host.target,number:String(index+1).padStart(2,'0'),cwd:handles.current[tab.id]?.cwd(),phase:tab.phase})));
+    window.addEventListener(TERMINAL_TARGETS_EVENT,targets);
+    const receive=(event:Event)=>{
+      const input=(event as CustomEvent).detail;
+      const tab=tabs.find(tab=>tab.id===input?.terminal_id);
+      if(!tab)return;
+      if(tab.phase!=='running'){setHint(tt('目标终端已关闭或尚未连接'));input.reply?.('目标终端已关闭或尚未连接');return}
+      if(typeof input.text!=='string')return;
+      try{const text=prepareTerminalInput(input.text);if(!handles.current[tab.id]?.insert(text)){setHint(tt('无法填入命令；多行命令需要终端支持安全粘贴'));input.reply?.('无法填入命令；多行命令需要终端支持安全粘贴');return}setActive(tab.id);setCollapsed(false);if(dock.current)activateFloatingWindow({currentTarget:dock.current,target:dock.current});setTimeout(()=>handles.current[tab.id]?.focus(),0);setHint(tt('命令已填入，请检查后按 Enter 执行'));input.reply?.('')}catch(error){setHint(String(error));input.reply?.(String(error))}
+    };
+    window.addEventListener(TERMINAL_INPUT_EVENT,receive);return()=>{window.removeEventListener(TERMINAL_INPUT_EVENT,receive);window.removeEventListener(TERMINAL_TARGETS_EVENT,targets)};
+  },[tabs]);
   useEffect(()=>{if(tabs.length&&!tabs.some(tab=>tab.id===active))setActive(tabs[tabs.length-1]!.id)},[tabs,active]);
   useEffect(()=>{
     const resize=()=>{setFrame(old=>fitTerminalFrame(old,terminalViewport()));gesture.current=null;setDragging(false)};

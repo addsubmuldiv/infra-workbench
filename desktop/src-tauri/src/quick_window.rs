@@ -5,6 +5,8 @@ static NEXT: AtomicUsize = AtomicUsize::new(1);
 // Per-window, memory-only handoff. Never send terminal text through navigation
 // URLs or persist it as workspace state. The receiver can drain only its own key.
 static CONTEXTS: LazyLock<Mutex<HashMap<String,Vec<serde_json::Value>>>>=LazyLock::new(||Mutex::new(HashMap::new()));
+static INPUTS: LazyLock<Mutex<HashMap<String,Vec<serde_json::Value>>>>=LazyLock::new(||Mutex::new(HashMap::new()));
+static TARGETS: LazyLock<Mutex<HashMap<String,Vec<serde_json::Value>>>>=LazyLock::new(||Mutex::new(HashMap::new()));
 
 fn check_context(items:&[serde_json::Value])->Result<(),String>{
     if items.len()>3 {return Err("终端附件数量超出限制".into());}
@@ -69,8 +71,8 @@ fn open_with_path(app: &tauri::AppHandle, tool: &str, host: &str, path: Option<&
     if let Some(path)=path { url.query_pairs_mut().append_pair("cwd",path); }
     if let Some(channel)=channel {url.query_pairs_mut().append_pair("channel",channel);}
     let label=companion.map(|source|format!("quick-assistant-{}",source.label())).unwrap_or_else(||format!("quick-{}",NEXT.fetch_add(1,Ordering::Relaxed)));
-    if let (Some(source),Some(existing))=(companion,app.get_webview_window(&label)) {
-        place_companion(source,&existing).map_err(|message|tauri::Error::Io(std::io::Error::other(message)))?;
+    if let (Some(_source),Some(existing))=(companion,app.get_webview_window(&label)) {
+        // Reusing the companion must preserve the user's size and position.
         if existing.url()?.query_pairs().find(|(key,_)|key=="channel").map(|(_,value)|value.into_owned())!=channel.map(str::to_owned) {existing.navigate(url)?;}
         existing.unminimize()?;existing.show()?;existing.set_focus()?;return Ok(());
     }
@@ -120,9 +122,43 @@ fn open_with_path(app: &tauri::AppHandle, tool: &str, host: &str, path: Option<&
 }
 
 #[tauri::command]
-pub fn quick_window_action(window: tauri::WebviewWindow, action: String) -> Result<serde_json::Value,String> {
+pub fn quick_window_action(window: tauri::WebviewWindow, action: String, input: Option<serde_json::Value>) -> Result<serde_json::Value,String> {
     if !window.label().starts_with("quick-") || !window.url().map(|u|infra_workbench_desktop::is_service_url(&u)).unwrap_or(false) {
         return Err("不允许的窗口".into());
+    }
+    if action=="publish-terminal-targets" {
+        if !window.url().map(|u|u.query_pairs().any(|(k,v)|k=="tool"&&v=="terminal")).unwrap_or(false) {return Err("无效的终端窗口".into());}
+        let items=input.and_then(|v|v.as_array().cloned()).ok_or("无效的终端列表")?;
+        if items.len()>12 || serde_json::to_vec(&items).map_err(|e|e.to_string())?.len()>100_000 {return Err("终端列表超出限制".into());}
+        TARGETS.lock().map_err(|_|"无法更新终端列表")?.insert(window.label().to_owned(),items);
+        return Ok(serde_json::Value::Null);
+    }
+    if action=="list-terminal-targets" {
+        let source=window.label().strip_prefix("quick-assistant-").ok_or("只允许配对助手读取终端列表")?;
+        if window.app_handle().get_webview_window(source).is_none(){return Ok(serde_json::json!([]));}
+        return Ok(serde_json::Value::Array(TARGETS.lock().map_err(|_|"无法读取终端列表")?.get(source).cloned().unwrap_or_default()));
+    }
+    if action=="send-terminal-input" {
+        let source=window.label().strip_prefix("quick-assistant-").ok_or("只允许配对助手发送命令")?;
+        let source_window=window.app_handle().get_webview_window(source).ok_or("原终端窗口已关闭")?;
+        if !source_window.url().map(|u|infra_workbench_desktop::is_service_url(&u)&&u.query_pairs().any(|(k,v)|k=="tool"&&v=="terminal")).unwrap_or(false) {return Err("无效的终端窗口".into());}
+        let value=input.ok_or("缺少命令")?;
+        let text=value.get("text").and_then(|v|v.as_str()).ok_or("无效的命令")?;
+        let terminal=value.get("terminal_id").and_then(|v|v.as_str()).ok_or("缺少终端标签")?;
+        if text.trim().is_empty() || text.chars().count()>12000 || text.chars().any(|c|c.is_control()&&c!='\n'&&c!='\t') || terminal.is_empty() || terminal.len()>256 {return Err("无效的命令".into());}
+        let mut inputs=INPUTS.lock().map_err(|_|"无法传递命令")?;
+        let queue=inputs.entry(source.to_owned()).or_default();
+        if queue.len()>=3 {return Err("请等待终端接收之前的命令".into());}
+        queue.push(value);
+        drop(inputs);
+        source_window.unminimize().map_err(|e|e.to_string())?;
+        source_window.show().map_err(|e|e.to_string())?;
+        source_window.set_focus().map_err(|e|e.to_string())?;
+        return Ok(serde_json::Value::Null);
+    }
+    if action=="take-terminal-input" {
+        if !window.url().map(|u|u.query_pairs().any(|(k,v)|k=="tool"&&v=="terminal")).unwrap_or(false) {return Err("只允许终端接收命令".into());}
+        return Ok(serde_json::Value::Array(INPUTS.lock().map_err(|_|"无法读取命令")?.remove(window.label()).unwrap_or_default()));
     }
     if action=="take-terminal-context" {
         if !window.label().starts_with("quick-assistant-") {return Err("只允许助手窗口接收终端附件".into());}
@@ -178,7 +214,8 @@ mod tests {
 }
 
 #[tauri::command]
-pub fn open_quick_tool(window: tauri::WebviewWindow, tool: String, host: String, path: Option<String>, channel: Option<String>, attachments:Option<Vec<serde_json::Value>>) -> Result<(),String> {
+pub async fn open_quick_tool(window: tauri::WebviewWindow, tool: String, host: String, path: Option<String>, channel: Option<String>, attachments:Option<Vec<serde_json::Value>>) -> Result<(),String> {
+    // WebView2 window creation must run outside the UI thread to avoid deadlock.
     if !window.label().starts_with("quick-") || !window.url().map(|u|infra_workbench_desktop::is_service_url(&u)).unwrap_or(false) {
         return Err("不允许的窗口".into());
     }

@@ -7,6 +7,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import 'katex/dist/katex.min.css';
 import {MermaidDiagram} from './MermaidDiagram';
+import {TERMINAL_PICK_EVENT} from './terminalInput';
 
 // Keep renderer identities stable so streaming does not remount scrolled tables.
 const components:Components={
@@ -17,7 +18,7 @@ const components:Components={
       const source=code.children.filter(child=>child.type==='text').map(child=>child.value).join('');
       return <MermaidDiagram source={source}/>;
     }
-    return <pre {...props}>{children}</pre>;
+    return <div className="chat-code-container"><pre {...props}>{children}</pre><button className="chat-code-insert" onClick={event=>{const element=event.currentTarget;window.dispatchEvent(new CustomEvent(TERMINAL_PICK_EVENT,{detail:{text:element.previousElementSibling?.textContent||'',element}}))}}>{ui('填入终端…')}</button></div>;
   },
   a:({node,...props})=><a {...props} target={/^https?:\/\//i.test(props.href||'')?'_blank':undefined} rel="noopener noreferrer"/>,
   table:({node,...props})=><div className="chat-markdown-table" role="region" aria-label={ui("消息表格")} tabIndex={0}><table {...props}/></div>,

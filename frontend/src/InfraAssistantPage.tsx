@@ -7,6 +7,7 @@ import {Sparkles} from 'lucide-react';
 import {assistantRequest,type AssistantStatus} from './infraAssistant';
 import './infraAssistant.css';
 import {AssistantChat} from './AssistantChat';
+import {TerminalInsert} from './TerminalInsert';
 
 type AssistantProps={compact?:boolean;openSettings:()=>void;selectedHostIds?:string[]};
 export function InfraAssistant(props:AssistantProps){return isDemo?<DemoAssistant/>:<LiveInfraAssistant {...props}/>}
@@ -28,5 +29,6 @@ function LiveInfraAssistant({openSettings,selectedHostIds=[],compact=false}:{com
     {status&&!status.configured&&<div className="assistant-note">{t('内置助手需要配置模型接口；本机 Codex 可在下方执行引擎中选择。','Configure a model API for the built-in assistant, or select local Codex below.')}</div>}
     {status?.credential_error&&<div className="assistant-error">{status.credential_error}</div>}
     <div className="assistant-tab-content assistant-chat-tab"><AssistantChat configured={!!status?.configured} selectedHostIds={selectedHostIds} model={status?.model} openSettings={openSettings}/></div>
+    <TerminalInsert/>
   </section>;
 }

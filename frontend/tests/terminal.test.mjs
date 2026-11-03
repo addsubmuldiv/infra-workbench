@@ -87,7 +87,7 @@ function harness(t,{tabs=null,initialStates={}}={}){
     if(name==='@xterm/xterm')return {Terminal};
     if(name==='@xterm/addon-search')return {SearchAddon:class {onDidChangeResults(){return {dispose(){}}}clearDecorations(){}}};
     if(name==='@xterm/addon-fit')return {FitAddon:class {fit(){}proposeDimensions(){return dimensions}}};
-    if(name==='./terminalPaths'||name==='./terminalSuggestions'||name==='./terminalWindow'||name==='./windowLayers'||name==='./terminalRenderer'||name==='./browserId'){
+    if(name==='./terminalInput'||name==='./terminalPaths'||name==='./terminalSuggestions'||name==='./terminalWindow'||name==='./windowLayers'||name==='./terminalRenderer'||name==='./browserId'){
       const pathExports={};
       const source=fs.readFileSync(new URL('../src/'+name.slice(2)+'.ts',import.meta.url),'utf8');
       const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
@@ -116,6 +116,20 @@ async function view(t,onDirectory,cwd){
 }
 
 const downloadCommand='nohup modelscope download --model Qwen/Qwen3-Omni-30B-A3B-Thinking README.md --local_dir ./dir > qwen3-omni-download.log 2>&1 < /dev/null &';
+
+test('assistant insertion writes at the cursor without Enter and refuses unsafe multiline paste',async t=>{
+ const {ref,term,socket}=await view(t);
+ term.modes={bracketedPasteMode:false};
+ assert.equal(ref.current.insert('echo hello'),true);
+ assert.equal(socket.sent.at(-1).data,'echo hello');
+ const count=socket.sent.length;
+ assert.equal(ref.current.insert('echo a\necho b'),false);
+ assert.equal(socket.sent.length,count);
+ term.modes.bracketedPasteMode=true;term.bracketedPaste=true;
+ assert.equal(ref.current.insert('echo a\necho b'),true);
+ assert.equal(socket.sent.at(-1).data,'\x1b[200~echo a\recho b\x1b[201~');
+ socket.readyState=3;assert.equal(ref.current.insert('echo disconnected'),false);
+});
 test('native browser paste preserves single-line shell syntax without paste delimiters',async t=>{
   const {term,socket,clipboardListeners,unmount}=await view(t);term.bracketedPaste=true;
   let prevented=0,stopped=0;

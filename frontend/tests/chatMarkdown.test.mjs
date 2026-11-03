@@ -11,6 +11,7 @@ import remarkMath from 'remark-math-extended';
 import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import DOMPurify from 'dompurify';
+import * as terminalInput from '../src/terminalInput.ts';
 
 const diagramJs=ts.transpileModule(fs.readFileSync(new URL('../src/MermaidDiagram.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
 const diagramExports={};
@@ -28,6 +29,7 @@ new Function('require','exports',js)(name=>{
   const localized=i18nMock(name);if(localized)return localized;
   if(name==='react')return React;
   if(name==='react-markdown')return ReactMarkdown;
+  if(name==='./terminalInput')return terminalInput;
   if(name==='remark-gfm')return remarkGfm;
   if(name==='remark-math-extended')return remarkMath;
   if(name==='./MermaidDiagram')return diagramExports;

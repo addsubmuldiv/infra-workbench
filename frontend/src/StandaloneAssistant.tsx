@@ -7,6 +7,7 @@ import {t,useLocale} from './i18n';
 import './assistantWindow.css';
 import './standaloneAssistant.css';
 
+
 export function StandaloneAssistant(){
  useLocale();
  const params=new URLSearchParams(location.search),channel=params.get('channel');

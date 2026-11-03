@@ -10,6 +10,7 @@ import {FileBrowser} from './FileBrowser';
 import {TerminalBoundary} from './TerminalBoundary';
 import {browserId} from './browserId';
 import './quickWindow.css';
+import {TERMINAL_INPUT_EVENT,localTerminalTargets} from './terminalInput';
 type Host={id:string;target:string;user:string|null};
 const nativeInvoke=(window as any).__TAURI_INTERNALS__?.invoke;
 const nativeAction=(action:string)=>{if(nativeInvoke)void nativeInvoke('quick_window_action',{action}).catch(console.error)};
@@ -21,6 +22,14 @@ function QuickToolWindow(){
  const [hosts,setHosts]=useState<Host[]>([]),[error,setError]=useState(''),[ready,setReady]=useState(false);
  const [terminal,setTerminal]=useState<TerminalRequest|null>(null);
  const [files,setFiles]=useState<{host:Host;path?:string;requestId:string}|null>(null);
+ useEffect(()=>{
+  if(kind!=='terminal')return;
+  const receive=(input:unknown)=>window.dispatchEvent(new CustomEvent(TERMINAL_INPUT_EVENT,{detail:input}));
+  if(!nativeInvoke){const port=new BroadcastChannel('iwb-terminal-input:'+assistantChannel);port.onmessage=event=>{if(event.data?.type==='list-targets')port.postMessage({type:'targets',items:localTerminalTargets()});else receive(event.data)};return()=>port.close()}
+  let alive=true,busy=false;
+  const poll=async()=>{if(busy)return;busy=true;try{await nativeInvoke('quick_window_action',{action:'publish-terminal-targets',input:localTerminalTargets()});const items=await nativeInvoke('quick_window_action',{action:'take-terminal-input'});if(alive&&Array.isArray(items))items.forEach(receive)}catch(error){console.error(error)}finally{busy=false}};
+  const timer=setInterval(()=>void poll(),500);return()=>{alive=false;clearInterval(timer)};
+ },[kind,assistantChannel]);
  useEffect(()=>{
   const sender=!nativeInvoke&&typeof BroadcastChannel!=='undefined'?createContextSender(new BroadcastChannel('iwb-terminal-assistant:'+assistantChannel)):null;
   let nativePending:TerminalAttachment[]=[];
