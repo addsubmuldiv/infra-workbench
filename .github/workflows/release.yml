@@ -68,4 +68,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
         run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; preserving its published assets."
+            exit 0
+          fi
           gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --title "Infra Workbench $RELEASE_TAG" --notes "Windows (x64) and macOS (Apple Silicon and Intel) installers. These builds are unsigned and macOS builds are not notarized. Review platform verification and known limitations before publishing. SHA256SUMS.txt verifies download integrity; it does not authenticate the publisher."

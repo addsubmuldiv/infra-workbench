@@ -25,9 +25,11 @@ The model interprets goals, selects tools, and explains results. The backend val
 
 ## Desktop installation on Windows
 
-The intended end-user distribution is a desktop installer. The repository includes CI for a Tauri NSIS installer and a PyInstaller backend, but installation, launch, and uninstall have not yet been accepted on a clean Windows system without Python / Node.js. This does not imply that a published installer is currently available.
+Current version: **v0.1.0**. Download the Windows x64 installer from the [v0.1.0 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.0), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`.
 
-When a package is available, download it from this repository's [Releases](https://github.com/addsubmuldiv/infra-workbench/releases) after checking its version and release notes. If no installer is listed, use the source fallback: extract the entire repository and double-click **`安装.cmd`**. It prepares Python and dependencies over the internet and creates a desktop shortcut. Keep the whole project directory. See [Windows instructions](docs/WINDOWS.md) and [macOS limitations](docs/MACOS.md), currently in Chinese.
+The installer is unsigned. Local frozen-runtime checks and NSIS packaging passed; clean Windows install, upgrade and uninstall acceptance is still pending. This release does not include macOS installers. See [macOS limitations](docs/MACOS.md), currently in Chinese.
+
+Developers can also extract the complete repository and run **`安装.cmd`** from source. This prepares Python and dependencies over the internet and requires keeping the whole project directory. See [Windows instructions](docs/WINDOWS.md).
 
 Add your own SSH machines after launch. Desktop windows, the tray, and the floating monitor share the local backend. Use the tray menu to exit the backend.
 

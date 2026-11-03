@@ -2,7 +2,9 @@
 
 ## 桌面安装包
 
-普通用户优先选择 Releases 中实际发布的桌面安装包。CI 已配置 NSIS 与 PyInstaller 打包，但尚未在无 Python / Node.js 的干净 Windows 系统验收安装、启动和卸载；CI 构建产物不等于正式发布，也不能据此承诺无需运行时的安装已验证。
+当前版本为 [v0.1.0](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.0)，提供 Windows x64 向导安装包。安装包包含 Python 后台及前端资源；普通用户无需安装开发环境。附件中的 `SHA256SUMS.txt` 用于检查下载完整性。
+
+安装包未签名。本机冻结后台自测与 NSIS 构建已通过，但无 Python / Node.js 的干净 Windows 系统安装、升级和卸载验收仍待完成。
 
 以下 `安装.cmd`、Python、WinGet 和保留项目目录等要求适用于源码安装。不要把源码启动器生成的 EXE 当成可独立分发的桌面安装包。
 

@@ -40,6 +40,8 @@ import {SSHPasswordDialog} from './SSHPasswordDialog';
 import {RemoveHostDialog} from './RemoveHostDialog';
 import {deviceUsage} from './hostUsage';
 import {HOST_CATEGORIES,filterHosts,type HostCategory} from './hostList';
+declare const __IWB_VERSION__:string;
+const appVersion=typeof __IWB_VERSION__==='undefined'?'':__IWB_VERSION__;
 let bootPreferences=loadPreferences(browserStorage());
 document.documentElement.dataset.theme=bootPreferences.theme;
 
@@ -294,7 +296,7 @@ function App(){
     {page==='settings'&&(isDemo?<><LanguageSettings/><section className="settings-card"><h2>{tr('演示设置','Demo settings')}</h2><p>{tr('演示不接收模型密钥、邮箱或 SSH 密码。主题可在顶部切换；真实连接和技能管理请退出演示后配置。','The demo does not accept model keys, email or SSH passwords. Change the theme in the header. Exit demo to configure real connections and skills.')}</p></section></>:<React.Suspense fallback={<p role="status">{ui("正在加载设置…")}</p>}><SettingsPage/></React.Suspense>)}
 
     {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} edit={item=>setReservationDraft(draftFromReservation(item,true))} rebook={item=>setReservationDraft(draftFromReservation(item,false))} locate={locateReservation} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} enableNotifications={enableNotifications} notify={notify}/>}
-    <footer className="page-footer"><span><ShieldCheck size={13}/>{ui("私钥留在本机 · sudo 密码可选存入系统凭据管理器")}</span><span>LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
+    <footer className="page-footer"><span><ShieldCheck size={13}/>{ui("私钥留在本机 · sudo 密码可选存入系统凭据管理器")}</span><span aria-label={tr("软件版本","Software version")}>v{appVersion} · LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
     <React.Suspense fallback={<p role="status">{ui("正在加载 AI 助手…")}</p>}><AssistantWindow open={assistantOpen} onClose={()=>setAssistantOpen(false)} onDockWidthChange={setAssistantWidth} selectedHostIds={scope.map(host=>host.id)} openSettings={()=>navigate('settings')} locate={(hostId,devices)=>{if(!state.hosts.some(host=>host.id===hostId)){setNotice(ui("这台机器已不在当前列表中。"));return}showMachines([hostId]);setSelected({[hostId]:devices});navigate('overview')}} openTerminal={hostId=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setTerminalRequest({id:browserId(),host});else setNotice(ui("这台机器已不在当前列表中。"))}}/></React.Suspense>
     <TerminalBoundary close={()=>setTerminalRequest(null)}><React.Suspense fallback={<div className="terminal-loading" role="status">{ui("正在加载终端…")}</div>}>{terminalRequest&&(isDemo?<DemoTerminal close={()=>setTerminalRequest(null)}/>:<TerminalDock request={terminalRequest} hosts={state.hosts} onDirectory={(hostId,path)=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setFileHost({host,path,requestId:browserId()})}}/>)}</React.Suspense></TerminalBoundary>
     {notice&&<div role="status" className="toast"><Check size={17}/>{notice}<button className="icon-button" aria-label={ui("关闭提示")} onClick={()=>setNotice('')}><X size={15}/></button></div>}
