@@ -104,3 +104,9 @@ sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH �
 用户授权重启后，正式托盘后台已重新启动。实际 MCP 客户端发现 55 个工具和九个技能；内置 Agent 在正式聊天 HTTP/SSE 中调用 get_workbench_state 成功，SQLite 记录 runtime=deepagents、tool_transport=mcp。原有机器、预约和历史对话保留，未更改真实预约或远端文件。本次对话约 12 秒完成。
 
 首次正式验证暴露了完整 /api/state 含大量端口/进程字典导致模型输出超限的问题。get_workbench_state 现返回范围内的机器概要及准确 host_count/reservation_count/rule_count，详细数据仍由专用工具提供。新增大快照回归用例先失败后通过，相关 50 项检查通过；修复后再次重启并完成上面的正式验证。私有计数和验证记录保存在忽略目录 work/restart-validation/。
+
+## 集群管理与批量操作（2026-11-04）
+
+集群通过统一目录暴露 list_clusters、get_cluster、create_cluster、update_cluster、delete_cluster、update_cluster_members。execute_cluster_command 固定 revision 和目标成员，使用 request_id 去重；get_cluster_command_batch/get_cluster_command_output 读取逐机状态与输出，cancel_cluster_command_batch 取消，resume_cluster_command_batch 继续重启后暂停的排队项。启动不明不会自动重试，已确认终态不会被迟到的状态查询覆盖。
+
+open_cluster_terminals 创建专用持久会话并返回交接入口，不等于客户端已打开界面。受限助手不能通过集群扩大机器范围；修改归类需要相关集群全部成员权限。接口与 MCP 共用服务。界面和使用限制见 [CLUSTERS.md](CLUSTERS.md)。

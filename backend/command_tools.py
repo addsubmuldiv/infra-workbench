@@ -64,7 +64,7 @@ class CommandTools:
         self.update_jobs = update_jobs
         self.source = Path(__file__).with_name('command_probe.py').read_text(encoding='utf-8')
 
-    async def call(self, name, arguments, allowed, state):
+    async def call(self, name, arguments, allowed, state, *, job_id=None, expected_config=None):
         args = DEFINITIONS[name][0].model_validate(arguments)
         try:
             host = self.probes.host(args.host_id, allowed)
@@ -75,7 +75,9 @@ class CommandTools:
                              'cancel_command_job': 'cancel', 'inspect_server_process': 'inspect',
                              'signal_server_process': 'signal'}[name]
         if name == 'execute_server_command':
-            request['job_id'] = uuid.uuid4().hex
+            if job_id is not None and (len(job_id) != 32 or any(c not in '0123456789abcdef' for c in job_id)):
+                raise ValueError('Invalid internal command job ID')
+            request['job_id'] = job_id or uuid.uuid4().hex
             state.setdefault('command_jobs', []).append(dict(host_id=args.host_id, job_id=request['job_id'], sudo=args.sudo))
             state['command_jobs'] = state['command_jobs'][-100:]
             if self.update_jobs is not None:
@@ -87,6 +89,8 @@ class CommandTools:
                 if self.sudo is None:
                     raise AgentError('PERMISSION_DENIED', '此连接未提供 sudo 服务。')
                 config = await self.probes.ssh.effective(host)
+                if expected_config is not None and any(config.get(k) != expected_config.get(k) for k in ('hostname','port','user','proxyjump','proxycommand','hostkeyalias')):
+                    raise AgentError('CREDENTIAL_IDENTITY_CHANGED', 'SSH 连接身份已变化')
                 if host.get('sudo_enabled'):
                     password = self.sudo.password(host, self.sudo.identity(config))
                 options = "-S -k -p ''" if password else '-n'
@@ -97,6 +101,11 @@ class CommandTools:
                 command = 'sudo '+options+' -- python3 -c '+shlex.quote(bootstrap)
                 source = (password+'\n' if password else '')+'\nIWB_SCRIPT_START\n'+script
                 code, out, err = await self.probes.ssh.run_bound(host, command, source, config)
+            elif expected_config is not None:
+                config = await self.probes.ssh.effective(host)
+                if any(config.get(k) != expected_config.get(k) for k in ('hostname','port','user','proxyjump','proxycommand','hostkeyalias')):
+                    raise AgentError('CREDENTIAL_IDENTITY_CHANGED', 'SSH 连接身份已变化')
+                code, out, err = await self.probes.ssh.run_bound(host, 'python3 -', script, config)
             else:
                 code, out, err = await self.probes.ssh.run(host, 'python3 -', script)
             if code:

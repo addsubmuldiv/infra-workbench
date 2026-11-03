@@ -84,3 +84,18 @@ def test_old_card_only_watch_ids_require_reselection_after_chip_expansion(tmp_pa
         assert state['rules'][0]['devices'] == ['0']
         assert state['rules'][0]['status'] == 'needs_selection'
         assert len(state['hosts'][0]['snapshot']['devices']) == 2
+
+
+def test_device_command_failure_on_stdout_is_not_reported_as_timeout(tmp_path):
+    import json
+    app = create_app(tmp_path, start_poll=False)
+    app.state.hosts.append(dict(id='driver-error', target='example', auth='key'))
+    async def run(host, command, source=None):
+        raw = dict(kind='NPU', metrics=dict(code=187, out='dcmi module initialize failed. ret is -8005\n', error=''))
+        return 0, 'IWB_JSON:'+json.dumps(raw), ''
+    app.state.ssh.run = run
+    with TestClient(app) as client:
+        result = client.post('/api/hosts/driver-error/refresh', headers={'X-IWB':'1'}).json()
+        assert result['status']=='error' and result['error_stage']=='probe'
+        assert 'npu-smi' in result['error'] and '-8005' in result['error'] and '187' in result['error']
+        assert '超时' not in result['error']

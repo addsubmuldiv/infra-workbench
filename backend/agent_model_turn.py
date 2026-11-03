@@ -30,9 +30,9 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
     protocols=['responses','chat_completions'] if config['protocol']=='auto' else [config['protocol']]
     for index,protocol in enumerate(protocols):
         if protocol=='responses':
-            payload=dict(model=config['model'],instructions=instructions,input=response_input(messages,reasoning=deepseek),store=False,stream=False,max_output_tokens=16384 if deepseek else 2400)
+            payload=dict(model=config['model'],instructions=instructions,input=response_input(messages,reasoning=deepseek),store=False,stream=False)
             if tools:payload.update(tools=[dict(type='function',**tool) for tool in tools],tool_choice='auto')
-            if deepseek:payload['reasoning']=dict(effort='high')
+            if deepseek:payload.update(reasoning=dict(effort='high'))
             path='/responses'
         else:
             payload=dict(model=config['model'],messages=[dict(role='system',content=instructions)]+[{k:v for k,v in m.items() if k!='reasoning_content' or deepseek} for m in messages],stream=False)
@@ -71,8 +71,6 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
                 for call in message.get('tool_calls',[]) if isinstance(message.get('tool_calls'),list) else []:
                     function=call.get('function') if isinstance(call,dict) else None
                     if isinstance(function,dict):calls.append(dict(id=call.get('id'),name=function.get('name'),arguments=function.get('arguments')))
-        if len(calls)>8 or len({c['id'] for c in calls if isinstance(c['id'],str)})!=len(calls):
-            raise ProviderFailure('模型返回过多或重复的工具调用，本轮已停止')
         normalized=[]
         for call in calls:
             if not all(isinstance(call[field],str) and 0<len(call[field])<=limit for field,limit in (('id',200),('name',100),('arguments',12000))):
@@ -84,6 +82,10 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
                 except ValueError:
                     raise ProviderFailure('模型工具调用参数不完整或无效，本轮未执行') from None
             normalized.append(dict(id=call['id'],type='function',function=dict(name=call['name'],arguments=call['arguments'])))
+        # A fleet inspection can legitimately return many independent calls.
+        # Reject ambiguous identities, rather than imposing a batch-size limit.
+        if len({call['id'] for call in normalized}) != len(normalized):
+            raise ProviderFailure('模型返回的工具调用 ID 重复，本轮未执行这些调用')
         content=''.join(text)
         if key:
             content=content.replace(key,'[已隐藏 API key]')

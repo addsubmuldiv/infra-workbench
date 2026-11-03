@@ -14,10 +14,6 @@ def new_import_host(row):
 
 async def resolve_row(row, ssh):
     candidate = new_import_host(row)
-    if candidate['manual']:
-        if row.resolved_identity:
-            raise WorkbookError('导入预览后 SSH 别名配置已变化，请重新选择 Excel 并核对')
-        return
     try:
         config = await ssh.effective_details(candidate)
         resolved_identity = connection_identity(config)
@@ -37,8 +33,7 @@ async def configurations(hosts,ssh):
     values={}
     for host in hosts:
         try:
-            values[host['id']]=(dict(hostname=host['target'],user=host.get('user'),port=str(host.get('port') or 22))
-                                if host.get('manual') else await ssh.effective_details(host))
+            values[host['id']]=await ssh.effective_details(host)
         except Exception:
             values[host['id']]=None
     return values

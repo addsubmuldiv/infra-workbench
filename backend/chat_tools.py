@@ -133,8 +133,8 @@ class ChatTools:
             inventory=[dict(h,snapshot=dict(h['snapshot'],status='refresh_timeout')) if h['id'] in failed else h for h in inventory]
             rows,coverage=search_inventory(inventory,plan)
             state['search_plan']=plan.model_dump()
-            state['last_host_ids']=list(dict.fromkeys(row['host_id'] for row in rows))[:30]
-            return dict(plan=plan.model_dump(),items=rows[:40],total=len(rows),truncated=len(rows)>40,coverage=coverage)
+            state['last_host_ids']=list(dict.fromkeys(row['host_id'] for row in rows))
+            return dict(plan=plan.model_dump(),items=rows,total=len(rows),truncated=False,coverage=coverage)
         if name=='read_changes':
             return self.assistant.history.view(args.hours,host_ids=allowed)
         host=self.host(args.host_id,allowed)

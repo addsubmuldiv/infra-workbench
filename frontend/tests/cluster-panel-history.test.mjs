@@ -1,0 +1,28 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+test('switching command history resets targets and retry draft and ignores stale cluster responses',async t=>{
+ const a={id:'a',name:'A',revision:1,host_ids:['host-a']},b={id:'b',name:'B',revision:2,host_ids:['host-b']};
+ const ba={id:'batch-a',cluster_id:'a',status:'failed',items:[{id:'item-a',host_id:'host-a',name:'Host A',status:'failed'}],command:'old command',cwd:'/old',sudo:true};
+ const bb={id:'batch-b',cluster_id:'b',status:'completed',items:[{id:'item-b',host_id:'host-b',name:'Host B',status:'completed'}]};
+ const values=[a,[],[ba,bb],ba,['host-a'],'old command','/old',900,9,true,false,'','item-a','stdout','',0,false,'',ba],refs=[];let cursor=0,refCursor=0;
+ const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect(){},useRef:value=>{const i=refCursor++;return refs[i]??(refs[i]={current:value})},useState:initial=>{const i=cursor++;if(!(i in values))values[i]=initial;return [values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value}]}};
+ const original=Object.getOwnPropertyDescriptor(globalThis,'document');Object.defineProperty(globalThis,'document',{configurable:true,value:{body:{}}});t.after(()=>{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document});
+ const pending={},calls=[];
+ const api=(path,method,body)=>{calls.push({path,method,body});if(path==='/clusters/a'||path==='/clusters/b')return new Promise(resolve=>{pending[path]=resolve});if(method==='POST')return Promise.resolve({...bb,id:'new-batch',items:[]});return Promise.resolve({items:[]})};
+ const source=fs.readFileSync(new URL('../src/ClusterPanel.tsx',import.meta.url),'utf8');const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
+ const exports={};new Function('require','exports',js)(name=>({'react':react,'react-dom':{createPortal:node=>node},'./i18n':{t:zh=>zh,useLocale(){}},'./browserId':{browserId:()=>String(Math.random())},'./clusterApi':{clusterApi:api}}[name]??{}),exports);
+ const props={cluster:a,hosts:[{id:'host-a',target:'Host A'},{id:'host-b',target:'Host B'}],close(){},terminal(){},openTerminalBatch(){}};
+ const render=()=>{cursor=0;refCursor=0;return exports.ClusterPanel(props)};
+ const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children??[]).flat(Infinity).flatMap(nodes)];let tree=render();
+ const history=id=>nodes(tree).find(n=>n.type==='button'&&n.props.className?.startsWith('cluster-history')&&n.props.children.some(c=>c?.type==='strong'&&c.props.children.includes(id)));
+ history('a').props.onClick();tree=render();history('b').props.onClick();tree=render();assert.equal(nodes(tree).some(n=>n.type==='form'),false,'old form is hidden while new membership loads');
+ pending['/clusters/b'](b);await Promise.resolve();tree=render();
+ const targets=nodes(tree).find(n=>n.props?.className==='cluster-targets');assert.equal(nodes(targets).filter(n=>n.type==='input'&&n.props.checked).length,1);assert.ok(JSON.stringify(targets).includes('Host B'));assert.ok(!JSON.stringify(targets).includes('Host A'));
+ assert.equal(nodes(tree).find(n=>n.type==='textarea').props.value,'');assert.equal(nodes(tree).find(n=>n.type==='input'&&n.props.pattern).props.value,'');
+ assert.deepEqual(nodes(tree).filter(n=>n.type==='input'&&n.props.type==='number').map(n=>n.props.value),[300,5]);assert.equal(nodes(tree).find(n=>n.type==='input'&&n.props.type==='checkbox'&&!('disabled' in n.props)).props.checked,false);
+ pending['/clusters/a'](a);await Promise.resolve();tree=render();assert.equal(nodes(tree).find(n=>n.type==='h2').props.children[0],'B','late A response cannot replace B');
+ nodes(tree).find(n=>n.type==='textarea').props.onChange({target:{value:'printf fresh'}});tree=render();nodes(tree).find(n=>n.type==='form').props.onSubmit({preventDefault(){}});await Promise.resolve();
+ const submission=calls.find(c=>c.method==='POST').body;assert.equal(submission.cluster_id,'b');assert.deepEqual(submission.host_ids,['host-b']);assert.equal(submission.retry_of,undefined);assert.equal(submission.cwd,undefined);assert.equal(submission.sudo,false);assert.equal(submission.command,'printf fresh');
+});

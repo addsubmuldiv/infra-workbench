@@ -12,7 +12,7 @@ def dialog_position(anchor, size, work_area, gap=12):
     return x,y
 
 
-def monitor_work_area(window):
+def monitor_work_area(window, *, full=False):
     try:
         import ctypes
         from ctypes import wintypes as w
@@ -25,7 +25,7 @@ def monitor_work_area(window):
         hwnd=user.GetAncestor(window.winfo_id(),2)
         info=MonitorInfo();info.cbSize=ctypes.sizeof(info)
         if user.GetMonitorInfoW(user.MonitorFromWindow(hwnd,2),ctypes.byref(info)):
-            rect=info.rcWork
+            rect=info.rcMonitor if full else info.rcWork
             return rect.left,rect.top,rect.right,rect.bottom
     except (OSError,AttributeError):pass
     return 0,0,window.winfo_screenwidth(),window.winfo_screenheight()

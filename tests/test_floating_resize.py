@@ -1,6 +1,14 @@
 from backend.floating_layout import viewport_layout, clamp_size
 
 
+def test_resolution_scale_preserves_2k_and_enlarges_4k_in_both_orientations():
+    from backend.floating_layout import resolution_scale
+    for size in [(1920,1080),(2560,1440),(1440,2560),(3440,1440)]:
+        assert resolution_scale(*size) == 1.
+    for size in [(3840,2160),(2160,3840),(4096,2160),(5120,2880)]:
+        assert resolution_scale(*size) == 1.25
+
+
 def test_minimum_is_a_multi_machine_count_list():
     layout = viewport_layout(100, 50)
     assert (layout['width'],layout['height']) == (220,190)

@@ -133,8 +133,6 @@ class AgentAPIService:
         return self.view()
 
     def create_profile(self, name):
-        if len(self.profiles) >= 50:
-            raise ValueError('最多保存 50 套接口配置')
         id = uuid.uuid4().hex
         profiles = copy.deepcopy(self.profiles)
         profiles[id] = dict(name=name, config=AgentAPISettings().model_dump(exclude={'api_key','remember','profile_id'}))
@@ -424,7 +422,7 @@ class AgentAPIService:
             names = sorted(names)
             names = [name.replace(key, '[已隐藏 API key]') if key else name for name in names]
             partial = bool(envelope.get('has_more') or envelope.get('nextPageToken') or data.get('has_more'))
-            return dict(models=names[:500], truncated=len(names) > 500 or partial)
+            return dict(models=names, truncated=partial)
 
 
 class ProfileDetails(BaseModel):

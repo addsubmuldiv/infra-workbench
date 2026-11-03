@@ -7,9 +7,9 @@ from .server_import import safe_failure
 
 
 class ImportJobs:
-    def __init__(self,hosts,connect,provision,*,clock=time.monotonic):
+    def __init__(self,hosts,connect,provision,*,clock=time.monotonic,clusters=None):
         self.hosts,self.connect,self.provision,self.clock=hosts,connect,provision,clock
-        self.jobs={}
+        self.jobs={};self.clusters=clusters
 
     def _prune(self):
         now=self.clock()
@@ -40,7 +40,7 @@ class ImportJobs:
     def view(self,key):
         job=self._job(key);rows=job['rows']
         keys=[row for row in rows if row.key_status!='not_requested']
-        return dict(id=key,status=job['status'],total=len(rows),
+        return dict(id=key,status=job['status'],cluster_id=job.get('cluster_id'),total=len(rows),
                     processed=sum(row.status in ('invalid','failed','imported','skipped') for row in rows),
                     success=sum(row.status=='imported' for row in rows),failed=sum(row.status in ('invalid','failed') for row in rows),
                     skipped=sum(row.status=='skipped' for row in rows),valid=sum(row.status=='ready' for row in rows),
@@ -54,12 +54,16 @@ class ImportJobs:
         key=next((key for key in reversed(self.jobs) if self.jobs[key]['status']!='preview'),None)
         return self.view(key) if key else None
 
-    def start(self,key,provision):
+    def start(self,key,provision,cluster_id=None):
         job=self._job(key)
         if job['status']!='preview':return self.view(key)
         if any(other['status']=='running' or (other.get('key_task') and not other['key_task'].done()) for other in self.jobs.values()):
             raise ValueError('已有批量导入或免密配置任务正在运行，请等待该任务完成')
-        job.update(status='running',provision=provision,updated=self.clock())
+        clusters=self.clusters() if callable(self.clusters) else self.clusters
+        if cluster_id is not None:
+            if clusters is None:raise ValueError('集群服务不可用')
+            clusters.pin_import(cluster_id)
+        job.update(status='running',provision=provision,cluster_id=cluster_id,clusters=clusters,updated=self.clock())
         job['import_task']=asyncio.create_task(self._run(job))
         return self.view(key)
 
@@ -88,6 +92,7 @@ class ImportJobs:
                                     '机器已存在，密码保存失败，原配置保持不变' if result.get('password_save_failed') else '机器已存在，保留原配置')
                         continue
                     row.host_id=result['host_id'];row.status='imported';row.reason='登录成功，已添加'
+                    if job.get('cluster_id') is not None:job['clusters'].assign_import(row.host_id,job['cluster_id'])
                     if job['provision'] and row.password:row.key_status='queued'
                     elif job['provision']:row.key_status='done';row.key_reason='已通过无密码登录验证'
                 except Exception as exc:
@@ -101,6 +106,7 @@ class ImportJobs:
             job['status']='complete'
             if any(row.key_status=='queued' for row in job['rows']):job['key_task']=asyncio.create_task(self._keys(job))
         finally:
+            if job.get('cluster_id') is not None:job['clusters'].unpin_import(job['cluster_id'])
             if job['status']=='running':job['status']='interrupted'
             if job['status']!='complete':
                 for row in job['rows']:row.password=None

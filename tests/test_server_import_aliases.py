@@ -35,6 +35,8 @@ def alias_app(tmp_path,monkeypatch,*,deny=False):
         def is_closed(self):return self.closed
         async def run(self,command,**kwargs):return SimpleNamespace(exit_status=0,stdout='',stderr='')
     async def connector(**kwargs):
+        if hasattr(kwargs.get('tunnel'), 'command'):
+            kwargs['proxy_command'] = kwargs.pop('tunnel').command
         assert kwargs['password'] in (PASSWORD,None)
         if deny:raise RuntimeError('Permission denied synthetic-only')
         connection=Connection();connections.append((kwargs,connection));return connection
@@ -74,7 +76,11 @@ def test_new_import_resolves_config_alias_and_explicit_overrides_at_connector(tm
         options=connections[0][0]
         assert options['host']==expected_host and options['port']==expected_port
         assert options['username']=='sheet-user'
-        for key,value in routing.items():assert options[key].replace('[','').replace(']','')==value
+        for key,value in routing.items():
+            if key=='tunnel':
+                assert options['proxy_command'][-1]=='jumper@192.0.2.9'
+                assert options['proxy_command'][options['proxy_command'].index('-p')+1]=='2200'
+            else:assert options[key].replace('[','').replace(']','')==value
         if not routing:assert 'tunnel' not in options and 'proxy_command' not in options
         host=app.state.hosts[0]
         assert host['target']==target and host['manual']==(target=='192.0.2.99')
@@ -91,7 +97,7 @@ def test_alias_background_key_connections_keep_original_alias_route(tmp_path,mon
         assert len(connections)==3
         for options,_ in connections:
             assert options['host']=='192.0.2.80' and options['port']==2222
-            assert options['username']=='sheet-user' and options['tunnel'].replace('[','').replace(']','')=='jumper@192.0.2.9:2200'
+            assert options['username']=='sheet-user' and options['proxy_command'][-1]=='jumper@192.0.2.9'
             assert options['host_key_alias']=='training-hostkey'
         assert connections[-1][0]['preferred_auth']==['publickey']
         host=app.state.hosts[0]
@@ -248,3 +254,54 @@ def test_existing_alias_identity_rechecked_at_password_connector_boundary(tmp_pa
         _,result=do_import(client)
         assert result['failed']==1 and not connections,result
         assert app.state.hosts==[before] and vault.values['existing']==previous
+
+@pytest.mark.parametrize('port', [None, 22, 2244])
+def test_ip_import_honors_wildcard_jump_config(tmp_path, monkeypatch, port):
+    app, vault, commands, connections = alias_app(tmp_path, monkeypatch)
+    config = Path.home()/'.ssh'/'config'
+    with config.open('a', encoding='utf-8') as stream:
+        stream.write('Host 177.*\n  User config-user\n  Port 2222\n  ProxyJump jumper@192.0.2.9:2200\n  HostKeyAlias wildcard-hostkey\n')
+    with TestClient(app) as client:
+        _, result = do_import(client, target='177.11.21.1', port=port)
+        assert result['success'] == 1 and result['password_saved'] == 1, result
+        options = connections[0][0]
+        assert options['proxy_command'][-3:]==['-W', '177.11.21.1:'+str(port or 22), 'jumper@192.0.2.9']
+        assert options['host_key_alias'] == 'wildcard-hostkey'
+        assert options['username'] == 'sheet-user'
+        assert options['port'] == (port or 22)
+        assert vault.values[app.state.hosts[0]['id']]['password'] == PASSWORD
+
+
+def test_ip_wildcard_route_change_after_preview_rejects_password(tmp_path, monkeypatch):
+    app, vault, _, connections = alias_app(tmp_path, monkeypatch)
+    config = Path.home()/'.ssh'/'config'
+    with config.open('a', encoding='utf-8') as stream:
+        stream.write('Host 177.*\n  ProxyJump jumper@192.0.2.9:2200\n')
+    with TestClient(app) as client:
+        preview = client.post('/api/imports/preview', headers=HEADERS, content=sheet([
+            ['host', 'username', 'password', 'port'], ['177.11.21.1', 'sheet-user', PASSWORD, 22]
+        ])).json()
+        config.write_text(config.read_text(encoding='utf-8').replace('192.0.2.9:2200', '192.0.2.10:2200'), encoding='utf-8')
+        client.post('/api/imports/'+preview['id']+'/start', headers=HEADERS, json={})
+        result = until(client, preview['id'], lambda job: job['status']=='complete')
+        assert result['failed']==1 and not connections and not vault.values and not app.state.hosts, result
+
+@pytest.mark.parametrize('jump', ['jump-alias', 'first-jump,user@last-jump:2200'])
+def test_password_jump_uses_native_ssh_alias_resolution(tmp_path, monkeypatch, jump):
+    import asyncio
+    app, _, _, connections = alias_app(tmp_path, monkeypatch)
+    async def effective(host):
+        return dict(hostname='192.0.2.80', user='sheet-user', port='22', proxyjump=jump)
+    app.state.ssh.effective = effective
+    async def connect():
+        conn = await app.state.ssh.password_connection(dict(target='training', manual=False), PASSWORD)
+        conn.close()
+    asyncio.run(connect())
+    options = connections[0][0]
+    assert 'tunnel' not in options
+    command = options['proxy_command']
+    assert isinstance(command, list) and command[0] == 'ssh'
+    assert command[-3:] == ['-W', '192.0.2.80:22', jump.split(',')[-1].removesuffix(':2200')]
+    assert 'BatchMode=yes' in command and 'ClearAllForwardings=yes' in command
+    if ',' in jump:
+        assert command[command.index('-J')+1] == 'first-jump'

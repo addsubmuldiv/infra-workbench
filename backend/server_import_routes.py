@@ -8,14 +8,16 @@ from pydantic import BaseModel
 
 from .server_import import MAX_FILE, import_template, parse_workbook
 from .server_import_jobs import ImportJobs
+from .agent_errors import AgentError
 
 
 class ImportOptions(BaseModel):
     provision:bool=False
+    cluster_id:str|None=None
 
 
 def register_import_routes(app,hosts,connect,provision,prepare=None):
-    manager=ImportJobs(hosts,connect,provision);app.state.server_imports=manager
+    manager=ImportJobs(hosts,connect,provision,clusters=lambda:getattr(app.state,"clusters",None));app.state.server_imports=manager
     parsing=asyncio.Semaphore(2)
 
     def view(key):
@@ -52,8 +54,9 @@ def register_import_routes(app,hosts,connect,provision,prepare=None):
     @app.post('/api/imports/{key}/start')
     async def start(key:str,body:ImportOptions):
         view(key)
-        try:return public(manager.start(key,body.provision))
+        try:return public(manager.start(key,body.provision,body.cluster_id))
         except ValueError as exc:raise HTTPException(409,str(exc)) from None
+        except AgentError as exc:raise HTTPException(409 if exc.code=='CONFLICT' else 400,exc.message) from None
 
     @app.delete('/api/imports/{key}')
     async def discard(key:str):

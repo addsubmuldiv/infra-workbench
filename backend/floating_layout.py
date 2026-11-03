@@ -6,6 +6,12 @@ DRAW_SCALE = .65
 MAX_SIZE = (520, 480)
 
 
+def resolution_scale(width, height):
+    """Use physical monitor pixels, including portrait displays, not work area."""
+    short, long = sorted((width, height))
+    return 1.25 if short >= 2160 and long >= 3840 else 1.
+
+
 def clamp_size(width, height):
     return max(MIN_SIZE[0], min(MAX_SIZE[0], int(width))), max(MIN_SIZE[1], min(MAX_SIZE[1], int(height)))
 

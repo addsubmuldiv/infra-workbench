@@ -44,6 +44,28 @@ else:
         run('set-option','-g','allow-passthrough','on')
         run('set-option','-t',name,'history-limit','5000')
         print('IWB_TMUX:'+json.dumps(dict(id=key,created=time.time())))
+    elif action=='broadcast':
+        state=snapshot(key)
+        # Never race a person typing in an attached terminal. A detached pane
+        # with our authenticated prompt record is the only eligible target.
+        reason=None
+        if run('has-session','-t',name).returncode:reason='session_ended'
+        elif run('list-clients','-t',name,'-F','#{client_name}').stdout.strip():reason='terminal_attached'
+        elif state.get('token')!=options['token']:reason='unsupported_shell'
+        elif state.get('kind')!='prompt':reason='shell_busy_or_unknown'
+        elif run('display-message','-p','-t',name,'#{pane_current_command}').stdout.strip()!='bash':reason='shell_busy_or_unknown'
+        if reason:print('IWB_TMUX:'+json.dumps(dict(status='skipped',reason=reason)))
+        else:
+            # Consume readiness before sending. A broken transport is never
+            # retried; only a subsequent authenticated shell prompt re-arms it.
+            state['kind']='broadcast_pending'
+            temporary=location(key)+'.broadcast.tmp'
+            fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+            with os.fdopen(fd,'w') as stream:json.dump(state,stream)
+            os.replace(temporary,location(key))
+            literal=run('send-keys','-t',name,'-l','--',options['command'])
+            enter=run('send-keys','-t',name,'Enter') if literal.returncode==0 else None
+            print('IWB_TMUX:'+json.dumps(dict(status='sent' if enter is not None and enter.returncode==0 else 'unknown')))
     elif action=='attach':
         if run('has-session','-t',name).returncode:raise SystemExit('持久会话已结束，请新建会话')
         if run('list-clients','-t',name,'-F','#{client_name}').stdout.strip():raise SystemExit('此持久会话已在其他终端打开，请先断开原连接')
@@ -59,13 +81,16 @@ else:
         print('IWB_TMUX:{}')
 '''
 
-def tmux_command(action,ids=None,session=None,cwd=None):
-    if action not in ('create','attach','status','end'):raise ValueError('持久会话操作无效')
+def tmux_command(action,ids=None,session=None,cwd=None,command=None):
+    if action not in ('create','attach','status','end','broadcast'):raise ValueError('持久会话操作无效')
     options=dict(action=action)
     if action=='status':options['ids']=list(ids or [])
     else:options['id']=session['id']
     if any(not isinstance(key,str) or not re.fullmatch('[a-f0-9]{32}',key) for key in options.get('ids',[options.get('id')])):raise ValueError('持久会话标识无效')
     if cwd is not None and (not isinstance(cwd,str) or not cwd.startswith('/') or len(cwd)>4096 or any(c in cwd for c in '\0\r\n')):raise ValueError('无效的终端目录')
+    if action=='broadcast':
+        if not isinstance(command,str) or not 0<len(command)<=16000 or any(ord(c)<32 or ord(c)==127 for c in command):raise ValueError('广播命令必须为单行，且不超过 16000 字符')
+        options.update(command=command,token=session['token'])
     if action=='create':options.update(cwd=cwd,rc=shell_rc(session['token']))
     return 'exec python3 -c '+shlex.quote(REMOTE.replace('OPTIONS',repr(options)))
 

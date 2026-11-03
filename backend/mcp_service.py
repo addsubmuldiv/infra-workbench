@@ -47,6 +47,9 @@ class WorkbenchMCPService:
         if self.operations is not None and getattr(self.operations.app.state, 'automation', None) is not None:
             from .automation import catalog as automation_catalog
             catalog.update(automation_catalog())
+        if self.operations is not None and getattr(self.operations.app.state, "clusters", None) is not None:
+            from .cluster_mcp import catalog as cluster_catalog
+            catalog.update(cluster_catalog())
         if self.embedded:
             for name in PRIVATE:
                 catalog.pop(name, None)
@@ -67,6 +70,9 @@ class WorkbenchMCPService:
                     if name=='create_automation':return response(manager.save(arguments,allowed=self.allowed))
                     return response(manager.save(arguments['draft'],arguments['id'],self.allowed))
                 except ValueError:raise AgentError('INVALID_ARGUMENT','Invalid workflow or machine scope') from None
+        if self.operations is not None and getattr(self.operations.app.state, 'clusters', None) is not None:
+            from .cluster_mcp import catalog as cluster_catalog, call as cluster_call
+            if name in cluster_catalog():return await cluster_call(self.operations.app, name, arguments, self.allowed)
         if self.skill_snapshot is not None and name in ('list_skills', 'read_skill'):
             if name == 'list_skills':
                 return response({'items': [{key: value for key, value in item.items() if key not in ('files', 'file_manifest', 'versions')}

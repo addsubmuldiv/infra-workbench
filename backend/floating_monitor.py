@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 from urllib.request import build_opener, ProxyHandler
-from backend.floating_layout import clamp_size, viewport_layout, MIN_SIZE, DEFAULT_SIZE, DRAW_SCALE
+from backend.floating_layout import clamp_size, viewport_layout, resolution_scale, MIN_SIZE, DEFAULT_SIZE, DRAW_SCALE
 
 ROOT = Path(__file__).resolve().parents[1]
 TITLE = tr('Infra Workbench · 浮窗', 'Infra Workbench · Monitor')
@@ -269,6 +269,9 @@ class FloatingMonitor:
         self.sprite_refs = []
         self.rounded_items = {}
         self.dpi_scale = max(1.,root.winfo_fpixels('1i')/96.) if sys.platform=='win32' and self._dpi_aware() else 1.
+        self.native_dpi_scale = self.dpi_scale
+        self.resolution_scale = 1.
+        self._display_job = None
         self.drag = None
         self.resize_drag = None
         self._resize_job = None
@@ -305,10 +308,31 @@ class FloatingMonitor:
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.bind('<B1-Motion>',self.pointer_drag)
         root.bind('<ButtonRelease-1>',self.pointer_release)
+        root.bind('<Configure>', self.display_changed, add='+')
         self.render()
         self.worker = threading.Thread(target=self.poll, daemon=True, name='iwb-float-state')
         self.worker.start()
         root.after(250, self.consume)
+
+    def update_display_scale(self):
+        from backend.floating_position import monitor_work_area
+        left, top, right, bottom = monitor_work_area(self.root, full=True)
+        factor = resolution_scale(right-left, bottom-top)
+        changed = factor != self.resolution_scale
+        self.resolution_scale = factor
+        self.dpi_scale = self.native_dpi_scale * factor
+        return changed
+
+    def display_changed(self, event):
+        if event.widget is not self.root or self._display_job is not None:
+            return
+        def refresh():
+            self._display_job = None
+            if self.resize_drag:
+                self._display_job = self.root.after(150, refresh)
+            elif self.update_display_scale():
+                self.render(force=True)
+        self._display_job = self.root.after(150, refresh)
 
     @staticmethod
     def _dpi_aware():
@@ -651,6 +675,7 @@ class FloatingMonitor:
         return tr(f'{idle}/{len(devices)} 空闲', f'{idle}/{len(devices)} Idle')
 
     def render(self, force=False):
+        self.update_display_scale()
         layout=viewport_layout(*self.viewport_size,host_count=len(self.visible_hosts()) if self.hosts else None)
         self.viewport_size=(layout['width'],layout['height'])
         minimal=layout['minimal']
@@ -661,7 +686,7 @@ class FloatingMonitor:
         drawing = [(h['id'], h['target'], [(d.get('display_id', d.get('id')), device_status(d, h.get('snapshot', {}).get('fresh') is True and not self.error),
                     d.get('memory_used') if mode == 'single' else None, d.get('memory_total') if mode == 'single' else None)
                     for d in h.get('snapshot', {}).get('devices', [])]) for h in visible]
-        signature = json.dumps((drawing, self.error, self.settings.values,self.viewport_size,self.scroll_offset,self.detail_offset), sort_keys=True)
+        signature = json.dumps((drawing, self.error, self.settings.values,self.viewport_size,self.scroll_offset,self.detail_offset,self.dpi_scale), sort_keys=True)
         if signature == self.last_render and not force:
             return
         self.hide_tooltip()
@@ -711,7 +736,7 @@ class FloatingMonitor:
         def text(x, y, value, size=10, color=self.INK, bold=False, anchor='w', **kw):
             # Width is a single-line limit, never permission to wrap into the next label.
             from tkinter import font as tkfont
-            font=('Microsoft YaHei UI',max(7,round(size*scale)),'bold' if bold else 'normal')
+            font=('Microsoft YaHei UI',max(1,round(max(7,round(size*scale))*self.resolution_scale)),'bold' if bold else 'normal')
             limit=kw.pop('width',None)
             if limit is not None:
                 measure=tkfont.Font(root=self.root,font=font)
@@ -857,7 +882,7 @@ class FloatingMonitor:
                 c.create_line(194,y+13,194,y+rh-13,fill='#dce4ed')
                 from tkinter import font as tkfont
                 numeric=self.summary(h).split(' ')[0] if h.get('snapshot',{}).get('fresh') and not self.error else tr('未知', 'Unknown')
-                count_font=tkfont.Font(root=self.root,font=('Microsoft YaHei UI',max(7,round(9*scale))))
+                count_font=tkfont.Font(root=self.root,font=('Microsoft YaHei UI',max(1,round(max(7,round(9*scale))*self.resolution_scale))))
                 count_width=count_font.measure(numeric)/(scale*self.dpi_scale)+8
                 if h.get('snapshot',{}).get('fresh') and not self.error:
                     text(203,y+rh/2-9,numeric,9,'#16815c',tags='host-count-'+h['id'])

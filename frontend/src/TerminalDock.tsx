@@ -47,7 +47,7 @@ function palette(){
     brightBlack:'#8090a4',brightRed:'#ef8c8c',brightGreen:'#7bcea7',brightYellow:'#e6c488',brightBlue:'#8bb5ef',brightMagenta:'#c5a3ea',brightCyan:'#89d3d6',brightWhite:'#f0f4fa'};
 }
 
-const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase:(phase:Phase)=>void;onDirectory?:(hostId:string,path:string)=>void}>(function TerminalView({tab,active,font,onPhase,onDirectory},ref){
+export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase:(phase:Phase)=>void;onDirectory?:(hostId:string,path:string)=>void}>(function TerminalView({tab,active,font,onPhase,onDirectory},ref){
   useLocale();
   const [suggestion,setSuggestion]=useState(''),[shellStatus,setShellStatus]=useState(tt("正在检测增强功能"));
   const [workspace,setWorkspace]=useState<any>(null),[tools,setTools]=useState(false);

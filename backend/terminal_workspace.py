@@ -15,6 +15,13 @@ class TerminalWorkspace:
             self.profiles[host_id]=value
         return value
 
+    def mark_interactive(self,session):
+        # An interactive pane may retain a partial readline buffer after detach.
+        # Prompt events can be buffered, so they cannot safely re-arm broadcast.
+        if session.get('cluster_batch_id') and not session.get('broadcast_dirty'):
+            session['broadcast_dirty']=True
+            self.save()
+
     def save(self):self.store.save('terminal_workspace',self.profiles)
 
     def record(self,host_id,identity,command,cwd):

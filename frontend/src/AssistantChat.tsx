@@ -23,7 +23,7 @@ const engineName=(engine?:AssistantEngine)=>engine==='claude'?'Claude Code':engi
 const suggestions=['检查可用资源和运行中的服务','分析训练日志并找出异常','帮我设置资源监控'];
 export function AssistantChat({configured,selectedHostIds,model,openSettings}:{configured:boolean;selectedHostIds:string[];model?:string;openSettings?:()=>void}){
   const [attachments,setAttachments]=useState<TerminalAttachment[]>(takeTerminalContext);
-  useEffect(()=>{const receive=()=>setAttachments(old=>[...old,...takeTerminalContext()].slice(-3));window.addEventListener(TERMINAL_CONTEXT_EVENT,receive);return()=>window.removeEventListener(TERMINAL_CONTEXT_EVENT,receive)},[]);
+  useEffect(()=>{const receive=()=>setAttachments(old=>[...old,...takeTerminalContext()]);window.addEventListener(TERMINAL_CONTEXT_EVENT,receive);return()=>window.removeEventListener(TERMINAL_CONTEXT_EVENT,receive)},[]);
   const [engine,setEngine]=useWorkspaceValue<AssistantEngine>('workspace:assistant-engine','deepagents');
   const [profileId,setProfileId]=useState<string|undefined>(undefined);
   const [items,setItems]=useState<ChatItem[]>([]),[chat,setChat]=useState<Chat|null>(null),[text,setText]=useWorkspaceValue('workspace:chat-draft','');
@@ -42,7 +42,7 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
     if(previous?.id===value.id&&previous.updated>value.updated)return;
     if(current.current!==value.id){setDraftScope(null);follow.current=true;steerRequest.current?.abort();steerRequest.current=null;setSteering(false);setSupplement('')}
     current.current=value.id;chatValue.current=value;setChat(value);if(value.turns.length)setEngine(value.engine||'deepagents');
-    setItems(old=>[value,...old.filter(item=>item.id!==value.id)].slice(0,30));
+    setItems(old=>[value,...old.filter(item=>item.id!==value.id)]);
   };
   useEffect(()=>{if(chat?.id)saveChatId(chat.id)},[chat?.id]);
   useEffect(()=>workspaceStorage.subscribe('iwb-assistant-chat',()=>{

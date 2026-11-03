@@ -10,6 +10,7 @@ import * as notifications from '../src/notifications.ts';
 import * as requests from '../src/requests.ts';
 import * as usage from '../src/hostUsage.ts';
 import * as hostList from '../src/hostList.ts';
+import * as clusterApi from '../src/clusterApi.ts';
 import * as ids from '../src/browserId.ts';
 import * as assistantLayout from '../src/assistantLayout.ts';
 
@@ -21,7 +22,7 @@ hosts[1].snapshot.devices.slice(1).forEach(d=>d.processes=[{pid:123,user:'test'}
 function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   const values=[],storage=new Map();let cursor=0,tree;
   const state={hosts:hostItems,rules:[],reservations,events:[],server_time:100};
-  const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),lazy:()=>()=>null,Suspense:'suspense',StrictMode:'strict',
+  const react={createElement:(type,props,...children)=>typeof type==='function'&&['ClusterSidebar','Check'].includes(type.name)?type({...props,children}):({type,props:{...props,children}}),lazy:()=>()=>null,Suspense:'suspense',StrictMode:'strict',
     useState:initial=>{const index=cursor++;if(!(index in values))values[index]=index===0?state:typeof initial==='function'?initial():initial;return [values[index],value=>{values[index]=typeof value==='function'?value(values[index]):value}]},
     useRef:initial=>{const index=cursor++;if(!(index in values))values[index]={current:initial};return values[index]},useMemo:fn=>fn(),useEffect(){}};
   for(const [name,value] of Object.entries({window:{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},scrollTo(){}},document:{documentElement:{dataset:{}},getElementById:()=>({})},location:{hash}})){
@@ -29,7 +30,9 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   }
   const source=fs.readFileSync(new URL('../src/main.tsx',import.meta.url),'utf8')+'\nexport {App};';
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};const mocks={'./demoBootstrap':{isDemo:demo},'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':{...preferences,browserStorage:()=>window.localStorage},'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
+  const exports={};const mocks={'./clusterApi':clusterApi,'./i18n':{t:(zh)=>zh,useLocale(){}},'./demoBootstrap':{isDemo:demo},'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':{...preferences,browserStorage:()=>window.localStorage},'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
+  const sidebarJs=ts.transpileModule(fs.readFileSync(new URL('../src/ClusterSidebar.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
+  const sidebarExports={};new Function('require','exports',sidebarJs)(name=>workspaceMock(name,react)??(mocks[name]||new Proxy({},{get:(_,key)=>key})),sidebarExports);mocks['./ClusterSidebar']=sidebarExports;
   new Function('require','exports',js)(name=>workspaceMock(name,react)??(mocks[name]||new Proxy({},{get:(_,key)=>key})),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);

@@ -8,6 +8,7 @@ import asyncssh
 
 from .core import discover_aliases, install_key_script
 from .ssh_passwords import connection_identity
+from .ssh_proxy import SSHProxyConnector
 
 
 class SSHService:
@@ -59,8 +60,8 @@ class SSHService:
         return args + [self.destination(host)]
 
     async def effective(self, host):
-        if host.get('manual'):
-            return dict(hostname=host['target'], user=host['user'], port=str(host['port']))
+        # Literal addresses also match Host patterns (e.g. 177.*). Resolve
+        # them through OpenSSH just like native commands and credential checks.
         args = ['ssh', '-G', '-o', 'PermitLocalCommand=no']
         if host.get('user'):
             args += ['-l', host['user']]
@@ -109,7 +110,29 @@ class SSHService:
         if cfg.get('hostkeyalias') and cfg['hostkeyalias'] != 'none':
             options['host_key_alias'] = cfg['hostkeyalias']
         if cfg.get('proxyjump') and cfg['proxyjump'] != 'none':
-            options['tunnel'] = cfg['proxyjump']
+            # AsyncSSH inherits config=None for string tunnels, so an OpenSSH
+            # jump alias would be looked up in DNS instead of ~/.ssh/config.
+            jumps = cfg['proxyjump'].split(',')
+            destination = jumps[-1]
+            proxy = ['ssh', '-T', '-o', 'BatchMode=yes',
+                     '-o', 'ClearAllForwardings=yes', '-o', 'StrictHostKeyChecking=yes',
+                     '-o', 'PermitLocalCommand=no', '-o', 'ConnectTimeout=20']
+            if self.custom_known_hosts:
+                proxy += ['-o', 'UserKnownHostsFile='+str(self.known_hosts)]
+            if len(jumps) > 1:
+                proxy += ['-J', ','.join(jumps[:-1])]
+            user, separator, address = destination.rpartition('@')
+            if not separator:
+                address = destination
+            if ':' in address and (not address.startswith('[') or ']:' in address):
+                address, port = address.rsplit(':', 1)
+                proxy += ['-p', port]
+            address = address.strip('[]')
+            destination = (user+'@' if separator else '')+address
+            endpoint = cfg['hostname']
+            if ':' in endpoint:
+                endpoint = '['+endpoint.strip('[]')+']'
+            options['proxy_command'] = proxy+['-W', endpoint+':'+str(cfg.get('port',22)), destination]
         elif cfg.get('proxycommand') and cfg['proxycommand'] != 'none':
             command = cfg['proxycommand'].replace('%h', cfg['hostname']).replace('%p', cfg.get('port', '22')).replace('%r', cfg.get('user', ''))
             options['proxy_command'] = command
@@ -118,6 +141,8 @@ class SSHService:
             options['agent_path'] = None
         else:
             options['client_keys'] = []
+        if options.get('proxy_command'):
+            options['tunnel'] = SSHProxyConnector(options.pop('proxy_command'))
         connection = await asyncssh.connect(**options)
         self.connection_configs[connection] = cfg
         return connection

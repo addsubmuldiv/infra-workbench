@@ -220,8 +220,16 @@ class TerminalManager:
                 if initial.get('session'):
                     persistent=next((s for s in self.workspace.profile(host['id'],identity)['sessions'] if s['id']==initial['session']),None)
                     if not persistent:raise ValueError('找不到此账号的持久会话')
-                    if any(v.get('persistent')==persistent['id'] and v['host_id']==host['id'] for v in self.active.values()):raise ValueError('此持久会话已在其他标签中打开')
-                    self.active[session_id]['persistent']=persistent['id']
+                    batch_manager=getattr(websocket.app.state,'cluster_terminals',None)
+                    if batch_manager is not None:
+                        async with batch_manager.lock:
+                            if any(v.get('persistent')==persistent['id'] and v['host_id']==host['id'] for v in self.active.values()):raise ValueError('此持久会话已在其他标签中打开')
+                            self.workspace.mark_interactive(persistent)
+                            self.active[session_id]['persistent']=persistent['id']
+                    else:
+                        if any(v.get('persistent')==persistent['id'] and v['host_id']==host['id'] for v in self.active.values()):raise ValueError('此持久会话已在其他标签中打开')
+                        self.workspace.mark_interactive(persistent)
+                        self.active[session_id]['persistent']=persistent['id']
                 protocol=ShellProtocol(persistent['token'] if persistent else session_id)
                 command=tmux_command('attach',session=persistent) if persistent else bootstrap_command(session_id,cwd)
                 channel=await self.open_channel(host,cols,rows,command=command,config=cfg)
@@ -299,6 +307,7 @@ class TerminalManager:
                         if sudo_waiting and data:
                             sudo_waiting=False
                             await sudo_state()
+                        if persistent is not None and data:self.workspace.mark_interactive(persistent)
                         await channel.write(data)
                     elif kind=='sudo' and protocol:
                         current=self.sudo.identity(await self.ssh.effective(host))
@@ -310,6 +319,7 @@ class TerminalManager:
                             await websocket.send_json(dict(type='warning',message='未发送密码：请确认已开启密码复用，且当前 sudo 正在等待密码'))
                             continue
                         sudo_waiting=False;sudo_attempted=True
+                        if persistent is not None:self.workspace.mark_interactive(persistent)
                         await channel.write(password+'\n')
                         await sudo_state()
                     elif kind=='resize':
@@ -359,6 +369,9 @@ def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
     workspace=TerminalWorkspace(store) if store else None
     manager=TerminalManager(ssh,workspace,sudo)
     app.state.terminals=manager
+    if workspace is not None:
+        from .cluster_terminals import register_cluster_terminal_routes
+        register_cluster_terminal_routes(app,hosts,ssh,workspace,sudo)
 
     async def resolve(host_id):
         host=next((h for h in hosts if h['id']==host_id),None)

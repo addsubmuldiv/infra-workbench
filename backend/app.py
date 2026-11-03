@@ -65,6 +65,7 @@ class ConnectionRequest(BaseModel):
     password: SecretStr | None = None
     provision: bool = False
     remember_password: bool = False
+    cluster_id: str | None = None
 
     @field_validator('target', 'user')
     @classmethod
@@ -210,7 +211,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                     raise ValueError('远端未返回有效采集结果；请检查 Python3')
                 raw = json.loads(out.split('IWB_JSON:')[-1].strip())
                 if raw['metrics']['code'] != 0:
-                    raise ValueError(raw['metrics']['error'])
+                    metrics = raw['metrics']
+                    tool = 'npu-smi' if raw.get('kind') == 'NPU' else 'nvidia-smi' if raw.get('kind') == 'GPU' else '设备采集命令'
+                    detail = (metrics.get('error') or '').strip() or (metrics.get('out') or '').strip()
+                    raise ValueError(f"{tool} 采集失败（退出码 {metrics['code']}）：{detail[-800:] or '命令未返回错误详情'}")
                 stage = 'parse'
                 if raw['kind'] == 'GPU':
                     devices = parse_nvidia(raw['metrics']['out'], raw['processes']['out'], raw['processes']['code'] == 0)
@@ -327,6 +331,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             import_cleanup.cancel()
             with contextlib.suppress(asyncio.CancelledError):await import_cleanup
             await app.state.server_imports.close()
+            await app.state.clusters.close()
             await app.state.agent_chat.close()
             if terminal_task:
                 terminal_task.cancel()
@@ -368,6 +373,11 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     app.state.infra_assistant = InfraAssistant(agent_api, app.state.agent_service.inventory, resource_history, refresh_assistant)
     register_assistant_routes(app, app.state.infra_assistant)
     probes = ChatTools(app.state.infra_assistant,app.state.agent_service,ssh)
+    from .clusters import ClusterService
+    from .cluster_routes import register_cluster_routes
+    from .command_tools import CommandTools
+    app.state.clusters = ClusterService(store, hosts, CommandTools(probes, sudo, getattr(app.state, 'desktop_command_jobs', None)))
+    register_cluster_routes(app, app.state.clusters)
     from .skill_service import SkillService
     from .skill_routes import register_skill_routes
     app.state.skills = SkillService(store)
@@ -411,6 +421,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_launch_routes(app, data)
     from .desktop_update import register_routes as register_desktop_update_routes
     register_desktop_update_routes(app)
+    app.state.clusters.bind_command_registry(app.state.desktop_command_jobs)
 
     from .workspace_state import register_workspace_state
     register_workspace_state(app, store)
@@ -503,7 +514,19 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     @app.post('/api/connect')
     @serialize_connections
     async def connect(body:ConnectionRequest):
-        return await connect_machine(body)
+        if body.cluster_id:
+            try:
+                app.state.clusters.pin_import(body.cluster_id)
+            except AgentError as exc:
+                raise HTTPException(409,exc.message) from None
+        try:
+            result = await connect_machine(body)
+            if body.cluster_id:
+                app.state.clusters.assign_import(result['host_id'],body.cluster_id)
+            return result
+        finally:
+            if body.cluster_id:
+                app.state.clusters.unpin_import(body.cluster_id)
 
     @serialize_connections
     async def import_connection(row):
@@ -596,6 +619,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 raise HTTPException(400, str(exc)) from None
             await app.state.port_forwarding.remove_host(host_id)
             hosts.remove(host)
+            app.state.clusters.remove_host(host_id)
         rules[:] = [r for r in rules if r['host_id'] != host_id]
         reservations.remove_host(host_id)
         conn = ssh.sessions.pop(host_id, None)

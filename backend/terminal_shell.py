@@ -62,7 +62,7 @@ if path and kind in ('start','prompt'):
         try:
             with open(path) as stream: prior=json.loads(stream.read(65536))
         except (OSError,ValueError):prior={}
-        state=dict(kind=kind,status=int(status),cwd=cwd)
+        state=dict(kind=kind,status=int(status),cwd=cwd,token=TOKEN)
         results=prior.get('results',[])
         if not isinstance(results,list):results=[]
         # Keep completed runs separate from the next running command. The last

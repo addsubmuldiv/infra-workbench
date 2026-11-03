@@ -49,7 +49,7 @@ def test_deepseek_responses_preserves_reasoning_for_tool_followup(client, monkey
         await service.turn('rules',[first['message'],{'role':'tool','tool_call_id':'probe','content':'ok'}],[])
     asyncio.run(run())
     assert calls[0]['reasoning']=={'effort':'high'}
-    assert calls[0]['max_output_tokens']==16384
+    assert 'max_output_tokens' not in calls[0]
     assert calls[1]['input'][0]=={'type':'reasoning','content':[{'type':'reasoning_text','text':'internal context'}]}
 
 
@@ -62,3 +62,29 @@ def test_framework_roundtrip_keeps_reasoning_in_internal_metadata():
     reply=asyncio.run(WorkbenchChatModel(Provider()).ainvoke([HumanMessage(content='check')]))
     assert reply.content=='done'
     assert wire_messages([reply])[0]['reasoning_content']=='internal context'
+
+
+def test_large_tool_batch_is_valid_but_duplicate_ids_are_rejected(client, monkeypatch):
+    import pytest
+    from backend.agent_api import ProviderFailure
+    service = client.app.state.agent_api
+    service.config.update(model='test', protocol='responses')
+    output = [dict(type='function_call', call_id=f'call-{i}', name='inspect', arguments='{}') for i in range(20)]
+    async def request(*args):
+        return dict(status='completed', output=output)
+    monkeypatch.setattr(service, 'request', request)
+    result = asyncio.run(service.turn('rules', [dict(role='user', content='check all hosts')], []))
+    assert len(result['message']['tool_calls']) == 20
+    output[-1]['call_id'] = output[0]['call_id']
+    with pytest.raises(ProviderFailure, match='ID 重复'):
+        asyncio.run(service.turn('rules', [dict(role='user', content='check')], []))
+
+
+def test_chat_selection_lists_have_no_count_ceiling():
+    from backend.agent_chat import ChatMessageRequest
+    request = ChatMessageRequest(content='check', selected_host_ids=[str(i) for i in range(200)],
+                                 selected_skill_names=[str(i) for i in range(40)])
+    assert len(request.selected_host_ids) == 200
+    assert len(request.selected_skill_names) == 40
+    for field in ('selected_host_ids', 'selected_skill_names', 'terminal_attachments'):
+        assert 'maxItems' not in ChatMessageRequest.model_json_schema()['properties'][field]

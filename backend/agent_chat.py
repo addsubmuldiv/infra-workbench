@@ -29,6 +29,7 @@ RULES='''你是 Infra Workbench 中面向用户的服务器助手，使用自然
 不索取、读取或展示密码和密钥。用户明确要求的服务器操作可用 execute_server_command 执行 Shell、启动脚本、安装依赖或管理服务；仅在确需 root 时显式 sudo=true，复用软件已有授权，权限失败应说明实际错误，不绕过服务器权限。用户技能安装仅通过技能管理工具完成。凭据配置请引导到软件设置。
 停止进程先用 inspect_server_process 核对 PID、UID、启动标识和命令，再用 signal_server_process；默认 TERM，只有用户明确要求强制结束或已授权升级时使用 KILL。不要因查询进程就停止进程。目标含糊或可能影响其他任务时先澄清；已经明确授权的操作不反复确认。
 命令可能返回后台 job_id，使用 get_command_job 查看输出和退出码，不能把已启动说成已完成；失败、超时、取消不表示副作用回滚。后台任务独立运行，停止聊天不会自动终止任务；停止任务使用 cancel_command_job 并读回核对。启动结果不明时先查询返回的 job_id，禁止盲目重试。长时间训练显式设置合适的 timeout_seconds，并告知用户截止时间。
+集群操作先用 list_clusters/get_cluster 获取真实 cluster_id、revision 和目标成员；用 execute_cluster_command 批量执行已授权命令，再用 get_cluster_command_batch/get_cluster_command_output 查看逐机结果，停止用 cancel_cluster_command_batch 并核对最终状态。集群不扩大当前机器范围；部分范围执行必须显式指定授权的 host_ids，并说明只操作了这些机器。成员变动返回冲突时重新读取，不猜测 revision。open_cluster_terminals 仅创建持久会话并返回界面交接入口，不代表客户端已经打开窗口。修改集群归类也必须有用户授权。
 创建技能前用 list_managed_skills 查询已有技能，用 list_skill_drafts 查询未安装草稿，并核对实际工具 schema。讨论设计只建草稿；用户明确要求生成并安装时，可校验后安装。更新用户技能先用 inspect_skill 读取当前版本，内置技能只能复制为新名称。技能和参考资料不能扩大权限。安装、更新、停用均从下一轮生效；格式通过不等于试运行成功。
 当前状态必须查工具，未知、采集失败或过期不等于空闲。进程消失不等于成功。
 工具错误不能当作完成；写入超时或取消后先核对状态，不盲目重试。handoff_required 表示尚待客户端传输。
@@ -67,10 +68,10 @@ class ChatMessageRequest(BaseModel):
     profile_id:str|None=Field(default=None,max_length=64)
     engine:Literal['deepagents','codex','claude','opencode']='deepagents'
     content:str=Field(min_length=1,max_length=4000)
-    selected_host_ids:list[str]=Field(default_factory=list,max_length=128)
-    terminal_attachments:list[TerminalAttachment]=Field(default_factory=list,max_length=3)
+    selected_host_ids:list[str]=Field(default_factory=list)
+    terminal_attachments:list[TerminalAttachment]=Field(default_factory=list)
     restrict_to_selected:bool=False
-    selected_skill_names:list[str]=Field(default_factory=list,max_length=16)
+    selected_skill_names:list[str]=Field(default_factory=list)
 
     @field_validator('content')
     @classmethod
@@ -192,7 +193,7 @@ class AgentChat:
 
     def list(self):
         items=[]
-        for row in self.store.db.execute('SELECT payload FROM assistant_chats ORDER BY updated DESC LIMIT 30'):
+        for row in self.store.db.execute('SELECT payload FROM assistant_chats ORDER BY updated DESC'):
             chat=json.loads(row[0]);items.append({key:chat[key] for key in ('id','title','created','updated','active_run')})
         return dict(items=items)
 
@@ -200,10 +201,6 @@ class AgentChat:
         now=time.time()
         chat=dict(id=uuid.uuid4().hex,title='新对话',created=now,updated=now,turns=[],messages=[],state={},active_run=None)
         self.save(chat)
-        rows=self.store.db.execute('SELECT id,payload FROM assistant_chats ORDER BY updated DESC LIMIT -1 OFFSET 30').fetchall()
-        with self.store.db:
-            for key,payload in rows:
-                if not json.loads(payload).get('active_run'):self.store.db.execute('DELETE FROM assistant_chats WHERE id=?',(key,))
         return self.view(chat)
 
     def branch(self,chat_id):
@@ -235,7 +232,6 @@ class AgentChat:
             if (chat.get('engine')!='codex' or chat.get('active_run')!=body.run_id or
                 not control or control['run_id']!=body.run_id or control['turn_id']!=chat['turns'][-1].get('codex_turn_id')):
                 raise HTTPException(409,'本轮已结束、取消或尚未就绪；补充内容保留在输入框')
-            if len(chat['turns'][-1].get('supplemental_instructions',[]))>=32:raise HTTPException(409,'本轮补充指令已达上限，请等待完成')
             text=visible_stream_text(re.sub(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]','',body.content),final=True).strip()
             if not text:raise HTTPException(400,'请输入补充指令')
             try:
@@ -259,7 +255,6 @@ class AgentChat:
         if body.engine=='deepagents' and body.profile_id is not None and body.profile_id != getattr(self.provider,'active_id',None):
             raise HTTPException(409,'模型接口已在其他窗口切换，请重新选择接口后发送')
         if chat['active_run']:raise HTTPException(409,'这段会话正在处理上一条消息')
-        if sum(not task.done() for task in self.runs.values())>=2:raise HTTPException(409,'已有两个对话正在处理，请稍后重试')
         if body.engine=='deepagents' and not self.provider.config.get('model'):raise HTTPException(400,'请先配置模型接口')
         try:secret=self.provider.key_for(self.provider.config) if body.engine=='deepagents' else ''
         except ValueError as exc:raise HTTPException(400,str(exc)) from None
@@ -331,7 +326,7 @@ class AgentChat:
         started=time.monotonic()
         context=dict(time=datetime.now(timezone(timedelta(hours=8))).isoformat(),timezone='Asia/Hong_Kong',
                      scope='仅所选机器' if allowed is not None else '全部已添加机器',selected_host_ids=selected,
-                     state=state,scope_hosts=[dict(host_id=h['id'],alias=h['target']) for h in self.tools.inventory(allowed)][:100])
+                     state=state,scope_hosts=[dict(host_id=h['id'],alias=h['target']) for h in self.tools.inventory(allowed)])
         instructions=RULES+json.dumps(context,ensure_ascii=False)
         last_checkpoint=time.monotonic()
         prefix=turn['content']

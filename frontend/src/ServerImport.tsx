@@ -1,4 +1,5 @@
-import {useLocale} from './i18n';
+import {ClusterTarget} from './ClusterTarget';
+import {t,useLocale} from './i18n';
 import {toolText as tt} from './toolI18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {Download,FileSpreadsheet,LoaderCircle,Upload} from 'lucide-react';
@@ -21,6 +22,7 @@ export default function ServerImport({onChanged}:{onChanged:(ids:string[])=>void
   useLocale();
   const [job,setJob]=useState<ImportJob|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[filename,setFilename]=useState(''),[provision,setProvision]=useState(false),[failedOnly,setFailedOnly]=useState(false);
   const current=useRef(job),changed=useRef(onChanged),seen=useRef(new Set<string>()),mounted=useRef(true),uploads=useRef<AbortController|null>(null),selecting=useRef(false);
+  const [clusterId,setClusterId]=useState('');
   const starting=useRef(false);
   current.current=job;changed.current=onChanged;
   const receive=(value:ImportJob)=>{
@@ -68,7 +70,7 @@ export default function ServerImport({onChanged}:{onChanged:(ids:string[])=>void
   };
   const start=async()=>{
     if(!job||starting.current)return;starting.current=true;setBusy(true);setError('');
-    try{receive(await importRequest('/'+job.id+'/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provision})}))}
+    try{receive(await importRequest('/'+job.id+'/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provision,cluster_id:clusterId||null})}))}
     catch(e){if(mounted.current)setError(e instanceof Error?e.message:tt("开始导入失败"))}
     finally{starting.current=false;if(mounted.current)setBusy(false)}
   };
@@ -80,6 +82,7 @@ export default function ServerImport({onChanged}:{onChanged:(ids:string[])=>void
     <p className="subtle">{tt("提供的密码会在验证成功后自动存入系统凭据管理器，可在机器的「SSH 密码」中查看保存状态或删除。按 SSH 别名或实际地址、账号、端口匹配已有机器；只验证并补存密码，不重复添加，不修改原密钥和跳板。文件内重复目标会跳过。密码原文不显示在预览和报告中。未信任的主机指纹需先在终端核对。")}</p>
     {error&&<div className="connection-error" role="alert">{error}</div>}
     {job&&<>
+      {job.status==='preview'&&<><ClusterTarget value={clusterId} onChange={setClusterId} disabled={busy}/><p className="subtle">{t("仅新增成功的机器进入所选集群。已有机器补存密码时保留原归属。","Only newly added machines join this cluster. Existing machines retain their membership when saving passwords.")}</p></>}
       <div className="import-summary"><span>{tt("总数 ")}<b>{job.total}</b></span><span className="success">{tt("新增 ")}<b>{job.success}</b></span><span className="failure">{tt("失败 ")}<b>{job.failed}</b></span><span>{tt("跳过新增 ")}<b>{job.skipped}</b></span>{job.status==='preview'?<span>{tt("待处理 ")}<b>{job.valid}</b></span>:<><span className="success">{tt("密码已保存 ")}<b>{job.password_saved||0}</b></span>{!!job.password_failed&&<span className="failure">{tt("密码保存失败 ")}<b>{job.password_failed}</b></span>}</>}</div>
       {job.status==='preview'?<><p className="subtle">{filename} {tt(" · 请核对以下地址和账号，再开始导入。")}</p><label className="provision-option"><input type="checkbox" checked={provision} onChange={e=>setProvision(e.target.checked)} disabled={busy}/><div><strong>{tt("导入成功后，在后台配置免密登录")}</strong><p>{tt("先完成所有服务器的导入，再排队追加公钥并独立验证，不影响导入成功计数。")}</p></div></label></>:<>
         <div className="import-progress"><div><strong>{importing?tt("正在导入"):job.status==='complete'?tt("导入完成"):tt("导入已中断")}</strong><span>{job.processed} / {job.total} · {importPercent(job.processed,job.total)}%</span></div><progress aria-label={tt("服务器导入进度")} max={job.total||1} value={job.processed}/>{importing&&<p>{job.rows.find(row=>row.status==='connecting')?.target||tt("正在准备下一台机器…")}</p>}</div>
