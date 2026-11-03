@@ -73,8 +73,14 @@ jobs:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           INCLUDE_MACOS: ${{ inputs.include_macos || false }}
         run: |
-          flags=()
-          if [ "$INCLUDE_MACOS" != "true" ]; then flags+=(--partial); fi
+          # Intel Mac is no longer a release target. Require every supported
+          # artifact explicitly before using the manifest's partial-platform mode.
+          test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-windows-x86_64-setup.exe"
+          if [ "$INCLUDE_MACOS" = "true" ]; then
+            test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-aarch64.app.tar.gz"
+            test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-aarch64.dmg"
+          fi
+          flags=(--partial)
           node desktop/release.mjs manifest release-assets "${RELEASE_TAG#v}" CHANGELOG.md "${flags[@]}"
           node desktop/release.mjs checksums release-assets "${flags[@]}"
       - name: Create draft release

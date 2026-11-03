@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ (github.event_name == 'pull_request' || inputs.include_macos) && fromJSON('["windows-latest","macos-15","macos-15-intel"]') || fromJSON('["windows-latest"]') }}
+        os: ${{ (github.event_name == 'pull_request' || inputs.include_macos) && fromJSON('["windows-latest","macos-15"]') || fromJSON('["windows-latest"]') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -95,10 +95,12 @@ jobs:
         working-directory: desktop
         run: node release.mjs collect src-tauri/target/release/bundle ../release-assets
       - name: Install WebKit compatibility test runtime
+        if: runner.os == 'macOS'
         run: |
           npm install --prefix work/desktop-benchmark --no-save ws@8 playwright@1.64.1
           node work/desktop-benchmark/node_modules/playwright/cli.js install webkit
       - name: Check shared UI on WebKit (including missing newer APIs)
+        if: runner.os == 'macOS'
         run: node scripts/check-webkit-performance-compat.cjs
       - uses: actions/upload-artifact@v6
         if: always()
