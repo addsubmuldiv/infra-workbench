@@ -72,3 +72,33 @@ def test_credential_delete_failure_is_reported_without_removing_the_host(tmp_pat
         assert result.status_code==400
         assert 'synthetic store error' not in result.text
         assert app.state.hosts[0]['id']=='hostid'
+
+
+def test_saved_password_session_restores_once_and_checks_identity(tmp_path):
+    import pytest
+    from backend.ssh import SSHService
+    from backend.ssh_passwords import SSHPasswords
+    from backend.agent_errors import AgentError
+    ssh = SSHService(tmp_path)
+    passwords = SSHPasswords(ssh, Vault())
+    host = dict(id='a', target='a', auth='password_session')
+    address = ['original']
+    async def details(h): return dict(hostname=address[0], user='user', port='22')
+    ssh.effective_details = details
+    calls = []
+    class Connection:
+        def is_closed(self): return False
+    async def connect(h, password, provision=False):
+        calls.append(password)
+        ssh.sessions[h['id']] = Connection()
+    ssh.connect = connect
+    async def run():
+        await passwords.save(host, 'test-password')
+        await asyncio.gather(passwords.restore_session(host), passwords.restore_session(host))
+        assert calls == ['test-password']
+        ssh.sessions.clear()
+        address[0] = 'changed'
+        with pytest.raises(AgentError, match='CREDENTIAL_IDENTITY_CHANGED'):
+            await passwords.restore_session(host)
+        assert calls == ['test-password']
+    asyncio.run(run())

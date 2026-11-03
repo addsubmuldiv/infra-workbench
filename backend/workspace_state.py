@@ -11,6 +11,8 @@ KEYS = {
  'infra-workbench:notifications:read:v1', 'infra-workbench:reservation-wait-minutes',
  'iwb-assistant-chat', 'iwb.precision.draft.v1', 'iwb-terminal-command-window',
  'infra-workbench:terminal-frame:v1',
+ 'cluster-collapse', 'infra-workbench:terminal-highlights:v1',
+ 'infra-workbench:terminal-images:v1',
 }
 
 def allowed(key):

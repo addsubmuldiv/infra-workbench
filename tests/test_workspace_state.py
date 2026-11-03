@@ -37,3 +37,21 @@ def test_invalid_or_oversized_state_does_not_write(tmp_path):
         for values in [{'api-key': 'secret'}, {'workspace:x': 'x'*65537}, {'workspace:x': {'invalid': 1}}]:
             assert c.put('/api/workspace-state', json={'values': values}).status_code == 422
         assert c.get('/api/workspace-state').json()['revision'] == 0
+
+
+def test_cluster_and_terminal_preferences_save_with_other_workspace_edits(tmp_path):
+    values = {
+        'cluster-collapse': '{"cluster-1":true}',
+        'infra-workbench:terminal-highlights:v1': '{"enabled":true,"rules":[]}',
+        'infra-workbench:terminal-images:v1': 'true',
+        'workspace:page': '"overview"',
+    }
+    path = tmp_path / 'db.sqlite'
+    with client(path) as c:
+        response = c.put('/api/workspace-state', json={'values': values})
+        assert response.status_code == 200, response.text
+        assert response.json()['values'] == values
+    with client(path) as c:
+        assert c.get('/api/workspace-state').json()['values'] == values
+        assert c.put('/api/workspace-state', json={'values': {key: None for key in values}}).status_code == 200
+        assert c.get('/api/workspace-state').json()['values'] == {}

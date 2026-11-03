@@ -148,6 +148,8 @@ class SSHService:
         return connection
 
     async def run(self, host, command, source=None):
+        if restore := getattr(self, 'restore_session', None):
+            await restore(host)
         session = self.sessions.get(host['id'])
         if session and not session.is_closed():
             current = await self.effective(host)

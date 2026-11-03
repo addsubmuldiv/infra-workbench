@@ -1,4 +1,5 @@
 """Optional SSH-login secrets, separate from sudo/SMTP and never in host records."""
+import asyncio
 import hashlib
 import json
 
@@ -15,6 +16,8 @@ def connection_identity(config):
 class SSHPasswords:
     def __init__(self,ssh,vault):
         self.ssh,self.vault=ssh,vault
+        self.restore_locks = {}
+        ssh.restore_session = self.restore_session
 
     def view(self,host):
         try:
@@ -53,6 +56,21 @@ class SSHPasswords:
             raise AgentError('CREDENTIAL_IDENTITY_CHANGED','SSH 目标、账号或路由已变化，请重新保存密码。')
         return dict(host_id=host['id'],hostname=cfg['hostname'],user=cfg['user'],port=int(cfg.get('port',22)),
                     credential_type='ssh-password',password=value['password'])
+
+    async def restore_session(self, host):
+        if host.get('auth') != 'password_session':
+            return
+        async with self.restore_locks.setdefault(host['id'], asyncio.Lock()):
+            session = self.ssh.sessions.get(host['id'])
+            if session and not session.is_closed():
+                return
+            if self.view(host)['password_saved'] is False:
+                return
+            config = await self.config(host)
+            credential = await self.get(host)
+            # Recheck the endpoint inside connect before sending a saved secret.
+            candidate = dict(host, _import_identity=connection_identity(config))
+            await self.ssh.connect(candidate, credential['password'], False)
 
     def forget(self,host):
         try:
