@@ -1,3 +1,4 @@
+import {TERMINAL_CONTEXT_EVENT} from './terminalContext';
 import {isDemo,demoRuntime} from './demoBootstrap';
 import {LanguageSettings} from './LanguageSettings';
 import {DesktopUpdateNotification} from './DesktopUpdatePanel';
@@ -90,6 +91,7 @@ function App(){
   const [assistantOpen,setAssistantOpen]=useState(()=>location.hash.split('?')[0]==='#assistant'||loadAssistantOpen(browserStorage())),[assistantWidth,setAssistantWidth]=useState(0);
   useWorkspaceRestore(ASSISTANT_OPEN_KEY,()=>loadAssistantOpen(browserStorage()),setAssistantOpen);
   useEffect(()=>{try{browserStorage()?.setItem(ASSISTANT_OPEN_KEY,String(assistantOpen))}catch{}},[assistantOpen]);
+  useEffect(()=>{const open=()=>setAssistantOpen(true);window.addEventListener(TERMINAL_CONTEXT_EVENT,open);return()=>window.removeEventListener(TERMINAL_CONTEXT_EVENT,open)},[]);
   const [page,setPage]=useWorkspaceValue<Page>('workspace:page',pageFromHash(location.hash)==='assistant'?'overview':pageFromHash(location.hash)),[filter,setFilter]=useWorkspaceValue('workspace:filter','全部'),[count,setCount]=useWorkspaceValue('workspace:count',1),[minimum,setMinimum]=useWorkspaceValue('workspace:minimum',16),[clear,setClear]=useWorkspaceValue('workspace:clear',true);
   const [resourceKind,setResourceKind]=useWorkspaceValue('workspace:resourceKind','全部'),[selectedScope,setSelectedScope]=useWorkspaceValue('workspace:selectedScope',false),[deviceOverview,setDeviceOverview]=useWorkspaceValue('workspace:deviceOverview',false);
   const [adding,setAdding]=useState(false),[detail,setDetail]=useState<{host:string;device:string}|null>(null),[selected,setSelected]=useWorkspaceValue<Record<string,string[]>>('workspace:selected-devices',{});

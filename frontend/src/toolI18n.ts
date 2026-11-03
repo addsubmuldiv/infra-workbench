@@ -2,6 +2,12 @@ import {t} from './i18n.ts';
 
 // App-owned tool UI copy. Remote output, paths and file content are never passed here.
 const english:Record<string,string>={
+  "没有可附加的终端内容":"No terminal content to attach",
+  "已附加到 AI 草稿，请预览后发送":"Attached to AI draft; preview before sending",
+  "选区 → AI":"Selection → AI",
+  "当前屏幕 → AI":"Visible screen → AI",
+  "收起 AI 助手":"Close AI assistant",
+
   "正在连接": "Connecting",
   "会话运行中": "Session running",
   "连接已结束": "Connection closed",

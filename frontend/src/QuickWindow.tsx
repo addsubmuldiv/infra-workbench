@@ -1,3 +1,5 @@
+import {TERMINAL_CONTEXT_EVENT} from './terminalContext';
+import {AssistantChat} from './AssistantChat';
 import {useLocale} from './i18n';
 import {toolText as tt} from './toolI18n';
 import React,{useEffect,useState} from 'react';
@@ -11,6 +13,8 @@ const nativeInvoke=(window as any).__TAURI_INTERNALS__?.invoke;
 const nativeAction=(action:string)=>{if(nativeInvoke)void nativeInvoke('quick_window_action',{action}).catch(console.error)};
 export function QuickWindow(){
   const locale=useLocale();
+ const [assistant,setAssistant]=useState(false),[configured,setConfigured]=useState(false);
+ useEffect(()=>{const open=()=>{setAssistant(true);fetch('/api/assistant/status').then(r=>r.json()).then(v=>setConfigured(!!v.configured)).catch(()=>{})};window.addEventListener(TERMINAL_CONTEXT_EVENT,open);return()=>window.removeEventListener(TERMINAL_CONTEXT_EVENT,open)},[]);
  const params=new URLSearchParams(location.search),kind=params.get('tool'),hostId=params.get('host');
  const [hosts,setHosts]=useState<Host[]>([]),[error,setError]=useState(''),[ready,setReady]=useState(false);
  const [terminal,setTerminal]=useState<TerminalRequest|null>(null);
@@ -58,6 +62,7 @@ export function QuickWindow(){
   {error?<p role="alert">{error}<button onClick={()=>location.reload()}>{tt("重试")}</button></p>:!ready?<p role="status">{tt("正在打开机器窗口…")}</p>:null}
   {ready&&<button className="quick-reopen" onClick={()=>{const host=hosts.find(h=>h.id===hostId)!;if(kind==='terminal')setTerminal({host,id:browserId()});else setFiles({host,requestId:browserId()})}}>{tt("重新打开")}{kind==='terminal'?tt("终端"):tt("文件")}</button>}
   <TerminalBoundary close={()=>setTerminal(null)}>{terminal&&<TerminalDock request={terminal} hosts={hosts} onDirectory={directory}/>}</TerminalBoundary>
+  {assistant&&<div style={{position:"fixed",inset:"12px 12px 12px auto",width:"min(500px,95vw)",zIndex:10000,background:"var(--bg)",overflow:"auto"}}><button onClick={()=>setAssistant(false)}>{tt('收起 AI 助手')}</button><AssistantChat configured={configured} selectedHostIds={hostId?[hostId]:[]}/></div>}
   {files&&<FileBrowser host={files.host} hosts={hosts} initialPath={files.path} requestId={files.requestId} close={()=>setFiles(null)} onTerminal={(id,cwd)=>openTool('terminal',id,cwd)}/>}
  </main>;
 }

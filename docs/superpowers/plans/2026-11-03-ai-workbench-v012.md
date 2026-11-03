@@ -30,7 +30,7 @@
 ## Tasks and acceptance
 
 1. [ ] **Codex integration** — `backend/codex_*.py`, `backend/agent_chat.py`, assistant engine selector. Real installed CLI text/tool/continuation/cancel smoke; mocked protocol and scope tests; commit.
-2. [ ] **Terminal context to AI** — terminal selection/screen buffer attachment and explicit read limits, machine/session/cwd provenance, assistant launch/draft handoff; tests for truncation and scope; commit.
+2. [x] **Terminal context to AI** — terminal selection/screen buffer attachment and explicit read limits, machine/session/cwd provenance, assistant launch/draft handoff; tests for truncation and scope; commit.
 3. [ ] **Port forwarding/service entry** — managed loopback local SSH forwarding, per-host start/stop/status, port conflict reporting, TensorBoard/Jupyter/custom service links, backend lifecycle cleanup; real local tunnel smoke where practical; commit.
 4. [ ] **Keyword highlighting** — configurable literal terminal rules with training presets, persistent preferences, safe bounded rendering and full-screen terminal behavior; tests/build; commit.
 5. [ ] **Reusable automation** — user-inspectable deterministic workflows over approved MCP tools, manual runs first, opt-in connect/output triggers only when reliable events exist, bounded run logs/cancel; AI create/edit via tools and skills; tests; commit.
@@ -47,3 +47,5 @@
 - Ruling: optional API/SDK credentials will not be invented; unavailable external agent runtimes must have explicit setup status.
 
 Task 1 implementation: local Codex App Server, authenticated scoped real MCP, isolated native tools, engine picker, model discovery and scope-safe resume. Targeted tests and frontend build pass. Live CLI initialize/account/model/MCP inventory validated; cloud turn validation remains limited by response-stream request timeouts (90-second bounded smoke), not represented as a successful real model tool call.
+
+Task 2: explicit selection/visible-screen capture, bounded Unicode plain text and provenance, removable preview/draft handoff including standalone terminal assistant. Independent server attachment/scope validation and credential scrubbing; both engines receive untrusted attachment data. Targeted backend, full frontend tests and TypeScript/Vite build verified. No continuous output feed or automatic execution.
