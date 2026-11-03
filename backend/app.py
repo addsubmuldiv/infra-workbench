@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validat
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
+from .port_forwarding import register_port_forwarding
 from .ssh import SSHService
 from .store import Store
 from .credentials import create_credential_store
@@ -343,6 +344,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             for pending_collect in collect_tasks.values():
                 if not pending_collect.done():pending_collect.cancel()
             await asyncio.gather(*collect_tasks.values(),return_exceptions=True)
+            await app.state.port_forwarding.close()
             await ssh.close()
             store.db.close()
 
@@ -356,6 +358,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_mail_routes(app, mail)
     register_desktop_notification_routes(app, store)
     register_terminal_routes(app,hosts,ssh,store,sudo)
+    register_port_forwarding(app,store,ssh,hosts)
     app.state.agent_service = AgentService(hosts,snapshots,ssh,ssh_passwords,collect)
     app.state.reservations, app.state.workbench_rules = reservations, rules
     async def refresh_assistant():
@@ -587,6 +590,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 raise HTTPException(400,exc.message) from None
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
+            await app.state.port_forwarding.remove_host(host_id)
             hosts.remove(host)
         rules[:] = [r for r in rules if r['host_id'] != host_id]
         reservations.remove_host(host_id)

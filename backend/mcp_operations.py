@@ -19,6 +19,12 @@ REQUEST_ORIGIN = ContextVar('iwb_mcp_origin', default='http://127.0.0.1:8765')
 
 # name: method, route, description, read-only, transport handoff
 OPERATIONS = {
+    'list_services': ('GET', '/api/hosts/{host_id}/services', '查看这台机器的本地 SSH 服务转发状态。', True, False),
+    'create_service': ('POST', '/api/hosts/{host_id}/services', '保存本地服务转发规则；仅在用户明确要求时使用，不启动远端服务。', False, False),
+    'start_service': ('POST', '/api/hosts/{host_id}/services/{forward_id}/start', '启动仅绑定本机回环地址的 SSH 转发；仅在用户明确要求时使用。', False, False),
+    'stop_service': ('POST', '/api/hosts/{host_id}/services/{forward_id}/stop', '停止本地 SSH 服务转发。', False, False),
+    'delete_service': ('DELETE', '/api/hosts/{host_id}/services/{forward_id}', '停止并删除本地服务转发规则。', False, False),
+
     'connect_host': ('POST', '/api/connect', '通过已有 SSH 配置/密钥连接并添加机器。需要用户要求。密码输入和保存应在软件连接界面完成。provision=true 会配置免密，只在用户要求时使用。', False, False),
     'get_workbench_state': ('GET', '/api/state', '查看机器概要、监控规则、预约及准确计数。只返回允许范围内的记录。详细设备和进程使用 get_resources，端口用 ssh_check；概要不包含全部采样。', True, False),
     'preflight': ('POST', '/api/preflight', '训练前检查指定设备、显存和端口，不预留设备，不启动训练。', True, False),
