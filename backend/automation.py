@@ -1,6 +1,7 @@
 """Bounded deterministic workflows. Only explicit, schema-validated MCP calls."""
 import asyncio
 import copy
+import json
 import time
 import uuid
 from fastapi import HTTPException
@@ -71,7 +72,7 @@ class Automation:
     def start(self,id,source='manual'):
         item=copy.deepcopy(self.find(id));self.validate({k:v for k,v in item.items() if k!='id'})
         if id in self.tasks or len(self.tasks)>=2:raise ValueError('已有流程运行，请稍后再试 / Workflow concurrency limit')
-        run=dict(id=uuid.uuid4().hex,workflow_id=id,name=item['name'],source=source,status='running',created=time.time(),steps=[])
+        run=dict(id=uuid.uuid4().hex,workflow_id=id,host_ids=list(item['host_ids']),name=item['name'],source=source,status='running',created=time.time(),steps=[])
         self.runs.append(run);self.runs=self.runs[-100:];self.persist()
         self.tasks[id]=asyncio.create_task(self.execute(item,run));return copy.deepcopy(run)
     async def execute(self,item,run):
@@ -142,10 +143,32 @@ def catalog():
     from .mcp_operations import expand
     raw=Draft.model_json_schema()
     schema=expand(raw,raw)
-    return {name:dict(name=name,title=name,description=desc,inputSchema=inputs,outputSchema=envelope({}),annotations=dict(readOnlyHint=name=='list_automations',destructiveHint=False,idempotentHint=False,openWorldHint=False)) for name,desc,inputs in [
+    identifier=dict(type='object',properties=dict(id=dict(type='string')),required=['id'],additionalProperties=False)
+    tools=[
       ('list_automations','列出当前机器范围内的流程；不会运行。',dict(type='object',properties={},additionalProperties=False)),
-      ('create_automation','保存供用户检查的禁用流程草稿；不会运行或启用自动触发。',schema),
-      ('update_automation','修改流程并停用自动触发；不会运行。',dict(type='object',properties=dict(id=dict(type='string'),draft=schema),required=['id','draft'],additionalProperties=False))]}
+      ('create_automation','保存停用的流程，不执行。',schema),
+      ('update_automation','修改流程并停用自动触发，不执行。',dict(type='object',properties=dict(id=dict(type='string'),draft=schema),required=['id','draft'],additionalProperties=False)),
+      ('run_automation','执行用户明确要求运行的已有流程，返回运行记录；后台任务仍需读回状态。',identifier),
+      ('cancel_automation','取消本地流程执行，不会自动终止已启动的远端任务。',identifier),
+      ('set_automation_enabled','启用或停用流程自动触发，需要用户明确授权。',dict(type='object',properties=dict(id=dict(type='string'),enabled=dict(type='boolean')),required=['id','enabled'],additionalProperties=False)),
+      ('list_automation_runs','分页查询指定流程的运行记录及逐步结果。',dict(type='object',properties=dict(id=dict(type='string'),offset=dict(type='integer',minimum=0,default=0),page_size=dict(type='integer',minimum=1,maximum=100,default=20)),required=['id'],additionalProperties=False)),
+    ]
+    return {name:dict(name=name,title=name,description=desc,inputSchema=inputs,outputSchema=envelope({}),annotations=dict(readOnlyHint=name in ('list_automations','list_automation_runs'),destructiveHint=name not in ('list_automations','list_automation_runs'),idempotentHint=name in ('list_automations','list_automation_runs','set_automation_enabled'),openWorldHint=False)) for name,desc,inputs in tools}
+
+async def mcp_call(manager,name,args,allowed):
+    if name=='list_automations':return response({'items':manager.list(allowed)})
+    if name=='create_automation':return response(manager.save(args,allowed=allowed))
+    manager.find(args['id'],allowed)
+    if name=='update_automation':return response(manager.save(args['draft'],args['id'],allowed))
+    if name=='run_automation':return response(manager.start(args['id']))
+    if name=='cancel_automation':
+        await manager.cancel(args['id']);return response(dict(cancel_requested=True,remote_jobs='not_cancelled'))
+    if name=='set_automation_enabled':
+        manager.activate(args['id'],args['enabled']);return response(dict(id=args['id'],enabled=args['enabled']))
+    rows=[r for r in reversed(manager.runs) if r['workflow_id']==args['id'] and (allowed is None or r.get('host_ids') is not None and set(r['host_ids'])<=set(allowed))]
+    start=args.get('offset',0);end=start+args.get('page_size',20)
+    return response(json.loads(scrub(dict(items=rows[start:end],has_more=end<len(rows),next_offset=end if end<len(rows) else None))))
+
 
 def register_automation(app,store,hosts,service):
     manager=app.state.automation=Automation(store,hosts,service)

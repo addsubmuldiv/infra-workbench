@@ -89,7 +89,7 @@ async def test_immediate_cancel_releases_slot():
  assert not m.tasks and m.runs[-1]['status']=='cancelled'
 
 @async_test
-async def test_actual_mcp_draft_scope_and_ui_only_execution(tmp_path):
+async def test_actual_mcp_draft_scope_and_explicit_execution(tmp_path):
  from backend.app import create_app
  from backend.agent_errors import AgentError
  app=create_app(tmp_path,start_poll=False)
@@ -98,7 +98,7 @@ async def test_actual_mcp_draft_scope_and_ui_only_execution(tmp_path):
  draft=Draft(name='Inspect',host_ids=['a'],steps=[{'tool':'refresh_host','arguments':{'host_id':'a'}}]).model_dump()
  saved=(await service.call('create_automation',draft))['data']
  assert not app.state.automation.enabled and not app.state.automation.tasks
- assert 'run_automation' not in service.catalog() and 'activate_automation' not in service.catalog()
+ assert 'run_automation' in service.catalog() and 'set_automation_enabled' in service.catalog()
  draft['host_ids']=['b'];draft['steps'][0]['arguments']['host_id']='b'
  with pytest.raises(AgentError):await service.call('create_automation',draft)
  assert len((await service.call('list_automations',{}))['data']['items'])==1

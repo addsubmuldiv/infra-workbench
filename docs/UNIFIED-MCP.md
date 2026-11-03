@@ -110,3 +110,27 @@ sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH �
 集群通过统一目录暴露 list_clusters、get_cluster、create_cluster、update_cluster、delete_cluster、update_cluster_members。execute_cluster_command 固定 revision 和目标成员，使用 request_id 去重；get_cluster_command_batch/get_cluster_command_output 读取逐机状态与输出，cancel_cluster_command_batch 取消，resume_cluster_command_batch 继续重启后暂停的排队项。启动不明不会自动重试，已确认终态不会被迟到的状态查询覆盖。
 
 open_cluster_terminals 创建专用持久会话并返回交接入口，不等于客户端已打开界面。受限助手不能通过集群扩大机器范围；修改归类需要相关集群全部成员权限。接口与 MCP 共用服务。界面和使用限制见 [CLUSTERS.md](CLUSTERS.md)。
+
+
+## 单点工具扩展（2026-11-04）
+
+新增十二个确定性工具；不调用大模型、不执行诊断流程：
+
+- `get_ssh_config`：读取实际 SSH 地址、账号、端口、跳板和密钥路径；不返回私钥、密码或 ProxyCommand 内容。
+- `test_tcp_connection`：从本机探测目标机器的 SSH 地址指定端口；`vantage=remote` 从服务器探测显式 `address`。不经过本机 SSH 跳板模拟 TCP 直连，二者结果可能不同。
+- `test_ssh_authentication`：独立验证 `publickey` 或 `saved_password`，不添加机器、不安装公钥、不替换已有会话。保存密码仍核对连接身份。
+- `list_command_jobs`：列出当前 SSH UID 的命令任务元数据，支持状态筛选及 offset 分页；不列出其他用户或 sudo/root 的任务，不包含输出正文。服务器清理临时目录后记录可能消失。
+- `search_file_contents`：目录内按文字或正则搜索，返回路径、行号和匹配文本；支持文件名模式、递归与分页；匹配前跳过完整私钥区块。
+- `tail_server_file`：读取文件末尾，扫描尾部 64 KiB，明确报告截断。
+- `hash_server_file`：流式计算 sha256、sha512 或 md5，报告读取过程中大小/修改时间是否变化；变化时摘要不是稳定快照。
+- `get_directory_usage`：按目录深度分组逻辑文件字节数并分页；不是文件系统实际块占用，硬链接按路径重复计算，跳过符号链接和受保护文件。
+- `get_systemd_unit_status`：查询指定 systemd unit 的状态、主 PID 和退出状态。
+- `read_systemd_journal`：读取指定 unit 的日志，支持 since 和 cursor；使用 next_cursor 续读。保留完整 JSON 记录边界后截断超长 MESSAGE，不以截断字节生成游标；单条记录超过 16 MiB 时明确报错。受当前 SSH 用户权限和远端命令可用性限制。
+- `save_terminal_snippet`：创建命令收藏；提供 snippet_id 时修改现有收藏，不执行命令。
+- `delete_terminal_snippet`：删除命令收藏，不执行命令。
+
+另新增 `run_automation`、`cancel_automation`、`set_automation_enabled` 和 `list_automation_runs`，复用已有流程服务。创建/修改流程仍不自动启用或执行；运行和启用必须来自用户明确要求。取消流程不会自动取消已启动的远端命令任务，应使用 cancel_command_job 并读回。运行记录按创建时机器范围过滤，不能借修改流程成员读取旧的越权结果。
+
+所有新增工具使用共享目录和参数 schema，先验证机器范围。文件工具复用 model_paths 的真实路径保护；结果经过脱敏。分页大小和返回字节范围用于分批读取，不限制任务调用次数。目录扫描、文件哈希可能受现有 SSH 操作超时影响，超时不代表完整结果。
+
+验证入口：`.venv/Scripts/python.exe -m pytest tests/test_atomic_mcp.py tests/test_unified_mcp.py tests/test_mcp.py tests/test_automation.py -q`。其中 Linux 探针集成测试在 Windows+WSL 执行真实 Python 子进程，systemd 命令使用隔离 fixture，不操作真实服务。

@@ -42,6 +42,8 @@ class WorkbenchMCPService:
             catalog.update(self.operations.catalog())
             catalog.update(mcp_skills.CATALOG)
             catalog.update(command_catalog())
+            from .atomic_mcp import catalog as atomic_catalog
+            catalog.update(atomic_catalog())
         if self.skills is not None:
             catalog.update(mcp_skills.skill_catalog())
         if self.operations is not None and getattr(self.operations.app.state, 'automation', None) is not None:
@@ -61,14 +63,17 @@ class WorkbenchMCPService:
             raise AgentError('INVALID_ARGUMENT', '未知工具或参数不是 JSON 对象。')
         if next(Draft202012Validator(catalog[name]['inputSchema']).iter_errors(arguments), None):
             raise AgentError('INVALID_ARGUMENT', '参数不符合工具 inputSchema。')
+        if self.operations is not None:
+            from .atomic_mcp import catalog as atomic_catalog, call as atomic_call
+            if name in atomic_catalog():
+                try:return await atomic_call(self,name,arguments)
+                except ValueError as exc:raise AgentError('INVALID_ARGUMENT',str(exc)) from None
         if self.operations is not None and getattr(self.operations.app.state, 'automation', None) is not None:
             from .automation import catalog as automation_catalog
             if name in automation_catalog():
                 manager=self.operations.app.state.automation
-                try:
-                    if name=='list_automations':return response({'items':manager.list(self.allowed)})
-                    if name=='create_automation':return response(manager.save(arguments,allowed=self.allowed))
-                    return response(manager.save(arguments['draft'],arguments['id'],self.allowed))
+                from .automation import mcp_call
+                try:return await mcp_call(manager,name,arguments,self.allowed)
                 except ValueError:raise AgentError('INVALID_ARGUMENT','Invalid workflow or machine scope') from None
         if self.operations is not None and getattr(self.operations.app.state, 'clusters', None) is not None:
             from .cluster_mcp import catalog as cluster_catalog, call as cluster_call
