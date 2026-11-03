@@ -1,6 +1,7 @@
 import {TERMINAL_CONTEXT_EVENT} from './terminalContext';
-import {AssistantWindow} from './AssistantWindow';
-import {createPortal} from 'react-dom';
+import {StandaloneAssistant} from './StandaloneAssistant';
+import {createContextSender} from './terminalAssistantBridge';
+import {takeTerminalContext,type TerminalAttachment} from './terminalContext';
 import {useLocale} from './i18n';
 import {toolText as tt} from './toolI18n';
 import React,{useEffect,useState} from 'react';
@@ -12,14 +13,39 @@ import './quickWindow.css';
 type Host={id:string;target:string;user:string|null};
 const nativeInvoke=(window as any).__TAURI_INTERNALS__?.invoke;
 const nativeAction=(action:string)=>{if(nativeInvoke)void nativeInvoke('quick_window_action',{action}).catch(console.error)};
-export function QuickWindow(){
+export function QuickWindow(){return new URLSearchParams(location.search).get('tool')==='assistant'?<StandaloneAssistant/>:<QuickToolWindow/>}
+function QuickToolWindow(){
   const locale=useLocale();
- const [assistant,setAssistant]=useState(false),[assistantWidth,setAssistantWidth]=useState(0);
- useEffect(()=>{const open=()=>{setAssistant(true)};window.addEventListener(TERMINAL_CONTEXT_EVENT,open);return()=>window.removeEventListener(TERMINAL_CONTEXT_EVENT,open)},[]);
+ const [assistantChannel]=useState(browserId);
  const params=new URLSearchParams(location.search),kind=params.get('tool'),hostId=params.get('host');
  const [hosts,setHosts]=useState<Host[]>([]),[error,setError]=useState(''),[ready,setReady]=useState(false);
  const [terminal,setTerminal]=useState<TerminalRequest|null>(null);
  const [files,setFiles]=useState<{host:Host;path?:string;requestId:string}|null>(null);
+ useEffect(()=>{
+  const sender=!nativeInvoke&&typeof BroadcastChannel!=='undefined'?createContextSender(new BroadcastChannel('iwb-terminal-assistant:'+assistantChannel)):null;
+  let nativePending:TerminalAttachment[]=[];
+  let popup:Window|null=null;
+  const open=async()=>{
+   const items=takeTerminalContext();sender?.add(items);nativePending=[...nativePending,...items].slice(-3);
+   const host=items[items.length-1]?.host_id||hostId;
+   if(!host)return;
+   const nativeBatch=nativePending;if(nativeInvoke)nativePending=[];
+   try{
+    if(nativeInvoke){await nativeInvoke('open_quick_tool',{tool:'assistant',host,path:null,channel:assistantChannel,attachments:nativeBatch});}
+    else {
+     if(!sender)throw Error('This browser does not support cross-window messaging.');
+     const query=new URLSearchParams({tool:'assistant',host,channel:assistantChannel});
+     const width=440,left=screenX+outerWidth+12+width<=screen.availWidth?screenX+outerWidth+12:Math.max(0,screenX-width-12);
+     if(!popup||popup.closed)popup=window.open('/?'+query,'terminal-assistant-'+assistantChannel,`popup,width=${width},height=640,left=${left},top=${screenY}`);
+     if(!popup)throw Error(tt('请允许弹出窗口后重试。'));
+     popup.focus();
+    }
+    setError('');
+   }catch(e){if(nativeInvoke)nativePending=[...nativeBatch,...nativePending].slice(-3);setError(tt('无法打开独立 AI 助手窗口，请确认桌面程序已更新：')+String(e))}
+  };
+  window.addEventListener(TERMINAL_CONTEXT_EVENT,open);
+  return()=>{window.removeEventListener(TERMINAL_CONTEXT_EVENT,open);sender?.close()};
+ },[assistantChannel,hostId]);
  useEffect(()=>{
   const controller=new AbortController();
   if(!['terminal','files'].includes(kind??'')||!hostId){setError(tt("窗口参数无效。"));return}
@@ -57,13 +83,12 @@ export function QuickWindow(){
    event.preventDefault();event.stopPropagation();nativeAction('drag');
   }
  };
- return <main className={"quick-window"+(assistantWidth?" quick-assistant-docked":"")} style={{"--quick-assistant-width":assistantWidth+"px"} as React.CSSProperties} onClickCapture={clickControl} onPointerDownCapture={drag} onDoubleClickCapture={event=>{
+ return <main className="quick-window" onClickCapture={clickControl} onPointerDownCapture={drag} onDoubleClickCapture={event=>{
   if(nativeInvoke&&(event.target as HTMLElement).closest('.terminal-topbar,.file-header')&&!(event.target as HTMLElement).closest('button,select,input')){event.stopPropagation();nativeAction('maximize')}
  }}>
   {error?<p role="alert">{error}<button onClick={()=>location.reload()}>{tt("重试")}</button></p>:!ready?<p role="status">{tt("正在打开机器窗口…")}</p>:null}
   {ready&&<button className="quick-reopen" onClick={()=>{const host=hosts.find(h=>h.id===hostId)!;if(kind==='terminal')setTerminal({host,id:browserId()});else setFiles({host,requestId:browserId()})}}>{tt("重新打开")}{kind==='terminal'?tt("终端"):tt("文件")}</button>}
   <TerminalBoundary close={()=>setTerminal(null)}>{terminal&&<TerminalDock request={terminal} hosts={hosts} onDirectory={directory}/>}</TerminalBoundary>
-  {createPortal(<div className="quick-assistant-host"><AssistantWindow open={assistant} onClose={()=>setAssistant(false)} onDockWidthChange={setAssistantWidth} selectedHostIds={hostId?[hostId]:[]} locate={(id)=>openTool('terminal',id)} openTerminal={id=>openTool('terminal',id)} openSettings={()=>window.open('/#settings','_blank','noopener')}/></div>,document.body)}
   {files&&<FileBrowser host={files.host} hosts={hosts} initialPath={files.path} requestId={files.requestId} close={()=>setFiles(null)} onTerminal={(id,cwd)=>openTool('terminal',id,cwd)}/>}
  </main>;
 }

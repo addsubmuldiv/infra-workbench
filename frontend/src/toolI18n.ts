@@ -12,6 +12,8 @@ const english:Record<string,string>={
   "将当前屏幕附加到 AI 助手":"Attach visible screen to AI assistant",
   "将选中文字附加到 AI 草稿，预览后发送":"Attach selected text to the AI draft; preview before sending",
   "将当前可见屏幕附加到 AI 草稿，预览后发送":"Attach the visible screen to the AI draft; preview before sending",
+  "请允许弹出窗口后重试。":"Allow pop-up windows and try again.",
+  "无法打开独立 AI 助手窗口，请确认桌面程序已更新：":"Cannot open the separate AI assistant window; update the desktop app: ",
   "选区 → AI":"Selection → AI",
   "当前屏幕 → AI":"Visible screen → AI",
   "收起 AI 助手":"Close AI assistant",

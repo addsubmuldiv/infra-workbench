@@ -123,7 +123,7 @@ const READY_SCRIPT: &str = r#"
   const observer=new MutationObserver(ready);
   function ready() {
     const root=document.getElementById('root');
-    if (pending || !root || !(root.querySelector('.shell') || (location.search.includes('tool=') ? root.querySelector('.terminal-dock,.file-browser,[role=alert]') : root.querySelector('button')))) return;
+    if (pending || !root || !(root.querySelector('.shell') || (location.search.includes('tool=') ? root.querySelector('.terminal-dock,.file-browser,.standalone-assistant,[role=alert]') : root.querySelector('button')))) return;
     pending=true;
     // Hidden WebViews can suspend animation frames; do not wait on requestAnimationFrame.
     setTimeout(() => {
