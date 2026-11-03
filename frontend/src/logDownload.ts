@@ -1,7 +1,8 @@
+import {toolText as tt} from './toolI18n.ts';
 export async function downloadOriginalLog(location:{host_id:string;path:string;transfer_id?:string},fetcher:typeof fetch=fetch,endpoint='/api/logs/download',signal?:AbortSignal,onProgress?:(received:number,total:number|null)=>void):Promise<{blob:Blob;filename:string;skipped?:number}>{
   const response=await fetcher(endpoint,{method:'POST',headers:{'Content-Type':'application/json','X-IWB':'1'},body:JSON.stringify(location),signal});
   if(!response.ok){
-    let message='日志下载失败，请检查连接和文件路径';
+    let message=tt("日志下载失败，请检查连接和文件路径");
     try{const data=await response.json();if(typeof data.detail==='string')message=data.detail}catch{}
     throw new Error(message);
   }
@@ -18,12 +19,12 @@ export async function downloadOriginalLog(location:{host_id:string;path:string;t
   try{
     onProgress(0,total);
     while(true){
-      if(signal?.aborted)throw new DOMException('下载已取消','AbortError');
+      if(signal?.aborted)throw new DOMException(tt("下载已取消"),'AbortError');
       const {done,value}=await reader.read();if(done)break;
       parts.push(value as Uint8Array<ArrayBuffer>);received+=value.byteLength;onProgress(received,total);
     }
-    if(signal?.aborted)throw new DOMException('下载已取消','AbortError');
-    if(total!==null&&received!==total)throw new Error('下载长度不完整，请重新下载');
+    if(signal?.aborted)throw new DOMException(tt("下载已取消"),'AbortError');
+    if(total!==null&&received!==total)throw new Error(tt("下载长度不完整，请重新下载"));
     return {blob:new Blob(parts),filename,...details};
   }finally{signal?.removeEventListener('abort',abort);reader.releaseLock()}
 }

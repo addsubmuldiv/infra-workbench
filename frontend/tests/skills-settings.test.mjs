@@ -1,3 +1,4 @@
+import {i18nMock} from './i18n-mock.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -24,7 +25,7 @@ function harness(t,{conflict=false}={}){
   };
   const previous=globalThis.window;globalThis.window=new EventTarget();t.after(()=>{cleanups.forEach(fn=>fn?.());globalThis.window=previous});
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/SkillsSettings.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./skills'?{skillRequest,skillMarkdown:()=>files['SKILL.md']}:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{},exports);
+  const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='./skills'?{skillRequest,skillMarkdown:()=>files['SKILL.md']}:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);
   const render=()=>{slot=0;tree=exports.SkillsSettings();for(const effect of effects.splice(0))effect()};

@@ -2,6 +2,7 @@
 import json
 import threading
 from fastapi import HTTPException, Response
+from .interface_language import tr
 from pydantic import BaseModel, ConfigDict, Field
 
 KEYS = {
@@ -24,8 +25,11 @@ class StatePatch(BaseModel):
 def register_workspace_state(app, store):
     lock = threading.RLock()
     key = 'workspace_ui_state_v1'
+    from .interface_language import update_shared_language
     from .floating_theme import update_shared_theme
-    update_shared_theme(store.load(key, {'revision':0,'values':{}}))
+    initial = store.load(key, {'revision':0,'values':{}})
+    update_shared_theme(initial)
+    update_shared_language(initial)
 
     @app.get('/api/workspace-state')
     async def read_workspace_state(response: Response):
@@ -37,7 +41,7 @@ def register_workspace_state(app, store):
     async def write_workspace_state(body: StatePatch, response: Response):
         response.headers['Cache-Control'] = 'no-store'
         if any(not allowed(k) or v is not None and len(v.encode('utf-8')) > 65536 for k, v in body.values.items()):
-            raise HTTPException(422, '界面状态名称无效或内容过大')
+            raise HTTPException(422, tr('界面状态名称无效或内容过大', 'Invalid UI state name or content too large'))
         with lock:
             state = store.load(key, {'revision': 0, 'values': {}})
             values = dict(state['values'])
@@ -49,9 +53,10 @@ def register_workspace_state(app, store):
                 else:
                     values[k] = v
             if len(values) > 256 or len(json.dumps(values).encode('utf-8')) > 524288:
-                raise HTTPException(422, '界面状态总量超出限制')
+                raise HTTPException(422, tr('界面状态总量超出限制', 'Total UI state exceeds the limit'))
             if values != state['values']:
                 state = {'revision': state['revision'] + 1, 'values': values}
                 store.save(key, state)
                 update_shared_theme(state)
+                update_shared_language(state)
             return state

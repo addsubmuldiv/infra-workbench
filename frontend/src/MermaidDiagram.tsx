@@ -1,3 +1,4 @@
+import {t} from './i18n';
 import React,{useEffect,useId,useState} from 'react';
 import DOMPurify from 'dompurify';
 
@@ -39,13 +40,13 @@ export function MermaidDiagram({source}:{source:string}){
     return ()=>{cancelled=true;clearTimeout(timer)};
   },[source,id]);
   const current=result?.source===source?result:undefined;
-  return <figure className="chat-mermaid" aria-label="Mermaid 图表">
-    {current?.svg?<div className="chat-mermaid-canvas" role="region" aria-label="Mermaid 图表，可横向滚动" tabIndex={0}
+  return <figure className="chat-mermaid" aria-label={t("Mermaid 图表","Mermaid diagram")}>
+    {current?.svg?<div className="chat-mermaid-canvas" role="region" aria-label={t("Mermaid 图表，可横向滚动","Mermaid diagram, scroll horizontally")} tabIndex={0}
       ref={node=>{
         const svg=node?.querySelector('svg');
         if(svg?.viewBox.baseVal.width)svg.style.width=svg.viewBox.baseVal.width+'px';
       }} dangerouslySetInnerHTML={{__html:current.svg}}/>:
-      <p className="chat-mermaid-status" role="status">{current?.failed?'图表暂未完成或语法有误，可查看源码。':'正在绘制图表…'}</p>}
-    <details><summary>图表源码</summary><pre><code>{source}</code></pre></details>
+      <p className="chat-mermaid-status" role="status">{current?.failed?t("图表暂未完成或语法有误，可查看源码。","Diagram is incomplete or contains a syntax error. View the source below."):t("正在绘制图表…","Rendering diagram…")}</p>}
+    <details><summary>{t("图表源码","Diagram source")}</summary><pre><code>{source}</code></pre></details>
   </figure>;
 }

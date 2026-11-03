@@ -1,3 +1,4 @@
+import {ui} from './assistantLocale';
 import {useWorkspaceRestore} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useRef,useState} from 'react';
@@ -65,24 +66,24 @@ export function AssistantWindow({open,onClose,onDockWidthChange,...assistantProp
   const frame=fitFrame(layout.frame,size);
   const dimensions=floating?{left:frame.x,top:frame.y,width:frame.width,height:frame.height}:{right:0,top:0,width:dockWidth,height:'100dvh'};
   return <section id="infra-assistant-panel" ref={element} hidden={!open} className={'assistant-window '+layout.mode+(preview?' dock-preview':'')+(dragging?' dragging':'')} style={dimensions}
-    role={floating?'dialog':'complementary'} aria-label="AI 助手窗口" aria-modal={floating?false:undefined} data-floating-window={open&&floating?'assistant':undefined}
+    role={floating?'dialog':'complementary'} aria-label={ui("AI 助手窗口")} aria-modal={floating?false:undefined} data-floating-window={open&&floating?'assistant':undefined}
     onPointerDownCapture={floating?activateFloatingWindow:undefined} onFocusCapture={floating?activateFloatingWindow:undefined}
     onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onLostPointerCapture={event=>finish(event,true)}>
     <header className="assistant-window-header" onPointerDown={event=>start(event,'move')}>
-      <div className="assistant-window-title" tabIndex={0} aria-label="移动 AI 助手窗口，拖动标题栏或使用方向键" onKeyDown={event=>{
+      <div className="assistant-window-title" tabIndex={0} aria-label={ui("移动 AI 助手窗口，拖动标题栏或使用方向键")} onKeyDown={event=>{
         if(event.target!==event.currentTarget)return;
         const offset:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};
         if(offset[event.key]){event.preventDefault();persist({...current.current,mode:'floating',frame:moveFileWindow(current.current.frame,...offset[event.key],viewport())})}
-      }}><span className="assistant-window-icon"><Sparkles size={17}/></span><div><strong>AI 助手</strong><small>{floating?'悬浮窗口':'右侧停靠'}</small></div><GripHorizontal size={15} className="assistant-window-grip"/></div>
-      <div className="assistant-window-actions"><button className="icon-button" aria-label={floating?'停靠到右侧':'悬浮 AI 助手'} title={floating?'停靠到右侧':'切换为悬浮窗口，也可以拖动标题栏'} onClick={floating?dock:detach}>{floating?<PanelRightClose size={16}/>:<PanelsTopLeft size={16}/>}</button><button className="icon-button" aria-label="收起 AI 助手" title="收起助手，保留对话和输入" onClick={onClose}><Minus size={17}/></button></div>
+      }}><span className="assistant-window-icon"><Sparkles size={17}/></span><div><strong>{ui("AI 助手")}</strong><small>{floating?ui("悬浮窗口"):ui("右侧停靠")}</small></div><GripHorizontal size={15} className="assistant-window-grip"/></div>
+      <div className="assistant-window-actions"><button className="icon-button" aria-label={floating?ui("停靠到右侧"):ui("悬浮 AI 助手")} title={floating?ui("停靠到右侧"):ui("切换为悬浮窗口，也可以拖动标题栏")} onClick={floating?dock:detach}>{floating?<PanelRightClose size={16}/>:<PanelsTopLeft size={16}/>}</button><button className="icon-button" aria-label={ui("收起 AI 助手")} title={ui("收起助手，保留对话和输入")} onClick={onClose}><Minus size={17}/></button></div>
     </header>
     <div className="assistant-window-content"><InfraAssistant {...assistantProps} compact/></div>
-    {floating?['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'file-edge-resize edge-'+edge} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?'调整助手窗口大小':undefined} tabIndex={edge==='se'?0:undefined} onPointerDown={event=>start(event,edge)} onKeyDown={event=>{
+    {floating?['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'file-edge-resize edge-'+edge} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?ui("调整助手窗口大小"):undefined} tabIndex={edge==='se'?0:undefined} onPointerDown={event=>start(event,edge)} onKeyDown={event=>{
       const offset:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};
       if(offset[event.key]){event.preventDefault();persist({...current.current,frame:fitFrame(resizeFileWindow(current.current.frame,'se',...offset[event.key],viewport()),viewport())})}
-    }}/>):<div className="assistant-dock-resizer" role="separator" aria-label="调整助手侧栏宽度" aria-orientation="vertical" aria-valuemin={Math.min(320,size.width-16)} aria-valuemax={Math.min(640,size.width-16)} aria-valuenow={dockWidth} tabIndex={0} onPointerDown={event=>start(event,'dock-width')} onDoubleClick={()=>persist({...current.current,dockWidth:420})} onKeyDown={event=>{
+    }}/>):<div className="assistant-dock-resizer" role="separator" aria-label={ui("调整助手侧栏宽度")} aria-orientation="vertical" aria-valuemin={Math.min(320,size.width-16)} aria-valuemax={Math.min(640,size.width-16)} aria-valuenow={dockWidth} tabIndex={0} onPointerDown={event=>start(event,'dock-width')} onDoubleClick={()=>persist({...current.current,dockWidth:420})} onKeyDown={event=>{
       if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();persist({...current.current,dockWidth:fitAssistantDockWidth(dockWidth+(event.key==='ArrowLeft'?20:-20),size.width)})}
     }}/>}
-    {preview&&<div className="assistant-dock-hint"><PanelRightOpen size={16}/>松开后停靠到右侧</div>}
+    {preview&&<div className="assistant-dock-hint"><PanelRightOpen size={16}/>{ui("松开后停靠到右侧")}</div>}
   </section>;
 }

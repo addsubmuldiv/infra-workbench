@@ -1,3 +1,4 @@
+import {i18nMock} from './i18n-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,7 +9,7 @@ function harness(t,draft,save,configured=true){
   const values=[],effects=[],cleanups=[];let cursor=0,tree;
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useState:initial=>{const i=cursor++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],v=>{values[i]=typeof v==='function'?v(values[i]):v}]},useEffect:fn=>effects.push(fn)};
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/ReservationPanel.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./reservations'?reservations:name==='./preferences'?{browserStorage:()=>null}:name==='./mailSettings'?{mailRequest:async()=>({reservation_available:configured})}:{},exports);
+  const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='./reservations'?reservations:name==='./preferences'?{browserStorage:()=>null}:name==='./mailSettings'?{mailRequest:async()=>({reservation_available:configured})}:{}),exports);
   let closed=0;const props={hosts,draft,countEnabled:true,save,close:()=>closed++,openSettings(){}};
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const text=n=>n==null||n===false?'':typeof n!=='object'?String(n):(n.props?.children||[]).flat(Infinity).map(text).join('');

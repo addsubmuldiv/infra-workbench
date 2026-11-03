@@ -1,3 +1,4 @@
+import {t} from './i18n.ts';
 export type SkillReceipt={name:string;version:number|string;source:string};
 export type SkillMeta=SkillReceipt&{description:string;enabled:boolean;warnings:string[]};
 export type SkillVersion={version:number;created?:number;content_hash?:string};
@@ -6,7 +7,7 @@ export type SkillDetail=SkillMeta&{files:Record<string,string>;versions:SkillVer
 export type SkillDraft={id:string;revision:number;files:Record<string,string>;skill_name?:string|null;base_version?:number|null;file_manifest?:SkillFile[]};
 export type SkillValidation={valid:boolean;errors:string[];warnings:string[];missing_tools?:string[]};
 async function checked(response:Response){
-  if(!response.ok){let value;try{value=await response.json()}catch{}throw new Error(typeof value?.detail==='string'?value.detail:'技能操作失败，请检查后台版本和输入。')}
+  if(!response.ok){let value;try{value=await response.json()}catch{}throw new Error(typeof value?.detail==='string'?value.detail:t('技能操作失败，请检查后台版本和输入。','Skill operation failed. Check the backend version and input.'))}
   return response;
 }
 export async function skillRequest<T>(path='',method='GET',body?:unknown,signal?:AbortSignal,request:typeof fetch=fetch):Promise<T>{
@@ -15,8 +16,8 @@ export async function skillRequest<T>(path='',method='GET',body?:unknown,signal?
   return response.json() as Promise<T>;
 }
 export async function importSkill(file:File,signal?:AbortSignal,request:typeof fetch=fetch):Promise<SkillDraft>{
-  if(file.size>2*1024*1024)throw new Error('导入文件不能超过 2 MiB。');
-  if(!/\.(md|zip)$/i.test(file.name))throw new Error('请选择 Markdown 或 ZIP 文件。');
+  if(file.size>2*1024*1024)throw new Error(t('导入文件不能超过 2 MiB。','Imported files must not exceed 2 MiB.'));
+  if(!/\.(md|zip)$/i.test(file.name))throw new Error(t('请选择 Markdown 或 ZIP 文件。','Select a Markdown or ZIP file.'));
   const response=await checked(await request('/api/skills/import?filename='+encodeURIComponent(file.name),{method:'POST',signal,headers:{'Content-Type':'application/octet-stream','X-IWB':'1'},body:file}));
   return response.json() as Promise<SkillDraft>;
 }

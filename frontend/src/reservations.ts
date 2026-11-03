@@ -1,4 +1,5 @@
-import type {MailResult} from './mailSettings';
+import {t} from './i18n.ts';
+import type {MailResult} from './mailSettings.ts';
 export type DesktopStatus='pending'|'sending'|'submitted'|'failed'|'disabled'|'unknown'|'skipped';
 export type Reservation={id:string;host_id:string;target:string;devices:string[];labels:string[];mode?:'fixed'|'count';required_count?:number;kind?:string;available_count?:number|null;matched_devices?:string[];wait_seconds:number;minimum_gib:number;status:'waiting'|'settling'|'unknown'|'needs_selection'|'ready';idle_seconds:number;remaining_seconds:number;notified_at:number|null;email_notify?:boolean;email?:MailResult|null;desktop?:{status:DesktopStatus;error?:string;updated:number}|null;url?:string};
 export type ReservationHost={id:string;target:string;snapshot:{fresh:boolean;devices:{id:string;display_id?:string;kind:string;name:string;processes:unknown[];processes_known:boolean}[]}};
@@ -11,10 +12,10 @@ export function reservationLocation(item:Pick<Reservation,'host_id'|'mode'|'devi
   for(const id of item.mode==='count'?item.matched_devices??[]:item.devices)query.append('device',id);
   return '#overview?'+query.toString();
 }
-export const desktopStatusText:Record<DesktopStatus,string>={pending:'系统通知等待托盘处理',sending:'正在提交 系统通知',submitted:'已提交 系统通知',failed:'系统通知提交失败',disabled:'托盘桌面通知已关闭',unknown:'系统通知结果待确认',skipped:'未提交 系统通知'};
+export const desktopStatusText:Record<DesktopStatus,string>={get pending(){return t("系统通知等待托盘处理","System notification awaiting tray processing")},get sending(){return t("正在提交 系统通知","Submitting system notification")},get submitted(){return t("已提交 系统通知","System notification submitted")},get failed(){return t("系统通知提交失败","System notification submission failed")},get disabled(){return t("托盘桌面通知已关闭","Tray desktop notifications are disabled")},get unknown(){return t("系统通知结果待确认","System notification result pending confirmation")},get skipped(){return t("未提交 系统通知","System notification not submitted")}};
 const WAIT_KEY='infra-workbench:reservation-wait-minutes';
 export function waitSeconds(minutes:number):number{
-  if(!Number.isFinite(minutes)||minutes<0||minutes>1440)throw new Error('等待时间请输入 0～1440 分钟');
+  if(!Number.isFinite(minutes)||minutes<0||minutes>1440)throw new Error(t("等待时间请输入 0～1440 分钟","Enter a wait time between 0 and 1440 minutes"));
   return Math.round(minutes*60);
 }
 export function loadWaitMinutes(storage:Pick<Storage,'getItem'>|null):number{
@@ -25,5 +26,5 @@ export function saveWaitMinutes(storage:Pick<Storage,'setItem'>|null,value:numbe
 }
 export function countdown(seconds:number):string{
   const value=Math.max(0,Math.ceil(seconds));
-  return value<60?`${value} 秒`:`${Math.floor(value/60)} 分 ${value%60} 秒`;
+  return value<60?t(`${value} 秒`,`${value} seconds`):t(`${Math.floor(value/60)} 分 ${value%60} 秒`,`${Math.floor(value/60)} minutes ${value%60} seconds`);
 }

@@ -1,3 +1,5 @@
+import {i18nMock} from './i18n-mock.mjs';
+import * as toolTranslations from '../src/toolI18n.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -13,7 +15,7 @@ function harness(t,initial,request){
     useEffect:fn=>effects.push(fn)};
   const source=fs.readFileSync(new URL('../src/ServerImport.tsx',import.meta.url),'utf8');
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:name==='./serverImportApi'?{...api,importRequest:request}:{},exports);
+  const exports={};new Function('require','exports',js)(name=>i18nMock(name)??((name==='./toolI18n'||name==='./toolI18n.ts')?toolTranslations:undefined)??(name==='react'?react:name==='./serverImportApi'?{...api,importRequest:request}:{}),exports);
   const render=()=>{cursor=0;tree=exports.default({onChanged(){}});return tree};
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const text=n=>n==null||n===false?'':typeof n!=='object'?String(n):(n.props?.children||[]).flat(Infinity).map(text).join('');

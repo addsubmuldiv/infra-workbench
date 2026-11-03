@@ -1,3 +1,5 @@
+import {i18nMock} from './i18n-mock.mjs';
+import * as toolTranslations from '../src/toolI18n.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -20,7 +22,7 @@ function editorHarness(t,{failSave=false}={}){
   const source=ts.transpileModule(fs.readFileSync(new URL('../src/FileEditor.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const operation=async(host,command)=>{calls.push(command);if(command.op==='save'&&failSave)throw new Error('文件已被其他人修改');return {path:'/test.txt',content:command.op==='save'?command.content:'original',revision:'revision',newline:'LF',bytes:8}};
   function TextEditor(){}
-  new Function('require','exports',source)(name=>name==='react'?react:name==='react-dom'?{createPortal:node=>node}:name==='./TextEditor'?{TextEditor}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./files'?{fileOperation:operation}:new Proxy({},{get:(_,key)=>key}),exports);
+  new Function('require','exports',source)(name=>i18nMock(name)??((name==='./toolI18n'||name==='./toolI18n.ts')?toolTranslations:undefined)??(name==='react'?react:name==='react-dom'?{createPortal:node=>node}:name==='./TextEditor'?{TextEditor}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./files'?{fileOperation:operation}:new Proxy({},{get:(_,key)=>key})),exports);
   const render=()=>{slot=0;tree=exports.FileEditor({host:'test',path:'/test.txt',close:()=>closed++,saved(){},changed(){},busyChanged(){},closeRequest:ref});for(const effect of effects.splice(0))effect();return tree};
   const nodes=(node=tree)=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(child=>nodes(child))];
   const find=predicate=>nodes().find(predicate);

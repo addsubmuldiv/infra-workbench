@@ -1,3 +1,4 @@
+import {t,useLocale} from './i18n';
 import {useWorkspaceRestore} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useRef,useState} from 'react';
@@ -6,6 +7,7 @@ import {DEFAULT_SIDEBAR_WIDTH,MIN_SIDEBAR_WIDTH,MOBILE_BREAKPOINT,fitSidebarWidt
 function storage(){try{return workspaceStorage}catch{return null}}
 
 export function WorkspaceLayout({children,onClickCapture,assistantWidth=0}:{children:React.ReactNode;onClickCapture?:React.MouseEventHandler<HTMLDivElement>;assistantWidth?:number}){
+  useLocale();
   const [preferred,setPreferred]=useState(()=>loadSidebarWidth(storage()));
   useWorkspaceRestore('infra-workbench:sidebar-width:v1',()=>loadSidebarWidth(storage()),setPreferred);
   const [viewport,setViewport]=useState(()=>window.innerWidth),[dragging,setDragging]=useState(false);
@@ -30,8 +32,8 @@ export function WorkspaceLayout({children,onClickCapture,assistantWidth=0}:{chil
   };
   return <div onClickCapture={onClickCapture} className={'shell'+(dragging?' resizing-sidebar':'')+(assistantWidth?' assistant-docked':'')} style={{'--sidebar-width':`${width}px`,'--assistant-width':`${assistantWidth}px`} as React.CSSProperties} data-sidebar-wide={width>=480}>
     {children}
-    <div className="sidebar-resizer" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-valuemin={viewport<=MOBILE_BREAKPOINT?65:MIN_SIDEBAR_WIDTH} aria-valuemax={viewport<=MOBILE_BREAKPOINT?65:maximum} aria-valuenow={width} tabIndex={0}
-      title="拖动调整左栏宽度；双击恢复默认；方向键微调"
+    <div className="sidebar-resizer" role="separator" aria-label={t("调整左侧栏宽度","Resize sidebar")} aria-orientation="vertical" aria-valuemin={viewport<=MOBILE_BREAKPOINT?65:MIN_SIDEBAR_WIDTH} aria-valuemax={viewport<=MOBILE_BREAKPOINT?65:maximum} aria-valuenow={width} tabIndex={0}
+      title={t("拖动调整左栏宽度；双击恢复默认；方向键微调","Drag to resize; double-click to reset; use arrow keys to adjust")}
       onPointerDown={event=>{
         if(event.button!==0)return;event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);

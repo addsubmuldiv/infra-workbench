@@ -1,3 +1,5 @@
+import {i18nMock} from './i18n-mock.mjs';
+import * as toolTranslations from '../src/toolI18n.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -25,7 +27,7 @@ function harness(t,component='BrowserBody',fetchDownload,folderSupported=true,fo
   const source=ts.transpileModule(fs.readFileSync(new URL('../src/FileBrowser.tsx',import.meta.url),'utf8')+'\nexport {BrowserBody};',
     {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   function FileEditor(){}
-  new Function('require','exports',source)(name=>name==='react'?react:name==='./browserId'?ids:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./folderUpload'?folderUploads:name==='./fileTransfers'?{...fileTransfers,uploadPayload:folderSender??fileTransfers.uploadPayload}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key}),exports);
+  new Function('require','exports',source)(name=>i18nMock(name)??((name==='./toolI18n'||name==='./toolI18n.ts')?toolTranslations:undefined)??(name==='react'?react:name==='./browserId'?ids:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./folderUpload'?folderUploads:name==='./fileTransfers'?{...fileTransfers,uploadPayload:folderSender??fileTransfers.uploadPayload}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key})),exports);
   const guard={current:null},hosts=[{id:'A',target:'A'},{id:'B',target:'B'}];
   let props=component==='BrowserBody'?{host:hosts[0],onBusy(){},editorClose:guard}:{host:hosts[0],hosts,close(){},requestId:'first'};
   const render=updates=>{props={...props,...updates};slot=0;tree=exports[component](props);for(const effect of effects.splice(0))effect();return tree};

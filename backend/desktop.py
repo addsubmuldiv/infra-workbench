@@ -17,6 +17,7 @@ import webbrowser
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0,str(ROOT))
+from backend.interface_language import tr
 from backend.notifications import should_notify
 from backend.reminder_links import event_link
 URL = 'http://127.0.0.1:8765/'
@@ -40,7 +41,7 @@ def register_notification_identity(registry=None,shell=None,shortcut=None):
     from ctypes import wintypes as w
     icon=(ROOT/'backend'/'assets'/'workbench.png').resolve()
     if not icon.is_file():
-        raise RuntimeError('无法加载通知应用图标，请检查 backend/assets/workbench.png')
+        raise RuntimeError(tr('无法加载通知应用图标，请检查 backend/assets/workbench.png', 'Unable to load notification app icon. Check backend/assets/workbench.png'))
     key=r'Software\Classes\AppUserModelId'+'\\'+APP_ID
     with registry.CreateKey(registry.HKEY_CURRENT_USER,key) as entry:
         registry.SetValueEx(entry,'DisplayName',0,registry.REG_SZ,'Infra Workbench')
@@ -53,7 +54,7 @@ def register_notification_identity(registry=None,shell=None,shortcut=None):
     set_identity.argtypes=[w.LPCWSTR]
     set_identity.restype=ctypes.c_long
     if set_identity(APP_ID)<0:
-        raise RuntimeError('无法设置 Windows 通知应用身份')
+        raise RuntimeError(tr('无法设置 Windows 通知应用身份', 'Unable to set Windows notification application identity'))
     return APP_ID
 
 
@@ -129,11 +130,11 @@ def deliver_events(events, enabled, notify, transition=update_delivery):
         return
     text = (deliverable[0]['message'] if len(deliverable) == 1 else
             '\n'.join(event['message'] for event in deliverable[:3])
-            + (f'\n另有 {len(deliverable)-3} 条变化' if len(deliverable) > 3 else ''))
+            + (tr(f'\n另有 {len(deliverable)-3} 条变化', f'\nPlus {len(deliverable)-3} more changes') if len(deliverable) > 3 else ''))
     destination = event_link(deliverable[0]) if len(deliverable) == 1 else '#reservations'
     status, error = 'submitted', ''
     try:
-        notify('Infra Workbench · 资源变化', text, destination)
+        notify(tr('Infra Workbench · 资源变化', 'Infra Workbench · Resource changes'), text, destination)
     except Exception as exc:
         status, error = 'failed', str(exc)[:500]
         logging.exception('Windows notification request failed')
@@ -188,7 +189,7 @@ class Startup:
         frozen=bool(getattr(sys,'frozen',False))
         pythonw=Path(sys.executable) if frozen else Path(sys.executable).with_name('pythonw.exe')
         if not pythonw.exists():
-            raise RuntimeError('当前 Python 环境缺少 pythonw.exe，请重新安装项目运行环境')
+            raise RuntimeError(tr('当前 Python 环境缺少 pythonw.exe，请重新安装项目运行环境', 'pythonw.exe is missing from the current Python environment. Reinstall the project runtime'))
         from backend.desktop_runtime import runtime_arguments
         self.command=subprocess.list2cmdline(runtime_arguments(pythonw,ROOT,platform='win32',frozen=frozen))
 
@@ -234,8 +235,8 @@ class ServiceHost:
         try:
             health=get_api('health')
             if health.get('name')!='infra-workbench':
-                raise RuntimeError('8765 端口被其他程序占用，未停止任何进程')
-            raise RuntimeError('检测到独立后台占用 8765 端口，请先退出该后台，再启动托盘；托盘必须在自己的进程内运行后台服务')
+                raise RuntimeError(tr('8765 端口被其他程序占用，未停止任何进程', 'Port 8765 is in use by another program. No processes were stopped'))
+            raise RuntimeError(tr('检测到独立后台占用 8765 端口，请先退出该后台，再启动托盘；托盘必须在自己的进程内运行后台服务', 'A standalone backend is using port 8765. Exit it before starting the tray, which must run its backend in the same process'))
         except (URLError,TimeoutError,OSError):
             pass
         import uvicorn
@@ -259,12 +260,12 @@ class ServiceHost:
         elapsed=time.monotonic()-started
         failure=self.startup_failure
         if not self.thread.is_alive():
-            reason=f'后台线程提前退出（{failure or "未返回就绪状态"}）'
+            reason=tr(f'后台线程提前退出（{failure or "未返回就绪状态"}）', f'Backend thread exited early ({failure or "No ready state returned"})')
         else:
-            reason=f'等待后台就绪超过 {BACKEND_STARTUP_TIMEOUT} 秒'
+            reason=tr(f'等待后台就绪超过 {BACKEND_STARTUP_TIMEOUT} 秒', f'Backend did not become ready within {BACKEND_STARTUP_TIMEOUT} seconds')
         logging.error('Backend not ready elapsed=%.3fs reason=%s',elapsed,reason)
         self.stop()
-        raise RuntimeError(reason+'；详细原因见 data/desktop.log。未停止其他后台。')
+        raise RuntimeError(reason+tr('；详细原因见 data/desktop.log。未停止其他后台。', '; See data/desktop.log for details. No other backend was stopped.'))
 
     def stop(self):
         if self.owned and self.server:
@@ -338,26 +339,26 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
     icon=user.LoadImageW(None,str(ROOT/'backend'/'assets'/'workbench.ico'),1,
                         user.GetSystemMetrics(49),user.GetSystemMetrics(50),0x10)
     if not icon:
-        raise RuntimeError('无法加载工作台图标，请检查 backend/assets/workbench.ico')
+        raise RuntimeError(tr('无法加载工作台图标，请检查 backend/assets/workbench.ico', 'Unable to load workbench icon. Check backend/assets/workbench.ico'))
     notification_icon=user.LoadImageW(None,str(ROOT/'backend'/'assets'/'workbench.ico'),1,
                                      user.GetSystemMetrics(11),user.GetSystemMetrics(12),0x10)
     if not notification_icon:
         user.DestroyIcon(icon)
-        raise RuntimeError('无法加载通知图标，请检查 backend/assets/workbench.ico')
+        raise RuntimeError(tr('无法加载通知图标，请检查 backend/assets/workbench.ico', 'Unable to load notification icon. Check backend/assets/workbench.ico'))
     icon_data=Notification(size=ctypes.sizeof(Notification),id=1,flags=7,callback=WM_TRAY,
-                           icon=icon,tip='Infra Workbench · 后台监控',balloonIcon=notification_icon)
+                           icon=icon,tip=tr('Infra Workbench · 后台监控', 'Infra Workbench · Background monitoring'),balloonIcon=notification_icon)
 
     def notify(title,text,destination='#reservations'):
         with notification_lock:
             if stop.is_set():
-                raise RuntimeError('托盘正在退出，未提交桌面通知')
+                raise RuntimeError(tr('托盘正在退出，未提交桌面通知', 'Tray is shutting down. Desktop notification not submitted'))
             clicks.submitting(destination)
             data=Notification(size=ctypes.sizeof(Notification),hwnd=hwnd,id=1,flags=0x10,
                               title=title[:63],info=text[:255],infoFlags=0x04|0x20,
                               balloonIcon=notification_icon)
             if not shell.Shell_NotifyIconW(1,ctypes.byref(data)):
                 clicks.dismissed()
-                raise RuntimeError('Windows 未接受桌面通知请求')
+                raise RuntimeError(tr('Windows 未接受桌面通知请求', 'Windows did not accept the desktop notification request'))
             receipt['notification_accepted']=True
 
     from backend.floating_monitor import get_monitor_controller
@@ -367,12 +368,12 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
         popup=user.CreatePopupMenu()
         if not popup: return
         try:
-            for command,label,checked in [(1,'打开工作台',False),(2,'桌面通知',settings.notifications),
-                                          (6,'显示浮窗',bool(floating_monitor and floating_monitor.enabled)),
-                                          (3,'登录 Windows 时启动',startup.enabled()),(4,'发送测试通知',False)]:
+            for command,label,checked in [(1,tr('打开工作台', 'Open workbench'),False),(2,tr('桌面通知', 'Desktop notifications'),settings.notifications),
+                                          (6,tr('显示浮窗', 'Show monitor'),bool(floating_monitor and floating_monitor.enabled)),
+                                          (3,tr('登录 Windows 时启动', 'Start at Windows sign-in'),startup.enabled()),(4,tr('发送测试通知', 'Send test notification'),False)]:
                 user.AppendMenuW(popup,8 if checked else 0,command,label)
             user.AppendMenuW(popup,0x800,0,None)
-            user.AppendMenuW(popup,0,5,'退出托盘并停止后台监控')
+            user.AppendMenuW(popup,0,5,tr('退出托盘并停止后台监控', 'Quit tray and stop monitoring'))
             point=w.POINT();user.GetCursorPos(ctypes.byref(point));user.SetForegroundWindow(hwnd)
             selected=user.TrackPopupMenu(popup,0x100|2,point.x,point.y,0,hwnd,None)
             if selected==1: open_workbench()
@@ -381,7 +382,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
             elif selected==3:
                 startup.set(not startup.enabled())
             elif selected==4:
-                messages.put(('Infra Workbench','桌面通知测试：关闭浏览器后，托盘仍会提醒监控规则的资源变化。'))
+                messages.put(('Infra Workbench',tr('桌面通知测试：关闭浏览器后，托盘仍会提醒监控规则的资源变化。', 'Desktop notification test: the tray continues sending resource alerts after the browser is closed.')))
             elif selected==6:
                 floating_monitor.set_enabled(not floating_monitor.enabled)
             elif selected==5:
@@ -397,6 +398,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 logging.info('Taskbar recreated; restoring tray icon')
                 ensure_tray_icon(shell,icon_data);return 0
             if message==0x113 and wp==1:
+                icon_data.tip = tr('Infra Workbench · 后台监控', 'Infra Workbench · Background monitoring')
                 ensure_tray_icon(shell,icon_data);return 0
             if message==WM_TRAY:
                 if lp==0x203: open_workbench()
@@ -422,7 +424,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
         except Exception:
             logging.exception('Desktop action failed')
             if not smoke_test:
-                user.MessageBoxW(hwnd,'操作失败，请查看 data/desktop.log。','Infra Workbench',0x10)
+                user.MessageBoxW(hwnd,tr('操作失败，请查看 data/desktop.log。', 'Operation failed. See data/desktop.log.'),'Infra Workbench',0x10)
             return 0
         return user.DefWindowProcW(hwnd,message,wp,lp)
 
@@ -434,7 +436,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
     icon_data.hwnd=hwnd
     if not shell.Shell_NotifyIconW(0,ctypes.byref(icon_data)):
         user.DestroyWindow(hwnd)
-        raise RuntimeError('无法创建 Windows 托盘图标')
+        raise RuntimeError(tr('无法创建 Windows 托盘图标', 'Unable to create Windows tray icon'))
     receipt['icon_created']=True
     logging.info('Tray ready pid=%s hwnd=%s service_owned=%s',os.getpid(),hwnd,service.owned)
     if not user.SetTimer(hwnd,1,200 if smoke_test else 5000,None):
@@ -460,7 +462,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 pass
             stop.wait(.1 if smoke_test else 2)
     if smoke_test:
-        messages.put(('Infra Workbench · 通知测试','这是系统托盘功能的测试通知，测试图标将自动退出。'))
+        messages.put((tr('Infra Workbench · 通知测试', 'Infra Workbench · Notification test'),tr('这是系统托盘功能的测试通知，测试图标将自动退出。', 'This is a system tray test notification. The test icon will exit automatically.')))
     worker=threading.Thread(target=monitor,name='iwb-notifications',daemon=True)
     worker.start()
     if open_browser: open_workbench()
@@ -487,7 +489,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('--no-browser',action='store_true')
     args=parser.parse_args(argv)
-    if os.name!='nt': raise SystemExit('系统托盘目前支持 Windows 10/11')
+    if os.name!='nt': raise SystemExit(tr('系统托盘目前支持 Windows 10/11', 'The system tray currently supports Windows 10/11'))
     DATA.mkdir(parents=True,exist_ok=True)
     from logging.handlers import RotatingFileHandler
     logging.basicConfig(handlers=[RotatingFileHandler(DATA/'desktop.log',maxBytes=256000,backupCount=1,encoding='utf-8')],level=logging.INFO,

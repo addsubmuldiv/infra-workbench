@@ -1,3 +1,4 @@
+import {i18nMock} from './i18n-mock.mjs';
 import {workspaceMock} from './workspace-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';

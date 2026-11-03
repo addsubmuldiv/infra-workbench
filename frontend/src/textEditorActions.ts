@@ -1,6 +1,7 @@
 import {EditorState,Transaction} from '@codemirror/state';
 import type {EditorView} from '@codemirror/view';
 import {getSearchQuery} from '@codemirror/search';
+import {t} from './i18n.ts';
 
 type ClipboardIO=Pick<Clipboard,'readText'|'writeText'>;
 const selectedText=(state:EditorState)=>state.selection.ranges.map(range=>state.sliceDoc(range.from,range.to)).filter(Boolean).join('\n');
@@ -12,19 +13,19 @@ export async function copyText(view:EditorView,clipboard:ClipboardIO=navigator.c
 export async function cutText(view:EditorView,clipboard:ClipboardIO=navigator.clipboard){
   const before=view.state;if(before.readOnly||!selectedText(before))return false;
   await copyText(view,clipboard);
-  if(!unchanged(view,before)||view.state.readOnly)throw new Error('编辑内容或选择已变化，请重新剪切');
+  if(!unchanged(view,before)||view.state.readOnly)throw new Error(t('编辑内容或选择已变化，请重新剪切','Content or selection changed. Try cutting again.'));
   view.dispatch({...view.state.replaceSelection(''),annotations:Transaction.userEvent.of('delete.cut'),scrollIntoView:true});return true;
 }
 export async function pasteText(view:EditorView,clipboard:ClipboardIO=navigator.clipboard){
   const before=view.state;if(before.readOnly)return false;
   const text=await clipboard.readText();if(!text)return false;
-  if(!unchanged(view,before)||view.state.readOnly)throw new Error('编辑内容或选择已变化，请重新粘贴');
+  if(!unchanged(view,before)||view.state.readOnly)throw new Error(t('编辑内容或选择已变化，请重新粘贴','Content or selection changed. Try pasting again.'));
   view.dispatch({...view.state.replaceSelection(text),annotations:Transaction.userEvent.of('input.paste'),scrollIntoView:true});return true;
 }
 export function searchMatchCount(state:EditorState,limit=10000){
   const query=getSearchQuery(state);if(!query.search)return '';
-  if(!query.valid)return '无效的正则表达式';
+  if(!query.valid)return t('无效的正则表达式','Invalid regular expression');
   const cursor=query.getCursor(state.doc);let count=0;
-  while(!cursor.next().done){count++;if(count>limit)return '超过 '+limit+' 处匹配'}
-  return count+' 处匹配';
+  while(!cursor.next().done){count++;if(count>limit)return t('超过 '+limit+' 处匹配','More than '+limit+' matches')}
+  return t(count+' 处匹配',count+' matches');
 }

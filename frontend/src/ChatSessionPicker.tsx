@@ -1,3 +1,4 @@
+import {ui} from './assistantLocale';
 import React,{useId,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Check,ChevronDown,MessageSquare} from 'lucide-react';
@@ -22,10 +23,10 @@ export function ChatSessionPicker({items,value,disabled,onChange}:{items:ChatIte
   useLayoutEffect(()=>{
     if(visible)menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"],button')?.focus({preventScroll:true});
   },[visible]);
-  return <><button ref={trigger} type="button" className="chat-session-picker" aria-label="选择对话" aria-haspopup="menu" aria-expanded={visible} aria-controls={visible?id:undefined} disabled={disabled} onClick={()=>setOpen(!visible)} onKeyDown={event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();setOpen(true)}}}><MessageSquare size={16}/><span>{items.find(item=>item.id===value)?.title||'新对话'}</span><ChevronDown size={13}/></button>{visible&&createPortal(<div ref={menu} id={id} className="chat-session-menu" role="menu" aria-label="选择对话" style={{...position,maxHeight:Math.max(80,Math.min(360,window.innerHeight-position.top-12))}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))close()}} onKeyDown={event=>{
+  return <><button ref={trigger} type="button" className="chat-session-picker" aria-label={ui("选择对话")} aria-haspopup="menu" aria-expanded={visible} aria-controls={visible?id:undefined} disabled={disabled} onClick={()=>setOpen(!visible)} onKeyDown={event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();setOpen(true)}}}><MessageSquare size={16}/><span>{items.find(item=>item.id===value)?.title||ui("新对话")}</span><ChevronDown size={13}/></button>{visible&&createPortal(<div ref={menu} id={id} className="chat-session-menu" role="menu" aria-label={ui("选择对话")} style={{...position,maxHeight:Math.max(80,Math.min(360,window.innerHeight-position.top-12))}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))close()}} onKeyDown={event=>{
     if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close(true);return}
     const options=Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('button')||[]);
     const index=options.indexOf(document.activeElement as HTMLButtonElement);
     if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?options.length-1:(index+(event.key==='ArrowDown'?1:options.length-1))%options.length;options[next]?.focus({preventScroll:true})}
-  }}>{items.length?items.map(item=><button type="button" role="menuitemradio" aria-checked={item.id===value} key={item.id} title={item.title} onClick={()=>{close(true);if(item.id!==value)onChange(item.id)}}><span>{item.active_run?'处理中 · ':''}{item.title}</span>{item.id===value&&<Check size={15}/>}</button>):<p>暂无历史对话</p>}</div>,document.body)}</>;
+  }}>{items.length?items.map(item=><button type="button" role="menuitemradio" aria-checked={item.id===value} key={item.id} title={item.title} onClick={()=>{close(true);if(item.id!==value)onChange(item.id)}}><span>{item.active_run?ui("处理中 · "):''}{item.title}</span>{item.id===value&&<Check size={15}/>}</button>):<p>{ui("暂无历史对话")}</p>}</div>,document.body)}</>;
 }

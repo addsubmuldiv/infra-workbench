@@ -1,3 +1,4 @@
+import {i18nMock} from './i18n-mock.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ function render(usage,extra={}){
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect:()=>{},useState:()=>[null,()=>{}]};
   const exports={};
   const code=ts.transpileModule(fs.readFileSync(new URL('../src/ContextUsageMeter.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  new Function('require','exports',code)(name=>name==='react'?react:{},exports);
+  new Function('require','exports',code)(name=>i18nMock(name)??(name==='react'?react:{}),exports);
   const turn={role:'assistant',context_usage:usage,...extra};
   const tree=exports.ContextUsageMeter({chat:{turns:[turn]},model:'test-model'});
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...node.props.children.flat(Infinity).flatMap(nodes)];

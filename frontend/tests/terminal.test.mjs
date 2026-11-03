@@ -1,3 +1,5 @@
+import {i18nMock} from './i18n-mock.mjs';
+import * as toolTranslations from '../src/toolI18n.ts';
 import {workspaceMock} from './workspace-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -64,6 +66,8 @@ function harness(t,{tabs=null,initialStates={}}={}){
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const exports={};
   const require=name=>{
+    if(name==='./toolI18n'||name==='./toolI18n.ts')return toolTranslations;
+    const translation=i18nMock(name);if(translation)return translation;
     const mock=workspaceMock(name,react);if(mock)return mock;
     if(name==='react')return react;
     if(name==='./TerminalCommands')return ()=>null;

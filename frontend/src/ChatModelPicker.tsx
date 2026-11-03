@@ -1,3 +1,4 @@
+import {ui} from './assistantLocale';
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Check,ChevronDown,LoaderCircle,Settings2} from 'lucide-react';
@@ -39,7 +40,7 @@ export function ChatModelPicker({model,openSettings}:{model?:string;openSettings
       });
       if(ticket!==generation.current)return;
       setView(next);setCurrent(next.model);setModels(list.models);setTruncated(list.truncated);
-    }catch(e){if(ticket===generation.current)setError(e instanceof Error?e.message:'无法获取模型列表')}
+    }catch(e){if(ticket===generation.current)setError(e instanceof Error?e.message:ui("无法获取模型列表"))}
     finally{if(ticket===generation.current)setLoading(false)}
   };
   const switchModel=async(name:string)=>{
@@ -50,23 +51,23 @@ export function ChatModelPicker({model,openSettings}:{model?:string;openSettings
       setView(value);setCurrent(value.model);
       window.dispatchEvent(new Event('infra-workbench:agent-settings-changed'));
       close();
-    }catch(e){setError(e instanceof Error?e.message:'模型切换失败')}
+    }catch(e){setError(e instanceof Error?e.message:ui("模型切换失败"))}
     finally{setSwitching('')}
   };
   const query=filter.trim().toLowerCase();
   const visible=(models||[]).filter(item=>!query||item.toLowerCase().includes(query));
   return <div className="chat-model-picker">
-    <button ref={trigger} type="button" className="text-button" aria-expanded={open} aria-haspopup="dialog" onClick={()=>{if(open)close();else{setOpen(true);void load()}}} title="切换模型" aria-label="切换模型">{switching&&<LoaderCircle size={12} className="spin"/>}<span>{current||'配置模型'}</span><ChevronDown size={12}/></button>
-    {open&&createPortal(<div ref={menu} className="chat-model-menu" role="dialog" aria-label="选择模型" style={position} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();trigger.current?.focus()}}}>
-      {models===null?(loading&&<p className="chat-model-state"><LoaderCircle size={13} className="spin"/>正在获取模型列表…</p>):<>
-        <input aria-label="筛选模型" placeholder="筛选模型" autoComplete="off" spellCheck={false} value={filter} onChange={event=>setFilter(event.target.value)}/>
+    <button ref={trigger} type="button" className="text-button" aria-expanded={open} aria-haspopup="dialog" onClick={()=>{if(open)close();else{setOpen(true);void load()}}} title={ui("切换模型")} aria-label={ui("切换模型")}>{switching&&<LoaderCircle size={12} className="spin"/>}<span>{current||ui("配置模型")}</span><ChevronDown size={12}/></button>
+    {open&&createPortal(<div ref={menu} className="chat-model-menu" role="dialog" aria-label={ui("选择模型")} style={position} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();trigger.current?.focus()}}}>
+      {models===null?(loading&&<p className="chat-model-state"><LoaderCircle size={13} className="spin"/>{ui("正在获取模型列表…")}</p>):<>
+        <input aria-label={ui("筛选模型")} placeholder={ui("筛选模型")} autoComplete="off" spellCheck={false} value={filter} onChange={event=>setFilter(event.target.value)}/>
         <div className="chat-model-list">{visible.map(item=><button type="button" key={item} className={item===current?'active':''} disabled={!!switching} aria-pressed={item===current} onClick={()=>void switchModel(item)}><span>{item}</span>{item===current?<Check size={13}/>:switching===item?<LoaderCircle size={13} className="spin"/>:null}</button>)}
-          {!visible.length&&<p className="chat-model-state">没有匹配的模型</p>}
+          {!visible.length&&<p className="chat-model-state">{ui("没有匹配的模型")}</p>}
         </div>
-        {truncated&&<p className="chat-model-state">模型较多，仅显示前 500 个；其他模型可在设置中手动填写。</p>}
+        {truncated&&<p className="chat-model-state">{ui("模型较多，仅显示前 500 个；其他模型可在设置中手动填写。")}</p>}
       </>}
-      {error&&<><p className="chat-model-state error" role="alert">{error}</p><button type="button" onClick={()=>void load()}>重新获取模型列表</button>{view&&<><input aria-label="手动输入模型 ID" placeholder="或手动输入模型 ID" value={filter} onChange={event=>setFilter(event.target.value)}/><button type="button" disabled={!filter.trim()||!!switching} onClick={()=>void switchModel(filter.trim())}>切换到此模型</button></>}</>}
-      <button type="button" className="chat-model-settings" onClick={()=>{close();openSettings?.()}}><Settings2 size={13}/>打开模型设置</button>
+      {error&&<><p className="chat-model-state error" role="alert">{error}</p><button type="button" onClick={()=>void load()}>{ui("重新获取模型列表")}</button>{view&&<><input aria-label={ui("手动输入模型 ID")} placeholder={ui("或手动输入模型 ID")} value={filter} onChange={event=>setFilter(event.target.value)}/><button type="button" disabled={!filter.trim()||!!switching} onClick={()=>void switchModel(filter.trim())}>{ui("切换到此模型")}</button></>}</>}
+      <button type="button" className="chat-model-settings" onClick={()=>{close();openSettings?.()}}><Settings2 size={13}/>{ui("打开模型设置")}</button>
     </div>,document.body)}
   </div>;
 }

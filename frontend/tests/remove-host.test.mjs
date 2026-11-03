@@ -1,3 +1,4 @@
+import {i18nMock} from './i18n-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,7 +11,7 @@ function harness(remove,hosts){
     useRef:initial=>{const i=slot++;if(!(i in values))values[i]={current:initial};return values[i]}};
   const source=fs.readFileSync(new URL('../src/RemoveHostDialog.tsx',import.meta.url),'utf8');
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:new Proxy({},{get:(_,key)=>key}),exports);
+  const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:new Proxy({},{get:(_,key)=>key})),exports);
   const render=()=>{slot=0;tree=exports.RemoveHostDialog({host:{id:'fake',target:'example-server'},hosts,remove,close:()=>closed++});return tree};
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);

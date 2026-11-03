@@ -1,3 +1,4 @@
+import {t} from './i18n.ts';
 export type ChangeEvent={id:number;created:number;host_id:string;alias:string;kind:string;description:string};
 export type ChangeHistory={events:ChangeEvent[];event_count:number;truncated:boolean;recording_started_at:number;last_observed_at:number|null;requested_since:number;until:number;error:string;limitations:string[]};
 export type AssistantStatus={model:string;configured:boolean;credential_error:string;host_count:number;history:ChangeHistory};
@@ -7,13 +8,13 @@ export type ResourceSummary={groups:{text:string;event_ids:number[]}[];history:C
 export async function assistantRequest<T>(path:string,method='GET',body?:unknown,signal?:AbortSignal,request:typeof fetch=fetch):Promise<T>{
   const response=await request('/api/assistant'+path,{method,cache:'no-store',signal,headers:{'Content-Type':'application/json','X-IWB':'1'},body:body===undefined?undefined:JSON.stringify(body)});
   let value;
-  try{value=await response.json()}catch{throw new Error('无法读取 AI 助手接口，请确认已启动新版后台。')}
-  if(!response.ok)throw new Error(response.status===404?'当前后台尚未加载 AI 助手，请从托盘正常退出后重新打开软件。':typeof value?.detail==='string'?value.detail:'AI 请求失败，请检查后台和模型配置。');
+  try{value=await response.json()}catch{throw new Error(t('无法读取 AI 助手接口，请确认已启动新版后台。','Unable to read the AI assistant API. Check that the updated backend is running.'))}
+  if(!response.ok)throw new Error(response.status===404?t('当前后台尚未加载 AI 助手，请从托盘正常退出后重新打开软件。','The backend has not loaded the AI assistant. Quit from the tray and reopen the app.'):typeof value?.detail==='string'?value.detail:t('AI 请求失败，请检查后台和模型配置。','AI request failed. Check the backend and model settings.'));
   return value as T;
 }
 export function rowTitle(row:SearchRow):string{
-  if(row.type==='process')return `PID ${row.pid} · ${row.user||'用户未知'}`;
-  if(row.type==='resource')return `${row.kind} · ${row.device_ids.length} 个设备`;
-  if(row.type==='session')return `tmux · ${row.name||'未命名会话'}`;
-  return row.fresh?'机器在线':'机器状态待确认';
+  if(row.type==='process')return `PID ${row.pid} · ${row.user||t('用户未知','Unknown user')}`;
+  if(row.type==='resource')return t(`${row.kind} · ${row.device_ids.length} 个设备`,`${row.kind} · ${row.device_ids.length} devices`);
+  if(row.type==='session')return `tmux · ${row.name||t('未命名会话','Unnamed session')}`;
+  return row.fresh?t('机器在线','Machine online'):t('机器状态待确认','Machine status unconfirmed');
 }

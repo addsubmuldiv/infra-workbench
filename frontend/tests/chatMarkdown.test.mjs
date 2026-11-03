@@ -1,3 +1,4 @@
+import {i18nMock} from './i18n-mock.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,6 +15,7 @@ import DOMPurify from 'dompurify';
 const diagramJs=ts.transpileModule(fs.readFileSync(new URL('../src/MermaidDiagram.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
 const diagramExports={};
 new Function('require','exports',diagramJs)(name=>{
+  const localized=i18nMock(name);if(localized)return localized;
   if(name==='react')return React;
   if(name==='dompurify')return DOMPurify;
   throw new Error('Unexpected diagram import: '+name);
@@ -23,6 +25,7 @@ const source=fs.readFileSync(new URL('../src/ChatMarkdown.tsx',import.meta.url),
 const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
 const exports={};
 new Function('require','exports',js)(name=>{
+  const localized=i18nMock(name);if(localized)return localized;
   if(name==='react')return React;
   if(name==='react-markdown')return ReactMarkdown;
   if(name==='remark-gfm')return remarkGfm;

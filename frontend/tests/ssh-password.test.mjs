@@ -1,3 +1,4 @@
+import {i18nMock} from './i18n-mock.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ function harness(t,{fail=false}={}){
   globalThis.fetch=async(url,options={})=>{calls.push({url,...options});return {ok:!(fail&&options.method==='POST'),json:async()=>fail&&options.method==='POST'?{detail:'验证失败'}:{password_saved:options.method!=='DELETE',can_remember:true,error:null}}};
   t.after(()=>{globalThis.fetch=original});
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/SSHPasswordDialog.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>name==='react'?react:new Proxy({},{get:(_,key)=>key}),exports);
+  const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:new Proxy({},{get:(_,key)=>key})),exports);
   const host={id:'example',target:'example'};
   const render=()=>{slot=0;tree=exports.SSHPasswordDialog({host,close:()=>closed++,updated:async()=>updated++});for(const effect of effects.splice(0))effect();return tree};
   const nodes=(node=tree)=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(n=>nodes(n))];

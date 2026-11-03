@@ -1,3 +1,4 @@
+import {ui} from './assistantLocale';
 import React from 'react';
 import Markdown,{type Components} from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -19,7 +20,7 @@ const components:Components={
     return <pre {...props}>{children}</pre>;
   },
   a:({node,...props})=><a {...props} target={/^https?:\/\//i.test(props.href||'')?'_blank':undefined} rel="noopener noreferrer"/>,
-  table:({node,...props})=><div className="chat-markdown-table" role="region" aria-label="消息表格" tabIndex={0}><table {...props}/></div>,
+  table:({node,...props})=><div className="chat-markdown-table" role="region" aria-label={ui("消息表格")} tabIndex={0}><table {...props}/></div>,
   img:({node,...props})=><img {...props} loading="lazy"/>,
 };
 const plugins=[remarkGfm,remarkMath];

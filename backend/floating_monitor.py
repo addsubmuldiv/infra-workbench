@@ -1,4 +1,5 @@
 """Small native monitor. No browser or extra SSH collection; cached antialiased native-window drawing."""
+from backend.interface_language import tr, current_locale, translated_text
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ from urllib.request import build_opener, ProxyHandler
 from backend.floating_layout import clamp_size, viewport_layout, MIN_SIZE, DEFAULT_SIZE, DRAW_SCALE
 
 ROOT = Path(__file__).resolve().parents[1]
-TITLE = 'Infra Workbench · 浮窗'
+TITLE = tr('Infra Workbench · 浮窗', 'Infra Workbench · Monitor')
 URL = 'http://127.0.0.1:8765/'
 
 
@@ -70,7 +71,7 @@ def process_tooltip_lines(processes):
     lines = []
     for process in processes:
         lines.append(f"PID {process.get('pid','?')} · {process.get('user') or '?'} · {process.get('name') or '?'}")
-        for key, label in (('cwd', '工作目录'), ('executable', '可执行文件')):
+        for key, label in (('cwd', tr('工作目录', 'Working directory')), ('executable', tr('可执行文件', 'Executable'))):
             if process.get(key):
                 lines.append(f'{label}  {process[key]}')
     return lines
@@ -180,7 +181,7 @@ class MonitorController:
                 if controller.enabled != shown:
                     shown = controller.enabled
                     if shown:
-                        app.error = '正在更新状态…'
+                        app.error = tr('正在更新状态…', 'Updating status…')
                         app.render(force=True)
                         app.active.set()
                         root.deiconify()
@@ -228,7 +229,7 @@ def get_monitor_controller():
 
 def launch_monitor():
     if sys.platform != 'win32':
-        raise RuntimeError('桌面浮窗目前支持 Windows')
+        raise RuntimeError(tr('桌面浮窗目前支持 Windows', 'The floating monitor currently supports Windows'))
     get_monitor_controller().set_enabled(True)
 
 
@@ -236,16 +237,17 @@ class FloatingMonitor:
     BG = '#ffffff'
     INK = '#26374a'
     MUTED = '#758597'
-    COLORS = {'idle': ('#e6f4ef', '#16815c', '✓', '空闲'),
-              'busy': ('#fff5e3', '#9b6b24', '●', '占用'),
-              'unknown': ('#edf1f5', '#758597', '?', '未知'),
-              'alarm': ('#fff0eb', '#c55048', '!', '异常')}
+    COLORS = {'idle': ('#e6f4ef', '#16815c', '✓', tr('空闲', 'Idle')),
+              'busy': ('#fff5e3', '#9b6b24', '●', tr('占用', 'Busy')),
+              'unknown': ('#edf1f5', '#758597', '?', tr('未知', 'Unknown')),
+              'alarm': ('#fff0eb', '#c55048', '!', tr('异常', 'Alarm'))}
 
     def __init__(self, root, settings, fetch=None):
         import tkinter as tk
         from tkinter import ttk
         self.tk, self.ttk, self.root, self.settings = tk, ttk, root, settings
         from backend.floating_theme import current_theme
+        self.locale = current_locale()
         self.theme_id,self.palette = current_theme()
         self.set_palette(self.palette)
         self.configure_ttk_theme()
@@ -277,7 +279,7 @@ class FloatingMonitor:
         self.scroll_offset = 0
         self.canvas = None
         self._canvas_commands = []
-        root.title(TITLE)
+        root.title(tr('Infra Workbench · 浮窗', 'Infra Workbench · Monitor'))
         root.configure(bg='#dce4ed')
         root.overrideredirect(True)
         root.attributes('-toolwindow', True)
@@ -334,7 +336,7 @@ class FloatingMonitor:
             tip.attributes('-toolwindow',True)
             tip.attributes('-topmost',True)
             tip.configure(bg=self.palette['line'])
-            message='取消置顶（当前已置顶）' if self.settings.values['pinned'] else '始终置顶（当前未置顶）'
+            message=tr('取消置顶（当前已置顶）', 'Unpin (currently always on top)') if self.settings.values['pinned'] else tr('始终置顶（当前未置顶）', 'Always on top (currently unpinned)')
             self.label(tip,message).pack(padx=1,pady=1,ipadx=8,ipady=5)
             tip.geometry(f'{x:+d}{y:+d}')
             tip.deiconify()
@@ -342,10 +344,43 @@ class FloatingMonitor:
 
     def set_palette(self, palette):
         self.BG,self.INK,self.MUTED = palette['panel'],palette['text'],palette['muted']
-        self.COLORS = {'idle':(palette['accent-bg'],palette['green'],'✓','空闲'),
-                       'busy':(palette['warning-bg'],palette['amber'],'●','占用'),
-                       'unknown':(palette['panel2'],palette['muted'],'?','未知'),
-                       'alarm':(palette['danger-bg'],palette['danger'],'!','异常')}
+        self.COLORS = {'idle':(palette['accent-bg'],palette['green'],'✓',tr('空闲', 'Idle')),
+                       'busy':(palette['warning-bg'],palette['amber'],'●',tr('占用', 'Busy')),
+                       'unknown':(palette['panel2'],palette['muted'],'?',tr('未知', 'Unknown')),
+                       'alarm':(palette['danger-bg'],palette['danger'],'!',tr('异常', 'Alarm'))}
+
+    def sync_language(self):
+        language = current_locale()
+        if language == self.locale:
+            return
+        self.locale = language
+        self.set_palette(self.palette)
+        self.error = translated_text(self.error)
+        self.hide_tooltip()
+        def translate(widget):
+            options = widget.keys()
+            if 'textvariable' in options and widget.cget('textvariable'):
+                variable = widget.cget('textvariable')
+                old = widget.getvar(variable)
+                new = translated_text(old)
+                if new != old:
+                    widget.setvar(variable, new)
+            elif 'text' in options:
+                old = widget.cget('text')
+                new = translated_text(old)
+                if new != old:
+                    widget.configure(text=new)
+            if callable(getattr(widget, 'title', None)):
+                widget.title(translated_text(widget.title()))
+            for child in widget.winfo_children():
+                translate(child)
+            if callable(getattr(widget, 'language_update', None)):
+                widget.language_update()
+        translate(self.root)
+        machine_list = getattr(self, 'machine_list', None)
+        if machine_list and machine_list.winfo_exists():
+            machine_list.schedule()
+        self.render(force=True)
 
     def configure_ttk_theme(self):
         style=self.ttk.Style(self.root)
@@ -415,7 +450,7 @@ class FloatingMonitor:
                 delay = interval if interval in (5, 10, 20, 30) else 10
             except Exception:
                 failures += 1
-                result = (None, '后台暂不可用 · 状态未知')
+                result = (None, tr('后台暂不可用 · 状态未知', 'Backend unavailable · Status unknown'))
                 delay = min(30, 5*failures)
             try:
                 self.inbox.put_nowait(result)
@@ -427,6 +462,7 @@ class FloatingMonitor:
     def consume(self):
         if self.stop.is_set():
             return
+        self.sync_language()
         self.sync_theme()
         try:
             state, error = self.inbox.get_nowait()
@@ -441,7 +477,7 @@ class FloatingMonitor:
             host = self.selected()
             collected = host.get('snapshot', {}).get('collected_at') if host else None
             if self.time_label and collected:
-                self.time_label.configure(text='所选机器采集于 '+time.strftime('%H:%M:%S', time.localtime(collected)))
+                self.time_label.configure(text=tr('所选机器采集于 ', 'Selected machine collected at ')+time.strftime('%H:%M:%S', time.localtime(collected)))
         except queue.Empty:
             pass
         self.root.after(500, self.consume)
@@ -451,7 +487,7 @@ class FloatingMonitor:
             self.settings.update(**values)
         except OSError:
             from tkinter import messagebox
-            messagebox.showerror('设置未保存', '无法写入浮窗设置，请检查数据目录权限。', parent=self.root)
+            messagebox.showerror(tr('设置未保存', 'Settings not saved'), tr('无法写入浮窗设置，请检查数据目录权限。', 'Unable to save monitor settings. Check data directory permissions.'), parent=self.root)
 
     def enter(self):
         self.hovered = True
@@ -606,9 +642,9 @@ class FloatingMonitor:
         snap = host.get('snapshot', {})
         devices = snap.get('devices', [])
         if not snap.get('fresh') or self.error:
-            return '状态未知'
+            return tr('状态未知', 'Status unknown')
         idle = sum(device_status(d, True) == 'idle' for d in devices)
-        return f'{idle}/{len(devices)} 空闲'
+        return tr(f'{idle}/{len(devices)} 空闲', f'{idle}/{len(devices)} Idle')
 
     def render(self, force=False):
         layout=viewport_layout(*self.viewport_size,host_count=len(self.visible_hosts()) if self.hosts else None)
@@ -693,7 +729,7 @@ class FloatingMonitor:
         rr(1,1,width-2,height-2,32,outline='#d4dee7')
         c.create_line(1,49,width-2,49,fill='#e8edf2') if mode != 'compact' else None
         server_icon(17,16)
-        title = '关注的机器' if mode == 'fleet' else ('‹ 返回总览' if mode == 'single' else (host['target'][:18] if host else 'GPU / NPU'))
+        title = tr('关注的机器', 'Favorite machines') if mode == 'fleet' else (tr('‹ 返回总览', '‹ Overview') if mode == 'single' else (host['target'][:18] if host else 'GPU / NPU'))
         text(47,26 if mode != 'compact' else 22,title,12,bold=True,tags='drag')
         c.tag_bind('all','<ButtonPress-1>',lambda event:self.start_drag(event) if event.y<round(40*scale*self.dpi_scale) and event.x<round((width-130)*scale*self.dpi_scale) and not self.resize_edge(event) else None)
         c.bind('<Motion>',self.resize_cursor)
@@ -707,7 +743,7 @@ class FloatingMonitor:
             c.tag_bind('drag','<Enter>',lambda event:c.configure(cursor='hand2'))
             c.tag_bind('drag','<Leave>',lambda event:c.configure(cursor=''))
         if mode == 'fleet' and not minimal:
-            text(233,26,'选择机器',9,'#157e73',anchor='center',tags='choose-machines')
+            text(233,26,tr('选择机器', 'Machines'),9,'#157e73',anchor='center',tags='choose-machines')
             c.tag_bind('choose-machines','<Button-1>',lambda event:self.open_machine_picker())
             c.tag_bind('choose-machines','<Enter>',lambda event:c.configure(cursor='hand2'))
             c.tag_bind('choose-machines','<Leave>',lambda event:c.configure(cursor=''))
@@ -732,7 +768,7 @@ class FloatingMonitor:
         c.tag_bind('pin','<Enter>',lambda event:(c.configure(cursor='hand2'),self.pin_tooltip(event)))
         c.tag_bind('pin','<Leave>',lambda event:(c.configure(cursor=''),self.hide_tooltip()))
         action('settings',width-(78 if minimal else 82),25,'⚙',self.open_settings,12)
-        action('collapse',width-(35 if minimal else 50),25,'展开' if minimal else '−',lambda:self.set_mode('fleet' if minimal else 'compact'),9 if minimal else 17)
+        action('collapse',width-(35 if minimal else 50),25,tr('展开', 'Expand') if minimal else '−',lambda:self.set_mode('fleet' if minimal else 'compact'),9 if minimal else 17)
         if not minimal:action('close',width-21,25,'×',self.close,13,self.MUTED)
         def device_cells(h, x, y, cell_width=25, detailed=False):
             snapshot = h.get('snapshot', {})
@@ -758,7 +794,7 @@ class FloatingMonitor:
                     text(px+cell_width/2,py+27,symbol if not detailed else symbol+' '+name,10,fg,anchor='center',tags=tag)
                 if detailed:
                     total,used=d.get('memory_total'),d.get('memory_used')
-                    memory=f'{used/1024**3:.0f}/{total/1024**3:.0f} GiB' if total and used is not None else '显存未知'
+                    memory=f'{used/1024**3:.0f}/{total/1024**3:.0f} GiB' if total and used is not None else tr('显存未知', 'Memory unknown')
                     text(px+cell_width/2,py+50,memory,8,fg,anchor='center',tags=tag)
                 c.tag_bind(tag,'<Button-3>',lambda event,ident=h['id']:self.machine_context_menu(event,ident))
                 c.tag_unbind(tag,'<Button-1>')
@@ -773,15 +809,15 @@ class FloatingMonitor:
                 snapshot=h.get('snapshot',{})
                 fresh=snapshot.get('fresh') is True and not self.error
                 idle=sum(device_status(d,fresh)=='idle' for d in snapshot.get('devices',[]))
-                text(width-21,y+20,f'{idle} 张' if fresh else '未知',11,'#16815c' if fresh else self.MUTED,bold=True,anchor='e',tags=tag)
+                text(width-21,y+20,tr(f'{idle} 张', f'{idle} devices') if fresh else tr('未知', 'Unknown'),11,'#16815c' if fresh else self.MUTED,bold=True,anchor='e',tags=tag)
                 c.create_line(18,y+39,width-18,y+39,fill=self.palette['line'])
                 y+=40
-            if not rows:text(18,88,'请先添加机器',10,self.MUTED)
+            if not rows:text(18,88,tr('请先添加机器', 'Add a machine first'),10,self.MUTED)
             def scroll_minimal(event):
                 self.scroll_offset=max(0,min(len(visible)-page_size,self.scroll_offset+(-1 if event.delta>0 else 1)))
                 self.render(force=True)
             c.bind('<MouseWheel>',scroll_minimal)
-            text(19,height-16,'选择机器',8,'#157e73',tags='choose-machines')
+            text(19,height-16,tr('选择机器', 'Machines'),8,'#157e73',tags='choose-machines')
             c.tag_bind('choose-machines','<Button-1>',lambda event:self.open_machine_picker())
             c.tag_bind('choose-machines','<Enter>',lambda event:c.configure(cursor='hand2'))
             c.tag_bind('choose-machines','<Leave>',lambda event:c.configure(cursor=''))
@@ -791,7 +827,7 @@ class FloatingMonitor:
             if layout['show_summary']:
                 rr(13,61,width-14,99,18,'#e6f4ef','#e6f4ef')
                 server_icon(26,72)
-                text(57,80,f'{len(visible)} 台机器 · {idle} 张空闲',12,'#183a48',True)
+                text(57,80,tr(f'{len(visible)} 台机器 · {idle} 张空闲', f'{len(visible)} machines · {idle} idle devices'),12,'#183a48',True)
             y = layout['content_top']
             for h,rh in zip(rows,row_heights):
                 label_tag = 'host-'+h['id']
@@ -801,11 +837,11 @@ class FloatingMonitor:
                 label_tag = 'host-'+h['id']
                 c.tag_bind(label_tag,'<Button-3>',lambda event,ident=h['id']:self.machine_context_menu(event,ident))
                 text(51,y+18,h['target'],9,bold=True,width=130,tags=label_tag)
-                text(185,y+64,'详情 ›',7,'#157e73',anchor='e',tags=label_tag)
+                text(185,y+64,tr('详情 ›', 'Details ›'),7,'#157e73',anchor='e',tags=label_tag)
                 devices=h.get('snapshot',{}).get('devices',[])
-                model=devices[0].get('name','') if devices else '暂无设备'
-                if not h.get('snapshot',{}).get('fresh'): model='连接中断 / 数据过期'
-                if len(devices)>16: model=f'前16 / {len(devices)} 设备 · 详情查看全部'
+                model=devices[0].get('name','') if devices else tr('暂无设备', 'No devices')
+                if not h.get('snapshot',{}).get('fresh'): model=tr('连接中断 / 数据过期', 'Disconnected / Stale data')
+                if len(devices)>16: model=tr(f'前16 / {len(devices)} 设备 · 详情查看全部', f'First 16 / {len(devices)} devices · Details for all')
                 text(51,y+41,model,8,self.MUTED,width=130,tags=label_tag)
                 c.tag_bind(label_tag,'<Button-1>',lambda e,hh=h:(self.select_host(hh['id']),self.set_mode('single')))
                 def hover(event, item=background):
@@ -816,13 +852,13 @@ class FloatingMonitor:
                 c.tag_bind(label_tag,'<Leave>',unhover)
                 c.create_line(194,y+13,194,y+rh-13,fill='#dce4ed')
                 from tkinter import font as tkfont
-                numeric=self.summary(h).split(' ')[0] if h.get('snapshot',{}).get('fresh') and not self.error else '未知'
+                numeric=self.summary(h).split(' ')[0] if h.get('snapshot',{}).get('fresh') and not self.error else tr('未知', 'Unknown')
                 count_font=tkfont.Font(root=self.root,font=('Microsoft YaHei UI',max(7,round(9*scale))))
                 count_width=count_font.measure(numeric)/(scale*self.dpi_scale)+8
                 if h.get('snapshot',{}).get('fresh') and not self.error:
                     text(203,y+rh/2-9,numeric,9,'#16815c',tags='host-count-'+h['id'])
-                    text(203,y+rh/2+10,'空闲',8,'#16815c')
-                else:text(203,y+rh/2,'未知',8,self.MUTED,tags='host-count-'+h['id'])
+                    text(203,y+rh/2+10,tr('空闲', 'Idle'),8,'#16815c')
+                else:text(203,y+rh/2,tr('未知', 'Unknown'),8,self.MUTED,tags='host-count-'+h['id'])
                 # One shared budget for the count, grid origin, gaps and right inset.
                 # The final slot must remain inside the rounded machine card at every width.
                 cells_left=max(203+count_width+10,width-24-(8*25+7*4))
@@ -830,7 +866,7 @@ class FloatingMonitor:
                 device_cells(h,cells_left,y+(9 if len(devices)>8 else 15),cell_width)
                 y += rh+6
             if not rows:
-                text(width/2,128,'请先在工作台添加机器',10,self.MUTED,anchor='center')
+                text(width/2,128,tr('请先在工作台添加机器', 'Add machines in the workbench first'),10,self.MUTED,anchor='center')
             if len(visible)>page_size:
                 def scroll(event):
                     step = -1 if event.delta>0 else 1
@@ -854,23 +890,23 @@ class FloatingMonitor:
             c.bind('<MouseWheel>',scroll_details)
             action('back',width-28,119,'‹',lambda:self.set_mode('fleet'),20,'#157e73')
         else:
-            text(20,70,'请先在工作台添加机器',10,self.MUTED)
+            text(20,70,tr('请先在工作台添加机器', 'Add machines in the workbench first'),10,self.MUTED)
         if not minimal:
             c.create_line(15,height-43,width-16,height-43,fill='#e1e7ee')
-            text(20,height-23,'●',12,'#16815c'); text(36,height-23,'空闲',9)
-            text(83,height-23,'●',12,'#d69516'); text(99,height-23,'占用',9)
-            text(146,height-23,'?',12,self.MUTED); text(161,height-23,'未知',9)
+            text(20,height-23,'●',12,'#16815c'); text(36,height-23,tr('空闲', 'Idle'),9)
+            text(83,height-23,'●',12,'#d69516'); text(99,height-23,tr('占用', 'Busy'),9)
+            text(146,height-23,'?',12,self.MUTED); text(161,height-23,tr('未知', 'Unknown'),9)
             page=''
             if mode=='single' and host and len(host.get('snapshot',{}).get('devices',[]))>layout['detail_page_size']:
                 total=len(host['snapshot']['devices'])
                 page=f'{self.detail_offset+1}–{min(total,self.detail_offset+layout["detail_page_size"])}/{total}'
             elif mode=='fleet' and len(visible)>page_size:
                 page=f'{self.scroll_offset+1}–{self.scroll_offset+len(rows)}/{len(visible)}'
-            if self.error:page='后台不可用'
+            if self.error:page=tr('后台不可用', 'Backend unavailable')
             if page:
                 text(width-124,height-23,page,8,self.MUTED,anchor='e',tags='footer-page')
             c.tag_unbind('footer-page','<Button-1>')
-            text(width-19,height-23,'工作台 ↗',9,'#157e73',anchor='e',tags='workbench')
+            text(width-19,height-23,tr('工作台 ↗', 'Workbench ↗'),9,'#157e73',anchor='e',tags='workbench')
             c.tag_bind('workbench','<Button-1>',lambda e:self.open_workbench())
             c.tag_bind('workbench','<Enter>',lambda e:c.configure(cursor='hand2'))
             c.tag_bind('workbench','<Leave>',lambda e:c.configure(cursor=''))
@@ -932,9 +968,9 @@ class FloatingMonitor:
         previous=getattr(self,'context_menu',None)
         if previous is not None and previous.winfo_exists():previous.dismiss()
         self.context_menu=MachineContextMenu(self,event.x_root,event.y_root,[
-            ('打开终端',lambda:self.open_machine_tool('terminal',host_id)),
-            ('打开文件',lambda:self.open_machine_tool('files',host_id)),
-            ('打开工作台',self.open_workbench),
+            (tr('打开终端', 'Open terminal'),lambda:self.open_machine_tool('terminal',host_id)),
+            (tr('打开文件', 'Open files'),lambda:self.open_machine_tool('files',host_id)),
+            (tr('打开工作台', 'Open workbench'),self.open_workbench),
         ])
         return 'break'
 
@@ -944,7 +980,7 @@ class FloatingMonitor:
             open_quick_window(tool,host_id)
         except (OSError,RuntimeError,ValueError) as exc:
             from tkinter import messagebox
-            messagebox.showerror('无法打开窗口',str(exc),parent=self.root)
+            messagebox.showerror(tr('无法打开窗口', 'Unable to open window'),str(exc),parent=self.root)
 
     def open_workbench(self):
         from backend.launcher import open_preferred_interface
@@ -952,7 +988,7 @@ class FloatingMonitor:
             open_preferred_interface(self.settings.path.parent,ROOT)
         except (OSError,RuntimeError) as exc:
             from tkinter import messagebox
-            messagebox.showerror('无法打开工作台',str(exc),parent=self.root)
+            messagebox.showerror(tr('无法打开工作台', 'Unable to open workbench'),str(exc),parent=self.root)
 
     def device_tooltip(self, event, host_id, device_id):
         self.hide_tooltip()
@@ -968,15 +1004,15 @@ class FloatingMonitor:
             state=device_status(device,fresh)
             color,status=self.COLORS[state][1],self.COLORS[state][3]
             total,used=device.get('memory_total'),device.get('memory_used')
-            memory=f'{used/1024**3:.1f} / {total/1024**3:.1f} GiB' if total and used is not None else '未知'
+            memory=f'{used/1024**3:.1f} / {total/1024**3:.1f} GiB' if total and used is not None else tr('未知', 'Unknown')
             utilization=device.get('utilization')
-            lines=[device.get('name',''),f'显存  {memory}',f'利用率  {utilization if utilization is not None else "未知"}'+('%' if utilization is not None else '')]
-            if not fresh:lines.insert(0,'数据已过期，以下为上次采集结果')
+            lines=[device.get('name',''),tr(f'显存  {memory}', f'Memory  {memory}'),tr(f'利用率  {utilization if utilization is not None else "未知"}', f'Utilization  {utilization if utilization is not None else "Unknown"}')+('%' if utilization is not None else '')]
+            if not fresh:lines.insert(0,tr('数据已过期，以下为上次采集结果', 'Data is stale. Showing the last collection'))
             processes=device.get('processes',[])
             if processes:
-                lines.append(f'进程  {len(processes)} 个')
+                lines.append(tr(f'进程  {len(processes)} 个', f'Processes  {len(processes)} '))
                 lines.extend(process_tooltip_lines(processes))
-            else:lines.append('无进程' if device.get('processes_known') else '进程信息未知')
+            else:lines.append(tr('无进程', 'No processes') if device.get('processes_known') else tr('进程信息未知', 'Process information unknown'))
             tip=self.tk.Toplevel(self.root)
             self._tooltip_window=tip
             tip.withdraw();tip.overrideredirect(True)
@@ -1023,7 +1059,7 @@ class FloatingMonitor:
         self.machine_window = win
         win.withdraw()
         win.overrideredirect(True)
-        win.title('选择关注的机器')
+        win.title(tr('选择关注的机器', 'Select favorite machines'))
         win.transient(self.root)
         win.attributes('-toolwindow', True)
         win.attributes('-topmost', True)
@@ -1032,7 +1068,7 @@ class FloatingMonitor:
         win.minsize(round(320*self.dpi_scale),round(300*self.dpi_scale))
         header=self.tk.Frame(win,bg=self.palette['panel2'],height=42)
         header.pack(fill='x')
-        title=self.label(header,'选择关注的机器',bg=self.palette['panel2'],font=('Microsoft YaHei UI',11,'bold'))
+        title=self.label(header,tr('选择关注的机器', 'Select favorite machines'),bg=self.palette['panel2'],font=('Microsoft YaHei UI',11,'bold'))
         title.pack(side='left',padx=16,pady=12)
         self.button(header,'×',win.destroy,bg=self.palette['panel2']).pack(side='right',padx=10)
         origin=[None]
@@ -1042,7 +1078,7 @@ class FloatingMonitor:
         for widget in (header,title):
             widget.bind('<ButtonPress-1>',begin)
             widget.bind('<B1-Motion>',drag)
-        self.label(win, '只在浮窗中显示勾选的机器，不影响工作台。', fg=self.MUTED).pack(anchor='w',padx=16,pady=(12,0))
+        self.label(win, tr('只在浮窗中显示勾选的机器，不影响工作台。', 'Only selected machines appear in the monitor. Workbench is unaffected.'), fg=self.MUTED).pack(anchor='w',padx=16,pady=(12,0))
         from backend.floating_picker import MachinePickerList,rounded_search
         query = self.tk.StringVar()
         search_box,search=rounded_search(win,self,query)
@@ -1065,18 +1101,19 @@ class FloatingMonitor:
             self.save(favorites=selected)
             self.render(force=True)
             win.destroy()
-        apply_button=self.button(footer,'确定',apply,bg='#e6f4ef',fg='#157e73')
+        apply_button=self.button(footer,tr('确定', 'OK'),apply,bg='#e6f4ef',fg='#157e73')
         apply_button.pack(side='right')
-        self.button(footer,'取消',win.destroy).pack(side='right',padx=8)
+        self.button(footer,tr('取消', 'Cancel'),win.destroy).pack(side='right',padx=8)
         def update(*args):
             number=sum(value.get() for value in self.machine_choices.values())
-            count.set(f'已选 {number} / {len(self.machine_choices)}')
+            count.set(tr(f'已选 {number} / {len(self.machine_choices)}', f'Selected {number} / {len(self.machine_choices)}'))
             apply_button.configure(state='normal' if number else 'disabled')
         def select_all(value):
             for variable in self.machine_choices.values():variable.set(value)
             update()
-        self.button(controls,'全选',lambda:select_all(True)).pack(side='left')
-        self.button(controls,'清空',lambda:select_all(False)).pack(side='left')
+        win.language_update = update
+        self.button(controls,tr('全选', 'Select all'),lambda:select_all(True)).pack(side='left')
+        self.button(controls,tr('清空', 'Clear'),lambda:select_all(False)).pack(side='left')
         self.machine_list=MachinePickerList(area,self,query,update)
         self.machine_list.pack(fill='both',expand=True)
         win.bind('<MouseWheel>',self.machine_list.wheel)
@@ -1100,7 +1137,7 @@ class FloatingMonitor:
         self.settings_window=win
         win.withdraw()
         win.overrideredirect(True)
-        win.title('浮窗设置')
+        win.title(tr('浮窗设置', 'Monitor settings'))
         win.transient(self.root)
         win.attributes('-toolwindow',True)
         win.attributes('-topmost',True)
@@ -1108,7 +1145,7 @@ class FloatingMonitor:
         win.geometry(f'{round(350*self.dpi_scale)}x{round(330*self.dpi_scale)}')
         header=self.tk.Frame(win,bg=self.palette['panel2'])
         header.pack(fill='x')
-        title=self.label(header,'浮窗设置',bg=self.palette['panel2'],font=('Microsoft YaHei UI',11,'bold'))
+        title=self.label(header,tr('浮窗设置', 'Monitor settings'),bg=self.palette['panel2'],font=('Microsoft YaHei UI',11,'bold'))
         title.pack(side='left',padx=16,pady=12)
         self.button(header,'×',lambda:done(),bg=self.palette['panel2']).pack(side='right',padx=8)
         origin=[None]
@@ -1124,10 +1161,10 @@ class FloatingMonitor:
         body.pack(fill='both',expand=True,padx=16,pady=12)
         heading=self.tk.Frame(body,bg=self.BG)
         heading.pack(fill='x')
-        self.label(heading,'不透明度').pack(side='left')
+        self.label(heading,tr('不透明度', 'Opacity')).pack(side='left')
         percentage=self.tk.StringVar()
         self.tk.Label(heading,textvariable=percentage,bg=self.BG,fg=self.palette['accent'],font=('Microsoft YaHei UI',10,'bold')).pack(side='right')
-        self.label(body,'拖动时实时预览；鼠标移入浮窗时恢复清晰。',fg=self.MUTED,wraplength=round(310*self.dpi_scale),justify='left').pack(anchor='w',pady=(6,2))
+        self.label(body,tr('拖动时实时预览；鼠标移入浮窗时恢复清晰。', 'Drag to preview. Hover over the monitor for full opacity.'),fg=self.MUTED,wraplength=round(310*self.dpi_scale),justify='left').pack(anchor='w',pady=(6,2))
         opacity=self.tk.DoubleVar(value=self.settings.values['opacity']*100)
         pending=[None]
         slider=self.tk.Canvas(body,bg=self.BG,height=round(36*self.dpi_scale),highlightthickness=0,bd=0,cursor='hand2')
@@ -1171,8 +1208,9 @@ class FloatingMonitor:
             pin.set(not pin.get())
             self.root.attributes('-topmost',pin.get())
             self.save(pinned=pin.get())
-            pin_button.configure(text='始终置顶：'+('开' if pin.get() else '关'))
-        pin_button=self.button(body,'始终置顶：'+('开' if pin.get() else '关'),toggle_pin,bg=self.palette['panel2'])
+            pin_button.configure(text=tr('始终置顶：', 'Always on top: ')+(tr('开', 'On') if pin.get() else tr('关', 'Off')))
+        pin_button=self.button(body,tr('始终置顶：', 'Always on top: ')+(tr('开', 'On') if pin.get() else tr('关', 'Off')),toggle_pin,bg=self.palette['panel2'])
+        pin_button.language_update = lambda: pin_button.configure(text=tr('始终置顶：', 'Always on top: ')+(tr('开', 'On') if pin.get() else tr('关', 'Off')))
         pin_button.pack(anchor='w',pady=(0,8))
         def done():
             if pending[0]:win.after_cancel(pending[0]);commit_opacity()
@@ -1180,7 +1218,7 @@ class FloatingMonitor:
             self.root.attributes('-alpha',1. if self.hovered else self.settings.values['opacity'])
             win.destroy()
         self.finish_settings=done
-        self.button(footer,'完成',done,bg=self.palette['accent-bg'],fg=self.palette['accent']).pack(side='right')
+        self.button(footer,tr('完成', 'Done'),done,bg=self.palette['accent-bg'],fg=self.palette['accent']).pack(side='right')
         win.bind('<Escape>',lambda event:done())
         win.protocol('WM_DELETE_WINDOW',done)
         win.bind('<Map>',lambda event:win.after_idle(lambda:style_native_window(win,18)) if event.widget==win else None)

@@ -1,3 +1,5 @@
+import {useLocale,dateLocale} from './i18n';
+import {toolText as tt} from './toolI18n';
 import {useWorkspaceRestore} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
 import {browserId} from './browserId';
@@ -24,7 +26,7 @@ export type TerminalRequest={id:string;host:Host;cwd?:string};
 type Phase='connecting'|'running'|'closed'|'error';
 type Tab={id:string;host:Host;phase:Phase;generation:number;cwd?:string;session?:string};
 type Handle={clear:()=>void;copy:()=>void;focus:()=>void;scrollToBottom:()=>void;search:()=>void;cwd:()=>string|undefined;reconnect:()=>void};
-const labels:Record<Phase,string>={connecting:'正在连接',running:'会话运行中',closed:'连接已结束',error:'连接失败'};
+const labels=():Record<Phase,string>=>({connecting:tt("正在连接"),running:tt("会话运行中"),closed:tt("连接已结束"),error:tt("连接失败")});
 // Windows clipboard-history injection can omit code on its synthetic Ctrl+V.
 const clipboardKey=(event:KeyboardEvent,key:'c'|'v')=>event.code==='Key'+key.toUpperCase()||(!event.code&&(event.key?.toLowerCase()===key||event.keyCode===key.toUpperCase().charCodeAt(0)));
 const validDirectory=(value:unknown):value is string=>typeof value==='string'&&value.startsWith('/')&&value.length<=4096&&!/[\x00-\x1f\x7f]/.test(value);
@@ -39,7 +41,8 @@ function palette(){
 }
 
 const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase:(phase:Phase)=>void;onDirectory?:(hostId:string,path:string)=>void}>(function TerminalView({tab,active,font,onPhase,onDirectory},ref){
-  const [suggestion,setSuggestion]=useState(''),[shellStatus,setShellStatus]=useState('正在检测增强功能');
+  useLocale();
+  const [suggestion,setSuggestion]=useState(''),[shellStatus,setShellStatus]=useState(tt("正在检测增强功能"));
   const [workspace,setWorkspace]=useState<any>(null),[tools,setTools]=useState(false);
   const [lastResult,setLastResult]=useState('');
   const [sudoAvailable,setSudoAvailable]=useState(false),sudoRef=useRef(false);
@@ -71,7 +74,7 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
       rendererRef.current.setActive(active);
     }
     const search=new SearchAddon({highlightLimit:1000});term.loadAddon(search);searchRef.current=search;
-    const searchResults=search.onDidChangeResults(result=>setSearchResult(result.resultIndex<0&&result.resultCount?'超过 1000 个匹配':`${result.resultIndex+1} / ${result.resultCount}`));
+    const searchResults=search.onDidChangeResults(result=>setSearchResult(result.resultIndex<0&&result.resultCount?tt("超过 1000 个匹配"):`${result.resultIndex+1} / ${result.resultCount}`));
     const pathLinks=directoryLinkProvider(term,path=>directoryRef.current?.(tab.host.id,path),window);
     const registeredLinks=term.registerLinkProvider(pathLinks);
     const links={dispose(){pathLinks.dispose();registeredLinks.dispose()}};
@@ -134,8 +137,8 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
     const disconnected=(next:Phase)=>{
       connected=false;connecting=false;retryArmed=true;phase(next);
       atPrompt.current=false;sudoRef.current=false;setSudoAvailable(false);updateSuggestion();
-      setShellStatus('连接已断开 · 按任意键重新连接');
-      if(!announced){announced=true;term.writeln('\r\n\x1b[90m── SSH 会话已结束 ──\r\n按任意键重新连接\x1b[0m')}
+      setShellStatus(tt("连接已断开 · 按任意键重新连接"));
+      if(!announced){announced=true;term.writeln(tt("\r\n\u001b[90m── SSH 会话已结束 ──\r\n按任意键重新连接\u001b[0m"))}
     };
     async function start(){
       if(disposed||connecting)return;
@@ -145,11 +148,11 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
       connecting=true;retryArmed=false;connected=false;failed=false;announced=false;remoteSize=null;
       socketRef.current=null;previous?.close();
       atPrompt.current=false;commandLine.current=emptyCommandLine();sudoRef.current=false;setSudoAvailable(false);updateSuggestion();
-      setShellStatus(retry?'正在重新连接…':'正在连接…');
+      setShellStatus(retry?tt("正在重新连接…"):tt("正在连接…"));
       if(retry){
         // Leave a disconnected full-screen app and reset its input modes.
         term.write('\x1b[?1049l\x1b[!p');
-        term.writeln('\r\n\x1b[90m正在重新连接…\x1b[0m');
+        term.writeln(tt("\r\n\u001b[90m正在重新连接…\u001b[0m"));
         // Archive the whole old viewport, including lines below its cursor.
         // A new ConPTY starts at (0,0): retaining the old cursor/screen lets
         // its absolute cursor updates overwrite the previous login output.
@@ -159,38 +162,38 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
       phase('connecting');resize();
       try{
         const response=await fetch('/api/hosts/'+tab.host.id+'/terminal-ticket',{method:'POST',headers:{'X-IWB':'1'}});
-        const data=await response.json();if(!response.ok)throw new Error(data.detail||'无法创建终端会话');
+        const data=await response.json();if(!response.ok)throw new Error(data.detail||tt("无法创建终端会话"));
         if(disposed||currentAttempt!==attempt)return;
         const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/terminal/'+tab.host.id,['iwb-terminal',data.ticket]);
         socketRef.current=ws;
-        ws.onopen=()=>{if(disposed||currentAttempt!==attempt)return;resize();remoteSize={cols:term.cols,rows:term.rows};send({type:'resize',...remoteSize,...(cwdRef.current?{cwd:cwdRef.current}:{}),...(data.workspace?{enhanced:true,...(tab.session?{session:tab.session}:{})}:{})});if(!data.workspace)setShellStatus('普通终端 · 更新后台后可启用增强功能')};
+        ws.onopen=()=>{if(disposed||currentAttempt!==attempt)return;resize();remoteSize={cols:term.cols,rows:term.rows};send({type:'resize',...remoteSize,...(cwdRef.current?{cwd:cwdRef.current}:{}),...(data.workspace?{enhanced:true,...(tab.session?{session:tab.session}:{})}:{})});if(!data.workspace)setShellStatus(tt("普通终端 · 更新后台后可启用增强功能"))};
         ws.onmessage=event=>{
           if(disposed||currentAttempt!==attempt)return;
           const message=JSON.parse(event.data);
-          if(message.type==='completion'){setLastResult(`上次命令 ${message.seconds} 秒 · 退出码 ${message.status}`);return}
+          if(message.type==='completion'){setLastResult(`${tt("上次命令 ")}${message.seconds}${tt(" 秒 · 退出码 ")}${message.status}`);return}
           if(message.type==='sudo'){sudoRef.current=!!message.available;setSudoAvailable(!!message.available);return}
           if(message.type==='workspace'){setWorkspace(message);history.current=message.settings?.history_enabled===false?[]:message.history||[];updateSuggestion();return}
           if(message.type==='shell'){
             if(['prompt','start'].includes(message.kind)&&validDirectory(message.cwd))cwdRef.current=message.cwd;
             if(message.kind==='unsupported')cwdRef.current=undefined;
-            if(message.result)setLastResult(`上次命令 ${message.result.seconds} 秒 · 退出码 ${message.result.status}`);
+            if(message.result)setLastResult(`${tt("上次命令 ")}${message.result.seconds}${tt(" 秒 · 退出码 ")}${message.result.status}`);
             atPrompt.current=message.kind==='prompt';commandLine.current=emptyCommandLine();updateSuggestion();
-            setShellStatus(message.kind==='unsupported'?'普通终端 · 增强功能需要远端 Python 3 和 Bash 4.4+':message.kind==='prompt'?'命令行就绪 · '+message.cwd:'命令执行中');return;
+            setShellStatus(message.kind==='unsupported'?tt("普通终端 · 增强功能需要远端 Python 3 和 Bash 4.4+"):message.kind==='prompt'?tt("命令行就绪 · ")+message.cwd:tt("命令执行中"));return;
           }
           if(message.type==='ready'){
             // Set native Windows compatibility before parsing login output.
             // AsyncSSH sessions use the default xterm behavior instead.
             term.options.windowsPty=message.windowsPty?.backend==='conpty'?message.windowsPty:undefined;
-            connected=true;connecting=false;retryArmed=false;phase('running');if(tab.session)setShellStatus('持久会话已接入 · 回到空命令行按回车后启用提示');resize();if(element.current?.classList.contains('active'))term.focus();
+            connected=true;connecting=false;retryArmed=false;phase('running');if(tab.session)setShellStatus(tt("持久会话已接入 · 回到空命令行按回车后启用提示"));resize();if(element.current?.classList.contains('active'))term.focus();
           }
           else if(message.type==='output')term.write(message.data,()=>{if(currentAttempt===attempt)send({type:'ack'})});
           else if(message.type==='warning'){term.writeln('\r\n\x1b[33m'+message.message+'\x1b[0m')}
           else if(message.type==='error'){term.writeln('\r\n\x1b[31m'+message.message+'\x1b[0m');phase('error')}
           else if(message.type==='exit')disconnected('closed');
         };
-        ws.onerror=()=>{if(!disposed&&currentAttempt===attempt){term.writeln('\r\n连接失败，请检查本地服务或网络。');disconnected('error')}};
-        ws.onclose=event=>{if(!disposed&&currentAttempt===attempt){if(event.code===1013)term.writeln('\r\n会话数量已达上限，请先关闭其他终端。');else if(event.code===1008)term.writeln('\r\n连接验证已失效，请重新连接。');else if(event.code!==1000)term.writeln('\r\nSSH 连接意外断开，请检查网络或本地服务。');disconnected(event.code!==1000?'error':'closed')}};
-      }catch(error){if(!disposed&&currentAttempt===attempt){term.writeln('\r\n'+(error instanceof Error?error.message:'连接失败'));disconnected('error')}}
+        ws.onerror=()=>{if(!disposed&&currentAttempt===attempt){term.writeln(tt("\r\n连接失败，请检查本地服务或网络。"));disconnected('error')}};
+        ws.onclose=event=>{if(!disposed&&currentAttempt===attempt){if(event.code===1013)term.writeln(tt("\r\n会话数量已达上限，请先关闭其他终端。"));else if(event.code===1008)term.writeln(tt("\r\n连接验证已失效，请重新连接。"));else if(event.code!==1000)term.writeln(tt("\r\nSSH 连接意外断开，请检查网络或本地服务。"));disconnected(event.code!==1000?'error':'closed')}};
+      }catch(error){if(!disposed&&currentAttempt===attempt){term.writeln('\r\n'+(error instanceof Error?error.message:tt("连接失败")));disconnected('error')}}
     }
     reconnectRef.current=()=>{void start()};
     start();
@@ -201,8 +204,8 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
   useEffect(()=>{if(active){const frame=requestAnimationFrame(()=>{resizeRef.current?.();terminal.current?.focus()});return()=>cancelAnimationFrame(frame)}},[active]);
   const searchOutput=(previous=false,incremental=false)=>{
     if(!query){searchRef.current?.clearDecorations();setSearchResult('0 / 0');return}
-    try{if(regex)new RegExp(query)}catch{searchRef.current?.clearDecorations();setSearchResult('正则表达式无效');return}
-    try{const options={caseSensitive,regex,incremental,decorations:{matchBackground:'#6b5730',activeMatchBackground:'#a47724',matchOverviewRuler:'#d8a33c',activeMatchColorOverviewRuler:'#f2c65a'}};searchRef.current?.[previous?'findPrevious':'findNext'](query,options)}catch{setSearchResult('查找暂不可用')}
+    try{if(regex)new RegExp(query)}catch{searchRef.current?.clearDecorations();setSearchResult(tt("正则表达式无效"));return}
+    try{const options={caseSensitive,regex,incremental,decorations:{matchBackground:'#6b5730',activeMatchBackground:'#a47724',matchOverviewRuler:'#d8a33c',activeMatchColorOverviewRuler:'#f2c65a'}};searchRef.current?.[previous?'findPrevious':'findNext'](query,options)}catch{setSearchResult(tt("查找暂不可用"))}
   };
   useEffect(()=>{if(searchOpen&&active){searchInput.current?.focus();searchOutput(false,true)}else searchRef.current?.clearDecorations()},[searchOpen,query,caseSensitive,regex,active]);
   useEffect(()=>{
@@ -211,13 +214,14 @@ const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase
     window.addEventListener('keydown',escape,true);return()=>window.removeEventListener('keydown',escape,true);
   },[searchOpen,active]);
   const workspaceAction=(message:object)=>{if(socketRef.current?.readyState===WebSocket.OPEN)socketRef.current.send(JSON.stringify({type:'workspace',...message}))};
-  return <><div ref={element} className={'terminal-screen '+(active?'active':'')} aria-label={tab.host.target+' SSH 交互终端'}/>{active&&<>{searchOpen&&<div className="terminal-search" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();setSearchOpen(false);terminal.current?.focus()}if(event.key==="Enter"){event.preventDefault();searchOutput(event.shiftKey)}}}><input ref={searchInput} aria-label="查找终端输出" placeholder="查找终端输出" value={query} onChange={event=>setQuery(event.target.value)}/><label><input type="checkbox" checked={caseSensitive} onChange={event=>setCaseSensitive(event.target.checked)}/>Aa</label><label><input type="checkbox" checked={regex} onChange={event=>setRegex(event.target.checked)}/>.*</label><span>{searchResult}</span><button onClick={()=>searchOutput(true)}>上一个</button><button onClick={()=>searchOutput()}>下一个</button><button onClick={()=>{setSearchOpen(false);terminal.current?.focus()}}>关闭</button></div>}<div className="terminal-assist"><span>{suggestion?<><b>→ 补全</b> <code>{suggestion}</code></>:shellStatus}{lastResult&&<small> · {lastResult}</small>}</span>{sudoAvailable&&<button onClick={()=>socketRef.current?.send(JSON.stringify({type:"sudo"}))}>填入 sudo 密码 · Alt+Enter</button>}{workspace&&<button onClick={()=>setTools(!tools)}>命令与设置</button>}</div>{tools&&workspace&&<TerminalCommands host={tab.host.target} workspace={workspace} action={workspaceAction} close={()=>setTools(false)} insert={text=>{
-    if(!atPrompt.current||!commandLine.current.valid||commandLine.current.text){setShellStatus('请先回到空命令行，再填入命令');return false}
+  return <><div ref={element} className={'terminal-screen '+(active?'active':'')} aria-label={tab.host.target+tt(" SSH 交互终端")}/>{active&&<>{searchOpen&&<div className="terminal-search" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();setSearchOpen(false);terminal.current?.focus()}if(event.key==="Enter"){event.preventDefault();searchOutput(event.shiftKey)}}}><input ref={searchInput} aria-label={tt("查找终端输出")} placeholder={tt("查找终端输出")} value={query} onChange={event=>setQuery(event.target.value)}/><label><input type="checkbox" checked={caseSensitive} onChange={event=>setCaseSensitive(event.target.checked)}/>Aa</label><label><input type="checkbox" checked={regex} onChange={event=>setRegex(event.target.checked)}/>.*</label><span>{searchResult}</span><button onClick={()=>searchOutput(true)}>{tt("上一个")}</button><button onClick={()=>searchOutput()}>{tt("下一个")}</button><button onClick={()=>{setSearchOpen(false);terminal.current?.focus()}}>{tt("关闭")}</button></div>}<div className="terminal-assist"><span>{suggestion?<><b>{tt("→ 补全")}</b> <code>{suggestion}</code></>:tt(shellStatus)}{lastResult&&<small> · {lastResult}</small>}</span>{sudoAvailable&&<button onClick={()=>socketRef.current?.send(JSON.stringify({type:"sudo"}))}>{tt("填入 sudo 密码 · Alt+Enter")}</button>}{workspace&&<button onClick={()=>setTools(!tools)}>{tt("命令与设置")}</button>}</div>{tools&&workspace&&<TerminalCommands host={tab.host.target} workspace={workspace} action={workspaceAction} close={()=>setTools(false)} insert={text=>{
+    if(!atPrompt.current||!commandLine.current.valid||commandLine.current.text){setShellStatus(tt("请先回到空命令行，再填入命令"));return false}
     pasteRef.current?.(text);terminal.current?.focus();return true;
   }}/> }</>}</>;
 });
 
 export function TerminalDock({request,hosts,onDirectory}:{request:TerminalRequest|null;hosts:Host[];onDirectory?:(hostId:string,path:string)=>void}){
+  useLocale();
   const [tabs,setTabs]=useState<Tab[]>([]),[active,setActive]=useState(''),[collapsed,setCollapsed]=useState(false),[maximized,setMaximized]=useState(false);
   const [frame,setFrame]=useState(()=>loadTerminalFrame(terminalStorage(),terminalViewport())),[font,setFont]=useState(13),[picker,setPicker]=useState(false),[hint,setHint]=useState('');
   const remoteFrame=useWorkspaceRestore(TERMINAL_FRAME_KEY,()=>loadTerminalFrame(terminalStorage(),terminalViewport()),setFrame);
@@ -229,7 +233,7 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   const bindDock=useRef((element:HTMLElement|null)=>{dock.current=element;registerFloatingWindow(element)});
   const current=tabs.find(tab=>tab.id===active);
   const hasLiveSessions=tabs.some(tab=>!tab.session&&(tab.phase==='connecting'||tab.phase==='running'));
-  const add=(host:Host,cwd?:string,session?:string)=>{if(session){const existing=tabs.find(t=>t.host.id===host.id&&t.session===session);if(existing){if(['closed','error'].includes(existing.phase))setTabs(old=>old.map(t=>t.id===existing.id?{...t,generation:t.generation+1,phase:'connecting'}:t));setActive(existing.id);setCollapsed(false);setPicker(false);return}}if(tabs.length>=12){setHint('最多同时打开 12 个终端');return}const id=browserId();setTabs(old=>[...old,{id,host,phase:'connecting',generation:0,cwd,session}]);setActive(id);setCollapsed(false);setPicker(false)};
+  const add=(host:Host,cwd?:string,session?:string)=>{if(session){const existing=tabs.find(t=>t.host.id===host.id&&t.session===session);if(existing){if(['closed','error'].includes(existing.phase))setTabs(old=>old.map(t=>t.id===existing.id?{...t,generation:t.generation+1,phase:'connecting'}:t));setActive(existing.id);setCollapsed(false);setPicker(false);return}}if(tabs.length>=12){setHint(tt("最多同时打开 12 个终端"));return}const id=browserId();setTabs(old=>[...old,{id,host,phase:'connecting',generation:0,cwd,session}]);setActive(id);setCollapsed(false);setPicker(false)};
   useEffect(()=>{if(request){const existing=request.cwd===undefined?tabs.find(tab=>tab.host.id===request.host.id):undefined;if(existing){setActive(existing.id);setCollapsed(false)}else add(request.host,request.cwd)}},[request]);
   useEffect(()=>{setTabs(old=>old.filter(tab=>hosts.some(host=>host.id===tab.host.id)))},[hosts.map(host=>host.id).join(',')]);
   useEffect(()=>{if(tabs.length&&!tabs.some(tab=>tab.id===active))setActive(tabs[tabs.length-1]!.id)},[tabs,active]);
@@ -251,22 +255,22 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   },[picker]);
   const persistent=async(host:Host,cwd?:string)=>{
     if(sessionBusy)return;setSessionBusy(true);
-    try{const response=await fetch('/api/hosts/'+host.id+'/terminal-sessions',{method:'POST',headers:{'X-IWB':'1','Content-Type':'application/json'},body:JSON.stringify(cwd?{cwd}:{})});const value=await response.json();if(!response.ok)throw new Error(value.detail||'无法创建持久会话');add(host,cwd,value.id)}catch(error){setHint(error instanceof Error?error.message:'无法创建持久会话')}finally{setSessionBusy(false)}
+    try{const response=await fetch('/api/hosts/'+host.id+'/terminal-sessions',{method:'POST',headers:{'X-IWB':'1','Content-Type':'application/json'},body:JSON.stringify(cwd?{cwd}:{})});const value=await response.json();if(!response.ok)throw new Error(value.detail||tt("无法创建持久会话"));add(host,cwd,value.id)}catch(error){setHint(error instanceof Error?error.message:tt("无法创建持久会话"))}finally{setSessionBusy(false)}
   };
   const duplicate=()=>{
     if(!current)return;
-    if(tabs.length>=12){setHint('最多同时打开 12 个终端');return}
+    if(tabs.length>=12){setHint(tt("最多同时打开 12 个终端"));return}
     const cwd=handles.current[active]?.cwd();
-    if(!validDirectory(cwd)){setHint('当前 Shell 尚未提供目录信息。请回到空命令行按一次回车后重试');return}
+    if(!validDirectory(cwd)){setHint(tt("当前 Shell 尚未提供目录信息。请回到空命令行按一次回车后重试"));return}
     if(current.session)void persistent(current.host,cwd);else add(current.host,cwd);
   };
   const endPersistent=async()=>{
-    if(!current?.session||!await confirm('结束此持久会话？会话中的任务也会停止，此操作无法撤销。'))return;
-    try{const response=await fetch('/api/hosts/'+current.host.id+'/terminal-sessions/'+current.session,{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail||'无法结束会话');setTabs(old=>old.filter(t=>t.id!==current.id))}catch(error){setHint(error instanceof Error?error.message:'无法结束会话')}
+    if(!current?.session||!await confirm(tt("结束此持久会话？会话中的任务也会停止，此操作无法撤销。")))return;
+    try{const response=await fetch('/api/hosts/'+current.host.id+'/terminal-sessions/'+current.session,{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail||tt("无法结束会话"));setTabs(old=>old.filter(t=>t.id!==current.id))}catch(error){setHint(error instanceof Error?error.message:tt("无法结束会话"))}
   };
   const close=async(id:string)=>{
     const tab=tabs.find(tab=>tab.id===id);
-    if(tab&&!tab.session&&(tab.phase==='connecting'||tab.phase==='running')&&!await confirm('关闭此 SSH 会话？前台任务可能随连接结束，建议先用 tmux 保留任务。'))return;
+    if(tab&&!tab.session&&(tab.phase==='connecting'||tab.phase==='running')&&!await confirm(tt("关闭此 SSH 会话？前台任务可能随连接结束，建议先用 tmux 保留任务。")))return;
     const remaining=tabs.filter(tab=>tab.id!==id);setTabs(remaining);if(id===active)setActive(remaining[remaining.length-1]?.id||'');
   };
   const startGesture=(event:React.PointerEvent,edge='move')=>{
@@ -284,21 +288,21 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   const restore=()=>{setCollapsed(false);requestAnimationFrame(()=>handles.current[active]?.focus())};
   const running=tabs.filter(tab=>tab.phase==='running').length,disconnected=tabs.filter(tab=>['error','closed'].includes(tab.phase)).length;
   if(!tabs.length)return null;
-  return <section ref={bindDock.current} data-floating-window="terminal" onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow} className={'terminal-dock floating '+(collapsed?'collapsed ':'')+(maximized&&!collapsed?'maximized ':'')+(dragging?'dragging':'')} style={terminalFrameStyle(frame,terminalViewport(),collapsed,maximized)} aria-label="SSH 终端面板" onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
+  return <section ref={bindDock.current} data-floating-window="terminal" onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow} className={'terminal-dock floating '+(collapsed?'collapsed ':'')+(maximized&&!collapsed?'maximized ':'')+(dragging?'dragging':'')} style={terminalFrameStyle(frame,terminalViewport(),collapsed,maximized)} aria-label={tt("SSH 终端面板")} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
     {confirmation}
-    {collapsed&&<button className="terminal-minimized-launcher" aria-label="恢复 SSH 终端" title={'恢复终端 · '+(current?.host.target||'SSH 会话')} onClick={restore}><span className="terminal-launcher-icon"><Terminal size={21}/><i className={'session-dot '+(disconnected?'error':running?'running':'connecting')}/></span><span className="terminal-launcher-text"><strong>SSH 终端 <b>{tabs.length}</b><ChevronUp size={14}/></strong><small>{running} 个运行中{disconnected>0?` · ${disconnected} 个已断开`:' · 点击恢复'}</small></span></button>}
-    {!collapsed&&!maximized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'terminal-resize-handle edge-'+edge} onPointerDown={event=>startGesture(event,edge)} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?'调整终端大小':undefined} tabIndex={edge==='se'?0:undefined} onKeyDown={event=>{
+    {collapsed&&<button className="terminal-minimized-launcher" aria-label={tt("恢复 SSH 终端")} title={tt("恢复终端 · ")+(current?.host.target||tt("SSH 会话"))} onClick={restore}><span className="terminal-launcher-icon"><Terminal size={21}/><i className={'session-dot '+(disconnected?'error':running?'running':'connecting')}/></span><span className="terminal-launcher-text"><strong>{tt("SSH 终端 ")}<b>{tabs.length}</b><ChevronUp size={14}/></strong><small>{running} {tt(" 个运行中")}{disconnected>0?` · ${disconnected}${tt(" 个已断开")}`:tt(" · 点击恢复")}</small></span></button>}
+    {!collapsed&&!maximized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'terminal-resize-handle edge-'+edge} onPointerDown={event=>startGesture(event,edge)} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?tt("调整终端大小"):undefined} tabIndex={edge==='se'?0:undefined} onKeyDown={event=>{
       const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(!offset)return;
       event.preventDefault();setFrame(old=>resizeTerminalFrame(old,'se',...offset,terminalViewport()));
     }}/ >)}
-    <div className="terminal-topbar" style={{display:collapsed?'none':undefined}} onPointerDown={event=>startGesture(event)} onDoubleClick={event=>{if(!(event.target as HTMLElement).closest('button'))setMaximized(!maximized)}}><div className="terminal-brand"><span><Terminal size={16}/></span><strong>终端</strong><small>拖动移动 · 边缘缩放</small><b>{tabs.length}</b></div>
-      <div className="terminal-window-actions"><button aria-label="最小化终端" title="收到右下角，保持所有连接" onClick={()=>{setCollapsed(true);setPicker(false)}}><ChevronDown size={16}/></button><button aria-label={maximized?'还原终端':'最大化终端'} onClick={()=>{setMaximized(!maximized);setCollapsed(false)}}>{maximized?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="关闭所有终端" title="关闭所有终端连接" onClick={async()=>{if(!hasLiveSessions||await confirm('关闭所有 SSH 会话？普通会话的前台任务可能结束；持久会话只断开显示连接。'))setTabs([])}}><X size={17}/></button></div>
+    <div className="terminal-topbar" style={{display:collapsed?'none':undefined}} onPointerDown={event=>startGesture(event)} onDoubleClick={event=>{if(!(event.target as HTMLElement).closest('button'))setMaximized(!maximized)}}><div className="terminal-brand"><span><Terminal size={16}/></span><strong>{tt("终端")}</strong><small>{tt("拖动移动 · 边缘缩放")}</small><b>{tabs.length}</b></div>
+      <div className="terminal-window-actions"><button data-window-action="minimize" aria-label={tt("最小化终端")} title={tt("收到右下角，保持所有连接")} onClick={()=>{setCollapsed(true);setPicker(false)}}><ChevronDown size={16}/></button><button data-window-action="maximize" aria-label={maximized?tt("还原终端"):tt("最大化终端")} onClick={()=>{setMaximized(!maximized);setCollapsed(false)}}>{maximized?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label={tt("关闭所有终端")} title={tt("关闭所有终端连接")} onClick={async()=>{if(!hasLiveSessions||await confirm(tt("关闭所有 SSH 会话？普通会话的前台任务可能结束；持久会话只断开显示连接。")))setTabs([])}}><X size={17}/></button></div>
     </div>
     <div className="terminal-body" style={{display:collapsed?'none':undefined}}>
-      <div className="terminal-tabbar" role="tablist" aria-label="SSH 会话"><div className="terminal-tabs">{tabs.map((tab,index)=><div key={tab.id} className={'terminal-tab '+(tab.id===active?'selected':'')}><button role="tab" aria-selected={tab.id===active} onClick={()=>setActive(tab.id)}><i className={'session-dot '+tab.phase}/><span>{tab.host.target}</span><small>{tab.session?'持久 '+tab.session.slice(0,4):String(index+1).padStart(2,'0')}</small></button><button className="terminal-tab-close" aria-label={'关闭 '+tab.host.target+' 终端'} onClick={()=>close(tab.id)}><X size={12}/></button></div>)}</div><div className="terminal-add"><button aria-label="新建 SSH 终端" title="新建会话" onClick={()=>setPicker(!picker)}><Plus size={17}/></button>{picker&&<div className="terminal-picker"><strong>连接到机器</strong>{hosts.map(host=><div key={host.id} className="terminal-picker-host"><button onClick={()=>add(host)}><Terminal size={14}/><span>{host.target}<small>{host.user||'使用 SSH 配置账号'}</small></span><Plus size={14}/></button><button disabled={sessionBusy} onClick={()=>persistent(host)}>新建持久会话</button>{(savedSessions[host.id]||[]).map(session=><div key={session.id} className="terminal-saved-session"><button onClick={()=>add(host,undefined,session.id)}>恢复 {session.id.slice(0,6)} · {new Date(session.created*1000).toLocaleString()}</button><button title="结束远端任务并移除记录" onClick={async()=>{if(!await confirm('结束此持久会话及其中的任务？'))return;try{const response=await fetch('/api/hosts/'+host.id+'/terminal-sessions/'+session.id,{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail);setSavedSessions(old=>({...old,[host.id]:(old[host.id]||[]).filter(s=>s.id!==session.id)}))}catch(error){setHint(String(error))}}}>结束</button></div>)}</div>)}</div>}</div></div>
-      <div className="terminal-toolbar"><div><span className="terminal-path">{current?.host.user||'SSH'}<b>@</b>{current?.host.target}</span><span className={'terminal-phase '+current?.phase}><i className={'session-dot '+current?.phase}/>{current&&labels[current.phase]}</span></div><div>{current?.session&&<button onClick={endPersistent} title="结束此持久会话及其中的任务">结束会话</button>}<button aria-label="减小终端字号" onClick={()=>setFont(f=>Math.max(10,f-1))}>A−</button><span className="terminal-font-size">{font}</span><button aria-label="增大终端字号" onClick={()=>setFont(f=>Math.min(22,f+1))}>A+</button><span className="terminal-divider"/><button className="terminal-duplicate" aria-label="复制当前终端" title="在同一目录新建独立会话，沿用命令历史" disabled={!current||current.phase==='connecting'||sessionBusy} onClick={duplicate}><CopyPlus size={14}/>复制终端</button><button aria-label="复制终端所选内容" title="复制所选内容 · Ctrl/⌘+C" onClick={()=>{handles.current[active]?.copy();setHint('选中文字后 Ctrl/⌘+C 复制；Ctrl/⌘+V 粘贴')}}><Copy size={14}/></button><button title="查找输出 · Ctrl/⌘+F" aria-label="查找终端输出" onClick={()=>handles.current[active]?.search()}>查找</button><button aria-label="清空终端显示" title="仅清空显示，不中断命令" onClick={()=>handles.current[active]?.clear()}><Trash2 size={14}/></button><button aria-label="回到底部" title="回到底部 · 查看最新输出" onClick={()=>{handles.current[active]?.scrollToBottom()}}><ChevronsDown size={16}/></button><button aria-label="重新连接当前终端" title={current?.session?"重新接入持久会话":"结束当前会话并重新连接"} onClick={async()=>{if(current&&(current.session||['closed','error'].includes(current.phase)||await confirm('重新连接将结束当前 SSH 会话，是否继续？')))handles.current[active]?.reconnect()}}><RefreshCw size={14}/></button></div></div>
+      <div className="terminal-tabbar" role="tablist" aria-label={tt("SSH 会话")}><div className="terminal-tabs">{tabs.map((tab,index)=><div key={tab.id} className={'terminal-tab '+(tab.id===active?'selected':'')}><button role="tab" aria-selected={tab.id===active} onClick={()=>setActive(tab.id)}><i className={'session-dot '+tab.phase}/><span>{tab.host.target}</span><small>{tab.session?tt("持久 ")+tab.session.slice(0,4):String(index+1).padStart(2,'0')}</small></button><button className="terminal-tab-close" aria-label={tt("关闭 ")+tab.host.target+tt(" 终端")} onClick={()=>close(tab.id)}><X size={12}/></button></div>)}</div><div className="terminal-add"><button aria-label={tt("新建 SSH 终端")} title={tt("新建会话")} onClick={()=>setPicker(!picker)}><Plus size={17}/></button>{picker&&<div className="terminal-picker"><strong>{tt("连接到机器")}</strong>{hosts.map(host=><div key={host.id} className="terminal-picker-host"><button onClick={()=>add(host)}><Terminal size={14}/><span>{host.target}<small>{host.user||tt("使用 SSH 配置账号")}</small></span><Plus size={14}/></button><button disabled={sessionBusy} onClick={()=>persistent(host)}>{tt("新建持久会话")}</button>{(savedSessions[host.id]||[]).map(session=><div key={session.id} className="terminal-saved-session"><button onClick={()=>add(host,undefined,session.id)}>{tt("恢复 ")}{session.id.slice(0,6)} · {new Date(session.created*1000).toLocaleString(dateLocale())}</button><button title={tt("结束远端任务并移除记录")} onClick={async()=>{if(!await confirm(tt("结束此持久会话及其中的任务？")))return;try{const response=await fetch('/api/hosts/'+host.id+'/terminal-sessions/'+session.id,{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail);setSavedSessions(old=>({...old,[host.id]:(old[host.id]||[]).filter(s=>s.id!==session.id)}))}catch(error){setHint(String(error))}}}>{tt("结束")}</button></div>)}</div>)}</div>}</div></div>
+      <div className="terminal-toolbar"><div><span className="terminal-path">{current?.host.user||'SSH'}<b>@</b>{current?.host.target}</span><span className={'terminal-phase '+current?.phase}><i className={'session-dot '+current?.phase}/>{current&&labels()[current.phase]}</span></div><div>{current?.session&&<button onClick={endPersistent} title={tt("结束此持久会话及其中的任务")}>{tt("结束会话")}</button>}<button aria-label={tt("减小终端字号")} onClick={()=>setFont(f=>Math.max(10,f-1))}>A−</button><span className="terminal-font-size">{font}</span><button aria-label={tt("增大终端字号")} onClick={()=>setFont(f=>Math.min(22,f+1))}>A+</button><span className="terminal-divider"/><button className="terminal-duplicate" aria-label={tt("复制当前终端")} title={tt("在同一目录新建独立会话，沿用命令历史")} disabled={!current||current.phase==='connecting'||sessionBusy} onClick={duplicate}><CopyPlus size={14}/>{tt("复制终端")}</button><button aria-label={tt("复制终端所选内容")} title={tt("复制所选内容 · Ctrl/⌘+C")} onClick={()=>{handles.current[active]?.copy();setHint(tt("选中文字后 Ctrl/⌘+C 复制；Ctrl/⌘+V 粘贴"))}}><Copy size={14}/></button><button title={tt("查找输出 · Ctrl/⌘+F")} aria-label={tt("查找终端输出")} onClick={()=>handles.current[active]?.search()}>{tt("查找")}</button><button aria-label={tt("清空终端显示")} title={tt("仅清空显示，不中断命令")} onClick={()=>handles.current[active]?.clear()}><Trash2 size={14}/></button><button aria-label={tt("回到底部")} title={tt("回到底部 · 查看最新输出")} onClick={()=>{handles.current[active]?.scrollToBottom()}}><ChevronsDown size={16}/></button><button aria-label={tt("重新连接当前终端")} title={current?.session?tt("重新接入持久会话"):tt("结束当前会话并重新连接")} onClick={async()=>{if(current&&(current.session||['closed','error'].includes(current.phase)||await confirm(tt("重新连接将结束当前 SSH 会话，是否继续？"))))handles.current[active]?.reconnect()}}><RefreshCw size={14}/></button></div></div>
       <div className="terminal-viewport">{tabs.map(tab=><TerminalView key={tab.id} ref={handle=>{handles.current[tab.id]=handle}} tab={tab} active={tab.id===active&&!collapsed} font={font} onDirectory={onDirectory} onPhase={phase=>setTabs(old=>old.map(item=>item.id===tab.id?{...item,phase}:item))}/>)}</div>
-      <div className="terminal-statusbar"><span><ShieldCheck size={12}/>{current?.session?'tmux 持久会话 · 关闭标签仅断开显示':'本机 SSH · 独立交互会话'}</span><span>{hint||'Ctrl/⌘+C 复制选中 · Ctrl/⌘+V 粘贴 · Ctrl/⌘+点击 pwd 路径打开目录'}</span><span>UTF-8 <i/>xterm-256color</span></div>
+      <div className="terminal-statusbar"><span><ShieldCheck size={12}/>{current?.session?tt("tmux 持久会话 · 关闭标签仅断开显示"):tt("本机 SSH · 独立交互会话")}</span><span>{hint||tt("Ctrl/⌘+C 复制选中 · Ctrl/⌘+V 粘贴 · Ctrl/⌘+点击 pwd 路径打开目录")}</span><span>UTF-8 <i/>xterm-256color</span></div>
     </div>
   </section>;
 }

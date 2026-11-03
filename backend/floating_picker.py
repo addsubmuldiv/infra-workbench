@@ -1,4 +1,5 @@
 """Native, rounded picker rows and slim scrollbar, matching the floating monitor."""
+from backend.interface_language import tr, current_locale
 import tkinter as tk
 from tkinter import font as tkfont
 from PIL import ImageTk
@@ -91,7 +92,7 @@ class MachinePickerList(tk.Frame):
             c.create_text(round(40*s),y+round(13*s),text=name,anchor='w',font=self.font,fill=p['text'],tags=tag)
             devices=host.get('snapshot',{}).get('devices',[])
             model=devices[0].get('name','') if devices else ''
-            info=f'{len(devices)} 张卡'+(' · '+model if model else '')
+            info=tr(f'{len(devices)} 张卡', f'{len(devices)} devices')+(' · '+model if model else '')
             while len(info)>1 and self.small_font.measure(info)>max_width:info=info[:-2]+'…'
             c.create_text(round(40*s),y+round(30*s),text=info,anchor='w',font=self.small_font,fill=p['muted'],tags=tag)
             def toggle(event,ident=host['id']):
@@ -106,7 +107,7 @@ class MachinePickerList(tk.Frame):
             c.tag_bind(tag,'<Button-1>',toggle)
             c.tag_bind(tag,'<Enter>',hover)
             c.tag_bind(tag,'<Leave>',leave)
-        if not hosts:c.create_text(12,20,text='没有匹配的机器',anchor='w',fill=p['muted'],font=self.small_font)
+        if not hosts:c.create_text(12,20,text=tr('没有匹配的机器', 'No matching machines'),anchor='w',fill=p['muted'],font=self.small_font)
         c.configure(scrollregion=(0,0,width,max(1,len(hosts)*stride)))
         self._commands=list(set(c._tclCommands or [])-commands_before)
         self.set_scroll(*c.yview())
@@ -146,7 +147,7 @@ def rounded_search(master,monitor,variable):
     canvas=tk.Canvas(master,bg=monitor.BG,height=round(34*monitor.dpi_scale),highlightthickness=0,bd=0)
     entry=tk.Entry(canvas,textvariable=variable,bd=0,relief='flat',highlightthickness=0,font=('Microsoft YaHei UI',9))
     entry_id=canvas.create_window(12*monitor.dpi_scale,17*monitor.dpi_scale,window=entry,anchor='w')
-    placeholder=tk.Label(canvas,text='搜索机器…',font=('Microsoft YaHei UI',9),cursor='xterm')
+    placeholder=tk.Label(canvas,text=tr('搜索机器…', 'Search machines…'),font=('Microsoft YaHei UI',9),cursor='xterm')
     placeholder_id=canvas.create_window(12*monitor.dpi_scale,17*monitor.dpi_scale,window=placeholder,anchor='w')
     def hint(*args):
         canvas.itemconfigure(placeholder_id,state='hidden' if variable.get() or entry.focus_get() is entry else 'normal')
