@@ -133,3 +133,38 @@ def test_actual_mcp_inventory_fails_closed_for_ambient_tools_credentials_and_pag
                       {'data':[{'name':'infra_workbench','tools':{'get_ssh_password':{}}}]},
                       {'data':[safe],'nextCursor':'more'}, {'data':[]}):
         with pytest.raises(ValueError):validate_mcp_inventory(inventory)
+
+
+def test_codex_environment_inherits_system_proxy_only_when_not_explicit():
+    from backend.codex_agent import codex_environment
+    system={'http':'http://127.0.0.1:7897','https':'http://127.0.0.1:7897','no':'intranet.example'}
+    result=codex_environment({'PATH':'test'},system)
+    assert result['HTTP_PROXY']==system['http'] and result['HTTPS_PROXY']==system['https']
+    assert all(name in result['NO_PROXY'].split(',') for name in ('127.0.0.1','localhost','::1'))
+    assert 'intranet.example' in result['NO_PROXY']
+    explicit={'https_proxy':'http://explicit:1234','NO_PROXY':'internal.example'}
+    result=codex_environment(explicit,system)
+    assert result['https_proxy']=='http://explicit:1234' and 'HTTP_PROXY' not in result
+    assert 'internal.example' in result['NO_PROXY'] and '127.0.0.1' in result['NO_PROXY']
+    assert explicit['NO_PROXY']=='internal.example'
+    result=codex_environment({'HTTP_PROXY':''},system)
+    assert result['HTTP_PROXY']=='' and 'HTTPS_PROXY' not in result
+
+
+def test_bridge_shutdown_cancels_inflight_tool_and_finishes_http_response():
+    started=asyncio.Event();cancelled=asyncio.Event()
+    class Service:
+        def catalog(self):return {'probe':dict(name='probe',description='probe',inputSchema={'type':'object'},outputSchema={'type':'object'})}
+        async def call(self,*args):
+            started.set()
+            try:await asyncio.sleep(100)
+            finally:cancelled.set()
+    async def scenario():
+        bridge=await ScopedMCPBridge(Service()).__aenter__()
+        async with httpx.AsyncClient(trust_env=False) as client:
+            pending=asyncio.create_task(client.post(bridge.url,json={'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'probe','arguments':{}}},headers={'Authorization':'Bearer '+bridge.token,'Accept':'application/json, text/event-stream'}))
+            await asyncio.wait_for(started.wait(),3)
+            async with asyncio.timeout(3):await bridge.__aexit__(None,None,None)
+            result=await pending
+            assert cancelled.is_set() and result.json()['result']['isError']
+    asyncio.run(scenario())

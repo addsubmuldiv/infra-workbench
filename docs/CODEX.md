@@ -10,7 +10,7 @@ AI 助手的「执行引擎」可以选择内置助手或本机 Codex。内置�
 
 每轮创建一个只监听 `127.0.0.1` 的临时 MCP 服务，用随机令牌认证，复用内置助手的工具目录、参数校验、机器范围和本轮技能快照。`get_ssh_info`、`get_ssh_password` 不在此目录。任务结束后关闭监听与连接；令牌不写入聊天、设置或日志。
 
-Codex 的本机 Shell、代码执行、浏览器、电脑控制、插件及其他扩展能力被关闭，本机沙箱为只读，原生提权和文件修改审批直接拒绝。发送模型请求前还会检查实际 MCP 目录；发现工作台之外的可用工具、凭据工具或目录不完整时拒绝开始，不能只靠配置声明推断隔离成功。服务器写操作仍须符合用户明确要求，工作台服务端继续检查机器范围和参数。
+Codex 的本机 Shell、JS REPL、浏览器、电脑控制、插件及其他扩展能力被关闭，本机沙箱为只读，原生提权和文件修改审批直接拒绝。保留 CLI 的 code-mode host 用于组合调用受限工具；关闭它会使此版本 CLI 无法向模型提供 MCP 工具。发送模型请求前还会检查实际 MCP 目录；发现工作台之外的可用工具、凭据工具或目录不完整时拒绝开始，不能只靠配置声明推断隔离成功。服务器写操作仍须符合用户明确要求，工作台服务端继续检查机器范围和参数。
 
 同一引擎和机器范围可以恢复 Codex thread。更改范围或从其他引擎进入时建立新 thread，不复制旧对话中可能属于更大范围的内容；旧聊天记录仍显示在本地。切换引擎不会撤销已经执行的操作。取消本轮会中断 Codex 并关闭本轮桥接，但已启动的远端后台命令仍需通过对应任务工具显式停止。
 
@@ -20,6 +20,12 @@ Codex 的提问会显示在对话中，由下一条用户消息回答；当前�
 
 2026-11-03：使用本机 Codex CLI 0.147.0 和现有 ChatGPT 登录，实际验证了 App Server 初始化、账号状态、实时默认模型及临时 MCP 的工具发现。发现并关闭了默认启用的电脑控制等环境能力，并用真实目录再次检查隔离。
 
-模型端到端试运行在 90 秒内多次返回 `responseStreamDisconnected` / `request timed out`，随后中断并清理。尚未确认真实云端模型调用工具、回复和续聊成功；模拟协议测试覆盖这条路径，不能替代真实模型验收。默认模型名称与账号可用性可能变化，以实际 CLI 返回为准。
+初次模型试运行返回 `responseStreamDisconnected` / `request timed out`。原因是此机器配置了系统代理，但后台没有对应的代理环境变量。适配器现在只为 Codex 子进程继承操作系统代理；已有 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` 设置优先，并保留原绕过项、补充回环地址到 `NO_PROXY`，避免把本机 MCP 令牌送往代理。不修改系统代理、全局环境变量或 Codex 配置。
 
-相关测试：` .venv/Scripts/python.exe -m pytest tests/test_codex_agent.py tests/test_agent_chat.py tests/test_unified_mcp.py -q`。
+修复后用真实 Codex 模型调用了隔离的 `list_hosts` MCP 工具，返回合成机器别名 `SMOKE-MCP-OK`；恢复同一 thread 后，第二轮未再次调用工具并正确返回这个别名。验证没有连接生产服务器或读取真实凭据。工具执行还需要对本轮工作台 MCP 显式设置默认允许，实际范围和参数仍由工作台校验；其他本机审批保持拒绝。默认模型名称与账号可用性可能变化，以实际 CLI 返回为准。
+
+另一次真实验证未手工提供代理环境，依靠系统代理成功进入合成 MCP 工具；在工具等待期间取消，确认工具被取消、Codex 子进程退出。受控业务任务会先取消并返回 MCP 错误，再关闭 HTTP 监听，避免等待连接超时。
+
+可重复运行 `.venv/Scripts/python.exe scripts/validate-codex-integration.py`，验证真实工具、续聊和取消，并将不含账号及 thread ID 的结果写入 `work/codex-live-validation.json`。这会产生少量模型请求，仅使用合成工具，不连接 SSH。
+
+相关测试：`.venv/Scripts/python.exe -m pytest tests/test_codex_agent.py tests/test_agent_chat.py tests/test_unified_mcp.py -q`。

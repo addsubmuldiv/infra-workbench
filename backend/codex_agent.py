@@ -20,11 +20,34 @@ import time
 
 from .chat_tools import scrub
 
-ISOLATED_FEATURES=('shell_tool','code_mode','code_mode_host','js_repl','memories','apps',
+ISOLATED_FEATURES=('shell_tool','code_mode','js_repl','memories','apps',
     'plugins','remote_plugin','computer_use','browser_use','browser_use_external',
     'browser_use_full_cdp_access','in_app_browser','image_generation','view_image',
     'hooks','multi_agent','multi_agent_v2','workspace_dependencies','goals','skill_search',
     'skill_mcp_dependency_install')
+
+
+def codex_environment(environment=None,system_proxies=None):
+    """Use OS proxy preferences only in this child; keep MCP loopback direct."""
+    from urllib.request import getproxies
+    result=dict(os.environ if environment is None else environment)
+    explicit=any(key.lower() in ('http_proxy','https_proxy','all_proxy') for key in result)
+    if not explicit:
+        proxies=getproxies() if system_proxies is None else system_proxies
+        for scheme in ('http','https'):
+            value=proxies.get(scheme)
+            if value:
+                result[scheme.upper()+'_PROXY']=value if '://' in value else 'http://'+value
+        if proxies.get('no') and not any(key.lower()=='no_proxy' for key in result):
+            result['NO_PROXY']=proxies['no']
+    bypass=[]
+    for key,value in result.items():
+        if key.lower()=='no_proxy':bypass.extend(part.strip() for part in value.split(',') if part.strip())
+    bypass=list(dict.fromkeys([*bypass,'127.0.0.1','localhost','::1']))
+    # Both spellings are set consistently: reqwest and subprocess tools differ
+    # in precedence on case-sensitive platforms.
+    result['NO_PROXY']=result['no_proxy']=','.join(bypass)
+    return result
 
 
 def validate_mcp_inventory(inventory):
@@ -88,7 +111,21 @@ class ScopedMCPBridge:
     async def __aenter__(self):
         import uvicorn
         from .mcp_server import create_mcp
-        self.server,self.http=create_mcp(self.service)
+        bridge=self
+        self.active_calls=set();self.stopping=False
+        class BridgeService:
+            def catalog(inner):return bridge.service.catalog()
+            async def call(inner,name,args):
+                from .agent_errors import AgentError,response
+                if bridge.stopping:return response(error=AgentError('CANCELLED','本轮已结束，未开始新操作。'))
+                task=asyncio.create_task(bridge.service.call(name,args))
+                bridge.active_calls.add(task)
+                try:return await task
+                except asyncio.CancelledError:
+                    if bridge.stopping:return response(error=AgentError('CANCELLED','本轮已取消；已发生的操作不回滚。'))
+                    raise
+                finally:bridge.active_calls.discard(task)
+        self.server,self.http=create_mcp(BridgeService())
         token=self.token
         async def app(scope,receive,send):
             headers=dict(scope.get('headers',[]))
@@ -116,6 +153,10 @@ class ScopedMCPBridge:
         return self
 
     async def __aexit__(self,*args):
+        self.stopping=True
+        pending=list(self.active_calls)
+        for task in pending:task.cancel()
+        await asyncio.gather(*pending,return_exceptions=True)
         if self.runner:self.runner.should_exit=True
         try:
             if self.task:await asyncio.wait_for(self.task,5)
@@ -141,7 +182,9 @@ class CodexConnection:
             overrides.extend(['-c',f'mcp_servers.{name}.enabled=false'])
         self.process=await asyncio.create_subprocess_exec(self.binary,'app-server','--stdio',
             '-c','web_search="disabled"','-c',disabled_plugins_override(),
+            '-c','features.code_mode_host=true',
             *overrides,
+            env=codex_environment(),
             stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,
             limit=4*1024*1024,**options)
         self.reader=asyncio.create_task(self.read())
@@ -262,7 +305,7 @@ async def run_codex_agent(chat,tools,allowed,instructions,save,start_text,on_tex
                 model=next((m['id'] for m in models if m.get('isDefault')),None)
                 if not model:raise ValueError('Codex 未返回可用的默认模型，请检查 CLI 登录和配置。')
                 chat['turns'][-1]['model']=model;save()
-                config={**{f'features.{name}':False for name in ISOLATED_FEATURES},'mcp_servers.infra_workbench':{'enabled':True,'url':bridge.url,'http_headers':{'Authorization':'Bearer '+bridge.token},'startup_timeout_sec':20,'tool_timeout_sec':180}}
+                config={**{f'features.{name}':False for name in ISOLATED_FEATURES},'features.code_mode_host':True,'mcp_servers.infra_workbench':{'enabled':True,'url':bridge.url,'http_headers':{'Authorization':'Bearer '+bridge.token},'startup_timeout_sec':20,'tool_timeout_sec':180,'default_tools_approval_mode':'approve'}}
                 # Disable unrelated inherited MCP servers without ever exposing
                 # or modifying their credentials/configuration.
                 for name in inherited_mcp_names():
