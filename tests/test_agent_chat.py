@@ -83,6 +83,37 @@ def test_native_loop_feeds_results_back_and_replays_the_previous_turn(tmp_path):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('previous_engine',['deepagents','codex'])
+@pytest.mark.parametrize('previous_scope',[None,['b']])
+def test_scope_transition_drops_model_history_but_keeps_visible_turns(tmp_path,monkeypatch,previous_engine,previous_scope):
+    async def fake_codex(chat,tools,allowed,instructions,save,start_text,on_text,**kwargs):
+        on_text('PRIVATE_B_OUTPUT',final=True)
+        chat['messages'].append(dict(role='assistant',content='PRIVATE_B_OUTPUT'))
+        chat.update(codex_thread_id='old-b-thread',codex_scope=sorted(allowed) if allowed is not None else None,last_engine='codex')
+    monkeypatch.setattr('backend.codex_agent.run_codex_agent',fake_codex)
+    async def scenario():
+        harness,model,tools=service(tmp_path)
+        tools.inventory=lambda allowed=None:[dict(id=key,target='machine-'+key) for key in ('a','b') if allowed is None or key in allowed]
+        item=harness.create()
+        attachment=dict(host_id='b',label='machine-b',terminal_id='tab-b',source='selection',captured_at='2026-11-03T00:00:00Z',content='PRIVATE_B_ATTACHMENT')
+        model.replies=[dict(message=dict(role='assistant',content='PRIVATE_B_OUTPUT'))]
+        first=harness.begin(item['id'],ChatMessageRequest(engine=previous_engine,content='inspect B',selected_host_ids=previous_scope or [],restrict_to_selected=previous_scope is not None,terminal_attachments=[attachment]))
+        await harness.runs[first['active_run']]
+        saved=harness.get(item['id']);saved['state']={'last_host_ids':['b'],'detail':'PRIVATE_B_STATE'};harness.save(saved)
+        model.replies=[dict(message=dict(role='assistant',content='A-only result'))]
+        second=harness.begin(item['id'],ChatMessageRequest(engine='deepagents',content='inspect A only',selected_host_ids=['a'],restrict_to_selected=True))
+        await harness.runs[second['active_run']]
+        instructions,messages,_=model.contexts[-1]
+        assert 'PRIVATE_B_' not in instructions+json.dumps(messages,ensure_ascii=False)
+        assert any(message.get('content')=='inspect A only' for message in messages)
+        visible=harness.view(harness.get(item['id']))
+        assert len(visible['turns'])==4
+        assert visible['turns'][0]['terminal_attachments'][0]['content']=='PRIVATE_B_ATTACHMENT'
+        assert visible['turns'][1]['content']=='PRIVATE_B_OUTPUT'
+        harness.store.db.close()
+    asyncio.run(scenario())
+
+
 def test_cancel_immediately_and_shutdown_leave_no_permanently_busy_chat(tmp_path):
     async def scenario():
         harness,model,tools=service(tmp_path);chat=harness.create()
