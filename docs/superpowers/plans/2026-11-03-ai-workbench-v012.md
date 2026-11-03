@@ -29,7 +29,7 @@
 
 ## Tasks and acceptance
 
-1. [ ] **Codex integration** — `backend/codex_*.py`, `backend/agent_chat.py`, assistant engine selector. Real installed CLI text/tool/continuation/cancel smoke; mocked protocol and scope tests; commit.
+1. [x] **Codex integration** — `backend/codex_*.py`, `backend/agent_chat.py`, assistant engine selector. Real installed CLI text/tool/continuation/cancel smoke; mocked protocol and scope tests; commit.
 2. [x] **Terminal context to AI** — terminal selection/screen buffer attachment and explicit read limits, machine/session/cwd provenance, assistant launch/draft handoff; tests for truncation and scope; commit.
 3. [x] **Port forwarding/service entry** — managed loopback local SSH forwarding, per-host start/stop/status, port conflict reporting, TensorBoard/Jupyter/custom service links, backend lifecycle cleanup; real local tunnel smoke where practical; commit.
 4. [x] **Keyword highlighting** — configurable literal terminal rules with training presets, persistent preferences, safe bounded rendering and full-screen terminal behavior; tests/build; commit.
@@ -41,6 +41,7 @@
 
 ## Progress / rulings
 
+- Release preflight: all eight approved features committed; v0.1.2 manifests synchronized. Full Python suite 742 passed / 11 skipped, frontend 272 passed, Rust 13 passed, release helpers 5 passed. WebKit normal/legacy flows pass after adding the new automation response to the synthetic fixture. Real Codex also passed against all 77 Workbench MCP tools using an isolated empty inventory. GitHub push/tag/build remain pending until these release changes are committed.
 - Starting commit: a857649; worktree clean; feature branch `codex/ai-workbench-v012`.
 - Installed Codex 0.147.0 is logged in with ChatGPT; verify actual local protocol instead of assuming Netcatty's version-specific interface.
 - Ruling: work on a feature branch in the clean shared checkout to reuse the installed build environment; no changes to main until validated.

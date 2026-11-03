@@ -1,36 +1,117 @@
 {
-  "_AppConfirm-BFIFCPIk.css": {
-    "file": "assets/AppConfirm-BFIFCPIk.css",
-    "src": "_AppConfirm-BFIFCPIk.css"
-  },
-  "_AppConfirm-CKXtzs_7.js": {
-    "file": "assets/AppConfirm-CKXtzs_7.js",
+  "_AppConfirm-BDKkcMnh.js": {
+    "file": "assets/AppConfirm-BDKkcMnh.js",
     "name": "AppConfirm",
     "imports": [
       "index.html",
-      "_index-DMTEenMZ.js"
+      "_index-olZlNI6m.js"
     ],
     "css": [
       "assets/AppConfirm-BFIFCPIk.css"
     ]
   },
+  "_AppConfirm-BFIFCPIk.css": {
+    "file": "assets/AppConfirm-BFIFCPIk.css",
+    "src": "_AppConfirm-BFIFCPIk.css"
+  },
+  "_AssistantChat-C2GCBHRo.js": {
+    "file": "assets/AssistantChat-C2GCBHRo.js",
+    "name": "AssistantChat",
+    "imports": [
+      "index.html",
+      "_skills-DIMyvjB1.js",
+      "_index-olZlNI6m.js",
+      "_AppConfirm-BDKkcMnh.js"
+    ],
+    "dynamicImports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ],
+    "css": [
+      "assets/AssistantChat-D-u1dD6A.css"
+    ],
+    "assets": [
+      "assets/KaTeX_AMS-Regular-BQhdFMY1.woff2",
+      "assets/KaTeX_AMS-Regular-DMm9YOAa.woff",
+      "assets/KaTeX_AMS-Regular-DRggAlZN.ttf",
+      "assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+      "assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff",
+      "assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf",
+      "assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+      "assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff",
+      "assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf",
+      "assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+      "assets/KaTeX_Fraktur-Bold-BsDP51OF.woff",
+      "assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf",
+      "assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+      "assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff",
+      "assets/KaTeX_Fraktur-Regular-CB_wures.ttf",
+      "assets/KaTeX_Main-Bold-Cx986IdX.woff2",
+      "assets/KaTeX_Main-Bold-Jm3AIy58.woff",
+      "assets/KaTeX_Main-Bold-waoOVXN0.ttf",
+      "assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+      "assets/KaTeX_Main-BoldItalic-SpSLRI95.woff",
+      "assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf",
+      "assets/KaTeX_Main-Italic-NWA7e6Wa.woff2",
+      "assets/KaTeX_Main-Italic-BMLOBm91.woff",
+      "assets/KaTeX_Main-Italic-3WenGoN9.ttf",
+      "assets/KaTeX_Main-Regular-B22Nviop.woff2",
+      "assets/KaTeX_Main-Regular-Dr94JaBh.woff",
+      "assets/KaTeX_Main-Regular-ypZvNtVU.ttf",
+      "assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+      "assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff",
+      "assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf",
+      "assets/KaTeX_Math-Italic-t53AETM-.woff2",
+      "assets/KaTeX_Math-Italic-DA0__PXp.woff",
+      "assets/KaTeX_Math-Italic-flOr_0UB.ttf",
+      "assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+      "assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff",
+      "assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf",
+      "assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+      "assets/KaTeX_SansSerif-Italic-DN2j7dab.woff",
+      "assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf",
+      "assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+      "assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff",
+      "assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf",
+      "assets/KaTeX_Script-Regular-D3wIWfF6.woff2",
+      "assets/KaTeX_Script-Regular-D5yQViql.woff",
+      "assets/KaTeX_Script-Regular-C5JkGWo-.ttf",
+      "assets/KaTeX_Size1-Regular-mCD8mA8B.woff2",
+      "assets/KaTeX_Size1-Regular-C195tn64.woff",
+      "assets/KaTeX_Size1-Regular-Dbsnue_I.ttf",
+      "assets/KaTeX_Size2-Regular-Dy4dx90m.woff2",
+      "assets/KaTeX_Size2-Regular-oD1tc_U0.woff",
+      "assets/KaTeX_Size2-Regular-B7gKUWhC.ttf",
+      "assets/KaTeX_Size3-Regular-CTq5MqoE.woff",
+      "assets/KaTeX_Size3-Regular-DgpXs0kz.ttf",
+      "assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+      "assets/KaTeX_Size4-Regular-BF-4gkZK.woff",
+      "assets/KaTeX_Size4-Regular-DWFBv043.ttf",
+      "assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+      "assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff",
+      "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf"
+    ]
+  },
+  "_AssistantChat-D-u1dD6A.css": {
+    "file": "assets/AssistantChat-D-u1dD6A.css",
+    "src": "_AssistantChat-D-u1dD6A.css"
+  },
   "_FileBrowser-BXzIsreW.css": {
     "file": "assets/FileBrowser-BXzIsreW.css",
     "src": "_FileBrowser-BXzIsreW.css"
   },
-  "_FileBrowser-C6L1TNAp.js": {
-    "file": "assets/FileBrowser-C6L1TNAp.js",
+  "_FileBrowser-DRAxOBX1.js": {
+    "file": "assets/FileBrowser-DRAxOBX1.js",
     "name": "FileBrowser",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_logDownload-C_9pi4DE.js",
-      "_index-DMTEenMZ.js",
+      "_logDownload-x-MslAZg.js",
+      "_index-olZlNI6m.js",
       "_windowLayers-C9W3NSUA.js",
-      "_minus-CPm8EIup.js",
-      "_minimize-2-B1bMLmdm.js",
-      "_upload-ClhPA2wp.js",
-      "_download-DuOTCDZ5.js"
+      "_minus-C5NDsxXV.js",
+      "_minimize-2-BTMLr8cP.js",
+      "_upload-CtPO_dwa.js",
+      "_download-qjRnnZ27.js"
     ],
     "dynamicImports": [
       "src/TextEditor.tsx"
@@ -39,57 +120,253 @@
       "assets/FileBrowser-BXzIsreW.css"
     ]
   },
-  "_download-DuOTCDZ5.js": {
-    "file": "assets/download-DuOTCDZ5.js",
+  "_arc-5u27AFsF.js": {
+    "file": "assets/arc-5u27AFsF.js",
+    "name": "arc",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_channel-BJclr9u8.js": {
+    "file": "assets/channel-BJclr9u8.js",
+    "name": "channel",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-2E7WHVMD-5wtsF136.js": {
+    "file": "assets/chunk-2E7WHVMD-5wtsF136.js",
+    "name": "chunk-2E7WHVMD",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-2Q5K7J3B-DvDJnZYD.js": {
+    "file": "assets/chunk-2Q5K7J3B-DvDJnZYD.js",
+    "name": "chunk-2Q5K7J3B",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-4EMNKR2T-Bqb7DzZU.js": {
+    "file": "assets/chunk-4EMNKR2T-Bqb7DzZU.js",
+    "name": "chunk-4EMNKR2T",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-55XCU76K-DwtDx9rz.js": {
+    "file": "assets/chunk-55XCU76K-DwtDx9rz.js",
+    "name": "chunk-55XCU76K",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-5VM5RSS4-DZD1YtSY.js": {
+    "file": "assets/chunk-5VM5RSS4-DZD1YtSY.js",
+    "name": "chunk-5VM5RSS4",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-JWPE2WC7-_uGZ62pf.js": {
+    "file": "assets/chunk-JWPE2WC7-_uGZ62pf.js",
+    "name": "chunk-JWPE2WC7",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-VQ5W62QI-BsL0IpDJ.js": {
+    "file": "assets/chunk-VQ5W62QI-BsL0IpDJ.js",
+    "name": "chunk-VQ5W62QI",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-XXDRQBXY--_zrur7E.js": {
+    "file": "assets/chunk-XXDRQBXY--_zrur7E.js",
+    "name": "chunk-XXDRQBXY",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js"
+    ]
+  },
+  "_chunk-ZCHMQSOR-D3T5qWne.js": {
+    "file": "assets/chunk-ZCHMQSOR-D3T5qWne.js",
+    "name": "chunk-ZCHMQSOR",
+    "imports": [
+      "index.html",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_graph-D8UmR1vK.js"
+    ],
+    "dynamicImports": [
+      "node_modules/mermaid/dist/chunks/mermaid.core/sizeCapture-INFHLROL.mjs"
+    ]
+  },
+  "_cynefin-EF2NZ3EQ-BxGmaE9J.js": {
+    "file": "assets/cynefin-EF2NZ3EQ-BxGmaE9J.js",
+    "name": "cynefin-EF2NZ3EQ",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_cytoscape.esm-BDkkwuE4.js": {
+    "file": "assets/cytoscape.esm-BDkkwuE4.js",
+    "name": "cytoscape.esm"
+  },
+  "_defaultLocale-DX6XiGOO.js": {
+    "file": "assets/defaultLocale-DX6XiGOO.js",
+    "name": "defaultLocale"
+  },
+  "_download-qjRnnZ27.js": {
+    "file": "assets/download-qjRnnZ27.js",
     "name": "download",
     "imports": [
       "index.html"
     ]
   },
-  "_index-DMTEenMZ.js": {
-    "file": "assets/index-DMTEenMZ.js",
+  "_flowDiagram-IUGLLWBU-BIGoTO-9.js": {
+    "file": "assets/flowDiagram-IUGLLWBU-BIGoTO-9.js",
+    "name": "flowDiagram-IUGLLWBU",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-5VM5RSS4-DZD1YtSY.js",
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "_channel-BJclr9u8.js"
+    ]
+  },
+  "_graph-D8UmR1vK.js": {
+    "file": "assets/graph-D8UmR1vK.js",
+    "name": "graph"
+  },
+  "_index-olZlNI6m.js": {
+    "file": "assets/index-olZlNI6m.js",
     "name": "index",
     "imports": [
       "index.html"
     ]
   },
-  "_logDownload-C_9pi4DE.js": {
-    "file": "assets/logDownload-C_9pi4DE.js",
+  "_init-Gi6I4Gst.js": {
+    "file": "assets/init-Gi6I4Gst.js",
+    "name": "init"
+  },
+  "_linear-DzousOXa.js": {
+    "file": "assets/linear-DzousOXa.js",
+    "name": "linear",
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_init-Gi6I4Gst.js",
+      "_defaultLocale-DX6XiGOO.js"
+    ]
+  },
+  "_logDownload-x-MslAZg.js": {
+    "file": "assets/logDownload-x-MslAZg.js",
     "name": "logDownload",
     "imports": [
       "index.html"
     ]
   },
-  "_minimize-2-B1bMLmdm.js": {
-    "file": "assets/minimize-2-B1bMLmdm.js",
+  "_mermaid.core-Cb8D-K3E.js": {
+    "file": "assets/mermaid.core-Cb8D-K3E.js",
+    "name": "mermaid.core",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js"
+    ],
+    "dynamicImports": [
+      "node_modules/mermaid/node_modules/katex/dist/katex.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/elk-QONTBCTQ.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/dagre-NK4GIZVX.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/swimlanes-B3ENRKFQ.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/cose-bilkent-JH36ORCC.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/c4Diagram-XDPPPE54.mjs",
+      "_flowDiagram-IUGLLWBU-BIGoTO-9.js",
+      "node_modules/mermaid/dist/chunks/mermaid.core/diagram-TYUNFSNR.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/swimlanesDiagram-AYQRV4AK.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/erDiagram-KYQIGQAA.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/gitGraphDiagram-PDYL7XHY.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/ganttDiagram-R7GPNTJY.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/infoDiagram-MVDRKAX5.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/pieDiagram-GNMPY74T.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/quadrantDiagram-D57K4MC3.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/xychartDiagram-4URNHDU4.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/requirementDiagram-EQYSW5RA.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/sequenceDiagram-BLEHNHQU.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/classDiagram-v2-4MYWR3UA.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/stateDiagram-v2-A6IESKWZ.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/journeyDiagram-BOSHW7O7.mjs",
+      "_flowDiagram-IUGLLWBU-BIGoTO-9.js",
+      "node_modules/mermaid/dist/chunks/mermaid.core/timeline-definition-JXYKGLGB.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/mindmap-definition-6OY57UG3.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/kanban-definition-FNSA4HC5.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/sankeyDiagram-SY24JHO5.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/diagram-I5XIIV2D.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/diagram-RJA3I4VV.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/blockDiagram-RJAE7QA3.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/diagram-ODIL2UCW.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/architectureDiagram-ZHVYKT53.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/diagram-PFBEJUXE.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/ishikawaDiagram-HPEHV2GE.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/vennDiagram-Q3Y3IDCW.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/diagram-CBK3MWTC.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/usecaseDiagram-WPOLBNNX.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/wardleyDiagram-IVAIDKWA.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/cynefinDiagram-WF24UDRP.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/railroadDiagram-Y72NRBL7.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/ebnfDiagram-V4P3TTPT.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/abnfDiagram-WEYOIA3C.mjs",
+      "node_modules/mermaid/dist/chunks/mermaid.core/pegDiagram-ECIUJNBX.mjs"
+    ]
+  },
+  "_minimize-2-BTMLr8cP.js": {
+    "file": "assets/minimize-2-BTMLr8cP.js",
     "name": "minimize-2",
     "imports": [
       "index.html"
     ]
   },
-  "_minus-CPm8EIup.js": {
-    "file": "assets/minus-CPm8EIup.js",
+  "_minus-C5NDsxXV.js": {
+    "file": "assets/minus-C5NDsxXV.js",
     "name": "minus",
     "imports": [
       "index.html"
     ]
   },
-  "_skills-BIY2ZHC1.css": {
-    "file": "assets/skills-BIY2ZHC1.css",
-    "src": "_skills-BIY2ZHC1.css"
-  },
-  "_skills-DwJtZ2A7.js": {
-    "file": "assets/skills-DwJtZ2A7.js",
-    "name": "skills",
+  "_ordinal-Cboi1Yqb.js": {
+    "file": "assets/ordinal-Cboi1Yqb.js",
+    "name": "ordinal",
     "imports": [
-      "index.html"
-    ],
-    "css": [
-      "assets/skills-BIY2ZHC1.css"
+      "_init-Gi6I4Gst.js"
     ]
   },
-  "_upload-ClhPA2wp.js": {
-    "file": "assets/upload-ClhPA2wp.js",
+  "_panels-top-left-vHWTaXVu.js": {
+    "file": "assets/panels-top-left-vHWTaXVu.js",
+    "name": "panels-top-left",
+    "imports": [
+      "index.html"
+    ]
+  },
+  "_skills-BdAiYKBI.css": {
+    "file": "assets/skills-BdAiYKBI.css",
+    "src": "_skills-BdAiYKBI.css"
+  },
+  "_skills-DIMyvjB1.js": {
+    "file": "assets/skills-DIMyvjB1.js",
+    "name": "skills",
+    "imports": [
+      "index.html",
+      "_AppConfirm-BDKkcMnh.js"
+    ],
+    "css": [
+      "assets/skills-BdAiYKBI.css"
+    ]
+  },
+  "_upload-CtPO_dwa.js": {
+    "file": "assets/upload-CtPO_dwa.js",
     "name": "upload",
     "imports": [
       "index.html"
@@ -100,20 +377,21 @@
     "name": "windowLayers"
   },
   "index.html": {
-    "file": "assets/index-1XjZNtaz.js",
+    "file": "assets/index-gVUnGzfZ.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
       "src/PrecisionCompare.tsx",
-      "_FileBrowser-C6L1TNAp.js",
+      "_FileBrowser-DRAxOBX1.js",
       "src/TerminalDock.tsx",
       "src/ServerImport.tsx",
       "src/SettingsPage.tsx",
-      "src/AssistantWindow.tsx"
+      "src/AssistantWindow.tsx",
+      "src/QuickWindow.tsx"
     ],
     "css": [
-      "assets/index-DvfYadvh.css"
+      "assets/index-Efr0wIJg.css"
     ]
   },
   "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs": {
@@ -122,102 +400,1033 @@
     "src": "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
     "isDynamicEntry": true
   },
+  "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.ttf": {
+    "file": "assets/KaTeX_AMS-Regular-DRggAlZN.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.woff": {
+    "file": "assets/KaTeX_AMS-Regular-DMm9YOAa.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.woff2": {
+    "file": "assets/KaTeX_AMS-Regular-BQhdFMY1.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Bold.ttf": {
+    "file": "assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Bold.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Bold.woff": {
+    "file": "assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Bold.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Bold.woff2": {
+    "file": "assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Bold.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Regular.ttf": {
+    "file": "assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Regular.woff": {
+    "file": "assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Regular.woff2": {
+    "file": "assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Caligraphic-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Fraktur-Bold.ttf": {
+    "file": "assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Fraktur-Bold.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Fraktur-Bold.woff": {
+    "file": "assets/KaTeX_Fraktur-Bold-BsDP51OF.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Fraktur-Bold.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Fraktur-Bold.woff2": {
+    "file": "assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Fraktur-Bold.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Fraktur-Regular.ttf": {
+    "file": "assets/KaTeX_Fraktur-Regular-CB_wures.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Fraktur-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Fraktur-Regular.woff": {
+    "file": "assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Fraktur-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Fraktur-Regular.woff2": {
+    "file": "assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Fraktur-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Bold.ttf": {
+    "file": "assets/KaTeX_Main-Bold-waoOVXN0.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Bold.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Bold.woff": {
+    "file": "assets/KaTeX_Main-Bold-Jm3AIy58.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Bold.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Bold.woff2": {
+    "file": "assets/KaTeX_Main-Bold-Cx986IdX.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Bold.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-BoldItalic.ttf": {
+    "file": "assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-BoldItalic.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-BoldItalic.woff": {
+    "file": "assets/KaTeX_Main-BoldItalic-SpSLRI95.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-BoldItalic.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-BoldItalic.woff2": {
+    "file": "assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-BoldItalic.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Italic.ttf": {
+    "file": "assets/KaTeX_Main-Italic-3WenGoN9.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Italic.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Italic.woff": {
+    "file": "assets/KaTeX_Main-Italic-BMLOBm91.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Italic.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Italic.woff2": {
+    "file": "assets/KaTeX_Main-Italic-NWA7e6Wa.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Italic.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Regular.ttf": {
+    "file": "assets/KaTeX_Main-Regular-ypZvNtVU.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff": {
+    "file": "assets/KaTeX_Main-Regular-Dr94JaBh.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2": {
+    "file": "assets/KaTeX_Main-Regular-B22Nviop.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Math-BoldItalic.ttf": {
+    "file": "assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Math-BoldItalic.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Math-BoldItalic.woff": {
+    "file": "assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Math-BoldItalic.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Math-BoldItalic.woff2": {
+    "file": "assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Math-BoldItalic.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Math-Italic.ttf": {
+    "file": "assets/KaTeX_Math-Italic-flOr_0UB.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Math-Italic.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Math-Italic.woff": {
+    "file": "assets/KaTeX_Math-Italic-DA0__PXp.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Math-Italic.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Math-Italic.woff2": {
+    "file": "assets/KaTeX_Math-Italic-t53AETM-.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Math-Italic.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Bold.ttf": {
+    "file": "assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Bold.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Bold.woff": {
+    "file": "assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Bold.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Bold.woff2": {
+    "file": "assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Bold.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Italic.ttf": {
+    "file": "assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Italic.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Italic.woff": {
+    "file": "assets/KaTeX_SansSerif-Italic-DN2j7dab.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Italic.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Italic.woff2": {
+    "file": "assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Italic.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Regular.ttf": {
+    "file": "assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Regular.woff": {
+    "file": "assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_SansSerif-Regular.woff2": {
+    "file": "assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_SansSerif-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Script-Regular.ttf": {
+    "file": "assets/KaTeX_Script-Regular-C5JkGWo-.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Script-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Script-Regular.woff": {
+    "file": "assets/KaTeX_Script-Regular-D5yQViql.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Script-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Script-Regular.woff2": {
+    "file": "assets/KaTeX_Script-Regular-D3wIWfF6.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Script-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size1-Regular.ttf": {
+    "file": "assets/KaTeX_Size1-Regular-Dbsnue_I.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size1-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size1-Regular.woff": {
+    "file": "assets/KaTeX_Size1-Regular-C195tn64.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size1-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size1-Regular.woff2": {
+    "file": "assets/KaTeX_Size1-Regular-mCD8mA8B.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size1-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size2-Regular.ttf": {
+    "file": "assets/KaTeX_Size2-Regular-B7gKUWhC.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size2-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size2-Regular.woff": {
+    "file": "assets/KaTeX_Size2-Regular-oD1tc_U0.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size2-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size2-Regular.woff2": {
+    "file": "assets/KaTeX_Size2-Regular-Dy4dx90m.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size2-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size3-Regular.ttf": {
+    "file": "assets/KaTeX_Size3-Regular-DgpXs0kz.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size3-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size3-Regular.woff": {
+    "file": "assets/KaTeX_Size3-Regular-CTq5MqoE.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size3-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size4-Regular.ttf": {
+    "file": "assets/KaTeX_Size4-Regular-DWFBv043.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size4-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size4-Regular.woff": {
+    "file": "assets/KaTeX_Size4-Regular-BF-4gkZK.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size4-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Size4-Regular.woff2": {
+    "file": "assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Size4-Regular.woff2"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.ttf": {
+    "file": "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.ttf"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff": {
+    "file": "assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff"
+  },
+  "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2": {
+    "file": "assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+    "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/abnfDiagram-WEYOIA3C.mjs": {
+    "file": "assets/abnfDiagram-WEYOIA3C-B_hv9nMB.js",
+    "name": "abnfDiagram-WEYOIA3C",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/abnfDiagram-WEYOIA3C.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-2E7WHVMD-5wtsF136.js",
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/architectureDiagram-ZHVYKT53.mjs": {
+    "file": "assets/architectureDiagram-ZHVYKT53-IocJoB2k.js",
+    "name": "architectureDiagram-ZHVYKT53",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/architectureDiagram-ZHVYKT53.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "_cytoscape.esm-BDkkwuE4.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/blockDiagram-RJAE7QA3.mjs": {
+    "file": "assets/blockDiagram-RJAE7QA3-CVZdzl6b.js",
+    "name": "blockDiagram-RJAE7QA3",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/blockDiagram-RJAE7QA3.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-5VM5RSS4-DZD1YtSY.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_graph-D8UmR1vK.js",
+      "_channel-BJclr9u8.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/c4Diagram-XDPPPE54.mjs": {
+    "file": "assets/c4Diagram-XDPPPE54-c045sg_n.js",
+    "name": "c4Diagram-XDPPPE54",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/c4Diagram-XDPPPE54.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/classDiagram-v2-4MYWR3UA.mjs": {
+    "file": "assets/classDiagram-v2-4MYWR3UA-DEyWpZfe.js",
+    "name": "classDiagram-v2-4MYWR3UA",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/classDiagram-v2-4MYWR3UA.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-5VM5RSS4-DZD1YtSY.js",
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "index.html",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/cose-bilkent-JH36ORCC.mjs": {
+    "file": "assets/cose-bilkent-JH36ORCC-HXqPXgPc.js",
+    "name": "cose-bilkent-JH36ORCC",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/cose-bilkent-JH36ORCC.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cytoscape.esm-BDkkwuE4.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/cynefinDiagram-WF24UDRP.mjs": {
+    "file": "assets/cynefinDiagram-WF24UDRP-D4iQEmrv.js",
+    "name": "cynefinDiagram-WF24UDRP",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/cynefinDiagram-WF24UDRP.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/dagre-NK4GIZVX.mjs": {
+    "file": "assets/dagre-NK4GIZVX-_Lm-IxX2.js",
+    "name": "dagre-NK4GIZVX",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/dagre-NK4GIZVX.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-ZCHMQSOR-D3T5qWne.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_graph-D8UmR1vK.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/diagram-CBK3MWTC.mjs": {
+    "file": "assets/diagram-CBK3MWTC-D-20nKAs.js",
+    "name": "diagram-CBK3MWTC",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/diagram-CBK3MWTC.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "_defaultLocale-DX6XiGOO.js",
+      "_ordinal-Cboi1Yqb.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_init-Gi6I4Gst.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/diagram-I5XIIV2D.mjs": {
+    "file": "assets/diagram-I5XIIV2D-BP_GTVOL.js",
+    "name": "diagram-I5XIIV2D",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/diagram-I5XIIV2D.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/diagram-ODIL2UCW.mjs": {
+    "file": "assets/diagram-ODIL2UCW-0OShh9TG.js",
+    "name": "diagram-ODIL2UCW",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/diagram-ODIL2UCW.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-2Q5K7J3B-DvDJnZYD.js",
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/diagram-PFBEJUXE.mjs": {
+    "file": "assets/diagram-PFBEJUXE-YwqwDCMq.js",
+    "name": "diagram-PFBEJUXE",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/diagram-PFBEJUXE.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/diagram-RJA3I4VV.mjs": {
+    "file": "assets/diagram-RJA3I4VV-DGmpNK1Q.js",
+    "name": "diagram-RJA3I4VV",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/diagram-RJA3I4VV.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/diagram-TYUNFSNR.mjs": {
+    "file": "assets/diagram-TYUNFSNR-Bd3JXQ6p.js",
+    "name": "diagram-TYUNFSNR",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/diagram-TYUNFSNR.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-5VM5RSS4-DZD1YtSY.js",
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "_channel-BJclr9u8.js",
+      "index.html",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/ebnfDiagram-V4P3TTPT.mjs": {
+    "file": "assets/ebnfDiagram-V4P3TTPT-cDkqz2iK.js",
+    "name": "ebnfDiagram-V4P3TTPT",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/ebnfDiagram-V4P3TTPT.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-2E7WHVMD-5wtsF136.js",
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/elk-QONTBCTQ.mjs": {
+    "file": "assets/elk-QONTBCTQ-CKomh4PN.js",
+    "name": "elk-QONTBCTQ",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/elk-QONTBCTQ.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-4EMNKR2T-Bqb7DzZU.js",
+      "_chunk-ZCHMQSOR-D3T5qWne.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_graph-D8UmR1vK.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/erDiagram-KYQIGQAA.mjs": {
+    "file": "assets/erDiagram-KYQIGQAA-d_oiSkKe.js",
+    "name": "erDiagram-KYQIGQAA",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/erDiagram-KYQIGQAA.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_channel-BJclr9u8.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/ganttDiagram-R7GPNTJY.mjs": {
+    "file": "assets/ganttDiagram-R7GPNTJY-CArFsSd0.js",
+    "name": "ganttDiagram-R7GPNTJY",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/ganttDiagram-R7GPNTJY.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_linear-DzousOXa.js",
+      "_init-Gi6I4Gst.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_defaultLocale-DX6XiGOO.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/gitGraphDiagram-PDYL7XHY.mjs": {
+    "file": "assets/gitGraphDiagram-PDYL7XHY-DMyaVHva.js",
+    "name": "gitGraphDiagram-PDYL7XHY",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/gitGraphDiagram-PDYL7XHY.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-2Q5K7J3B-DvDJnZYD.js",
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/infoDiagram-MVDRKAX5.mjs": {
+    "file": "assets/infoDiagram-MVDRKAX5-BsrloZCr.js",
+    "name": "infoDiagram-MVDRKAX5",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/infoDiagram-MVDRKAX5.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/ishikawaDiagram-HPEHV2GE.mjs": {
+    "file": "assets/ishikawaDiagram-HPEHV2GE-COOU5iTc.js",
+    "name": "ishikawaDiagram-HPEHV2GE",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/ishikawaDiagram-HPEHV2GE.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/journeyDiagram-BOSHW7O7.mjs": {
+    "file": "assets/journeyDiagram-BOSHW7O7-CS73nDO_.js",
+    "name": "journeyDiagram-BOSHW7O7",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/journeyDiagram-BOSHW7O7.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-5VM5RSS4-DZD1YtSY.js",
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_arc-5u27AFsF.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/kanban-definition-FNSA4HC5.mjs": {
+    "file": "assets/kanban-definition-FNSA4HC5-ClgYlCRf.js",
+    "name": "kanban-definition-FNSA4HC5",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/kanban-definition-FNSA4HC5.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-5VM5RSS4-DZD1YtSY.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/mindmap-definition-6OY57UG3.mjs": {
+    "file": "assets/mindmap-definition-6OY57UG3-B1bvrqqH.js",
+    "name": "mindmap-definition-6OY57UG3",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/mindmap-definition-6OY57UG3.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/pegDiagram-ECIUJNBX.mjs": {
+    "file": "assets/pegDiagram-ECIUJNBX-BiOS_8CK.js",
+    "name": "pegDiagram-ECIUJNBX",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/pegDiagram-ECIUJNBX.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-2E7WHVMD-5wtsF136.js",
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/pieDiagram-GNMPY74T.mjs": {
+    "file": "assets/pieDiagram-GNMPY74T-v6hC5QRk.js",
+    "name": "pieDiagram-GNMPY74T",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/pieDiagram-GNMPY74T.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "_arc-5u27AFsF.js",
+      "_ordinal-Cboi1Yqb.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_init-Gi6I4Gst.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/quadrantDiagram-D57K4MC3.mjs": {
+    "file": "assets/quadrantDiagram-D57K4MC3-BjzRsKR0.js",
+    "name": "quadrantDiagram-D57K4MC3",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/quadrantDiagram-D57K4MC3.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_linear-DzousOXa.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_init-Gi6I4Gst.js",
+      "_defaultLocale-DX6XiGOO.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/railroadDiagram-Y72NRBL7.mjs": {
+    "file": "assets/railroadDiagram-Y72NRBL7-DcJdD-hW.js",
+    "name": "railroadDiagram-Y72NRBL7",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/railroadDiagram-Y72NRBL7.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-2E7WHVMD-5wtsF136.js",
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/requirementDiagram-EQYSW5RA.mjs": {
+    "file": "assets/requirementDiagram-EQYSW5RA-BrJDhGpK.js",
+    "name": "requirementDiagram-EQYSW5RA",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/requirementDiagram-EQYSW5RA.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/sankeyDiagram-SY24JHO5.mjs": {
+    "file": "assets/sankeyDiagram-SY24JHO5-CPY_rstt.js",
+    "name": "sankeyDiagram-SY24JHO5",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/sankeyDiagram-SY24JHO5.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_ordinal-Cboi1Yqb.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_init-Gi6I4Gst.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/sequenceDiagram-BLEHNHQU.mjs": {
+    "file": "assets/sequenceDiagram-BLEHNHQU-BRRXl3Kw.js",
+    "name": "sequenceDiagram-BLEHNHQU",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/sequenceDiagram-BLEHNHQU.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-2Q5K7J3B-DvDJnZYD.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/sizeCapture-INFHLROL.mjs": {
+    "file": "assets/sizeCapture-INFHLROL-C5WhB25D.js",
+    "name": "sizeCapture-INFHLROL",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/sizeCapture-INFHLROL.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/stateDiagram-v2-A6IESKWZ.mjs": {
+    "file": "assets/stateDiagram-v2-A6IESKWZ-B4xvb4lC.js",
+    "name": "stateDiagram-v2-A6IESKWZ",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/stateDiagram-v2-A6IESKWZ.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "index.html",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/swimlanes-B3ENRKFQ.mjs": {
+    "file": "assets/swimlanes-B3ENRKFQ-drDCv2e7.js",
+    "name": "swimlanes-B3ENRKFQ",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/swimlanes-B3ENRKFQ.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-4EMNKR2T-Bqb7DzZU.js",
+      "_chunk-ZCHMQSOR-D3T5qWne.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_graph-D8UmR1vK.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/swimlanesDiagram-AYQRV4AK.mjs": {
+    "file": "assets/swimlanesDiagram-AYQRV4AK-l5ZhbWA1.js",
+    "name": "swimlanesDiagram-AYQRV4AK",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/swimlanesDiagram-AYQRV4AK.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_flowDiagram-IUGLLWBU-BIGoTO-9.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_chunk-5VM5RSS4-DZD1YtSY.js",
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_chunk-55XCU76K-DwtDx9rz.js",
+      "_AssistantChat-C2GCBHRo.js",
+      "index.html",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_channel-BJclr9u8.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/timeline-definition-JXYKGLGB.mjs": {
+    "file": "assets/timeline-definition-JXYKGLGB-Tcg9vS9c.js",
+    "name": "timeline-definition-JXYKGLGB",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/timeline-definition-JXYKGLGB.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_arc-5u27AFsF.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/usecaseDiagram-WPOLBNNX.mjs": {
+    "file": "assets/usecaseDiagram-WPOLBNNX-B4tEG1eV.js",
+    "name": "usecaseDiagram-WPOLBNNX",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/usecaseDiagram-WPOLBNNX.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-XXDRQBXY--_zrur7E.js",
+      "_chunk-VQ5W62QI-BsL0IpDJ.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/vennDiagram-Q3Y3IDCW.mjs": {
+    "file": "assets/vennDiagram-Q3Y3IDCW-CRDkVrw9.js",
+    "name": "vennDiagram-Q3Y3IDCW",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/vennDiagram-Q3Y3IDCW.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/wardleyDiagram-IVAIDKWA.mjs": {
+    "file": "assets/wardleyDiagram-IVAIDKWA-Os0HPgVc.js",
+    "name": "wardleyDiagram-IVAIDKWA",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/wardleyDiagram-IVAIDKWA.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-JWPE2WC7-_uGZ62pf.js",
+      "_mermaid.core-Cb8D-K3E.js",
+      "_cynefin-EF2NZ3EQ-BxGmaE9J.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
+    ]
+  },
+  "node_modules/mermaid/dist/chunks/mermaid.core/xychartDiagram-4URNHDU4.mjs": {
+    "file": "assets/xychartDiagram-4URNHDU4-DplpoFvY.js",
+    "name": "xychartDiagram-4URNHDU4",
+    "src": "node_modules/mermaid/dist/chunks/mermaid.core/xychartDiagram-4URNHDU4.mjs",
+    "isDynamicEntry": true,
+    "imports": [
+      "_mermaid.core-Cb8D-K3E.js",
+      "_init-Gi6I4Gst.js",
+      "_ordinal-Cboi1Yqb.js",
+      "_linear-DzousOXa.js",
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_defaultLocale-DX6XiGOO.js"
+    ]
+  },
+  "node_modules/mermaid/node_modules/katex/dist/katex.mjs": {
+    "file": "assets/katex-DLSO0Xi6.js",
+    "name": "katex",
+    "src": "node_modules/mermaid/node_modules/katex/dist/katex.mjs",
+    "isDynamicEntry": true
+  },
   "src/AssistantWindow.tsx": {
-    "file": "assets/AssistantWindow-42GQdmMU.js",
+    "file": "assets/AssistantWindow-aO-Y-BUd.js",
     "name": "AssistantWindow",
     "src": "src/AssistantWindow.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_AppConfirm-CKXtzs_7.js",
-      "_skills-DwJtZ2A7.js",
-      "_index-DMTEenMZ.js",
+      "_skills-DIMyvjB1.js",
+      "_AssistantChat-C2GCBHRo.js",
       "_windowLayers-C9W3NSUA.js",
-      "_minus-CPm8EIup.js"
+      "_panels-top-left-vHWTaXVu.js",
+      "_minus-C5NDsxXV.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js"
     ],
     "css": [
-      "assets/AssistantWindow-J674X_P5.css"
+      "assets/AssistantWindow-uzEBbQ6f.css"
     ]
   },
   "src/PrecisionCompare.tsx": {
-    "file": "assets/PrecisionCompare-HTID9ELi.js",
+    "file": "assets/PrecisionCompare-BiMM-uzs.js",
     "name": "PrecisionCompare",
     "src": "src/PrecisionCompare.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_logDownload-C_9pi4DE.js",
-      "_download-DuOTCDZ5.js"
+      "_logDownload-x-MslAZg.js",
+      "_download-qjRnnZ27.js"
     ],
     "css": [
       "assets/PrecisionCompare-lD65XQ0C.css"
     ]
   },
+  "src/QuickWindow.tsx": {
+    "file": "assets/QuickWindow-DDSyyG5U.js",
+    "name": "QuickWindow",
+    "src": "src/QuickWindow.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_AssistantChat-C2GCBHRo.js",
+      "src/TerminalDock.tsx",
+      "_FileBrowser-DRAxOBX1.js",
+      "_skills-DIMyvjB1.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_index-olZlNI6m.js",
+      "_windowLayers-C9W3NSUA.js",
+      "_minimize-2-BTMLr8cP.js",
+      "_logDownload-x-MslAZg.js",
+      "_minus-C5NDsxXV.js",
+      "_upload-CtPO_dwa.js",
+      "_download-qjRnnZ27.js"
+    ],
+    "css": [
+      "assets/QuickWindow-BiSZa3cY.css"
+    ]
+  },
   "src/ServerImport.tsx": {
-    "file": "assets/ServerImport-DTyjoqzr.js",
+    "file": "assets/ServerImport-C8dSk-e1.js",
     "name": "ServerImport",
     "src": "src/ServerImport.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_download-DuOTCDZ5.js",
-      "_upload-ClhPA2wp.js"
+      "_download-qjRnnZ27.js",
+      "_upload-CtPO_dwa.js"
     ],
     "css": [
       "assets/ServerImport-C32AXzxq.css"
     ]
   },
   "src/SettingsPage.tsx": {
-    "file": "assets/SettingsPage-BQSh0RCB.js",
+    "file": "assets/SettingsPage-DmEOmeE7.js",
     "name": "SettingsPage",
     "src": "src/SettingsPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_index-DMTEenMZ.js",
-      "_skills-DwJtZ2A7.js",
-      "_AppConfirm-CKXtzs_7.js",
-      "_upload-ClhPA2wp.js",
-      "_download-DuOTCDZ5.js"
+      "_panels-top-left-vHWTaXVu.js",
+      "_skills-DIMyvjB1.js",
+      "_index-olZlNI6m.js",
+      "_AppConfirm-BDKkcMnh.js",
+      "_upload-CtPO_dwa.js",
+      "_download-qjRnnZ27.js"
     ],
     "css": [
-      "assets/SettingsPage-DWaHV1pn.css"
+      "assets/SettingsPage-B_ObYPRa.css"
     ]
   },
   "src/TerminalDock.tsx": {
-    "file": "assets/TerminalDock-BzuLksFz.js",
+    "file": "assets/TerminalDock-Bjefiipi.js",
     "name": "TerminalDock",
     "src": "src/TerminalDock.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_index-DMTEenMZ.js",
+      "_index-olZlNI6m.js",
       "_windowLayers-C9W3NSUA.js",
-      "_AppConfirm-CKXtzs_7.js",
-      "_minimize-2-B1bMLmdm.js"
+      "_AppConfirm-BDKkcMnh.js",
+      "_minimize-2-BTMLr8cP.js"
     ],
     "dynamicImports": [
       "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs"
     ],
     "css": [
-      "assets/TerminalDock-CCliI6hK.css"
+      "assets/TerminalDock-C3MNkLos.css"
     ]
   },
   "src/TextEditor.tsx": {
-    "file": "assets/TextEditor-6udGCmnw.js",
+    "file": "assets/TextEditor-BSpZgya8.js",
     "name": "TextEditor",
     "src": "src/TextEditor.tsx",
     "isDynamicEntry": true,
     "imports": [
       "index.html",
-      "_FileBrowser-C6L1TNAp.js",
-      "_logDownload-C_9pi4DE.js",
-      "_index-DMTEenMZ.js",
+      "_FileBrowser-DRAxOBX1.js",
+      "_logDownload-x-MslAZg.js",
+      "_index-olZlNI6m.js",
       "_windowLayers-C9W3NSUA.js",
-      "_minus-CPm8EIup.js",
-      "_minimize-2-B1bMLmdm.js",
-      "_upload-ClhPA2wp.js",
-      "_download-DuOTCDZ5.js"
+      "_minus-C5NDsxXV.js",
+      "_minimize-2-BTMLr8cP.js",
+      "_upload-CtPO_dwa.js",
+      "_download-qjRnnZ27.js"
     ]
   }
 }

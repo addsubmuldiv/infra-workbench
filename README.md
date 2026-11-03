@@ -25,7 +25,7 @@ AI 助手直接使用工作台的机器、资源、进程、文件和预约工�
 
 ## 桌面安装（Windows）
 
-当前版本：**v0.1.1**。从 [v0.1.1 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.1) 下载 Windows x64 安装包，双击后按向导安装。安装包包含 Python 后台与前端资源，不需要另外准备 Python 或 Node.js；校验值见同一页面的 `SHA256SUMS.txt`。
+当前版本：**v0.1.2**。从 [v0.1.2 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.2) 下载 Windows x64 安装包，双击后按向导安装。安装包包含 Python 后台与前端资源，不需要另外准备 Python 或 Node.js；校验值见同一页面的 `SHA256SUMS.txt`。
 
 安装包尚未签名；已通过本机冻结后台自测及 NSIS 构建，干净 Windows 系统的安装、升级和卸载仍待验收。macOS 暂不提供本次发布附件，适配入口及验证限制见 [Mac 说明](docs/MACOS.md)。
 
@@ -43,6 +43,9 @@ Windows 安装版从 v0.1.1 起支持启动检查及手动下载、安装更新�
 
 ## 主要功能
 
+- **更多 Agent**：助手可选择本机 Codex、Claude Code、OpenCode，或继续使用现有模型接口。CLI 需另行安装并完成登录；[Codex 说明](docs/CODEX.md)、[其他 Agent 与验证限制](docs/EXTERNAL-AGENTS.md)。
+- **终端与 AI 联动**：选中报错或附加当前屏幕，预览后发送；支持对话分支，Codex 运行期间可补充要求。新增关键词高亮、可选图片显示和压缩包命令快捷填入，见[终端说明](docs/TERMINAL.md)及[图片与快捷操作](docs/TERMINAL-IMAGES-ARCHIVES.md)。
+- **远程服务与自动化**：管理 TensorBoard、Jupyter 等服务的本机 SSH 转发；让 AI 起草可检查、手动运行的流程，在设置中单独启用终端事件触发。见[远程服务](docs/PORT-FORWARDING.md)和[自动化流程](docs/AUTOMATION.md)。
 - **资源总览**：查看 GPU / NPU 的利用率、显存、温度，以及机器的 CPU 和内存；按设备数量和剩余显存寻找空闲机器。
 - **进程详情**：查看占卡进程的用户、PID、工作目录和启动命令，可按机器启用 sudo 补齐信息。勾选记住密码后，重开软件会自动复用该机器的密码；已安装的采集程序需要升级时会自动更新，无需重新配置。未记住的密码只在本次运行期间保留。
 - **资源提醒**：监控占用变化，接收 Windows 桌面通知，并在训练前检查设备和端口。

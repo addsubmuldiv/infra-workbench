@@ -60,6 +60,7 @@ module.exports=async function createFixture(snapshot,WebSocketServer,options={})
       if(url.pathname==='/api/settings/agent')return json(res,{active_id:'legacy',default_id:'legacy',profiles:[{id:'legacy',name:'Demo',model:''}],base_url:'',protocol:'auto',model:'',timeout_seconds:45,can_remember:false,has_api_key:false,api_key_saved:false,credential_error:'',last_test:null});
       if(url.pathname==='/api/workspace-state')return json(res,{revision:0,values:{}});
       if(url.pathname==='/api/settings/launch')return json(res,{mode:'browser',desktop_available:true,show_floating:false,floating_available:false});
+      if(url.pathname==='/api/automations')return json(res,{items:[],runs:[],tools:{}});
       if(url.pathname==='/api/settings/mail')return json(res,{enabled:false,host:'',port:465,security:'ssl',username:'',sender:'',recipients:[],can_remember:false,has_password:false,password_saved:false,credential_error:'',last_test:null,last_delivery:null,reservation_available:false});
       if(url.pathname.endsWith('/terminal-ticket'))return json(res,{ticket:'benchmark-ticket',workspace:false});
       if(url.pathname.endsWith('/terminal-workspace'))return json(res,{sessions:[]});

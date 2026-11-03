@@ -25,7 +25,7 @@ The model interprets goals, selects tools, and explains results. The backend val
 
 ## Desktop installation on Windows
 
-Current version: **v0.1.1**. Download the Windows x64 installer from the [v0.1.1 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.1), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`.
+Current version: **v0.1.2**. Download the Windows x64 installer from the [v0.1.2 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.2), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`.
 
 The installer is unsigned. Local frozen-runtime checks and NSIS packaging passed; clean Windows install, upgrade and uninstall acceptance is still pending. This release does not include macOS installers. See [macOS limitations](docs/MACOS.md), currently in Chinese.
 
@@ -42,6 +42,8 @@ After starting the frontend or workbench locally, append `?demo=1` to its addres
 For a frontend-only demo, run `npm ci` and `npm run demo` in `frontend`; `npm run build:demo` creates a static artifact. See [demo isolation and limitations](docs/DEMO.md).
 
 ## Features
+
+Version 0.1.2 adds local Codex, Claude Code and OpenCode engines alongside existing API profiles, explicit terminal attachments, chat branches and Codex run steering. It also adds loopback SSH service forwarding, inspectable automation workflows, keyword highlights, opt-in SIXEL/iTerm images and archive command fill without automatic execution. External CLIs must be installed and authenticated separately. Codex and Claude Code have real synthetic-tool validation; OpenCode's authenticated model path remains unverified after a timeout. See [Codex](docs/CODEX.md), [other agents](docs/EXTERNAL-AGENTS.md), [services](docs/PORT-FORWARDING.md), [automation](docs/AUTOMATION.md) and [terminal images](docs/TERMINAL-IMAGES-ARCHIVES.md).
 
 | Feature | What you can do |
 | --- | --- |

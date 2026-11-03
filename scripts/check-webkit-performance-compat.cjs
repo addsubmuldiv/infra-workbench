@@ -20,7 +20,7 @@ async function main(){
     browser=await playwright.webkit.launch({headless:true});output.version=browser.version();
     for(const legacy of [false,true]){
       const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();
-      const errors=[];page.on('pageerror',error=>errors.push(error.message));
+      const errors=[];page.on('pageerror',error=>{errors.push(error.message);console.error('WebKit page error:',error.message)});
       if(legacy)await context.addInitScript(()=>{
         Object.defineProperty(Crypto.prototype,'randomUUID',{value:undefined,configurable:true});
         Object.defineProperty(Array.prototype,'at',{value:undefined,configurable:true});

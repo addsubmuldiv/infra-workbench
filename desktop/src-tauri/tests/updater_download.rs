@@ -35,6 +35,9 @@ impl Server {
                     Err(error) if error.kind()==std::io::ErrorKind::WouldBlock=>{thread::sleep(Duration::from_millis(5));continue;},
                     Err(error)=>panic!("mock HTTP accept: {error}"),
                 };
+                // Windows may inherit the listener's nonblocking mode. The
+                // fixture reads a complete HTTP request with a bounded timeout.
+                stream.set_nonblocking(false).unwrap();
                 stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
                 let mut request=Vec::new(); let mut chunk=[0u8;1024];
                 while !request.windows(4).any(|w|w==b"\r\n\r\n") && request.len()<8192 {
