@@ -25,7 +25,7 @@ The guide highlights the actual controls, leaves them clickable, and follows ope
 - Application fetch calls are handled in memory; unrecognized endpoints and absolute URLs are denied. WebSocket, EventSource, XMLHttpRequest, WebTransport, RTCPeerConnection and sendBeacon do not connect to real services.
 - Static JavaScript, CSS, fonts and images still load from the demo host. This is an application-level isolation boundary, not a browser sandbox against arbitrary third-party code or extensions.
 
-Run `npm test` in frontend for demo transport, legacy-storage isolation and reservation-state regression checks. Browser verification should include the five-step tour, keyboard skip, booking dialogs, file editing, reset, a narrow viewport and a zero-API-request network trace.
+Run `npm test` in frontend for demo transport, legacy-storage isolation and reservation-state regression checks. Browser verification should include the nine-step tour, keyboard skip, booking dialogs, file editing, reset, a narrow viewport and a zero-API-request network trace.
 
 ## Verification in this change
 
@@ -38,3 +38,11 @@ These checks validate the simulated interface and isolation behavior. They do no
 In the repository's Settings → Pages, select GitHub Actions as the source, then manually run **Browser demo** with **publish** enabled. The workflow uploads the standalone artifact and deploys it through the `github-pages` environment; the job exposes the resulting URL. Default runs only build the artifact. This change has not enabled Pages or deployed a public site.
 
 The deployment configuration follows [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages). Repository settings and account eligibility must support Pages. The build retains relative static-asset URLs so it can run beneath the repository path, and the deployed artifact always starts in isolated demo mode.
+
+## Nine-step onboarding guide
+
+The guide now follows the first-use workflow: resource overview → host selection → idle-device filtering → process inspection → availability alerts → files and sample logs → terminal → AI assistant → setup and Skills/MCP entry points. The selected steps introduce the main day-to-day operations without visiting unsupported demo screens.
+
+Changing steps closes the previous demo dialog or floating window and restores the overview so the next control stays reachable. Save edits before continuing. The availability-alert step includes a simulated training-completion button. Guide cards measure their rendered height to stay within narrow viewports.
+
+Validation for this update: TypeScript check, 241 frontend tests, an isolated standalone production build, all nine desktop steps including live simulated controls, and all nine cards at a 390px viewport. The browser recorded no real `/api` requests during the tour. The published installer was not rebuilt as part of this guide-only update.

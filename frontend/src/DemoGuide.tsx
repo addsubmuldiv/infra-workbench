@@ -4,34 +4,43 @@ import {t, useLocale} from './i18n';
 import './demoGuide.css';
 
 const steps = [
-  ['hosts', '选择机器', 'Choose a machine', '机器列表提供了几台演示机器，点击名称可以查看资源。', 'Select a machine in the demo list to inspect its resources.'],
-  ['finder', '筛选资源', 'Filter resources', '使用筛选条件，找到符合显存、状态等要求的设备。', 'Filter devices by memory, status, and other requirements.'],
-  ['device', '查看进程', 'Inspect processes', '点击高亮按钮，查看这台设备上的模拟进程。关闭详情后可继续引导。', 'Open the highlighted button to inspect simulated processes. Close the details to continue the tour.'],
-  ['reservation', '创建预约', 'Create a reservation', '使用预约按钮体验资源预约流程。这里的预约只用于演示。', 'Use the reservation button to try the booking flow. These bookings are for demonstration only.'],
-  ['assistant', '询问 AI 助手', 'Ask the AI assistant', '打开助手，体验基于演示数据的回答，不会调用真实模型。', 'Open the assistant to try answers based on demo data, without calling a real model.'],
+  ['overview', '先看资源概览', 'Start with the resource overview', '这里汇总在线机器、设备数量和符合条件的资源。点击统计卡片，可以切换到对应的机器列表；离线或未知状态不会被当作空闲。', 'See online hosts, device counts, and matching resources. Select a summary card to inspect the relevant hosts. Offline or unknown devices are not treated as idle.'],
+  ['hosts', '选择要查看的机器', 'Choose which machines to inspect', '点击机器名称只看一台，勾选框可以同时查看多台。搜索和 GPU / NPU 分类帮助你在较多机器中定位目标。', 'Select a host name to inspect one machine, or use checkboxes to show several. Search and GPU/NPU categories help locate hosts in a larger list.'],
+  ['finder', '找到够用的空闲卡', 'Find suitable idle devices', '按 GPU / NPU、设备数量和每卡剩余显存筛选，再点击“查看机器”。默认搜索全部机器，左侧选择不会自动限制搜索范围；空闲结果也不会预留设备。', 'Filter by GPU/NPU, device count, and free memory per device, then select View machines. Searches cover all hosts unless explicitly restricted. Matching devices are not reserved.'],
+  ['device', '确认是谁在占卡', 'Inspect device processes', '点击设备，查看占用进程的用户、PID、启动命令和工作目录。不要只凭低利用率判断空闲；这里展示的是模拟进程。', 'Open a device to inspect the user, PID, command, and working directory of its processes. Low utilization alone does not mean idle. These processes are simulated.'],
+  ['reservation', '设置空闲提醒', 'Set an availability alert', '可以等待任意数量的卡，也可以指定卡号，并设置连续空闲多久后提醒。演示中可把等待设为 0 分钟，再点引导中的“模拟训练结束”观察提醒；预约不会锁卡。', 'Wait for a device count or specific IDs, with a continuous-idle delay. In the demo, use a zero-minute delay and Finish demo training in this guide to try an alert. Alerts do not lock devices.'],
+  ['files', '打开文件和训练日志', 'Open files and training logs', '浏览这台机器的目录，双击 train.log 查看示例训练日志，也可以编辑示例文本。真实使用时，这里用于管理服务器文件；演示中的修改只保存在当前页面。', 'Browse the host directory and double-click train.log to inspect the sample training log, or edit sample text. In real use this manages server files. Demo edits remain only in this page.'],
+  ['terminal', '在对应机器上打开终端', 'Open a terminal for the host', '终端与机器一一对应，方便查看环境、运行命令和处理训练任务。演示终端仅支持 help、pwd、ls 等模拟命令；真实终端可以执行有副作用的操作。', 'Open a terminal for a specific host to inspect its environment and work with training tasks. The demo accepts simulated commands such as help, pwd, and ls. Real terminals can run commands that change the server.'],
+  ['assistant', '让 AI 协助操作', 'Work with the AI assistant', '打开助手，点击“查找空闲资源”或“分析示例日志”查看预设回答。真实助手可以调用工作台工具，并复用 Skills；请展开工具记录核对目标、参数和结果。', 'Open the assistant and try Find idle resources or Analyze sample log for labelled preset answers. The real assistant can call workbench tools and reuse Skills. Inspect tool records to verify targets, arguments, and results.'],
+  ['settings', '了解真实使用前的配置', 'Review setup before real use', '设置集中管理模型接口、Skills、MCP 接入和邮件通知，桌面版还可配置启动及浮窗。演示不接收密钥或密码；退出演示后，再添加自己的机器并配置所需功能。', 'Settings brings together model connections, Skills, MCP access, and email alerts, plus desktop startup and floating-monitor preferences. The demo does not accept keys or passwords. Exit demo before adding real hosts and configuring these features.'],
 ] as const;
 const focusable = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 type Rect = {top:number; left:number; right:number; bottom:number};
 
-export function DemoGuide({onReset, onFinishTraining,onStart}: {onReset:()=>void; onFinishTraining:()=>void;onStart?:()=>void}) {
+export function DemoGuide({onReset, onFinishTraining,onStart,onStepChange}: {onReset:()=>void; onFinishTraining:()=>void;onStart?:()=>void;onStepChange?:(target:string)=>void}) {
   useLocale();
   const [step, setStep] = useState<number|null>(0);
   const [rect, setRect] = useState<Rect|null>(null);
+  const [cardHeight,setCardHeight]=useState(280);
   const card = useRef<HTMLDivElement>(null);
   const target = useRef<HTMLElement|null>(null);
   const replay = useRef<HTMLButtonElement>(null);
   const active = step !== null;
   useEffect(()=>{onStart?.()},[]);
+  useEffect(()=>{if(step!==null)onStepChange?.(steps[step][0])},[step]);
   useEffect(() => {
     if (step === null) {setRect(null); return;}
     let frame = 0;
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
+        const height=card.current?.getBoundingClientRect().height;
+        if(height)setCardHeight(previous=>Math.abs(previous-height)<1?previous:height);
         // Keep a detail/booking dialog operable when the highlighted control opens it.
         const dialogs = [...document.querySelectorAll<HTMLElement>('[role="dialog"], dialog[open]')].filter(el => !el.classList.contains('demo-tour-card') && el.getClientRects().length);
-        const assistant=step===4?document.querySelector<HTMLElement>('#infra-assistant-panel:not([hidden])'):null;
-        const el = dialogs[dialogs.length-1] ?? assistant ?? [...document.querySelectorAll<HTMLElement>(`[data-tour="${steps[step][0]}"]`)].find(el=>el.getClientRects().length) ?? null;
+        const assistant=steps[step][0]==='assistant'?document.querySelector<HTMLElement>('#infra-assistant-panel:not([hidden])'):null;
+        const panel=document.querySelector<HTMLElement>(`[data-tour-panel="${steps[step][0]}"]`);
+        const el = dialogs[dialogs.length-1] ?? assistant ?? panel ?? [...document.querySelectorAll<HTMLElement>(`[data-tour="${steps[step][0]}"]`)].find(el=>el.getClientRects().length) ?? null;
         target.current = el;
         const r = el?.getBoundingClientRect();
         const next = r && r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
@@ -46,9 +55,10 @@ export function DemoGuide({onReset, onFinishTraining,onStart}: {onReset:()=>void
     window.addEventListener('resize', measure);
     document.addEventListener('scroll', measure, true);
     const observer = new MutationObserver(measure);
-    observer.observe(document.body, {childList:true, subtree:true,attributes:true,attributeFilter:['hidden','open']});
+    observer.observe(document.body, {childList:true, subtree:true,attributes:true,attributeFilter:['hidden','open','data-tour-panel']});
     const resize = new ResizeObserver(measure);
     resize.observe(document.body);
+    if(card.current)resize.observe(card.current);
     return () => {cancelAnimationFrame(frame); observer.disconnect(); resize.disconnect(); window.removeEventListener('resize',measure); document.removeEventListener('scroll',measure,true);};
   }, [step]);
   useEffect(() => {
@@ -76,7 +86,9 @@ export function DemoGuide({onReset, onFinishTraining,onStart}: {onReset:()=>void
   const cardWidth=Math.min(360,innerWidth-24);
   const side=rect&&(rect.right+cardWidth+24<innerWidth||rect.left>cardWidth+24);
   const cardLeft=rect ? rect.right+cardWidth+24<innerWidth ? rect.right+14 : rect.left>cardWidth+24 ? rect.left-cardWidth-14 : Math.max(12,Math.min(rect.left,innerWidth-cardWidth-12)) : Math.max(12,(innerWidth-cardWidth)/2);
-  const cardTop=rect ? side ? Math.min(Math.max(12,rect.top),innerHeight-320) : rect.bottom+250<innerHeight ? rect.bottom+14 : Math.max(12,rect.top-250) : 90;
+  const maxCardTop=Math.max(12,innerHeight-cardHeight-12);
+  const preferredTop=rect ? side ? rect.top : rect.bottom+cardHeight+24<innerHeight ? rect.bottom+14 : rect.top-cardHeight-14 : 90;
+  const cardTop=Math.max(12,Math.min(preferredTop,maxCardTop));
   return <>
     <aside className="demo-bar" aria-label={t('演示模式','Demo mode')}>
       <span><strong>{t('演示模式','Demo mode')}</strong> · {t('所有数据均为模拟，不连接 SSH 或真实模型。','All data is simulated. No SSH or real model connections.')}</span>
@@ -90,10 +102,12 @@ export function DemoGuide({onReset, onFinishTraining,onStart}: {onReset:()=>void
         <div className="demo-shade" style={{top:rect.bottom,left:0,right:0,bottom:0}} />
         <div className="demo-highlight" style={{top:rect.top,left:rect.left,width:rect.right-rect.left,height:rect.bottom-rect.top}} />
       </> : <div className="demo-shade" style={{inset:0}} />}
-      <div className="demo-tour-card" ref={card} tabIndex={-1} role="dialog" aria-labelledby="demo-tour-title" aria-describedby="demo-tour-description" style={{top:Math.min(cardTop,Math.max(8,innerHeight-320)),left:cardLeft}}>
+      <div className="demo-tour-card" ref={card} tabIndex={-1} role="dialog" aria-labelledby="demo-tour-title" aria-describedby="demo-tour-description" style={{top:cardTop,left:cardLeft}}>
         <small>{t('新手引导','Getting started')} · {step+1} / {steps.length}</small>
         <h2 id="demo-tour-title">{t(steps[step][1],steps[step][2])}</h2>
         <p id="demo-tour-description">{t(steps[step][3],steps[step][4])}</p>
+        {steps[step][0]==='reservation'&&<button className="demo-tour-next" onClick={onFinishTraining}>{t('模拟训练结束','Finish demo training')}</button>}
+        <p className="demo-tour-hint">{t('可先操作高亮区域，再继续。切换步骤会收起当前演示窗口，请先保存编辑内容。','Try the highlighted controls before continuing. Moving between steps closes demo windows; save edits first.')}</p>
         {!rect && <p role="status">{t('当前控件暂不可见，你可以继续下一步。','This control is currently unavailable. You can continue to the next step.')}</p>}
         <div className="demo-tour-actions"><button onClick={stop}>{t('跳过','Skip')}</button><span /><button disabled={step===0} onClick={()=>setStep(step-1)}>{t('上一步','Back')}</button><button className="demo-tour-next" onClick={()=>step===steps.length-1 ? stop() : setStep(step+1)}>{step===steps.length-1 ? t('完成','Done') : t('下一步','Next')}</button></div>
       </div>
