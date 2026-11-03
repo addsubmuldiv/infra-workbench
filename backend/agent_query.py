@@ -73,6 +73,8 @@ def query_hosts(hosts, tool, options=None, now=None):
     ordered=sorted(hosts,key=lambda h:(h['target'].casefold(),h['id']))
     name=(options.get('name') or '').casefold()
     ordered=[h for h in ordered if name in h['target'].casefold()]
+    if tool=='find_hosts':
+        return find_hosts(ordered,options,now)
     if tool=='get_host' or (tool=='get_resources' and options.get('host_id')):
         host=resolve_host(hosts,options['host_id'])
         result=compact_resource(host,now,max_age) if tool=='get_host' else resource(host,now,max_age)
@@ -132,3 +134,48 @@ def query_hosts(hosts, tool, options=None, now=None):
     error=AgentError('INCOMPLETE_RESOURCE_QUERY','部分机器资源无法确认；有效结果仍保留。',
                      dict(tool='search_hosts',arguments=dict(options,refresh=True),message='保留原始条件更新采样；查看 excluded 中未知状态或采集权限原因。')) if uncertain else None
     return response(dict(items=items,excluded=excluded),error,uncertain)
+
+
+def physical_card_count(devices):
+    if all(d.get('card_id') is not None for d in devices):
+        return len({str(d['card_id']) for d in devices})
+    if all(d['kind']=='GPU' and not str(d['id']).startswith(('chip:','phy:')) for d in devices):
+        return len(devices)
+    return None
+
+
+def find_hosts(hosts,options,now):
+    items=[];uncertain=[]
+    model=(options.get('model') or '').casefold()
+    ip=(options.get('ip') or '').casefold()
+    hardware=any(k in options for k in ('kind','model','card_count'))
+    for host in hosts:
+        hostname=host.get('hostname');reasons=[]
+        if ip:
+            if hostname is None:reasons.append('ADDRESS_UNKNOWN')
+            elif ip not in hostname.casefold():continue
+        devices=(host.get('snapshot') or {}).get('devices') or []
+        matching=[d for d in devices if (not options.get('kind') or d['kind']==options['kind']) and model in d.get('name','').casefold()]
+        if hardware and devices and not matching:continue
+        if hardware and not devices:reasons.append('DEVICES_UNKNOWN')
+        groups=[]
+        for kind,name in sorted({(d['kind'],d.get('name','')) for d in matching}):
+            ds=[d for d in matching if d['kind']==kind and d.get('name','')==name]
+            # NPU physical_id may identify a die, so only card_id proves a card.
+            cards=physical_card_count(ds)
+            groups.append(dict(kind=kind,name=name,device_count=len(ds),card_count=cards,count_unit=unit(ds)))
+        if 'card_count' in options and matching:
+            # Count matching cards per kind, never add GPU and NPU counts together.
+            counts=[]
+            for kind in {d['kind'] for d in matching}:
+                ds=[d for d in matching if d['kind']==kind]
+                cards=physical_card_count(ds)
+                counts.append(cards)
+            if options['card_count'] not in counts:
+                if None in counts:reasons.append('CARD_COUNT_UNKNOWN')
+                else:continue
+        item=summary(host,now)
+        item.update(hostname=hostname,device_groups=groups,reasons=reasons)
+        (uncertain if reasons else items).append(item)
+    return response(dict(items=items,uncertain=uncertain),partial=bool(uncertain),
+        warnings=['部分机器信息不足，请查看 uncertain；旧采样只供定位，操作前重新核对。'] if uncertain else [])

@@ -6,9 +6,9 @@ from jsonschema import Draft202012Validator
 from backend.agent_tools import TOOLS,INSTRUCTIONS,validate_call
 from backend.agent_errors import AgentError
 
-EXPECTED={'list_hosts','search_hosts','get_host','get_resources','get_ssh_info','get_ssh_password'}
+EXPECTED={'list_hosts','find_hosts','search_hosts','get_host','get_resources','get_ssh_info','get_ssh_password'}
 
-def test_six_tools_are_discoverable_with_complete_schemas_and_valid_examples():
+def test_query_tools_are_discoverable_with_complete_schemas_and_valid_examples():
     assert set(TOOLS)==EXPECTED
     for name,tool in TOOLS.items():
         assert tool['name']==name

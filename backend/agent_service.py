@@ -36,6 +36,18 @@ class AgentService:
 
     async def call(self,name,arguments,budget=25):
         options=validate_call(name,arguments)
+        if name=='find_hosts':
+            inventory=[h for h in self.inventory() if (options.get('name') or '').casefold() in h['target'].casefold()]
+            semaphore=asyncio.Semaphore(8)
+            async def address(host):
+                async with semaphore:
+                    try:
+                        cfg=await asyncio.wait_for(self.ssh.effective(host),timeout=5)
+                        host['hostname']=cfg.get('hostname') or None
+                    except Exception:
+                        host['hostname']=host['target'] if host.get('manual') else None
+            await asyncio.gather(*(address(h) for h in inventory))
+            return query_hosts(inventory,name,options,time.time())
         if name in ('get_ssh_info','get_ssh_password'):
             host=resolve_host(self.hosts,options['host_id'])
             if name=='get_ssh_password':return response(await self.passwords.get(host))

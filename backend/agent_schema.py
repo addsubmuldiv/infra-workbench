@@ -37,6 +37,10 @@ SUMMARY['properties'].update(system=RESOURCE['properties']['system'],count_unit=
         unknown_devices=scalar('integer'),alarm_devices=scalar('integer')))))
 HOST_DETAIL=copy.deepcopy(SUMMARY)
 HOST_DETAIL['properties'].update(manual=B,user=scalar('string',nullable=True),port=scalar('integer',nullable=True))
+FOUND_HOST=copy.deepcopy(HOST)
+FOUND_HOST['properties'].update(hostname=scalar('string',nullable=True),reasons=array(S),
+    device_groups=array(obj(dict(kind=S,name=S,device_count=scalar('integer'),
+        card_count=scalar('integer','按 card_id 去重；无法确定物理卡数时 null。',nullable=True),count_unit=S))))
 
 
 def envelope(data_schema):

@@ -8,7 +8,8 @@ from . import agent_schema as s
 from .agent_errors import AgentError
 
 INSTRUCTIONS='''你正在使用 Infra Workbench，查询用户电脑中已添加的服务器和 GPU/NPU 资源。
-本服务提供六个工具：list_hosts、search_hosts、get_host、get_resources、get_ssh_info、get_ssh_password。
+机器查询工具：list_hosts、find_hosts、search_hosts、get_host、get_resources、get_ssh_info、get_ssh_password。
+用户用 IP、卡型号或卡数描述目标（例如“kill 950DT 那台机器的进程”）时先读取 find-hosts 技能，再 find_hosts；它不要求空闲或新鲜采样。多个候选时继续缩小范围或请用户确认，不自动选择第一台。uncertain 是信息不足的候选，不能当作已排除；旧采样只用于定位，操作前重新核对机器和进程。
 工作流程：不清楚有哪些机器时先 list_hosts；需要空闲训练设备时用 search_hosts，例如
 {"kind":"NPU","count":6,"min_free_gib":40,"idle":true,"refresh":true}。
 使用结果里的完整 host_id；get_host 读机器概况，get_resources(host_id) 读单机详细设备和占卡进程。
@@ -60,6 +61,16 @@ def definition(name,title,description,properties,required,output,examples,recove
 
 
 TOOLS={tool['name']:tool for tool in [
+    definition('find_hosts','按 IP、型号和卡数查找机器',
+        '使用前读取 find-hosts 技能（read_skill(name="find-hosts") 或 /skills/find-hosts/SKILL.md），了解自然语言条件拆解、IP尾号、多候选和连续筛选。按机器别名、SSH 目标地址/IP 子串、GPU/NPU 型号子串和物理卡数定位机器；不要求空闲，不检查显存，也不因离线或旧采样排除已知硬件。条件同时成立，card_count 是匹配型号/种类的物理卡数且精确匹配，不是最少数量。返回稳定 host_id、hostname、型号分组、设备数、物理卡数及采样时间；多 die 按 card_id 去重，无法确定物理卡数时返回 null。地址来自本机 SSH 配置，不做 DNS 或网络探测。items 为已匹配，uncertain 为信息不足的候选；多个候选必须继续缩小范围或询问用户，不能自动选择第一项。旧硬件信息可能已变化，执行进程操作前用真实 ID 重新查看资源与进程。',
+        dict(name=NAME,ip=field('string','SSH 目标地址/IP 的子串，不匹配跳板地址；不做 DNS 查询。'),
+             kind=field('string','设备种类。',enum=['GPU','NPU']),
+             model=field('string','设备型号子串，不区分大小写，例如 950DT、910B、H200。'),
+             card_count=field('integer','匹配型号和种类的物理卡数，精确匹配；多 die 不重复计数。',minimum=1)),
+        [],s.obj(dict(items=s.array(s.FOUND_HOST),uncertain=s.array(s.FOUND_HOST))),
+        [dict(arguments=dict(model='950DT'),purpose='按型号定位正在使用的机器'),
+         dict(arguments=dict(ip='177',model='950DT',card_count=8),purpose='组合地址、型号和物理卡数缩小范围')],
+        [dict(when='多个候选或 uncertain 非空',action='继续补充 IP、别名、型号或卡数；需要更新硬件时对候选调用 get_resources(refresh=true)，不要猜目标。')]),
     definition('list_hosts','列出已添加机器',
         '发现 Workbench 中已添加的全部机器，包含离线和等待首次采样项；可用 name 按别名子串过滤。返回稳定 host_id、别名、状态、设备种类/数量、采样时间和连接摘要，不包含密码，也不主动连接服务器。结果按别名/ID 排序，不把第一项作为推荐。下一步按资源需求调用 search_hosts，或用返回 ID 调用 get_host/get_ssh_info。同名机器必须用 ID，不猜目标。',
         dict(name=NAME),[],s.obj(dict(items=s.array(s.HOST))),

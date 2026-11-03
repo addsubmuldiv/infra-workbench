@@ -16,6 +16,14 @@
 
 `mcp_operations.py` 登记原有业务操作，并从 FastAPI 模型生成参数 schema。调用原有应用接口，继续执行其参数校验、并发控制、版本冲突、持久化和通知逻辑。`command_tools.py` 另提供用户授权的服务器 Shell 与进程管理，使用相同的 MCP 目录、机器范围检查和现有 SSH；不开放任意 HTTP 转发或本机 Shell。
 
+## 2026-11-03：按机器特征定位
+
+共享工具 `find_hosts` 用于按 `name`（别名）、`ip`（SSH 目标地址子串）、`kind`、`model`（型号子串）和 `card_count`（精确物理卡数）组合找机器，例如 `{"model":"950DT"}` 或 `{"ip":"177","model":"950DT","card_count":8}`。它不要求设备空闲、显存充足或采样新鲜，适合先定位待查看或停止进程的机器；寻找可用训练资源仍用 `search_hosts`。
+
+结果分为 `items`（已匹配）和 `uncertain`（地址、设备或物理卡数信息不足），包含真实机器 ID、SSH 目标地址、型号分组、设备数、物理卡数及采样时间。NPU 物理卡按 `card_id` 去重，不把 die 或 `physical_id` 当作物理卡；无法证明卡数时返回 null。条件中的卡数按同种类匹配设备统计，不跨 GPU/NPU 相加。地址只从本机 SSH 配置读取，不做 DNS 或服务器探测；受限会话先限制机器范围再解析。多个候选必须继续筛选或确认，旧硬件采样仅供定位，进程操作前重新核对。
+
+内置 `find-hosts` 技能覆盖 IP/尾号、别名、中英文型号、中文卡数、连续补充条件、多个候选和未知信息。助手规则、工具说明及进程/资源技能共同指向该技能。`scripts/validate-host-lookup-assistant.py` 使用当前配置的模型，在隔离数据库和合成忙碌设备上验证不同提示词及多轮缩小范围，禁止实际 SSH 操作；验证报告写入 `work/host-lookup-validation/report.json`。
+
 ## 2026-11-03：服务器命令与进程管理
 
 新增五个共享工具：execute_server_command、get_command_job、cancel_command_job、inspect_server_process、signal_server_process。命令支持指定绝对 cwd、返回退出码和分别读取 stdout/stderr。短任务等待约一秒，长任务返回 job_id，远端 Python supervisor 继续管理；关闭聊天或重启本地后台不会自动停止任务。
