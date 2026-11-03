@@ -2,7 +2,7 @@
 
 [简体中文](FLOATING-MONITOR.md) | [English](FLOATING-MONITOR.en.md)
 
-Keep GPU / NPU status visible while coding or reading logs without leaving the full workbench open. The monitor reuses backend samples and does not perform additional SSH collection. It works alongside either the browser or desktop interface and currently requires Windows. UI labels in the screenshots are Chinese.
+Keep GPU / NPU status visible while coding or reading logs without leaving the full workbench open. The monitor reuses backend samples and does not perform additional SSH collection. It works alongside either the browser or desktop interface and currently requires Windows. Screenshots below show the English interface with fictional machine names and sample data.
 
 ## Show, hide, and exit
 
@@ -12,7 +12,7 @@ The **×** button hides only the monitor. Collection, reservations, and notifica
 
 ## Overview, details, and compact view
 
-![Multi-machine overview](images/floating-overview.jpg)
+![Multi-machine overview](images/floating-overview-en.jpg)
 
 *All machines are fictional. The OS title bar is part of a temporary screenshot host; the production monitor is borderless.*
 
@@ -20,13 +20,13 @@ The overview summarizes followed machines and idle devices. Each machine card sh
 
 Click the machine name, card background, or **详情 ›** for details. The device grid shows status and used / total memory. Use the machine selector to switch machines and the back arrow to return. Hover over a device for memory, utilization, and collected process user, PID, working directory, and executable. Unavailable values remain unknown.
 
-![Single-machine details](images/floating-detail.jpg)
+![Single-machine details](images/floating-detail-en.jpg)
 
-*The sample omits memory values, so the cells say “显存未知” (memory unknown). Actual values depend on collection results.*
+*Memory values are sample data. Actual values depend on collection results.*
 
 Click **−** to collapse to a narrow list of machine names and idle counts; click **展开** to restore the overview. Scrolling, machine selection, and context menus remain available.
 
-![Compact machine list](images/floating-compact.jpg)
+![Compact machine list](images/floating-compact-en.jpg)
 
 ## Selection and appearance
 
@@ -39,7 +39,7 @@ Click **−** to collapse to a narrow list of machine names and idle counts; cli
 
 Right-click a machine card, name, or device and select **打开终端** (open terminal) or **打开文件** (open files). Overview, detail, and compact views all support this. Separate desktop tool windows reuse the machine's SSH configuration and the current backend.
 
-![Machine context menu](images/floating-menu.jpg)
+![Machine context menu](images/floating-menu-en.jpg)
 
 A directory link in the terminal can open a separate file window. **在当前目录打开终端** in the file toolbar opens another terminal in that directory while leaving the file window open. Use **工作台 ↗** or **打开工作台** to open the full workbench.
 

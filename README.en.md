@@ -11,9 +11,9 @@
 
 Built for engineers training, fine-tuning, deploying, and debugging models across multiple machines: find enough free accelerators, identify the processes using them, open the right directory and terminal, get notified when resources become available, and compare training metrics across experiments. Windows is the primary platform; macOS support is available but has not been verified on physical Mac hardware.
 
-![Resource overview with demonstration data](docs/images/overview.jpg)
+![Resource overview with demonstration data](docs/images/overview-en.png)
 
-*Screenshots use fictional machines and sample data. See the [illustrated user guide](docs/GUIDE.en.md). The interface supports Simplified Chinese and English. Switch under Settings → Interface language; existing screenshots use Chinese labels.*
+*Screenshots use fictional machines and sample data. See the [illustrated user guide](docs/GUIDE.en.md). The interface supports Simplified Chinese and English. Switch under Settings → Interface language. The screenshots below show the English interface.*
 
 ## What makes it AI-native
 
@@ -56,7 +56,7 @@ If installation fails, the window stays open with the error. Fix the cause and r
 
 ## Desktop resource monitor
 
-![Desktop resource monitor with sample machines](docs/images/floating-overview.jpg)
+![Desktop resource monitor with sample machines](docs/images/floating-overview-en.jpg)
 
 Toggle it from startup settings or the tray menu. Click a machine for details, hover over a device for process information, or right-click to open a standalone terminal or file window. Monitoring continues after the main workbench is closed.
 

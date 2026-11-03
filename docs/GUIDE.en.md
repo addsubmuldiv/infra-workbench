@@ -4,7 +4,7 @@
 
 Infra Workbench is an AI-native server workbench for AI engineers. It runs locally on Windows and connects to Linux servers over SSH, bringing resource discovery, process inspection, availability alerts, terminals, files, and training comparison together. The assistant uses workbench tools and can turn confirmed workflows into reusable skills. No persistent remote agent is required.
 
-The UI supports Simplified Chinese and English; screenshots use Chinese labels, which are included below for reference. Screenshots contain fictional machines and sample data. macOS users should read the [platform notes in Chinese](MACOS.md); native Mac behavior still requires hardware verification.
+The UI supports Simplified Chinese and English. Screenshots below show the English interface; Chinese button names are included in the instructions for reference. Screenshots contain fictional machines and sample data. macOS users should read the [platform notes in Chinese](MACOS.md); native Mac behavior still requires hardware verification.
 
 ## Start and exit
 
@@ -22,7 +22,7 @@ Open **Settings → Interface language (设置 → 界面语言)** and choose **
 
 ## Desktop resource monitor
 
-![Resource monitor overview](images/floating-overview.jpg)
+![Resource monitor overview](images/floating-overview-en.jpg)
 
 Toggle **显示浮窗** in the Windows tray menu or use startup settings. The monitor works with either main interface. The OS title bar in these screenshots belongs to a preview host; the production monitor is borderless.
 
@@ -49,7 +49,7 @@ To remove a machine, hover over its sidebar row and click the trash icon, or use
 
 ## Inspect resources and processes
 
-![Resource overview and filters](images/overview.jpg)
+![Resource overview and filters](images/overview-en.png)
 
 The top summary covers all added machines; sidebar selection controls the details below. Machine cards show connectivity, CPU usage and logical cores, RAM, and accelerator memory, utilization, temperature, and processes. CPU and RAM reflect the remote system view; container limits may differ.
 
@@ -59,7 +59,7 @@ The top **全部机器** control selects all machines and clears search/type fil
 
 Click a device or process to inspect user, PID, program, working directory, executable, and command. Missing permissions or unavailable fields are shown explicitly.
 
-![Process details](images/process-details.jpg)
+![Process details](images/process-details-en.png)
 
 ### Optional sudo collection
 
@@ -67,7 +67,7 @@ Click **sudo** beside a machine heading to enable elevated process-detail collec
 
 Remembering a password is optional; otherwise it lasts only for the current backend run. Saved passwords can be removed. This setting does not turn the interactive terminal or file manager into root.
 
-![Per-machine sudo settings](images/sudo-settings.jpg)
+![Per-machine sudo settings](images/sudo-settings-en.png)
 
 ## Readiness checks and monitoring
 
@@ -95,7 +95,7 @@ These are availability notifications: they do not lock devices or launch jobs. A
 
 ## Windows and email notifications
 
-![Notification center](images/notification-center.jpg)
+![Notification center](images/notification-center-en.png)
 
 The bell opens **通知中心**, showing seven days of events and monitoring rules. **全部已读** clears unread resource alerts for the current browser. SSH connection changes remain in history but do not count toward unread resource alerts or repeatedly trigger system notifications.
 
