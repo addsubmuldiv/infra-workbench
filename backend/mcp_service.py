@@ -8,6 +8,7 @@ from .agent_schema import envelope
 from .agent_tools import TOOLS
 from .chat_tools import REGISTRY
 from . import mcp_skills
+from .command_tools import CommandTools, catalog as command_catalog
 
 PROBE_NAMES = {'read_file': 'read_server_file', 'read_directory': 'read_server_directory'}
 PROBES = {PROBE_NAMES.get(n, n): n for n in REGISTRY}
@@ -40,6 +41,7 @@ class WorkbenchMCPService:
         if self.operations is not None:
             catalog.update(self.operations.catalog())
             catalog.update(mcp_skills.CATALOG)
+            catalog.update(command_catalog())
         if self.skills is not None:
             catalog.update(mcp_skills.skill_catalog())
         if self.embedded:
@@ -82,6 +84,9 @@ class WorkbenchMCPService:
                 raise AgentError(code, str(exc)) from None
         if self.operations is not None and name in self.operations.catalog():
             return await self.operations.call(name, arguments, self.allowed)
+        if self.operations is not None and name in command_catalog():
+            commands = CommandTools(self.probes, getattr(self.operations.app.state, 'sudo', None))
+            return await commands.call(name, arguments, self.allowed, self.state)
         if self.allowed is not None:
             # Extra legacy tools (e.g. get_host/search_hosts) must use a scoped
             # inventory and cannot refresh/query the whole fleet first.

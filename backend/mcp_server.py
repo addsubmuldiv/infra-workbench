@@ -43,7 +43,7 @@ def create_mcp(service):
                   instructions=('使用 tools/list 发现能力和参数；业务步骤参考内置 skills。写入只按用户明确要求执行。'
                                 '下载返回 handoff_required 仅表示传输交接，不能声称已下载。'
                                 '旧 get_ssh_* 工具供外部客户端使用；内置 Agent 复用软件 SSH。\n'
-                                +INSTRUCTIONS.replace('本服务提供六个工具：','原有六个兼容工具：').replace('本服务不执行、不转发 agent 的命令或文件。','本服务不转发任意命令；服务器文件和固定检查可使用新增 MCP 工具。')),
+                                +INSTRUCTIONS.replace('本服务提供六个工具：','原有六个兼容工具：').replace('本服务不执行、不转发 agent 的命令或文件。','用户授权的服务器命令、进程管理及文件操作可使用新增 MCP 工具；命令支持后台任务、超时、取消和状态查询。')),
                   on_list_tools=list_tools,on_call_tool=call_tool,
                   get_tool_input_schema=lambda name:catalog()[name]['inputSchema'] if name in catalog() else None)
     http_app=server.streamable_http_app(streamable_http_path='/mcp',json_response=True,stateless_http=True,

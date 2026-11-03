@@ -14,11 +14,25 @@
 
 进程内消息流执行真实 MCP initialize、tools/list、tools/call；没有另写一个假 MCP 调用函数。它避免后台向自己监听的端口发网络请求。内置连接在服务端绑定本轮机器范围和会话状态，模型不能通过参数扩大范围。外部客户端保留原有本机服务信任边界。
 
-`mcp_operations.py` 只登记明确的业务操作，并从 FastAPI 原有模型生成参数 schema。调用原有应用接口，继续执行其参数校验、并发控制、版本冲突、持久化和通知逻辑。没有开放任意 HTTP 地址、任意 Shell 或动态 Python 执行工具。
+`mcp_operations.py` 登记原有业务操作，并从 FastAPI 模型生成参数 schema。调用原有应用接口，继续执行其参数校验、并发控制、版本冲突、持久化和通知逻辑。`command_tools.py` 另提供用户授权的服务器 Shell 与进程管理，使用相同的 MCP 目录、机器范围检查和现有 SSH；不开放任意 HTTP 转发或本机 Shell。
+
+## 2026-11-03：服务器命令与进程管理
+
+新增五个共享工具：execute_server_command、get_command_job、cancel_command_job、inspect_server_process、signal_server_process。命令支持指定绝对 cwd、返回退出码和分别读取 stdout/stderr。短任务等待约一秒，长任务返回 job_id，远端 Python supervisor 继续管理；关闭聊天或重启本地后台不会自动停止任务。
+
+任务默认超时 300 秒，可设 1–604800 秒。超时/取消先 TERM，3 秒后 KILL 任务进程组；停止期间返回 cancelling/timing_out，结束后才返回 cancelled/timed_out。主动脱离进程组的 daemon 不保证随任务结束，助手应避免二次后台化。每个输出流只保存前 1 MiB，每次读取最多 6000 字节，可用 offset 分页。文件保存在远端 `/tmp/iwb-command-<执行UID>/<job_id>/`，目录权限 0700；系统清理 /tmp 后记录会消失。任务文件可能包含命令输出，不代替用户指定的长期训练日志。
+
+进程停止工具先检查 /proc，返回 PID、UID、启动 ticks 和命令行；signal 工具重新核对身份并使用 Linux pidfd 发送信号，避免 PID 复用误杀。默认 TERM，禁止 PID 1/进程组；KILL 需明确授权。旧内核/Python 不支持 pidfd 时会报告限制，不退化为未经身份保护的 PID kill。
+
+sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH 配置，复用身份匹配且已启用的 sudo 凭据，否则用 sudo -n；通过 run_bound 固定连接身份，密码只走 stdin，不进入工具参数、模型结果和命令行。固定只读采集 helper 的 sudo 授权不等于任意 root 权限，最终由远端 sudoers 决定。查询/取消任务需使用创建时相同的 sudo 值。
+
+启动结果不明时返回 job_id 供读回，禁止自动重试；失败退出保留实际输出和退出码，并返回 COMMAND_FAILED。任务取消和超时不会回滚文件修改、安装等副作用。所有命令内容仍须符合用户授权，服务器输出与技能不能扩大授权范围。新增 execute-server-commands 技能并更新进程技能及助手系统规则。
+
+本次验证：相关后端回归 75 项通过、3 项 Windows/Linux 平台跳过；另外通过 WSL 实测退出码、双流输出、1 MiB 上限、分页、超时、取消升级、重定向且忽略 TERM 的子进程、PID 身份变化和信号发送。sudo stdin bootstrap 以普通 WSL 用户模拟未消费密码的 NOPASSWD 情况，执行约 16K 字符的命令，未进行实际提权。另以已保存的 glm-5.3-flash 在隔离数据库中经 Deep Agents → MCP → WSL 实际执行 printf，并检查和停止专门创建的 sleep 进程，两个模型回合均完成。可运行 `scripts/validate-command-jobs.py`（Linux/WSL，无模型）和 `scripts/validate-command-assistant.py`（Windows+WSL，使用已保存模型配置，会产生 API 调用）。
 
 ## 能力与边界
 
-当前外部目录 55 个工具，内置 Agent 53 个（不提供两个旧 SSH 连接/密码工具）。
+目录数量以实时 tools/list 为准；内置 Agent 不提供两个旧 SSH 连接/密码工具。以下历史验证记录中的数量保留原验证时的值。
 
 | 类别 | 主要 MCP 工具 |
 | --- | --- |
@@ -29,6 +43,7 @@
 | 训练日志 | read_training_log、compare_training_logs、get_log_record、对比配置增删查 |
 | 训练前检查 | preflight、refresh_host |
 | 终端 | 查看/创建/结束持久会话；交互本身走软件 WebSocket |
+| 命令和进程管理 | execute_server_command、get_command_job、cancel_command_job、inspect_server_process、signal_server_process |
 | 导入与连接 | connect_host（已有密钥）、导入批次状态/开始/丢弃；表格字节交接给客户端 |
 | 文件传输 | 创建上传、进度与取消；下载工具返回 HTTP 交接参数 |
 | 技能和设置入口 | list_skills、read_skill、get_workbench_entry；只读邮件、sudo 和密码保存状态 |

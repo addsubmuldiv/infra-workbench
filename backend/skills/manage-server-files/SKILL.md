@@ -11,4 +11,4 @@ description: 用户明确要求保存、复制、移动服务器文件，创建�
 4. 操作后浏览目录或读回文件核实。超时、取消和未知结果应先复核，不能自动重试可能已完成的写入。
 5. 上传先 create_upload，随后由客户端把真实字节 PUT 到返回任务的上传地址。只创建任务不代表文件上传成功；用 get_upload 看最终状态，取消用 cancel_upload。
 6. 下载用 download_server_file/download_server_folder 返回传输交接，由客户端接收文件，不将二进制内容放入模型。handoff_required 不能描述为下载完成。
-7. 本能力不提供任意 Shell、删除文件、安装或提权。凭据路径不读取、不改写。
+7. 本文件工具不提供 Shell 或安装功能；用户明确要求的命令操作参考 execute-server-commands 技能。凭据路径不读取、不改写。
