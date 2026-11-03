@@ -58,6 +58,10 @@ def register_skill_routes(app, service, tools_callback: Callable):
     async def update(draft_id:str,body:EditBody):
         return invoke(service.update_draft,draft_id,body.revision,body.files)
 
+    @app.delete('/api/skills/drafts/{draft_id}')
+    async def delete_draft(draft_id:str,expected_revision:int=Query(ge=1)):
+        return invoke(service.delete_draft,draft_id,expected_revision)
+
     @app.post('/api/skills/drafts/{draft_id}/validate')
     async def validate(draft_id:str,body:RevisionBody):
         return invoke(service.validate_draft,draft_id,body.revision,tools_callback())

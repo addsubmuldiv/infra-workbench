@@ -55,3 +55,15 @@ test('persisted chat-created draft can be resumed in management page',async t=>{
   const h=harness(t);await h.loaded();const button=h.find(n=>n.type==='button'&&n.props.children.flat().some(child=>child?.type==='strong'&&child.props.children.includes('聊天创建的草稿')));assert.ok(button);
   await button.props.onClick();await h.settle();assert.ok(h.calls.some(call=>call.path==='/drafts/saved-draft'));assert.equal(h.find(n=>n.props['aria-label']==='技能文件内容').props.value.includes('步骤'),true);
 });
+
+test('delete installed skill uses current version and clears detail',async t=>{
+  const h=harness(t);await h.loaded();await h.open();await h.click('删除技能');
+  assert.ok(h.calls.some(call=>call.method==='DELETE'&&call.path==='/demo?expected_version=2'));
+  assert.equal(h.find(n=>n.type==='h3'&&n.props.children.includes('demo')),undefined);
+});
+test('delete saved draft uses revision and closes editor',async t=>{
+  const h=harness(t);await h.loaded();const button=h.find(n=>n.type==='button'&&n.props.children.flat().some(child=>child?.type==='strong'&&child.props.children.includes('聊天创建的草稿')));
+  await button.props.onClick();await h.settle();await h.click('删除草稿');
+  assert.ok(h.calls.some(call=>call.method==='DELETE'&&call.path==='/drafts/saved-draft?expected_revision=4'));
+  assert.equal(h.find(n=>n.props['aria-label']==='技能文件内容'),undefined);
+});

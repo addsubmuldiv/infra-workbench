@@ -191,3 +191,31 @@ def test_builtin_cache_tracks_added_and_modified_files(skills):
     assert skills.read('my-check')['created']==first['created']
     path.write_text(files(body='Changed instructions')['SKILL.md'],encoding='utf-8')
     assert skills.read('my-check')['hash']!=first['hash']
+
+def test_delete_draft_revision_and_installed_skill_preserved(skills):
+    install(skills)
+    draft=skills.create_draft(files(body='修改'), 'my-check', 1)
+    with pytest.raises(SkillError) as exc:
+        skills.delete_draft(draft['id'], 2)
+    assert exc.value.status_code==409
+    assert skills.read_draft(draft['id'])['revision']==1
+    skills.delete_draft(draft['id'], 1)
+    assert skills.list_drafts()==[]
+    assert skills.read('my-check')['version']==1
+    with pytest.raises(SkillError) as exc:
+        skills.read_draft(draft['id'])
+    assert exc.value.status_code==404
+
+
+def test_delete_draft_route(skills):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.skill_routes import register_skill_routes
+    app=FastAPI();register_skill_routes(app,skills,lambda:[])
+    draft=skills.create_draft(files())
+    path='/api/skills/drafts/'+draft['id']
+    with TestClient(app) as client:
+        assert client.delete(path).status_code==422
+        assert client.delete(path+'?expected_revision=2').status_code==409
+        assert client.delete(path+'?expected_revision=1').status_code==200
+        assert client.get(path).status_code==404

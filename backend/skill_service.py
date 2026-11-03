@@ -253,6 +253,12 @@ class SkillService:
                 result.append(item)
             return sorted(result,key=lambda item:item['created'],reverse=True)
 
+    def delete_draft(self,draft_id,expected_revision):
+        with self.lock:
+            self._draft(draft_id,expected_revision)
+            with self.db:self.db.execute('DELETE FROM skill_drafts WHERE id=?',(draft_id,))
+            return dict(id=draft_id,status='deleted')
+
     def update_draft(self,draft_id,revision,files):
         with self.lock:
             draft=self._draft(draft_id,revision)
