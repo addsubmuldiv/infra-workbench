@@ -77,10 +77,18 @@ def translate_event(engine,event):
 
 async def protect_directory(path):
     if os.name!='nt':path.chmod(0o700);return
-    who=await asyncio.create_subprocess_exec('whoami',stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)
-    account=(await who.communicate())[0].decode().strip()
-    proc=await asyncio.create_subprocess_exec('icacls',str(path),'/inheritance:r','/grant:r',account+':(OI)(CI)F','/remove:g','*S-1-3-4',stdout=asyncio.subprocess.DEVNULL,stderr=asyncio.subprocess.DEVNULL)
-    if await proc.wait():raise ValueError('无法限制临时 CLI 配置目录权限。')
+    async def helper(*args,capture=False):
+        proc=await asyncio.create_subprocess_exec(*args,stdout=asyncio.subprocess.PIPE if capture else asyncio.subprocess.DEVNULL,stderr=asyncio.subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            output,_=await asyncio.wait_for(proc.communicate(),10)
+            if proc.returncode:raise ValueError('无法限制临时 CLI 配置目录权限。')
+            return output or b''
+        finally:
+            if proc.returncode is None:
+                proc.kill();await proc.wait()
+    account=(await helper('whoami',capture=True)).decode().strip()
+    if not account:raise ValueError('无法确定临时 CLI 配置目录所有者。')
+    await helper('icacls',str(path),'/inheritance:r','/grant:r',account+':(OI)(CI)F','/remove:g','*S-1-3-4')
 
 def cli_configuration(engine,cwd,bridge,instructions,environment=None):
     env=codex_environment(environment)
