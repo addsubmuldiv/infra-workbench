@@ -46,6 +46,7 @@ def test_legacy_migration_keeps_original_config_and_vault(client):
     assert migrated.config==config
     assert migrated.view()['profiles'][0]['name']=='GLM'
     migrated.create_profile('DeepSeek')
+    migrated.activate('legacy')
     restarted=AgentAPIService(service.store,service.vault)
     assert restarted.config==config
     assert restarted.key_for(config)==KEY
@@ -57,7 +58,8 @@ def test_default_and_invalid_profile_inputs(client):
     second=client.post('/api/settings/agent/profiles',headers=HEADERS,json={'name':'DeepSeek'}).json()['active_id']
     assert client.put(f'/api/settings/agent/profiles/{second}',headers=HEADERS,json={'name':'My API','default':True}).status_code==200
     service.activate(original)
-    assert AgentAPIService(service.store,service.vault).active_id==second
+    assert AgentAPIService(service.store,service.vault).active_id==original
+    assert AgentAPIService(service.store,service.vault).default_id==second
     assert client.post('/api/settings/agent/profiles',headers=HEADERS,json={'name':'  '}).status_code==422
     assert client.post('/api/settings/agent/profiles/missing/activate',headers=HEADERS).status_code==400
 
@@ -137,3 +139,20 @@ def test_stale_chat_request_never_starts_on_different_provider(client):
     response=client.post('/api/assistant/chats/'+chat['id']+'/messages',headers=HEADERS,json={'content':'hello','profile_id':original})
     assert response.status_code==409
     assert not client.get('/api/assistant/chats/'+chat['id']).json()['turns']
+
+
+def test_restart_restores_last_api_and_inline_model_selection(client):
+    service = client.app.state.agent_api
+    default = service.active_id
+    save(client, 'https://first.test/v1', model='first-model')
+    selected = service.create_profile('Last used API')['active_id']
+    save(client, 'https://second.test/v1', model='initial-model', api_key='second-synthetic-key')
+    response = client.put('/api/settings/agent/model', headers=HEADERS,
+                          json={'profile_id': selected, 'model': 'last-model'})
+    assert response.status_code == 200
+    restarted = AgentAPIService(service.store, service.vault)
+    assert restarted.active_id == selected
+    assert restarted.default_id == default
+    assert restarted.config['base_url'] == 'https://second.test/v1'
+    assert restarted.config['model'] == 'last-model'
+    assert restarted.key_for(restarted.config) == 'second-synthetic-key'

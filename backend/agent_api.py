@@ -93,7 +93,8 @@ class AgentAPIService:
         self.config = store.load('agent_api_settings', AgentAPISettings().model_dump(exclude={'api_key', 'remember', 'profile_id'}))
         collection = store.load('agent_api_profiles', None)
         self.profiles = collection['profiles'] if collection else {'legacy': dict(name='GLM' if 'glm' in self.config.get('model','').lower() else '现有模型配置', config=dict(self.config))}
-        self.active_id = collection.get('default_id', collection['active_id']) if collection else 'legacy'
+        # Resume the last selected API; the default must not override it.
+        self.active_id = collection['active_id'] if collection else 'legacy'
         self.default_id = collection.get('default_id', self.active_id) if collection else 'legacy'
         self.config = dict(self.profiles[self.active_id]['config'])
         self.memories = {}
