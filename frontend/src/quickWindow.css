@@ -2,6 +2,10 @@
 .quick-window .terminal-dock.floating:not(.collapsed),.quick-window .file-browser.floating:not(.minimized) {left:0!important;top:0!important;right:0!important;bottom:0!important;width:100%!important;height:100dvh!important;max-width:none!important;max-height:none!important;border-radius:0}
 .quick-window .terminal-resize-handle,.quick-window .file-window-resize {display:none}
 .quick-window .terminal-brand small {display:none}
+.quick-window.quick-assistant-docked .terminal-dock.floating:not(.collapsed),.quick-window.quick-assistant-docked .file-browser.floating:not(.minimized){right:var(--quick-assistant-width)!important;width:calc(100% - var(--quick-assistant-width))!important}
+.quick-assistant-host .assistant-window{z-index:120;box-sizing:border-box}
+.quick-assistant-host .assistant-window.docked{border-left:1px solid var(--line)}
+.quick-assistant-host .chat-composer>details:not(.chat-context){max-height:110px;overflow:auto;overscroll-behavior:contain}
 .quick-reopen {margin:16px}
 
 .quick-window .file-header p {display:none}

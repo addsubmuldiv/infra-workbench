@@ -121,8 +121,10 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
   const running=!!chat?.active_run;
   return <section className="agent-chat" aria-label={ui("AI 工作台对话")}>
     <div className="chat-toolbar"><ChatSessionPicker items={items} value={chat?.id||''} disabled={!!busy} onChange={switchChat}/><div><button className="icon-button" aria-label={ui("新对话")} title={ui("新对话")} disabled={!!busy} onClick={newChat}><Plus size={16}/></button><details className="chat-more"><summary aria-label={ui("对话选项")}>•••</summary><div><button disabled={!!busy||!chat||running||!chat.turns.some(turn=>turn.role==='user')} onClick={branch}>{t("从上一轮之前分支","Branch before the previous round")}</button><p>{t("分支保留此前的对话，并恢复上一轮用户消息供编辑。已执行的命令和文件修改不会回退。","Branch keeps earlier conversation and restores the previous user message for editing. Executed commands and file changes are not rolled back.")}</p><button disabled={!!busy||!chat||running} onClick={remove}><Trash2 size={14}/>{ui("删除当前对话")}</button><p>{ui("对话保存在本机，上下文较长时会自动压缩早期内容。文件片段和检查结果会发送给当前模型，常见凭据字段会脱敏。")}</p></div></details></div></div>
-    <AssistantEnginePicker value={engine} onChange={setEngine} disabled={!!busy||!!chat?.active_run}/>{engine==='deepagents'&&<AgentProfilePicker onChange={value=>setProfileId(value.active_id)}/>}
-    {engine==='deepagents'&&<ContextUsageMeter chat={chat} model={model}/>}
+    <details className="chat-configuration"><summary><Settings2 size={14}/><span>{engineName(engine)}{engine==='deepagents'&&model?' · '+model:''}</span><small>{t('模型与上下文','Model and context')}</small><ChevronDown size={13}/></summary><div>
+      <AssistantEnginePicker value={engine} onChange={setEngine} disabled={!!busy||!!chat?.active_run}/>{engine==='deepagents'&&<AgentProfilePicker onChange={value=>setProfileId(value.active_id)}/>}
+      {engine==='deepagents'&&<ContextUsageMeter chat={chat} model={model}/>}
+    </div></details>
     {error&&<div className="assistant-error" role="alert">{error}</div>}
     <div ref={transcript} className="chat-transcript" aria-label={ui("对话消息")} aria-live="polite" onScroll={()=>{if(transcript.current)follow.current=shouldFollowChat(transcript.current)}}>
       {!chat?.turns.length&&<div className="chat-welcome"><span><Sparkles size={27}/></span><h3>{ui("你希望完成什么？")}</h3><p>{ui("检查资源、整理文件、预约机器或设置监控，直接描述你想完成的事情。")}</p><div>{suggestions.map(item=><button key={item} disabled={!!busy} onClick={()=>setText(ui(item))}>{ui(item)}</button>)}</div></div>}

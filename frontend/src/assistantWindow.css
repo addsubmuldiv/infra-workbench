@@ -1,5 +1,9 @@
 .assistant-window{position:fixed;z-index:30;display:flex;flex-direction:column;min-width:0;max-width:calc(100% - 16px);background:var(--panel);color:var(--text);border-left:1px solid var(--line);isolation:isolate}
 .assistant-window[hidden]{display:none}
+.chat-configuration{flex-shrink:0;min-width:0;border-bottom:1px solid var(--line)}
+.chat-configuration>summary{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer;padding:10px 14px;font-size:11px;color:var(--muted)}.chat-configuration>summary::-webkit-details-marker{display:none}.chat-configuration>summary>span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-configuration>summary>small{font-size:10px;white-space:nowrap}.chat-configuration[open]>summary>svg:last-child{transform:rotate(180deg)}
+.chat-configuration>div{max-height:min(240px,32dvh);overflow:auto;overscroll-behavior:contain}.chat-configuration .agent-profile-picker{padding:0 14px}.chat-configuration .chat-context-meter{border-bottom:0}
+.compact .chat-configuration>div{max-height:min(200px,20dvh)}
 .assistant-window.floating{z-index:70;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow),0 16px 64px #0002}
 .assistant-window-header{height:62px;min-height:62px;padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);background:var(--panel);border-radius:inherit;cursor:grab;touch-action:none;user-select:none}
 .assistant-window.dragging>.assistant-window-header{cursor:grabbing}

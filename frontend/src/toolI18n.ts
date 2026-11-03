@@ -8,6 +8,10 @@ const english:Record<string,string>={
 
   "没有可附加的终端内容":"No terminal content to attach",
   "已附加到 AI 草稿，请预览后发送":"Attached to AI draft; preview before sending",
+  "将选区附加到 AI 助手":"Attach selection to AI assistant",
+  "将当前屏幕附加到 AI 助手":"Attach visible screen to AI assistant",
+  "将选中文字附加到 AI 草稿，预览后发送":"Attach selected text to the AI draft; preview before sending",
+  "将当前可见屏幕附加到 AI 草稿，预览后发送":"Attach the visible screen to the AI draft; preview before sending",
   "选区 → AI":"Selection → AI",
   "当前屏幕 → AI":"Visible screen → AI",
   "收起 AI 助手":"Close AI assistant",

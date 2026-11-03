@@ -81,7 +81,7 @@ function harness(t,{tabs=null,initialStates={}}={}){
     const translation=i18nMock(name);if(translation)return translation;
     const mock=workspaceMock(name,react);if(mock)return mock;
     if(name==='react')return react;
-    if(name==='./TerminalCommands'||name==='./TerminalHighlightSettings')return ()=>null;
+    if(name==='./TerminalCommands'||name==='./TerminalHighlightSettings'||name==='./TerminalDisplaySettings')return ()=>null;
     if(name==='./terminalHighlights')return terminalHighlights;
     if(name==='./AppConfirm')return {useAppConfirm:()=>({confirm:async()=>false,confirmation:null})};
     if(name==='@xterm/xterm')return {Terminal};
