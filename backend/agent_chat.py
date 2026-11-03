@@ -65,7 +65,7 @@ class TerminalAttachment(BaseModel):
 class ChatMessageRequest(BaseModel):
     model_config=ConfigDict(extra='forbid')
     profile_id:str|None=Field(default=None,max_length=64)
-    engine:Literal['deepagents','codex']='deepagents'
+    engine:Literal['deepagents','codex','claude','opencode']='deepagents'
     content:str=Field(min_length=1,max_length=4000)
     selected_host_ids:list[str]=Field(default_factory=list,max_length=128)
     terminal_attachments:list[TerminalAttachment]=Field(default_factory=list,max_length=3)
@@ -220,10 +220,10 @@ class AgentChat:
                   state={},active_run=None,engine=source.get('engine','deepagents'),
                   request_scope=copy.deepcopy(source.get('request_scope')),
                   draft=copy.deepcopy(user.get('request',dict(content=user['content'],terminal_attachments=user.get('terminal_attachments',[]),selected_skill_names=[]))))
-        if chat['engine']=='codex':
+        if chat['engine'] in ('codex','claude','opencode'):
             seed=copy.deepcopy(chat['messages'])
             while seed and len(json.dumps(seed,ensure_ascii=False))>60000:seed.pop(0)
-            chat['branch_seed']=dict(engine='codex',scope=copy.deepcopy(chat['request_scope']),messages=seed)
+            chat['branch_seed']=dict(engine=chat['engine'],scope=copy.deepcopy(chat['request_scope']),messages=seed)
         self.save(chat)
         return dict(chat=self.view(chat),draft=chat['draft'])
 
@@ -298,6 +298,10 @@ class AgentChat:
             chat['state']={}
         if chat.get('engine','deepagents')!=body.engine:
             chat.pop('deep_state',None)
+            chat.pop('external_context',None)
+            # Visible turns remain an audit trail. Model history belongs to a
+            # single engine epoch, including later per-turn CLI continuation.
+            chat['messages']=[]
         chat['engine']=body.engine
         run_id=uuid.uuid4().hex
         request=body.model_dump(mode='json');request.update(content=text,terminal_attachments=attachments)
@@ -305,7 +309,7 @@ class AgentChat:
         for old_turn in chat['turns']:old_turn.pop('model_history_before',None)
         chat.pop('draft',None)
         chat['turns'].extend([dict(id=uuid.uuid4().hex,role='user',content=text,terminal_attachments=attachments,created=time.time(),request=request,model_history_before=history_before),
-                              dict(id=run_id,role='assistant',content='',created=time.time(),status='running',tools=[],model='Codex' if body.engine=='codex' else provider.config.get('model',''),profile_name=getattr(provider,'profiles',{}).get(getattr(provider,'active_id',''),{}).get('name',''),selected_skill_names=list(dict.fromkeys(body.selected_skill_names)))])
+                              dict(id=run_id,role='assistant',content='',created=time.time(),status='running',tools=[],model={'codex':'Codex','claude':'Claude Code','opencode':'OpenCode'}.get(body.engine,provider.config.get('model','')),profile_name=getattr(provider,'profiles',{}).get(getattr(provider,'active_id',''),{}).get('name',''),selected_skill_names=list(dict.fromkeys(body.selected_skill_names)))])
         chat['messages'].append(dict(role='user',content=model_text))
         if len(chat['turns'])==2:chat['title']=text[:60]
         chat['active_run']=run_id
@@ -344,6 +348,9 @@ class AgentChat:
             if chat.get('engine')=='codex':
                 from .codex_agent import run_codex_agent
                 await run_codex_agent(chat,self.tools,allowed,instructions,lambda:self.save(chat),start_text,on_text,skills=self.skills,controls=self.controls)
+            elif chat.get('engine') in ('claude','opencode'):
+                from .external_agents import run_external_agent
+                await run_external_agent(chat,self.tools,allowed,instructions,lambda:self.save(chat),start_text,on_text,skills=self.skills)
             else:
                 chat['last_engine']='deepagents'
                 await run_deep_agent(chat,provider,self.tools,allowed,instructions,secret,
@@ -400,7 +407,15 @@ def register_chat_routes(app,service):
             codex=dict(available=True,message='使用本机 Codex 登录和默认模型；需要时请在本机终端执行 codex login。')
         except ValueError as exc:
             codex=dict(available=False,message=str(exc))
-        return dict(codex={**codex,'steering':True},deepagents=dict(steering=False))
+        from .external_agents import resolve_agent,LABELS
+        external={}
+        for engine,label in LABELS.items():
+            try:
+                resolve_agent(engine)
+                external[engine]=dict(available=True,steering=False,message=f'使用本机 {label} 登录和默认模型；每轮独立会话，由工作台传入同范围历史。')
+            except ValueError as exc:
+                external[engine]=dict(available=False,steering=False,message=str(exc))
+        return dict(codex={**codex,'steering':True},deepagents=dict(steering=False),**external)
 
     @app.get('/api/assistant/chats')
     async def sessions():return service.list()

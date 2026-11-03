@@ -8,7 +8,7 @@ import * as api from '../src/agentChat.ts';
 import * as skills from '../src/skills.ts';
 const chat=(id,run='run1')=>({id:id.repeat(32),title:id,created:1,updated:2,active_run:run,turns:[{id:'t-'+id,role:'assistant',content:'开始',created:2,status:run?'running':'completed'}]});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(t,respond){
+function harness(t,respond,configured=true){
   const values=[],deps=[],effects=[],cleanups=[],streams=[],writes=[],requests=[];let slot=0,tree;
   const view={scrollTop:0,scrollHeight:1000,clientHeight:400};
   const useEffect=(fn,next)=>{const i=slot++;if(!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}};
@@ -30,7 +30,7 @@ function harness(t,respond){
   const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='./terminalContext'?terminalContext:name==='react'?react:name==='./workspaceState'?{workspaceStorage:{subscribe:()=>()=>{}}}:name==='./workspaceHooks'?{useWorkspaceValue:(_key,value)=>react.useState(value)}:name==='./agentChat'?{...api,loadChatId:()=>null,saveChatId:id=>writes.push(['iwb-assistant-chat',id])}:name==='./skills'?skills:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=predicate=>nodes(tree).find(predicate);
-  const render=()=>{slot=0;tree=exports.AssistantChat({configured:true,selectedHostIds:[]});const node=find(n=>n.props.className==='chat-transcript');node.props.ref.current=view;for(const effect of effects.splice(0))effect();return tree};
+  const render=()=>{slot=0;tree=exports.AssistantChat({configured,selectedHostIds:[]});const node=find(n=>n.props.className==='chat-transcript');node.props.ref.current=view;for(const effect of effects.splice(0))effect();return tree};
   const unmount=()=>cleanups.splice(0).forEach(fn=>fn?.());
   t.after(()=>{unmount();globalThis.fetch=previous.fetch;globalThis.window=previous.window;if(previous.storage)Object.defineProperty(globalThis,'localStorage',previous.storage);else delete globalThis.localStorage});
   const publish=async(content,updated)=>{const data={chat_id:'a'.repeat(32),title:'a',updated,active_run:'run1',turn:{id:'t-a',role:'assistant',content,created:2,status:'running'}};streams[0].source.enqueue(new TextEncoder().encode(`event: turn\ndata: ${JSON.stringify(data)}\n\n`));await tick();render()};
@@ -104,4 +104,20 @@ test('switching chat ignores a late supplemental response and aborts its request
   assert.equal(steerSignal.aborted,true);
   finish(Response.json({...chat('a'),engine:'codex',updated:8}));await pending;h.render();
   assert.equal(h.writes.at(-1)[1],'b'.repeat(32));assert.equal(h.find(n=>n.props.className==='chat-steer'),undefined);
+});
+
+for(const engine of ['claude','opencode'])test(`${engine} sends without model API setup and does not advertise steering`,async t=>{
+  const h=harness(t,url=>url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a',null),engine}):undefined,false);await h.loaded();
+  const input=h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props);input.props.onChange('hello');h.render();
+  assert.equal(h.find(n=>n.type==='button'&&n.props.className==='primary').props.disabled,false);
+  const label=engine==='claude'?'Claude Code':'OpenCode';
+  assert.ok(h.find(n=>n.type==='small'&&n.props.children.some(c=>typeof c==='string'&&c.includes(label))));
+  h.find(n=>n.props.className==='chat-composer').props.onSubmit({preventDefault(){}});await tick();h.render();
+  const body=JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body);assert.equal(body.engine,engine);assert.equal('profile_id' in body,false);
+});
+for(const engine of ['claude','opencode'])test(`${engine} active runs explain unsupported steering accurately`,async t=>{
+  const h=harness(t,url=>url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a'),engine}):undefined);await h.loaded();
+  assert.equal(h.find(n=>n.props.className==='chat-steer'),undefined);
+  const text=h.find(n=>n.props.className==='chat-steer-unavailable').props.children.join('');
+  assert.ok(text.includes(engine==='claude'?'Claude Code':'OpenCode'));assert.ok(!text.includes('Deep Agents'));
 });

@@ -1,3 +1,4 @@
+import type {AssistantEngine} from './AssistantEnginePicker';
 import type {TerminalAttachment} from './terminalContext';
 import {t} from './i18n.ts';
 import {localizedLabels} from './localizedLabels.ts';
@@ -7,7 +8,7 @@ import {assistantRequest} from './infraAssistant.ts';
 export type ChatTool={id:string;name:string;target?:string;status:string;arguments:string;output:string;started:number;finished?:number};
 export type ContextUsage={used_tokens:number;total_tokens:number;trigger_tokens:number;source:'provider'|'manual'|'fallback';model:string;estimated:boolean;phase:'request'|'response';updated:number};
 export type ChatTurn={supplemental_instructions?:{content:string;created:number}[];terminal_attachments?:TerminalAttachment[];provider_status?:string;model?:string;profile_name?:string;context_usage?:ContextUsage;context_compaction?:{status:'running'|'completed'|'failed';started:number;finished?:number};id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
-export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:'deepagents'|'codex'};
+export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:AssistantEngine};
 export type ChatItem=Pick<Chat,'id'|'title'|'created'|'updated'|'active_run'>;
 export function chatReplyTime(created:number,now=new Date()):{label:string;full:string;iso:string}|null{
   const date=new Date(created*1000);
