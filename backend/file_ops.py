@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import stat
+import sys
 import tempfile
 
 TEXT_LIMIT = 1024*1024
@@ -52,12 +53,21 @@ def no_replace(source, destination):
         os.rename(source, destination)
         return
     libc = ctypes.CDLL(None, use_errno=True)
-    rename = getattr(libc, 'renameat2', None)
-    if rename is None:
-        raise ValueError('远端系统不支持安全的无覆盖移动，请使用终端操作')
-    rename.argtypes = [ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]
-    rename.restype = ctypes.c_int
-    if rename(-100,os.fsencode(source),-100,os.fsencode(destination),1):
+    if sys.platform == 'darwin':
+        rename = getattr(libc, 'renamex_np', None)
+        if rename is None:
+            raise ValueError('远端系统不支持安全的无覆盖移动，请使用终端操作')
+        rename.argtypes = [ctypes.c_char_p,ctypes.c_char_p,ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(os.fsencode(source),os.fsencode(destination),4)  # RENAME_EXCL
+    else:
+        rename = getattr(libc, 'renameat2', None)
+        if rename is None:
+            raise ValueError('远端系统不支持安全的无覆盖移动，请使用终端操作')
+        rename.argtypes = [ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(-100,os.fsencode(source),-100,os.fsencode(destination),1)
+    if result:
         code=ctypes.get_errno()
         if code == errno.EXDEV:
             raise ValueError('不支持跨文件系统移动，请先复制并核实文件')

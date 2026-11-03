@@ -1,7 +1,10 @@
-import tkinter as tk
+import sys
+import pytest
 from types import SimpleNamespace
 from backend.floating_monitor import FloatingMonitor,MonitorSettings
+tk = pytest.importorskip('tkinter')
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='Native floating monitor uses Windows window attributes')
 def test_real_menu_survives_posting_and_dispatches_click(tmp_path):
     root=tk.Tk()
     app=FloatingMonitor(root,MonitorSettings(tmp_path/'float.json'),fetch=lambda:{'hosts':[]})

@@ -67,6 +67,7 @@ def test_startup_retries_an_exiting_tray_duplicate_without_parallel_live_childre
     monkeypatch.setattr(launcher,'build_opener',lambda *args:Opener())
     monkeypatch.setattr(launcher,'tray_ready',lambda:ready[0])
     monkeypatch.setattr(launcher.subprocess,'Popen',spawn)
+    monkeypatch.setattr(launcher.subprocess,'CREATE_NO_WINDOW',0x08000000,raising=False)
     monkeypatch.setattr(launcher.time,'monotonic',lambda:clock[0])
     monkeypatch.setattr(launcher.time,'sleep',lambda value:clock.__setitem__(0,clock[0]+value))
     monkeypatch.setattr('backend.local_service.loopback_listening',lambda **kwargs:ready[0])
@@ -95,6 +96,7 @@ def test_tray_quit_requests_graceful_resident_desktop_exit(tmp_path,monkeypatch)
     import backend.launcher as launcher
     executable=tmp_path/'infra-workbench-desktop.exe';executable.touch()
     calls=[]
+    monkeypatch.setattr(launcher,'find_desktop',lambda root:executable)
     monkeypatch.setattr(launcher.subprocess,'Popen',lambda args,**kwargs:calls.append(args))
     launcher.shutdown_desktop(tmp_path)
     assert calls==[[str(executable),'--quit-desktop']]

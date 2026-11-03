@@ -49,7 +49,7 @@ def test_refuse_system_pid():
         signal_process(1, '1', 0, 'TERM')
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='POSIX process groups required')
+@pytest.mark.skipif(sys.platform != 'linux', reason='Remote supervisor requires Linux procfs/pidfd')
 @pytest.mark.parametrize('command,timeout,status,code', [
     ('printf hello; exit 7', 5, 'failed', 7),
     ('sleep 20', 1, 'timed_out', None),

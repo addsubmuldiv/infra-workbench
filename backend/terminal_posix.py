@@ -103,6 +103,18 @@ class PosixTerminal:
                 os.kill(process.pid,sig)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            # Darwin may reject killpg when the last live group member exits
+            # between getpgid and killpg. The unreaped child PID is still ours.
+            try:
+                os.kill(process.pid,sig)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                # Reap only on this failure path. returncode prevents every
+                # later signal from targeting a PID that could now be reused.
+                if process.poll() is None:
+                    raise
 
     async def _close(self):
         descriptor=self.master
