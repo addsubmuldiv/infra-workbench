@@ -44,6 +44,9 @@ class WorkbenchMCPService:
             catalog.update(command_catalog())
         if self.skills is not None:
             catalog.update(mcp_skills.skill_catalog())
+        if self.operations is not None and getattr(self.operations.app.state, 'automation', None) is not None:
+            from .automation import catalog as automation_catalog
+            catalog.update(automation_catalog())
         if self.embedded:
             for name in PRIVATE:
                 catalog.pop(name, None)
@@ -55,6 +58,15 @@ class WorkbenchMCPService:
             raise AgentError('INVALID_ARGUMENT', '未知工具或参数不是 JSON 对象。')
         if next(Draft202012Validator(catalog[name]['inputSchema']).iter_errors(arguments), None):
             raise AgentError('INVALID_ARGUMENT', '参数不符合工具 inputSchema。')
+        if self.operations is not None and getattr(self.operations.app.state, 'automation', None) is not None:
+            from .automation import catalog as automation_catalog
+            if name in automation_catalog():
+                manager=self.operations.app.state.automation
+                try:
+                    if name=='list_automations':return response({'items':manager.list(self.allowed)})
+                    if name=='create_automation':return response(manager.save(arguments,allowed=self.allowed))
+                    return response(manager.save(arguments['draft'],arguments['id'],self.allowed))
+                except ValueError:raise AgentError('INVALID_ARGUMENT','Invalid workflow or machine scope') from None
         if self.skill_snapshot is not None and name in ('list_skills', 'read_skill'):
             if name == 'list_skills':
                 return response({'items': [{key: value for key, value in item.items() if key not in ('files', 'file_manifest', 'versions')}

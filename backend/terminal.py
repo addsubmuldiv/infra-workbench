@@ -230,6 +230,9 @@ class TerminalManager:
                 channel=await self.open_channel(host,cols,rows,cwd=cwd)
             else:
                 channel=await self.open_channel(host,cols,rows)
+            automation=getattr(websocket.app.state,'automation',None)
+            automation_connected=isinstance(channel,AsyncTerminal)
+            if automation and automation_connected:automation.terminal_event(host['id'],session_id,'onConnect')
             windows_pty=getattr(channel,'windows_pty',None)
             await websocket.send_json(dict(type='ready',**({'windowsPty':windows_pty} if windows_pty else {})))
             if protocol:
@@ -248,13 +251,16 @@ class TerminalManager:
                 await websocket.send_json(dict(type='sudo',waiting=sudo_waiting,available=available))
 
             async def output():
-                nonlocal pending,sudo_waiting,sudo_attempted
+                nonlocal pending,sudo_waiting,sudo_attempted,automation_connected
                 while True:
                     data=await channel.read()
                     if not data: return
                     if protocol:
                         data,events=protocol.feed(data)
                         for event in events:
+                            if automation and not automation_connected and event['kind']=='prompt':
+                                automation_connected=True
+                                automation.terminal_event(host['id'],session_id,'onConnect')
                             result=self.workspace.result(host,identity,persistent['id'],event.get('result')) if persistent else completion.feed(event)
                             if result:
                                 await websocket.send_json(dict(type='completion',**result))
@@ -272,6 +278,7 @@ class TerminalManager:
                             safe_event={key:value for key,value in event.items() if key!='command'}
                             await websocket.send_json(dict(type='shell',**safe_event))
                             if event['kind']=='start':await self.workspace_state(host['id'],identity)
+                    if automation:automation.terminal_event(host['id'],session_id,'onOutput',data)
                     for offset in range(0,len(data),4096):
                         await credits.acquire()
                         pending+=1
@@ -339,6 +346,8 @@ class TerminalManager:
             await asyncio.gather(*tasks,return_exceptions=True)
             if channel:
                 with contextlib.suppress(Exception): await channel.close()
+            automation=getattr(websocket.app.state,'automation',None)
+            if automation:automation.terminal_event(host['id'],session_id,'close')
             self.active.pop(session_id,None)
             with contextlib.suppress(Exception):
                 await websocket.send_json(dict(type='exit'))
