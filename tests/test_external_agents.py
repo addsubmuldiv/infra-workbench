@@ -160,3 +160,33 @@ def test_failed_run_removes_protected_mcp_config(monkeypatch):
     chat=dict(engine='claude',state={},messages=[dict(role='user',content='probe')],turns=[dict(tools=[])])
     with pytest.raises(ValueError):asyncio.run(module.run_external_agent(chat,MCPGateway(Service()),None,'safe',lambda:None,lambda:None,lambda *a,**kw:None))
     assert paths and not paths[0].exists() and not paths[0].parent.exists()
+
+@pytest.mark.parametrize('engine',['claude','opencode'])
+@pytest.mark.parametrize('scope_changed',[False,True])
+def test_first_external_branch_turn_uses_only_matching_server_snapshot(tmp_path,monkeypatch,engine,scope_changed):
+    import asyncio
+    from backend.agent_chat import AgentChat,ChatMessageRequest
+    from backend.store import Store
+    class Provider:config={'model':''}
+    class Tools:
+        def inventory(self,allowed=None):return [dict(id='a',target='synthetic A'),dict(id='b',target='synthetic B')]
+    seen=[]
+    async def run(chat,tools,allowed,*args,**kwargs):
+        seen.append(external_prompt(chat,engine,sorted(allowed)))
+    monkeypatch.setattr('backend.external_agents.run_external_agent',run)
+    async def scenario():
+        service=AgentChat(Store(tmp_path/'chat.db'),Provider(),Tools());source=service.get(service.create()['id'])
+        source.update(engine=engine,request_scope=['a'])
+        draft=dict(content='retry',engine=engine,selected_host_ids=['a'],restrict_to_selected=True)
+        source['turns']=[dict(role='user',content='OLD SCOPE AUDIT'),dict(role='assistant',content='PRIVATE OLD SCOPE'),dict(role='user',content='retry',request=draft,model_history_before=[dict(role='user',content='SAFE CURRENT SCOPE')]),dict(role='assistant',content='answer')]
+        source['messages']=[dict(role='user',content='retry')]
+        service.save(source)
+        branch=service.get(service.branch(source['id'])['chat']['id'])
+        assert branch['branch_seed']==dict(engine=engine,scope=['a'],messages=[dict(role='user',content='SAFE CURRENT SCOPE')])
+        scope=['b'] if scope_changed else ['a']
+        result=service.begin(branch['id'],ChatMessageRequest(content='retry',engine=engine,selected_host_ids=scope,restrict_to_selected=True))
+        await service.runs[result['active_run']]
+        assert len(seen)==1
+        assert ('SAFE CURRENT SCOPE' in seen[0]) is (not scope_changed)
+        assert 'PRIVATE OLD SCOPE' not in seen[0] and 'OLD SCOPE AUDIT' not in seen[0]
+    asyncio.run(scenario())
