@@ -59,8 +59,9 @@ def catalog():
 
 
 class CommandTools:
-    def __init__(self, probes, sudo=None):
+    def __init__(self, probes, sudo=None, update_jobs=None):
         self.probes, self.sudo = probes, sudo
+        self.update_jobs = update_jobs
         self.source = Path(__file__).with_name('command_probe.py').read_text(encoding='utf-8')
 
     async def call(self, name, arguments, allowed, state):
@@ -77,6 +78,8 @@ class CommandTools:
             request['job_id'] = uuid.uuid4().hex
             state.setdefault('command_jobs', []).append(dict(host_id=args.host_id, job_id=request['job_id'], sudo=args.sudo))
             state['command_jobs'] = state['command_jobs'][-100:]
+            if self.update_jobs is not None:
+                self.update_jobs[(args.host_id, bool(args.sudo), request['job_id'])] = {'status': 'unknown'}
         script = self.source+'\ntry:\n print("IWB_COMMAND:"+json.dumps(command_main(json.loads('+repr(json.dumps(request))+'), '+repr(self.source)+')))\nexcept Exception as exc:\n print("IWB_COMMAND:"+json.dumps({"error":str(exc)[:500]}))\n'
         password = None
         try:
@@ -104,6 +107,13 @@ class CommandTools:
             result = json.loads(line[len('IWB_COMMAND:'):])
             result = json.loads(scrub(result, password or ''))
             result.update(host_id=args.host_id, sudo=args.sudo)
+            if self.update_jobs is not None and name in ('execute_server_command', 'get_command_job', 'cancel_command_job'):
+                key = (args.host_id, bool(args.sudo), request['job_id'])
+                status = result.get('status', 'unknown')
+                if status in ('completed', 'failed', 'timed_out', 'cancelled'):
+                    self.update_jobs.pop(key, None)
+                else:
+                    self.update_jobs[key] = {'status': status}
             if result.get('error'):
                 return response(result, error=AgentError('OPERATION_FAILED', result['error']))
             if name == 'execute_server_command' and result.get('status') in ('failed', 'timed_out', 'cancelled'):

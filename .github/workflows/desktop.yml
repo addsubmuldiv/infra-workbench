@@ -2,11 +2,23 @@ name: Desktop packages
 
 on:
   workflow_dispatch:
+    inputs:
+      include_macos:
+        description: 'Also build experimental macOS packages'
+        type: boolean
+        default: false
   workflow_call:
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
     inputs:
       ref:
         required: true
         type: string
+      include_macos:
+        required: false
+        type: boolean
+        default: false
   pull_request:
     paths:
       - 'desktop/**'
@@ -29,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-15, macos-15-intel]
+        os: ${{ (github.event_name == 'pull_request' || inputs.include_macos) && fromJSON('["windows-latest","macos-15","macos-15-intel"]') || fromJSON('["windows-latest"]') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,6 +82,14 @@ jobs:
         working-directory: desktop/src-tauri
       - run: npm run build
         working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          IWB_UNSIGNED_BUILD: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+      - name: Collect signed update artifacts
+        if: github.event_name != 'pull_request'
+        working-directory: desktop
+        run: node release.mjs collect src-tauri/target/release/bundle ../release-assets
       - name: Install WebKit compatibility test runtime
         run: |
           npm install --prefix work/desktop-benchmark --no-save ws@8 playwright@1.64.1
@@ -85,9 +105,25 @@ jobs:
             work/performance-round2/webkit-*.png
           if-no-files-found: warn
       - uses: actions/upload-artifact@v6
+        if: github.event_name != 'pull_request'
         with:
           name: desktop-${{ matrix.os }}
+          path: release-assets/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: github.event_name == 'pull_request'
+        with:
+          name: desktop-unsigned-${{ matrix.os }}
           path: |
             desktop/src-tauri/target/release/bundle/nsis/*.exe
             desktop/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+      - name: Preserve packaging diagnostics
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: runtime-check-${{ matrix.os }}
+          path: |
+            work/desktop-build/runtime-self-test.json
+            work/desktop-build/build/iwb-runtime/warn-iwb-runtime.txt
+          if-no-files-found: ignore

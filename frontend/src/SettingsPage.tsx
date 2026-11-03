@@ -4,7 +4,8 @@ import {MCPSettings} from './MCPSettings';
 import {MailSettingsPage} from './MailSettingsPage';
 import {SkillsSettings} from './SkillsSettings';
 import {LanguageSettings} from './LanguageSettings';
+import {DesktopUpdates} from './DesktopUpdatePanel';
 
 export default function SettingsPage(){
-  return <><LanguageSettings/><LaunchSettingsPage/><AgentSettingsPage/><SkillsSettings/><MCPSettings/><MailSettingsPage/></>;
+  return <><LanguageSettings/><DesktopUpdates/><LaunchSettingsPage/><AgentSettingsPage/><SkillsSettings/><MCPSettings/><MailSettingsPage/></>;
 }

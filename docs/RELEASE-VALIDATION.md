@@ -6,8 +6,8 @@ Validation date: 2026-11-03. These results describe this working tree and local 
 
 1. Update frontend/package.json, frontend/package-lock.json, desktop/package.json, desktop/package-lock.json, desktop/src-tauri/tauri.conf.json, desktop/src-tauri/Cargo.toml, and desktop/src-tauri/Cargo.lock together. Keep the backend /api/health version aligned. The application footer reads its version from the frontend package at build time.
 2. Push a version tag such as v0.1.0, or manually run **Desktop release** with that existing tag. The tag must point to the checked-out commit and match the desktop versions.
-3. The reusable desktop workflow builds Windows x64, macOS Apple Silicon, and macOS Intel packages. Packaging runs the frozen Python runtime self-test, Rust tests, frontend tests, and WebKit checks. Missing installers fail artifact upload.
-4. The release job requires one EXE and two DMG files, writes SHA256SUMS.txt, and creates a **draft** GitHub release. Only this job has contents: write; checkout does not persist credentials. Existing releases and their assets are preserved; the job skips creation when that tag already has a release.
+3. The reusable desktop workflow builds Windows x64 by default; include_macos enables experimental Apple Silicon and Intel packages. Packaging runs the frozen Python runtime self-test, Rust tests, frontend tests, and WebKit checks. Missing installers fail artifact upload.
+4. The release job requires signed artifacts for the selected platforms, writes latest.json and SHA256SUMS.txt, and creates a **draft** GitHub release. Only this job has contents: write; checkout does not persist credentials. Existing releases and their assets are preserved; the job skips creation when that tag already has a release.
 5. Before publishing, download and verify all packages, complete the installation checks below, and inspect the workflow logs. GitHub workflows have not been executed in this local session.
 
 Checksums detect corrupted downloads; they do not replace publisher signatures. The workflow provides neither Windows code signing nor macOS signing/notarization. Release notes explicitly disclose this.
@@ -62,3 +62,18 @@ The final local package has not been installed or upgraded in a clean Windows en
 ## v0.1.0 release preparation
 
 The installer was rebuilt after adding the visible package-derived v0.1.0 footer. Frontend tests: 241 passed. Version/checksum tests: 2 passed. The frozen runtime self-test and NSIS packaging passed again. Chinese/English READMEs and CHANGELOG.md identify this first version. The tag and Release use the same source commit; only Windows x64 and the browser demo are attached. macOS and clean Windows acceptance remain pending.
+
+## v0.1.1 signed updater validation
+
+The Windows production build passed using an isolated Cargo target directory. The existing desktop and backend were left running. The frozen-runtime receipt reported ok=true, frozen=true, native_pty=true, hosts=0 and 12 built-in skills.
+
+- Installer: release/v0.1.1/Infra-Workbench-0.1.1-windows-x86_64-setup.exe
+- Size: 89,165,425 bytes (85.03 MiB)
+- SHA256: 4bd0756f4074d0a813fca5ada2af6caf94b0779b72f876ba508b707c72057618
+- Adjacent .sig, Windows-only latest.json and SHA256SUMS.txt are included.
+- Installer payload signature, global signature and trusted version 0.1.1 were independently verified with the public key only.
+- Backend: 685 passed, 11 skipped. Frontend: 249 passed and TypeScript passed. Native Rust: 13 passed, including real updater downloads rejecting modified bytes, invalid signatures and mismatched signed versions. Release tooling: 5 passed.
+- Headless Edge exercised the built settings UI with a synthetic native bridge: check, download progress and install action passed without page errors. No actual installation occurred.
+- The exact CI Playwright/WebKit version passed the local normal and legacy compatibility smoke checks. Earlier hosted WebKit/macOS failures were inspected; no claim is made that hosted CI or macOS packaging now passes.
+
+Clean-machine installation and a real end-to-end upgrade remain untested. Updater signatures authenticate update packages; the installer has no Windows Authenticode signature. Version 0.1.0 requires one manual bootstrap installation. The public update feed becomes accessible without credentials after the repository is made public. Signing builds require TAURI_SIGNING_PRIVATE_KEY; explicit unsigned development builds use IWB_UNSIGNED_BUILD=1 and cannot supply update artifacts. See UPDATES.md for key handling and release instructions.

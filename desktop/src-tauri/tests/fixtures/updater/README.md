@@ -1,0 +1,1 @@
+Synthetic non-executable payload for check/download signature tests only. The public key and signature belong to an ephemeral test key, not the production updater key. Tests must never install this fixture. No private key is committed.

@@ -14,10 +14,13 @@ pub fn open(app: &tauri::AppHandle, tool: &str, host: &str) -> tauri::Result<()>
 }
 
 fn open_with_path(app: &tauri::AppHandle, tool: &str, host: &str, path: Option<&str>) -> tauri::Result<()> {
+    let _window_gate=super::updater::WINDOW_GATE.lock().unwrap();
+    if super::updater::installing(app) { return Err(tauri::Error::Io(std::io::Error::new(std::io::ErrorKind::WouldBlock,"更新安装期间不能打开新窗口"))); }
     let mut url=reqwest::Url::parse(infra_workbench_desktop::SERVICE_URL).unwrap();
     url.query_pairs_mut().append_pair("tool",tool).append_pair("host",host);
     if let Some(path)=path { url.query_pairs_mut().append_pair("cwd",path); }
     let label=format!("quick-{}",NEXT.fetch_add(1,Ordering::Relaxed));
+    let navigation_app=app.clone();
     let window=WebviewWindowBuilder::new(app,&label,WebviewUrl::External(url))
         .title(if tool=="terminal" {"终端"} else {"文件"})
         .inner_size(if tool=="terminal" {760.0} else {900.0},if tool=="terminal" {480.0} else {560.0})
@@ -25,7 +28,7 @@ fn open_with_path(app: &tauri::AppHandle, tool: &str, host: &str, path: Option<&
         .background_color(tauri::window::Color(28,42,57,255))
         .initialization_script(super::READY_SCRIPT)
         .disable_drag_drop_handler()
-        .on_navigation(|url|infra_workbench_desktop::is_service_url(url))
+        .on_navigation(move |url|!super::updater::installing(&navigation_app) && infra_workbench_desktop::is_service_url(url))
         .on_new_window(|_,_|tauri::webview::NewWindowResponse::Deny)
                 .on_download(|webview, event| {
                     match event {

@@ -25,13 +25,15 @@ AI 助手直接使用工作台的机器、资源、进程、文件和预约工�
 
 ## 桌面安装（Windows）
 
-当前版本：**v0.1.0**。从 [v0.1.0 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.0) 下载 Windows x64 安装包，双击后按向导安装。安装包包含 Python 后台与前端资源，不需要另外准备 Python 或 Node.js；校验值见同一页面的 `SHA256SUMS.txt`。
+当前版本：**v0.1.1**。从 [v0.1.1 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.1) 下载 Windows x64 安装包，双击后按向导安装。安装包包含 Python 后台与前端资源，不需要另外准备 Python 或 Node.js；校验值见同一页面的 `SHA256SUMS.txt`。
 
 安装包尚未签名；已通过本机冻结后台自测及 NSIS 构建，干净 Windows 系统的安装、升级和卸载仍待验收。macOS 暂不提供本次发布附件，适配入口及验证限制见 [Mac 说明](docs/MACOS.md)。
 
 开发者也可完整解压仓库后双击 `安装.cmd` 从源码运行。源码方式首次需要联网准备 Python 和依赖，必须保留整个项目目录，详见 [Windows 安装与排障](docs/WINDOWS.md)。
 
 启动后添加自己的 SSH 机器。独立桌面窗口、系统托盘和资源浮窗共用本机后台；关闭主窗口不等于停止后台，退出请使用托盘菜单。
+
+Windows 安装版从 v0.1.1 起支持启动检查及手动下载、安装更新。已有 v0.1.0 用户需先手动安装一次；安装前请保存文件、关闭活动终端，并退出旧托盘后台。更新机制及限制见 [应用更新](docs/UPDATES.md)。
 
 ## 浏览器演示
 

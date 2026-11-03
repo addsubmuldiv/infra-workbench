@@ -47,3 +47,6 @@ desktop/src-tauri/icons/*
 
 # Standalone browser demo artifact
 frontend/demo-dist/
+
+# Collected signed release artifacts
+/release-assets/

@@ -343,6 +343,10 @@ class MenuBar:
             logging.exception('macOS test notification failed')
 
     def tick(self, _):
+        from backend.desktop_update import requested
+        if requested():
+            self.quit()
+            return
         if self.locale != current_locale():
             self.locale = current_locale()
             for item, zh, en in self.localized_items:
@@ -388,7 +392,8 @@ class MenuBar:
 
     def quit(self, _=None):
         self.close()
-        if self.service.owned:
+        from backend.desktop_update import requested
+        if self.service.owned and not requested():
             from backend.launcher import shutdown_desktop
             shutdown_desktop(ROOT)
         self.rumps.quit_application()
@@ -412,9 +417,12 @@ def launch(rumps, service, *, data=DATA, root=ROOT, menu_class=MenuBar, clock=ti
     receipt = receipt if receipt is not None else ReadyReceipt(data/'macos-desktop.ready', root)
     menu = None
     previous_signal = None
+    from backend.desktop_update import activate, deactivate
+    update_control = None
     try:
         started_at = clock()
         service.ensure()
+        update_control = activate(data, owned=service.owned)
         menu = menu_class(rumps, service, DesktopSettings(data/'desktop.json'),
                           LoginStartup(root=root, data=data), receipt, started_at=started_at)
         if threading.current_thread() is threading.main_thread():
@@ -430,6 +438,7 @@ def launch(rumps, service, *, data=DATA, root=ROOT, menu_class=MenuBar, clock=ti
             menu.close()
         receipt.remove()
         service.stop()  # ServiceHost only stops a service owned by this process.
+        deactivate(update_control)
 
 
 def mac_service():

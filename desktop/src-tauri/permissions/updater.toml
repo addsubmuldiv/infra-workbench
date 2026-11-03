@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-desktop-updater"
+description = "Guarded native update commands; main window only, safety replies from all local windows."
+commands.allow = ["desktop_update_status", "desktop_update_check", "desktop_update_download", "desktop_update_install", "desktop_update_safety_response"]

@@ -43,6 +43,25 @@ def test_command_dispatch_scrubs_output_and_keeps_failure(tmp_path):
     asyncio.run(run())
 
 
+def test_remote_command_registry_blocks_update_until_terminal_status(tmp_path):
+    async def run():
+        app = fixture_app(tmp_path)
+        from backend.desktop_update import _background_busy
+        status = 'running'
+        async def ssh(host, command, source=None):
+            return 0, 'IWB_COMMAND:'+json.dumps(dict(status=status, exit_code=None)), ''
+        app.state.ssh.run = ssh
+        state = {}
+        service = app.state.mcp_service.scoped(state, {'a'})
+        await service.call('execute_server_command', {'host_id': 'a', 'command': 'sleep 20'})
+        assert _background_busy(app)
+        status = 'completed'
+        await service.call('get_command_job', {'host_id': 'a', 'job_id': state['command_jobs'][0]['job_id']})
+        assert not _background_busy(app)
+        app.state.agent_chat.store.db.close()
+    asyncio.run(run())
+
+
 def test_sudo_uses_bound_connection_and_never_returns_password(tmp_path):
     async def run():
         app = fixture_app(tmp_path)

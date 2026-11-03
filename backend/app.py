@@ -402,6 +402,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     from .launcher import register_launch_routes
     register_launch_routes(app, data)
+    from .desktop_update import register_routes as register_desktop_update_routes
+    register_desktop_update_routes(app)
 
     from .workspace_state import register_workspace_state
     register_workspace_state(app, store)
@@ -422,7 +424,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @app.get('/api/health')
     async def health():
-        return {'name': 'infra-workbench', 'version': '0.1.0'}
+        return {'name': 'infra-workbench', 'version': '0.1.1'}
 
     @app.put('/api/settings/refresh')
     async def set_refresh(settings: RefreshSettings):

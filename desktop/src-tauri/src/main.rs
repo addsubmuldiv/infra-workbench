@@ -5,6 +5,7 @@ use std::{path::PathBuf, process::{Command, Stdio}, sync::atomic::{AtomicBool, O
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 mod window_fade;
 mod quick_window;
+mod updater;
 use window_fade::restore_window;
 
 #[derive(Default)]
@@ -138,9 +139,12 @@ const READY_SCRIPT: &str = r#"
 
 fn main() {
     tauri::Builder::default()
+        .manage(updater::UpdaterState::default())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Connecting::default())
         .manage(DesktopSession::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if updater::installing(app) { return; }
             if args.iter().any(|arg|arg=="--quit-desktop") { app.exit(0);return; }
             if let Some((tool,host))=quick_window::request(&args) { let _=quick_window::open(app,&tool,&host);return; }
             if let Some(window) = app.get_webview_window("main") {
@@ -152,19 +156,21 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::default()
             .with_filter(|label|label=="main")
             .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE | tauri_plugin_window_state::StateFlags::POSITION | tauri_plugin_window_state::StateFlags::MAXIMIZED).build())
-        .invoke_handler(tauri::generate_handler![close_desktop, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
+        .invoke_handler(tauri::generate_handler![updater::desktop_update_status, updater::desktop_update_check, updater::desktop_update_download, updater::desktop_update_install, updater::desktop_update_safety_response, close_desktop, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
         .setup(|app| {
             if std::env::args().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
             if let Some((tool,host))=quick_window::request(&std::env::args().collect::<Vec<_>>()) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
             #[cfg(target_os = "macos")]
             app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
+            let navigation_app=app.handle().clone();
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
                 .visible(false)
                 .background_color(tauri::window::Color(242,245,249,255))
                 .initialization_script(READY_SCRIPT)
                 .disable_drag_drop_handler() // Keep HTML file/folder upload handlers in the shared UI.
-                .on_navigation(|url| {
+                .on_navigation(move |url| {
+                    if updater::installing(&navigation_app) { return false; }
                     if is_service_url(url) || bootstrap_url(url) { return true; }
                     if matches!(url.scheme(), "http" | "https") { let _ = open::that(url.as_str()); }
                     false

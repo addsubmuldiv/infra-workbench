@@ -46,8 +46,10 @@ def main():
     shutil.copy2(work/'dist'/('iwb-runtime'+suffix), destination)
     receipt = work/'runtime-self-test.json'
     receipt.unlink(missing_ok=True)
-    subprocess.run([str(destination), '--self-test', str(receipt)], cwd=ROOT, check=True, timeout=90)
-    result = json.loads(receipt.read_text(encoding='utf-8'))
+    checked = subprocess.run([str(destination), '--self-test', str(receipt)], cwd=ROOT, check=False, timeout=90)
+    result = json.loads(receipt.read_text(encoding='utf-8')) if receipt.exists() else {'ok':False,'error':'No fresh self-test receipt','returncode':checked.returncode}
+    if checked.returncode:
+        raise RuntimeError('Bundled runtime self-test failed: '+str(result))
     if result.get('ok') is not True or result.get('frozen') is not True:
         raise RuntimeError('Bundled runtime self-test failed: '+str(result))
     # Exercise the real tray/menu-bar entry's argument parser too.

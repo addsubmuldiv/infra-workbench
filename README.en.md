@@ -25,13 +25,15 @@ The model interprets goals, selects tools, and explains results. The backend val
 
 ## Desktop installation on Windows
 
-Current version: **v0.1.0**. Download the Windows x64 installer from the [v0.1.0 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.0), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`.
+Current version: **v0.1.1**. Download the Windows x64 installer from the [v0.1.1 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.1), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`.
 
 The installer is unsigned. Local frozen-runtime checks and NSIS packaging passed; clean Windows install, upgrade and uninstall acceptance is still pending. This release does not include macOS installers. See [macOS limitations](docs/MACOS.md), currently in Chinese.
 
 Developers can also extract the complete repository and run **`安装.cmd`** from source. This prepares Python and dependencies over the internet and requires keeping the whole project directory. See [Windows instructions](docs/WINDOWS.md).
 
 Add your own SSH machines after launch. Desktop windows, the tray, and the floating monitor share the local backend. Use the tray menu to exit the backend.
+
+Windows installers support startup update checks and user-initiated download/installation from v0.1.1. Existing v0.1.0 users must manually install this bootstrap version once; save work and exit the old tray/backend first. See [updater operation and limits](docs/UPDATES.md).
 
 ## Browser demo
 

@@ -2,7 +2,7 @@
 
 ## 桌面安装包
 
-当前版本为 [v0.1.0](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.0)，提供 Windows x64 向导安装包。安装包包含 Python 后台及前端资源；普通用户无需安装开发环境。附件中的 `SHA256SUMS.txt` 用于检查下载完整性。
+当前版本为 [v0.1.1](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.1)，提供 Windows x64 向导安装包。安装包包含 Python 后台及前端资源；普通用户无需安装开发环境。附件中的 `SHA256SUMS.txt` 用于检查下载完整性。
 
 安装包未签名。本机冻结后台自测与 NSIS 构建已通过，但无 Python / Node.js 的干净 Windows 系统安装、升级和卸载验收仍待完成。
 

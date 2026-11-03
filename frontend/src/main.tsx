@@ -1,5 +1,6 @@
 import {isDemo,demoRuntime} from './demoBootstrap';
 import {LanguageSettings} from './LanguageSettings';
+import {DesktopUpdateNotification} from './DesktopUpdatePanel';
 import {DemoGuide} from './DemoGuide';
 import {DemoTerminal} from './DemoPanels';
 import {ui,themeText} from './mainI18n';
@@ -255,7 +256,7 @@ function App(){
       <div className="sidebar-hosts" data-tour="hosts">{hostList}</div>
       <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title={ui("机器选择保存在本机后台，其他窗口会同步更新。通过 SSH 连接远端机器，无需远端常驻 Agent。")}><i aria-hidden="true"/>{isDemo?tr("演示数据","Demo data"):ui("本地服务")}{error?ui("未连接"):ui("已连接")}</div></div>
     </aside>
-    <main onClick={clearDeviceSelection}>{workspaceError&&<div role="alert" className="assistant-error">{ui("工作空间状态同步失败，正在重试；未保存时请勿关闭页面。")}</div>}<header><div className="breadcrumb">{ui("工作空间 ")}<ChevronRight size={13}/>{pageTitle}</div>
+    <main onClick={clearDeviceSelection}><DesktopUpdateNotification openSettings={()=>navigate('settings')}/>{workspaceError&&<div role="alert" className="assistant-error">{ui("工作空间状态同步失败，正在重试；未保存时请勿关闭页面。")}</div>}<header><div className="breadcrumb">{ui("工作空间 ")}<ChevronRight size={13}/>{pageTitle}</div>
       <div className="header-tools"><label className="live refresh-control" title={ui("同时调整后台采集与页面刷新频率，设置对本工作台的所有窗口生效")}><i/><select aria-label={ui("刷新间隔")} value={refreshInterval} disabled={busy==='refresh-interval'||!state.server_time} onChange={async event=>{const interval=Number(event.target.value);setBusy('refresh-interval');try{const result=await api('/settings/refresh','PUT',{interval_seconds:interval});setState(old=>({...old,refresh_interval_seconds:result.interval_seconds}));setNotice(ui("刷新间隔已保存"))}catch(error){setNotice(error instanceof Error?error.message:ui("刷新间隔保存失败"))}finally{setBusy('')}}}>{[5,10,20,30].map(seconds=><option key={seconds} value={seconds}>{ui("每 ")}{seconds} {ui(" 秒刷新")}</option>)}</select></label>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>{ui("主题")}</span></summary><div className="theme-options"><h3>{ui("选择界面主题")}</h3><p>{ui("主题偏好由本机后台统一保存")}</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{themeText(t.name)}</strong><small>{t.mode==='light'?ui("亮色"):ui("暗色")} · {themeText(t.description)}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>

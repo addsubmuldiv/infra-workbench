@@ -401,6 +401,10 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 logging.info('Taskbar recreated; restoring tray icon')
                 ensure_tray_icon(shell,icon_data);return 0
             if message==0x113 and wp==1:
+                from backend.desktop_update import requested
+                if requested():
+                    user.DestroyWindow(hwnd)
+                    return 0
                 icon_data.tip = tr('Infra Workbench · 后台监控', 'Infra Workbench · Background monitoring')
                 ensure_tray_icon(shell,icon_data);return 0
             if message==WM_TRAY:
@@ -420,7 +424,8 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 logging.info('Tray window destroyed')
                 user.KillTimer(hwnd,1)
                 if floating_monitor: floating_monitor.shutdown()
-                if not smoke_test:
+                from backend.desktop_update import requested
+                if not smoke_test and not requested():
                     from backend.launcher import shutdown_desktop
                     shutdown_desktop(ROOT)
                 stop.set();shell.Shell_NotifyIconW(2,ctypes.byref(icon_data));user.PostQuitMessage(0);return 0
@@ -508,6 +513,8 @@ def main(argv=None):
     if not mutex: raise ctypes.WinError(ctypes.get_last_error())
     duplicate=ctypes.get_last_error()==183
     service=ServiceHost()
+    from backend.desktop_update import activate, deactivate
+    update_control=None
     try:
         logging.info('Desktop launch pid=%s duplicate=%s',os.getpid(),duplicate)
         if duplicate:
@@ -515,6 +522,7 @@ def main(argv=None):
             return
         started_at=time.time()
         service.ensure()
+        update_control=activate(DATA,owned=service.owned)
         run_tray(service,DesktopSettings(DATA/'desktop.json'),Startup(),not args.no_browser,started_at=started_at)
     except Exception as exc:
         logging.exception('Desktop startup failed')
@@ -523,6 +531,7 @@ def main(argv=None):
     finally:
         logging.info('Desktop exiting pid=%s',os.getpid())
         service.stop()
+        deactivate(update_control)
         kernel.CloseHandle(mutex)
 
 

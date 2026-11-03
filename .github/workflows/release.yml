@@ -9,6 +9,11 @@ on:
         description: 'Existing version tag to build (for example v0.1.0)'
         required: true
         type: string
+      include_macos:
+        description: 'Also release experimental macOS packages (all builds must pass)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,8 +46,10 @@ jobs:
   build:
     needs: validate
     uses: ./.github/workflows/desktop.yml
+    secrets: inherit
     with:
       ref: ${{ needs.validate.outputs.tag }}
+      include_macos: ${{ inputs.include_macos || false }}
   release:
     needs: [validate, build]
     runs-on: ubuntu-latest
@@ -61,8 +68,15 @@ jobs:
           pattern: desktop-*
           path: release-assets
           merge-multiple: true
-      - name: Verify artifact set and generate checksums
-        run: node desktop/release.mjs checksums release-assets
+      - name: Generate signed update feed and checksums
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          INCLUDE_MACOS: ${{ inputs.include_macos || false }}
+        run: |
+          flags=()
+          if [ "$INCLUDE_MACOS" != "true" ]; then flags+=(--partial); fi
+          node desktop/release.mjs manifest release-assets "${RELEASE_TAG#v}" CHANGELOG.md "${flags[@]}"
+          node desktop/release.mjs checksums release-assets "${flags[@]}"
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -72,4 +86,4 @@ jobs:
             echo "Release already exists; preserving its published assets."
             exit 0
           fi
-          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --title "Infra Workbench $RELEASE_TAG" --notes "Windows (x64) and macOS (Apple Silicon and Intel) installers. These builds are unsigned and macOS builds are not notarized. Review platform verification and known limitations before publishing. SHA256SUMS.txt verifies download integrity; it does not authenticate the publisher."
+          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --title "Infra Workbench $RELEASE_TAG" --notes "Signed updater release. Windows x64 is the default target; experimental macOS packages are included only when explicitly requested. Updater artifacts are cryptographically signed. Windows installers have no Authenticode signature, and macOS builds are not notarized. Review platform verification and known limitations before publishing. SHA256SUMS.txt verifies download integrity; it does not authenticate the publisher."

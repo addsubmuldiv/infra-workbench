@@ -85,7 +85,8 @@ class WorkbenchMCPService:
         if self.operations is not None and name in self.operations.catalog():
             return await self.operations.call(name, arguments, self.allowed)
         if self.operations is not None and name in command_catalog():
-            commands = CommandTools(self.probes, getattr(self.operations.app.state, 'sudo', None))
+            commands = CommandTools(self.probes, getattr(self.operations.app.state, 'sudo', None),
+                                    getattr(self.operations.app.state, 'desktop_command_jobs', None))
             return await commands.call(name, arguments, self.allowed, self.state)
         if self.allowed is not None:
             # Extra legacy tools (e.g. get_host/search_hosts) must use a scoped
