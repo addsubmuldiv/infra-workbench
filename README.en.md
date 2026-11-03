@@ -27,7 +27,7 @@ The model interprets goals, selects tools, and explains results. The backend val
 
 Current version: **v0.1.2**. Download the Windows x64 installer from the [v0.1.2 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.2), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`.
 
-The Windows installer has no Authenticode code signature; updater packages carry a separate update signature. Clean Windows install, upgrade and uninstall acceptance is still pending. GitHub macOS runners build separate experimental Apple Silicon and Intel packages for the same Release. See [macOS installation and limitations](docs/MACOS.md), currently in Chinese; native Mac acceptance is still pending.
+The Windows installer has no Authenticode code signature; updater packages carry a separate update signature. Clean Windows install, upgrade and uninstall acceptance is still pending. GitHub macOS runners build experimental Apple Silicon packages for the same Release. See [macOS installation and limitations](docs/MACOS.md), currently in Chinese; native Mac acceptance is still pending.
 
 Developers can also extract the complete repository and run **`安装.cmd`** from source. This prepares Python and dependencies over the internet and requires keeping the whole project directory. See [Windows instructions](docs/WINDOWS.md).
 

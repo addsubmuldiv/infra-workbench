@@ -1,13 +1,13 @@
 # macOS 使用说明
 
-Mac 作为工作台客户端，通过 SSH 管理 Linux 上的 GPU / Ascend NPU 服务器，面向 Intel 和 Apple Silicon。源码运行的目标环境为 macOS 11+、Python 3.11+；桌面包的构建配置最低为 macOS 12。**菜单栏、钥匙串授权、真实通知和干净系统安装尚待 Mac 实机验收。**
+Mac 作为工作台客户端，通过 SSH 管理 Linux 上的 GPU / Ascend NPU 服务器，桌面安装包优先支持 Apple Silicon。源码运行的目标环境为 macOS 11+、Python 3.11+；桌面包的构建配置最低为 macOS 12。**菜单栏、钥匙串授权、真实通知和干净系统安装尚待 Mac 实机验收。**
 
 ## 桌面安装包（实验性）
 
-从 [v0.1.2 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.2) 按处理器选择 `.dmg`：
+从 [v0.1.2 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.2) 下载 Apple Silicon 的 `.dmg`：
 
 - Apple Silicon：`Infra-Workbench-0.1.2-darwin-aarch64.dmg`。
-- Intel：`Infra-Workbench-0.1.2-darwin-x86_64.dmg`。
+Intel Mac 暂不提供桌面安装包。
 
 打开磁盘映像，将应用拖到 Applications 后启动。桌面包包含 Python 后台与前端资源，无需另装 Python 或 Node.js；外部 Codex、Claude Code、OpenCode 仍需自行安装和登录。手动升级前保存编辑内容并退出旧菜单栏后台。
 
