@@ -2,6 +2,11 @@ name: Desktop packages
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
   pull_request:
     paths:
       - 'desktop/**'
@@ -28,6 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -57,6 +63,8 @@ jobs:
       - run: npm test
         working-directory: frontend
       - run: npm ci
+        working-directory: desktop
+      - run: node --test release.test.mjs
         working-directory: desktop
       - run: cargo test --locked
         working-directory: desktop/src-tauri

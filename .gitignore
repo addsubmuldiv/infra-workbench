@@ -44,3 +44,6 @@ desktop/src-tauri/icons/*
 
 # Local build and UI verification artifacts.
 /outputs/
+
+# Standalone browser demo artifact
+frontend/demo-dist/

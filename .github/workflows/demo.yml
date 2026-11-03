@@ -1,0 +1,60 @@
+name: Browser demo
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the standalone demo to GitHub Pages (enable Pages first)'
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    paths: ['frontend/**', '.github/workflows/demo.yml']
+permissions:
+  contents: read
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build:demo
+        working-directory: frontend
+      - uses: actions/upload-artifact@v6
+        with:
+          name: infra-workbench-browser-demo
+          path: frontend/demo-dist/
+          if-no-files-found: error
+      - name: Prepare Pages artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: frontend/demo-dist/
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: demo
+    runs-on: ubuntu-latest
+    concurrency:
+      group: browser-demo-pages
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy demo
+        id: deployment
+        uses: actions/deploy-pages@v4

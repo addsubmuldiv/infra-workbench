@@ -1,6 +1,12 @@
 # Windows 安装与使用
 
-## 适用环境
+## 桌面安装包
+
+普通用户优先选择 Releases 中实际发布的桌面安装包。CI 已配置 NSIS 与 PyInstaller 打包，但尚未在无 Python / Node.js 的干净 Windows 系统验收安装、启动和卸载；CI 构建产物不等于正式发布，也不能据此承诺无需运行时的安装已验证。
+
+以下 `安装.cmd`、Python、WinGet 和保留项目目录等要求适用于源码安装。不要把源码启动器生成的 EXE 当成可独立分发的桌面安装包。
+
+## 源码安装适用环境
 
 - 本机：Windows 10 / 11，Windows PowerShell 5.1 或更高版本，具有写权限的普通目录。
 - Python 3.11+，Windows OpenSSH 客户端 `ssh.exe`。

@@ -1,3 +1,5 @@
+import {isDemo} from './demoBootstrap';
+import {DemoAssistant} from './DemoPanels';
 import {ui} from './assistantLocale';
 import React,{useEffect,useState} from 'react';
 import {Sparkles} from 'lucide-react';
@@ -5,7 +7,9 @@ import {assistantRequest,type AssistantStatus} from './infraAssistant';
 import './infraAssistant.css';
 import {AssistantChat} from './AssistantChat';
 
-export function InfraAssistant({openSettings,selectedHostIds=[],compact=false}:{compact?:boolean;openSettings:()=>void;selectedHostIds?:string[]}){
+type AssistantProps={compact?:boolean;openSettings:()=>void;selectedHostIds?:string[]};
+export function InfraAssistant(props:AssistantProps){return isDemo?<DemoAssistant/>:<LiveInfraAssistant {...props}/>}
+function LiveInfraAssistant({openSettings,selectedHostIds=[],compact=false}:{compact?:boolean;openSettings:()=>void;selectedHostIds?:string[]}){
   const [status,setStatus]=useState<AssistantStatus|null>(null),[error,setError]=useState('');
   useEffect(()=>{
     let request:AbortController;

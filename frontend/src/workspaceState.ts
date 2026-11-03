@@ -44,9 +44,9 @@ export function createWorkspaceStorage(send:Requester=request,onError:(failed:bo
  };
 }
 export const workspaceStorage=createWorkspaceStorage(request,failed=>{if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('workspace-save-status',{detail:failed}))});
-export async function initializeWorkspace(){
+export async function initializeWorkspace({isolated=false}:{isolated?:boolean}={}){
  // One-time import only. All subsequent reads/writes use the backend.
- let legacy:Storage|undefined;try{legacy=window.localStorage}catch{}
+ let legacy:Storage|undefined;try{if(!isolated)legacy=window.localStorage}catch{}
  await workspaceStorage.initialize(legacy);
  // Remove obsolete copies only after the backend acknowledged migration.
  if(legacy)for(const key of legacyKeys){try{legacy.removeItem(key)}catch{}}

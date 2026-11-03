@@ -1,0 +1,60 @@
+# Desktop release validation
+
+Validation date: 2026-11-03. These results describe this working tree and local Windows host, not a clean Windows or macOS installation.
+
+## Release procedure
+
+1. Update desktop/package.json, desktop/package-lock.json, desktop/src-tauri/tauri.conf.json, desktop/src-tauri/Cargo.toml, and desktop/src-tauri/Cargo.lock together.
+2. Push a version tag such as v0.1.0, or manually run **Desktop release** with that existing tag. The tag must point to the checked-out commit and match the desktop versions.
+3. The reusable desktop workflow builds Windows x64, macOS Apple Silicon, and macOS Intel packages. Packaging runs the frozen Python runtime self-test, Rust tests, frontend tests, and WebKit checks. Missing installers fail artifact upload.
+4. The release job requires one EXE and two DMG files, writes SHA256SUMS.txt, and creates a **draft** GitHub release. Only this job has contents: write; checkout does not persist credentials. Existing releases are not overwritten.
+5. Before publishing, download and verify all packages, complete the installation checks below, and inspect the workflow logs. GitHub workflows have not been executed in this local session.
+
+Checksums detect corrupted downloads; they do not replace publisher signatures. The workflow provides neither Windows code signing nor macOS signing/notarization. Release notes explicitly disclose this.
+
+## Locally verified
+
+- node --test desktop/release.test.mjs: 2 tests passed (version mismatch/tag validation, required installer set and SHA256 known-answer check).
+- cargo test --locked in desktop/src-tauri: 8 tests passed.
+- Both workflow YAML files parsed with local PyYAML. This checks syntax, not GitHub execution or hosted-runner availability.
+- NSIS uses a per-user installation (currentUser). Runtime packaging explicitly includes code/assets and runs a frozen-runtime self-test before bundling.
+
+## Installation checks still required
+
+- Clean Windows account or VM without Python, Node.js, or Rust: install, launch from Start menu, configure a machine, exercise terminal/file access, quit/relaunch, upgrade, uninstall. Test the WebView2 bootstrap installation path without an existing WebView2 runtime. Verify user configuration survives upgrade.
+- Real Apple Silicon and Intel Macs: mount DMG, install into Applications, launch, exercise terminal/file access, quit/relaunch, upgrade, uninstall. Record Gatekeeper prompts and the unsigned/not-notarized distribution limitation.
+- Check credentials and user data are absent from installers; confirm first-launch state and guidance. Test non-ASCII Windows user profiles and paths containing spaces.
+
+Do not mark platform installation checks as passed based only on CI compilation or a frozen-runtime self-test.
+
+## Initial local packaging attempt
+
+The frontend production build and frozen Windows runtime self-test succeeded. The fresh receipt reported ok=true, frozen=true, native_pty=true, 12 built-in skills, and hosts=0. PyInstaller emitted optional-module/platform-DLL warnings; these are retained in work/release-validation/desktop-build.log and do not establish clean-machine compatibility.
+
+The first Tauri build failed because a running desktop process locked target/release/infra-workbench-desktop.exe (Windows access denied). No running desktop process was terminated. Subsequent packaging uses an isolated CARGO_TARGET_DIR to avoid interfering with the user's open desktop window.
+
+## Final Windows package
+
+After the final frontend compatibility fixes, the Windows runtime was rebuilt and its new self-test receipt passed (ok=true, frozen=true, native_pty=true, hosts=0). Tauri NSIS packaging then completed with exit code 0 using the isolated target directory. The existing desktop process was left running.
+
+- Installer: release/Infra Workbench_0.1.0_x64-setup.exe
+- Size: 88,138,724 bytes (84.06 MiB)
+- SHA256: 95b789ac33edd2ce62cfad077f58899b36dad432e773a198acc26d1d251e013c
+- Checksum sidecar: release/Infra Workbench_0.1.0_x64-setup.exe.sha256
+- Final logs: work/release-validation/runtime-final.log and work/release-validation/nsis-final.log
+- Self-test receipt: work/desktop-build/runtime-self-test.json
+
+Reproduce packaging from the project root using the existing build environment:
+
+```powershell
+# npm run build in desktop normally builds frontend, runtime and NSIS together.
+# Close an existing development executable first, or isolate Cargo output:
+$env:CARGO_TARGET_DIR = Join-Path (Get-Location) 'work/release-validation/target'
+Push-Location desktop
+npm run build
+Pop-Location
+Copy-Item -LiteralPath 'work/release-validation/target/release/bundle/nsis/Infra Workbench_0.1.0_x64-setup.exe' -Destination 'release/Infra Workbench_0.1.0_x64-setup.exe'
+Get-FileHash -LiteralPath 'release/Infra Workbench_0.1.0_x64-setup.exe' -Algorithm SHA256
+```
+
+The final local package has not been installed or upgraded in a clean Windows environment. macOS packages and the GitHub release workflow remain unexecuted in this session. No claim of completed clean-machine or macOS validation is made.

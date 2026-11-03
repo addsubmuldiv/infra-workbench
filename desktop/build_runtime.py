@@ -45,6 +45,7 @@ def main():
     destination = output/('iwb-runtime-'+target+suffix)
     shutil.copy2(work/'dist'/('iwb-runtime'+suffix), destination)
     receipt = work/'runtime-self-test.json'
+    receipt.unlink(missing_ok=True)
     subprocess.run([str(destination), '--self-test', str(receipt)], cwd=ROOT, check=True, timeout=90)
     result = json.loads(receipt.read_text(encoding='utf-8'))
     if result.get('ok') is not True or result.get('frozen') is not True:

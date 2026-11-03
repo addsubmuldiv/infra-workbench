@@ -23,17 +23,19 @@ Turn repeatable workflows into **Skills**. Create a skill in Settings, import Ma
 
 The model interprets goals, selects tools, and explains results. The backend validates machine scope, arguments, and permissions. Execution records show target machines, parameters, results, and failures; uncertain resource states remain unknown. Resource searches and availability alerts do not lock devices or schedule training jobs.
 
-## Get started on Windows
+## Desktop installation on Windows
 
-1. Download the repository with **Code → Download ZIP** and extract the entire archive to a permanent folder, or clone it with Git.
-2. Double-click **`安装.cmd`** in the repository root. It prepares Python and dependencies, creates a desktop shortcut, and opens the app.
-3. Use the **Infra Workbench** desktop shortcut afterward.
+The intended end-user distribution is a desktop installer. The repository includes CI for a Tauri NSIS installer and a PyInstaller backend, but installation, launch, and uninstall have not yet been accepted on a clean Windows system without Python / Node.js. This does not imply that a published installer is currently available.
 
-The first installation requires an internet connection. No command-line input or Node.js installation is needed for normal use. Keep the entire extracted folder: the shortcut runs the app from that location, so copying only the generated EXE is insufficient.
+When a package is available, download it from this repository's [Releases](https://github.com/addsubmuldiv/infra-workbench/releases) after checking its version and release notes. If no installer is listed, use the source fallback: extract the entire repository and double-click **`安装.cmd`**. It prepares Python and dependencies over the internet and creates a desktop shortcut. Keep the whole project directory. See [Windows instructions](docs/WINDOWS.md) and [macOS limitations](docs/MACOS.md), currently in Chinese.
 
-The app opens the workbench and adds a system tray icon. Click **Add machine (添加机器)** to configure a server. The browser is the default interface; switch to a standalone desktop window under **Settings → Startup and desktop monitor (设置 → 启动与桌面浮窗)**.
+Add your own SSH machines after launch. Desktop windows, the tray, and the floating monitor share the local backend. Use the tray menu to exit the backend.
 
-If installation fails, the window stays open with the error. Fix the cause and run `安装.cmd` again. For macOS, use `运行.command`. Detailed [Windows troubleshooting](docs/WINDOWS.md) and [Mac instructions](docs/MACOS.md) are currently in Chinese.
+## Browser demo
+
+After starting the frontend or workbench locally, append `?demo=1` to its address, for example `http://127.0.0.1:8765/?demo=1`. Explore sample resources, terminals, files, and a highlighted walkthrough. The demo uses browser-only simulated data and isolates requests to the real backend. It does not connect to servers or model providers, and does not validate SSH, credentials, notifications, or installation. Simulated actions do not change the real workbench.
+
+For a frontend-only demo, run `npm ci` and `npm run demo` in `frontend`; `npm run build:demo` creates a static artifact. See [demo isolation and limitations](docs/DEMO.md).
 
 ## Features
 
@@ -88,11 +90,11 @@ Under **Settings → Skills (设置 → 技能)**, create a draft or import Mark
 
 ## Requirements, updates, and data
 
-The local machine needs **Windows 10 / 11 and the OpenSSH client**. If Python is missing, the installer attempts to install Python 3.12 with WinGet; without WinGet, [install Python manually](https://www.python.org/downloads/windows/). Remote machines need Linux, Python 3, and `nvidia-smi` or `npu-smi`.
+The local machine needs **Windows 10 / 11 and the OpenSSH client**. For source installation, if Python is missing, `安装.cmd` attempts to install Python 3.12 with WinGet; without WinGet, [install Python manually](https://www.python.org/downloads/windows/). Remote machines need Linux, Python 3, and `nvidia-smi` or `npu-smi`.
 
 Before updating, save edited files, handle terminal tasks, and exit through the tray menu. Pull the latest code and run `安装.cmd` again; existing machine configuration is retained and shortcuts are regenerated. Refreshing a page does not restart the backend.
 
-The backend runs locally. **Do not share the `data` directory or SSH private keys.** Optional saved sudo passwords use Windows Credential Manager and can be removed. Assistant conversations and server content actually read by its tools are sent to the configured model provider; do not ask it to read confidential files. Machine scope and credential protections remain enforced by the backend. See [data and credentials](SECURITY.md) in Chinese.
+The backend runs locally. **Do not share the `data` directory or SSH private keys.** Optional saved sudo passwords use Windows Credential Manager and can be removed. The assistant can write server files, execute authorized remote Shell commands, manage processes, and explicitly request sudo subject to server policy. It has no independent per-operation approval layer. Assistant conversations and server content actually read by its tools are sent to the configured model provider; do not ask it to read confidential files. Machine scope and credential protections remain enforced by the backend. See [data and credentials](SECURITY.md) in Chinese.
 
 ## Documentation
 

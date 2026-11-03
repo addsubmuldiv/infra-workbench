@@ -18,7 +18,7 @@ function host(id,kind,count,fresh=true){return {id,target:id,user:null,auth:'key
 const hosts=[host('alpha','NPU',8),host('beta','GPU',4),host('offline','GPU',2,false)];
 hosts[1].snapshot.devices.slice(1).forEach(d=>d.processes=[{pid:123,user:'test'}]);
 
-function harness(t,hash='#overview',reservations=[],hostItems=hosts){
+function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   const values=[],storage=new Map();let cursor=0,tree;
   const state={hosts:hostItems,rules:[],reservations,events:[],server_time:100};
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),lazy:()=>()=>null,Suspense:'suspense',StrictMode:'strict',
@@ -29,7 +29,7 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts){
   }
   const source=fs.readFileSync(new URL('../src/main.tsx',import.meta.url),'utf8')+'\nexport {App};';
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};const mocks={'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':{...preferences,browserStorage:()=>window.localStorage},'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
+  const exports={};const mocks={'./demoBootstrap':{isDemo:demo},'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':{...preferences,browserStorage:()=>window.localStorage},'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
   new Function('require','exports',js)(name=>workspaceMock(name,react)??(mocks[name]||new Proxy({},{get:(_,key)=>key})),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);
@@ -212,4 +212,17 @@ test('SSH password button highlights only confirmed saved credentials and update
   assert.ok(!h.button('alpha SSH 密码设置').props.className.includes('enabled'));
   h.button('alpha SSH 密码设置').props.onClick();h.render();
   assert.ok(h.find(n=>n.type==='SSHPasswordDialog'));
+});
+
+
+test('demo prevents entering real SSH credentials while leaving resource browsing usable',t=>{
+ const h=harness(t,'#overview',[],hosts,true);h.render();
+ h.button('alpha SSH 密码设置').props.onClick();h.render();
+ assert.equal(h.find(n=>n.type==='SSHPasswordDialog'),undefined);
+ h.button('alpha sudo 设置').props.onClick();h.render();
+ assert.equal(h.find(n=>n.type==='SudoModal'),undefined);
+ h.button('添加机器').props.onClick();h.render();
+ assert.equal(h.find(n=>n.type==='AddMachine'),undefined);
+ h.button('只看机器 beta').props.onClick();h.render();
+ assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 beta'));
 });

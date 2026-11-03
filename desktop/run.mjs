@@ -19,6 +19,10 @@ const python=path.join(root,process.platform==='win32'?'.venv/Scripts/python.exe
 if(!existsSync(python))throw new Error('Run the existing project installer first to create .venv');
 const npmCli=process.env.npm_execpath;
 if(!npmCli||!existsSync(npmCli))throw new Error('Start this script with npm run dev or npm run build');
+if(mode==='build'){
+  const check=spawnSync(python,['-c','import PyInstaller'],{cwd:root,stdio:'ignore'});
+  if(check.status!==0)throw new Error(`Desktop build dependencies are missing. Run: "${python}" -m pip install -r desktop/requirements-build.txt`);
+}
 run(process.execPath,[npmCli,'run','build'],path.join(root,'frontend'));
 if(mode==='build')run(python,[path.join(directory,'build_runtime.py')]);
 const args=[path.join(directory,'node_modules/@tauri-apps/cli/tauri.js'),mode];

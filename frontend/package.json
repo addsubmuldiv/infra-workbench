@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "build:demo": "tsc --noEmit && vite build --mode demo",
+    "demo": "vite --host 127.0.0.1 --mode demo"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
