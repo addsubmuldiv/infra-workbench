@@ -71,7 +71,8 @@ def test_codex_chat_does_not_require_api_profile_and_scope_is_bound(tmp_path,mon
     asyncio.run(scenario())
 
 
-def test_scope_change_starts_fresh_thread_without_old_private_transcript(monkeypatch):
+@pytest.mark.parametrize('seed_scope,expected',[(None,False),(['b'],False),(['a'],True)])
+def test_scope_change_starts_fresh_thread_without_old_private_transcript(monkeypatch,seed_scope,expected):
     import backend.codex_agent as module
     from backend.mcp_client import MCPGateway
     calls=[]
@@ -103,9 +104,12 @@ def test_scope_change_starts_fresh_thread_without_old_private_transcript(monkeyp
     async def scenario():
         chat={'state':{},'messages':[{'role':'assistant','content':'private-b-machine'},{'role':'user','content':'current request'}],
               'turns':[{'tools':[]}],'codex_thread_id':'old-wide-thread','codex_scope':None}
+        if seed_scope is not None:chat['branch_seed']=dict(engine='codex',scope=seed_scope,messages=[dict(role='user',content='safe branch context')])
         await module.run_codex_agent(chat,MCPGateway(Service()),{'a'},'rules',lambda:None,lambda:None,lambda *a,**k:None)
         prompt=next(params for method,params in calls if method=='turn/start')['input'][0]['text']
-        assert prompt=='current request'
+        assert ('safe branch context' in prompt)==expected
+        assert 'private-b-machine' not in prompt and prompt.endswith('current request')
+        assert 'branch_seed' not in chat
         assert chat['codex_scope']==['a'] and chat['turns'][-1]['model']=='live-default'
         thread=next(params for method,params in calls if method=='thread/start')
         assert thread['sandbox']=='read-only' and thread['approvalPolicy']=='never'

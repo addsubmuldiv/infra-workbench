@@ -47,11 +47,12 @@ async def main():
     codex_agent.CodexConnection.__init__=track
     codex_agent.CodexConnection.request=request
     synthetic=SyntheticService();gateway=MCPGateway(synthetic)
-    chat={'state':{},'messages':[],'turns':[]}
+    chat={'id':'synthetic-chat','active_run':'synthetic-run','state':{},'messages':[],'turns':[]}
+    controls={}
     async def turn(prompt):
         chat['messages'].append({'role':'user','content':prompt});chat['turns'].append({'tools':[],'content':''})
         def text(value,**kwargs):chat['turns'][-1]['content']=value
-        await codex_agent.run_codex_agent(chat,gateway,{'synthetic-a'},'Use only infra_workbench MCP tools. Never use shell or files.',lambda:None,lambda:None,text)
+        await codex_agent.run_codex_agent(chat,gateway,{'synthetic-a'},'Use only infra_workbench MCP tools. Never use shell or files.',lambda:None,lambda:None,text,controls=controls)
     try:
         async with asyncio.timeout(90):
             await turn('Call list_hosts MCP exactly once, then report the returned alias.')
@@ -65,12 +66,15 @@ async def main():
         task=asyncio.create_task(turn('Call list_hosts MCP now to read the current inventory. Do not answer without this tool.'))
         try:
             await asyncio.wait_for(synthetic.entered.wait(),50)
+            control=controls['synthetic-chat']
+            result=await control['connection'].request('turn/steer',{'threadId':control['thread_id'],'expectedTurnId':control['turn_id'],'input':[{'type':'text','text':'Supplemental instruction: after the pending tool, report STEER-ACCEPTED.'}]})
+            assert result.get('turnId')==control['turn_id']
         finally:
             task.cancel()
             await asyncio.wait_for(asyncio.gather(task,return_exceptions=True),12)
-        assert synthetic.cancelled.is_set()
+        assert synthetic.cancelled.is_set() and not controls
         assert all(connection.process.returncode is not None for connection in connections)
-        receipt={'alias':'SMOKE-MCP-OK','tools':['list_hosts'],'resume':True,'cancel':True,'proxy_mode':'process-local OS preferences or explicit environment; loopback bypassed'}
+        receipt={'alias':'SMOKE-MCP-OK','tools':['list_hosts'],'resume':True,'cancel':True,'steer_accepted':True,'proxy_mode':'process-local OS preferences or explicit environment; loopback bypassed'}
         target=ROOT/'work/codex-live-validation.json';target.parent.mkdir(exist_ok=True)
         target.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(receipt,ensure_ascii=False))

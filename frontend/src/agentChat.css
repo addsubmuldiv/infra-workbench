@@ -60,3 +60,5 @@
 .assistant-engine-picker{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px}.assistant-engine-picker select{max-width:230px;margin-left:8px}.assistant-engine-picker>div{display:flex;align-items:center;gap:8px;margin-top:6px;color:var(--muted)}
 
 .chat-composer details pre,.chat-turn details pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+
+.chat-steer{display:grid;gap:7px;padding:10px 14px;border-top:1px solid var(--border);flex-shrink:0}.chat-steer label,.chat-steer-unavailable{font-size:12px;color:var(--muted)}.chat-steer textarea{resize:vertical;min-height:52px;max-height:160px;width:100%;box-sizing:border-box}.chat-steer button{justify-self:end}.chat-steer-unavailable{padding:0 14px 10px}.chat-supplement-receipt{margin:8px 0;padding:8px 10px;border-left:2px solid var(--border);white-space:pre-wrap}.chat-supplement-receipt small{color:var(--muted)}

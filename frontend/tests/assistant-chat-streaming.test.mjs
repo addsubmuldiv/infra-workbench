@@ -8,7 +8,7 @@ import * as api from '../src/agentChat.ts';
 import * as skills from '../src/skills.ts';
 const chat=(id,run='run1')=>({id:id.repeat(32),title:id,created:1,updated:2,active_run:run,turns:[{id:'t-'+id,role:'assistant',content:'开始',created:2,status:run?'running':'completed'}]});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(t){
+function harness(t,respond){
   const values=[],deps=[],effects=[],cleanups=[],streams=[],writes=[],requests=[];let slot=0,tree;
   const view={scrollTop:0,scrollHeight:1000,clientHeight:400};
   const useEffect=(fn,next)=>{const i=slot++;if(!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}};
@@ -19,7 +19,8 @@ function harness(t){
   globalThis.window=new EventTarget();
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>null,setItem:(key,value)=>writes.push([key,value])}});
   globalThis.fetch=async(url,options)=>{
-    requests.push({url,method:options?.method});
+    requests.push({url,method:options?.method,body:options?.body});
+    const custom=respond?.(url,options);if(custom)return custom;
     if(url==='/api/skills')return Response.json({items:[]});
     if(url.endsWith('/events')){let source;const body=new ReadableStream({start(controller){source=controller}});streams.push({id:url.split('/').at(-2),source,signal:options.signal});return new Response(body,{headers:{'Content-Type':'text/event-stream'}})}
     if(url==='/api/assistant/chats')return Response.json({items:[chat('a'),chat('b',null)]});
@@ -65,4 +66,42 @@ test('terminal handoff preserves draft, previews removable text, and sends no re
   assert.equal(h.requests.length,count);
   h.find(n=>n.type==='button'&&n.props.children.includes('移除附件')).props.onClick();h.render();
   assert.equal(h.find(n=>n.type==='pre'),undefined);
+});
+
+
+test('branch restores the previous message draft and selected skills',async t=>{
+  const draft={content:'revise this request',terminal_attachments:[],selected_skill_names:['review'],engine:'codex',restrict_to_selected:true,selected_host_ids:['original-host']};
+  const h=harness(t,url=>url.endsWith('/branch')?Response.json({chat:chat('c',null),draft}):undefined);await h.loaded();
+  await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));h.render();await tick();h.render();
+  await h.find(n=>n.type==='button'&&n.props.children.includes('从上一轮之前分支')).props.onClick();h.render();
+  const input=h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props);
+  assert.equal(input.props.text,draft.content);assert.deepEqual(input.props.selected,['review']);assert.equal(h.writes.at(-1)[1],'c'.repeat(32));
+  assert.ok(h.requests.some(r=>r.url.endsWith('/'+ 'b'.repeat(32)+'/branch')&&r.method==='POST'));
+  assert.ok(h.find(n=>n.props.role==='status'&&n.props.children.some(c=>typeof c==='string'&&c.includes('original-host'))));
+  h.find(n=>n.props.className==='chat-composer').props.onSubmit({preventDefault(){}});await tick();h.render();
+  const sent=h.requests.find(r=>r.url.endsWith('/messages'));assert.ok(sent);assert.equal(JSON.parse(sent.body).restrict_to_selected,true);assert.deepEqual(JSON.parse(sent.body).selected_host_ids,['original-host']);
+});
+
+test('Codex supplemental instructions retain draft after conflict and clear after acceptance',async t=>{
+  let fail=true;
+  const h=harness(t,url=>url.endsWith('/steer')?(fail?Response.json({detail:'run changed'},{status:409}):Response.json({...chat('a'),engine:'codex',updated:3})):url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a'),engine:'codex'}):undefined);await h.loaded();
+  const field=()=>h.find(n=>n.type==='textarea'&&n.props.maxLength===4000);
+  field().props.onChange({target:{value:'please check tests'}});h.render();
+  const submit=()=>h.find(n=>n.props.className==='chat-steer').props.onSubmit({preventDefault(){}});
+  submit();await tick();h.render();assert.equal(field().props.value,'please check tests');
+  fail=false;submit();await tick();h.render();assert.equal(field().props.value,'');
+  const sent=h.requests.filter(r=>r.url.endsWith('/steer'));assert.equal(sent.length,2);assert.deepEqual(JSON.parse(sent[0].body),{content:'please check tests',run_id:'run1'});
+});
+
+
+test('switching chat ignores a late supplemental response and aborts its request',async t=>{
+  let finish,steerSignal;
+  const h=harness(t,(url,options)=>url.endsWith('/steer')?(steerSignal=options.signal,new Promise(resolve=>{finish=resolve})):url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a'),engine:'codex'}):undefined);await h.loaded();
+  h.find(n=>n.type==='textarea'&&n.props.maxLength===4000).props.onChange({target:{value:'pending'}});h.render();
+  const pending=h.find(n=>n.props.className==='chat-steer').props.onSubmit({preventDefault(){}});h.render();
+  assert.equal(h.find(n=>n.type==='textarea'&&n.props.maxLength===4000).props.disabled,true);
+  await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));h.render();await tick();h.render();
+  assert.equal(steerSignal.aborted,true);
+  finish(Response.json({...chat('a'),engine:'codex',updated:8}));await pending;h.render();
+  assert.equal(h.writes.at(-1)[1],'b'.repeat(32));assert.equal(h.find(n=>n.props.className==='chat-steer'),undefined);
 });
