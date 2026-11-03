@@ -17,7 +17,7 @@
 - Machine scope is bound by the server, not model parameters. Native local tools have their own restrictions.
 - Preserve existing API profiles, Deep Agents, skills, streaming, cancellation and persistent remote jobs.
 - No secrets in git, output or release assets. No production remote writes for testing.
-- Final version 0.1.2; push commits and version tag, build signed Windows update release using existing workflow.
+- Final version 0.1.2; push commits and version tag, build Windows plus Apple Silicon / Intel macOS release using existing workflow. Update artifacts are signed; Apple Developer ID signing/notarization is not configured.
 
 ## Review focus
 
@@ -41,6 +41,7 @@
 
 ## Progress / rulings
 
+- User added macOS packaging during release: cancelled the Windows-only run and dispatched release workflow `41605640001` with `include_macos=true`, preserving the existing immutable v0.1.2 code tag. Both Mac architectures and Windows now build in GitHub runners. Native Mac device acceptance remains pending.
 - Release preflight: all eight approved features committed; v0.1.2 manifests synchronized. Full Python suite 742 passed / 11 skipped, frontend 272 passed, Rust 13 passed, release helpers 5 passed. WebKit normal/legacy flows pass after adding the new automation response to the synthetic fixture. Real Codex also passed against all 77 Workbench MCP tools using an isolated empty inventory. GitHub push/tag/build remain pending until these release changes are committed.
 - Starting commit: a857649; worktree clean; feature branch `codex/ai-workbench-v012`.
 - Installed Codex 0.147.0 is logged in with ChatGPT; verify actual local protocol instead of assuming Netcatty's version-specific interface.
