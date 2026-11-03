@@ -1,6 +1,11 @@
-# Infra Workbench
+<p align="center">
+  <img src="backend/assets/workbench.svg" alt="Infra Workbench Logo" width="96" height="96">
+</p>
+<h1 align="center">Infra Workbench</h1>
 
-[简体中文](README.md) | [English](README.en.md)
+<p align="center">
+  <a href="README.md">简体中文</a> | <a href="README.en.md">English</a>
+</p>
 
 **面向 AI 工程师的 AI 原生服务器工作台。** 通过 SSH 连接多台 Linux 服务器，把 GPU / Ascend NPU 资源查找、进程排查、训练日志、终端和文件管理放在一起。既可以直接操作界面，也可以用自然语言让内置 AI 助手调用工作台工具，或通过 MCP 接入自己的 Agent。
 
@@ -98,3 +103,7 @@ AI 助手默认停靠在右侧，可边查看机器边对话。拖动标题栏�
 ## 用户自定义技能
 
 在设置 → 技能中导入 Markdown/ZIP、粘贴编辑或管理技能；也可以直接对内置 Agent 说“把刚才的流程生成并安装成一个技能”。支持持久草稿、版本回退、启停、复制和导出；下一轮对话生效，脚本不会自动执行。参见 [用户技能说明](docs/USER-SKILLS.md)。
+
+## 开源许可证
+
+本项目采用 [MIT 许可证](LICENSE)，允许使用、修改、分发和商用，也允许闭源使用；分发时须保留版权声明和许可声明。软件按原样提供，不提供担保。第三方依赖仍遵循各自的许可证。

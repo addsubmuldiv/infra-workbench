@@ -1,6 +1,11 @@
-# Infra Workbench
+<p align="center">
+  <img src="backend/assets/workbench.svg" alt="Infra Workbench Logo" width="96" height="96">
+</p>
+<h1 align="center">Infra Workbench</h1>
 
-[简体中文](README.md) | [English](README.en.md)
+<p align="center">
+  <a href="README.md">简体中文</a> | <a href="README.en.md">English</a>
+</p>
 
 **An AI-native server workbench for AI engineers.** Connect to multiple Linux servers over SSH and bring GPU / Ascend NPU discovery, process inspection, training logs, terminals, and file management into one workspace. Use the interface directly, ask the built-in AI assistant to call workbench tools, or connect your own agent through MCP.
 
@@ -97,3 +102,7 @@ The backend runs locally. **Do not share the `data` directory or SSH private key
 - [Development](CONTRIBUTING.md) · [Desktop build](docs/DESKTOP.md) · [macOS verification scope](docs/MACOS.md) (Chinese).
 
 The MCP endpoint is `http://127.0.0.1:8765/mcp`.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE), which permits use, modification, distribution, and commercial and closed-source use, provided the copyright and license notices are retained when distributing the software. The software is provided as is, without warranty. Third-party dependencies remain subject to their own licenses.
