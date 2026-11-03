@@ -67,6 +67,10 @@ jobs:
           .venv/Scripts/python.exe -m pip install -r requirements-dev.txt -r desktop/requirements-build.txt
       - name: Create Python environment (macOS)
         if: runner.os == 'macOS'
+        env:
+          # Intel may build cryptography from source. Keep its OpenSSL private;
+          # otherwise PyInstaller can select Python's older libssl of the same name.
+          OPENSSL_STATIC: '1'
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install -r requirements-dev.txt -r desktop/requirements-build.txt
