@@ -113,7 +113,15 @@ def test_tray_quit_requests_graceful_resident_desktop_exit(tmp_path,monkeypatch)
     import backend.launcher as launcher
     executable=tmp_path/'infra-workbench-desktop.exe';executable.touch()
     calls=[]
+    monkeypatch.setattr(launcher,'_signal_desktop_exit',lambda:False)
     monkeypatch.setattr(launcher,'find_desktop',lambda root:executable)
     monkeypatch.setattr(launcher.subprocess,'Popen',lambda args,**kwargs:calls.append(args))
     launcher.shutdown_desktop(tmp_path)
     assert calls==[[str(executable),'--quit-desktop']]
+
+
+def test_tray_exit_signals_the_resident_without_starting_another_executable(monkeypatch):
+    import backend.launcher as launcher
+    monkeypatch.setattr(launcher,'_signal_desktop_exit',lambda:True)
+    monkeypatch.setattr(launcher,'find_desktop',lambda *_:pytest.fail('must not choose a different desktop binary'))
+    launcher.shutdown_desktop()

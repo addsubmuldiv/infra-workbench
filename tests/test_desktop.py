@@ -89,6 +89,20 @@ def test_attached_service_is_never_stopped():
     assert host.server is None
 
 
+def test_tray_detects_its_failed_backend_without_claiming_an_external_service():
+    from types import SimpleNamespace
+    host=ServiceHost()
+    assert not host.failed()
+    host.owned=True
+    host.server=SimpleNamespace(started=True,should_exit=False)
+    host.thread=SimpleNamespace(is_alive=lambda:True)
+    assert not host.failed()
+    host.thread=SimpleNamespace(is_alive=lambda:False)
+    assert host.failed()
+    host.owned=False
+    assert not host.failed()
+
+
 def test_startup_changes_only_this_apps_exact_registration(monkeypatch):
     class Registry:
         HKEY_CURRENT_USER=object()

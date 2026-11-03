@@ -155,6 +155,7 @@ def parse_ports(result):
 
 
 def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None, agent_credential_store=None):
+    service_instance=uuid.uuid4().hex
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
@@ -430,7 +431,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @app.get('/api/health')
     async def health():
-        return {'name': 'infra-workbench', 'version': '0.1.1'}
+        return {'name': 'infra-workbench', 'version': '0.1.2', 'instance':service_instance}
 
     @app.put('/api/settings/refresh')
     async def set_refresh(settings: RefreshSettings):

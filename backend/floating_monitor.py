@@ -149,6 +149,8 @@ class MonitorController:
     def shutdown(self):
         # Keep the preference, so the next tray launch restores the user's choice.
         self.stopped.set()
+        if self.thread and self.thread is not threading.current_thread():
+            self.thread.join(timeout=2)
 
     @staticmethod
     def run(controller):

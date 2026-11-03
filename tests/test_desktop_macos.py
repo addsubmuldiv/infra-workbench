@@ -161,7 +161,7 @@ def test_menu_timer_readiness_requires_ui_tick_and_background_health(tmp_path):
     from backend.desktop import DesktopSettings
     ready = ReadyReceipt(tmp_path/'macos-desktop.ready', root=tmp_path)
     startup = SimpleNamespace(enabled=lambda: False, set=lambda enabled: None)
-    service = SimpleNamespace(owned=False)
+    service = SimpleNamespace(owned=False,failed=lambda:False)
     menu = MenuBar(fake_rumps(), service, DesktopSettings(tmp_path/'desktop.json'), startup, ready,
                    notifier=lambda *args: None, events=lambda: [], health=lambda: {'name': 'infra-workbench'})
     assert not ready.path.exists()
@@ -228,7 +228,7 @@ def test_menu_health_poll_runs_off_ui_and_ready_is_removed_after_run(tmp_path):
     health_calls = []
     ready = ReadyReceipt(tmp_path/'macos-desktop.ready', root=tmp_path)
     rumps = fake_rumps()
-    menu = MenuBar(rumps, SimpleNamespace(owned=False), DesktopSettings(tmp_path/'desktop.json'),
+    menu = MenuBar(rumps, SimpleNamespace(owned=False,failed=lambda:False), DesktopSettings(tmp_path/'desktop.json'),
                    SimpleNamespace(enabled=lambda: False), ready, notifier=lambda *args: None,
                    events=lambda: [], health=lambda: health_calls.append(threading.get_ident()) or {'name': 'infra-workbench'},
                    language_state=lambda: {'values': {}})
@@ -316,7 +316,7 @@ def test_menu_browser_and_test_actions_use_their_own_destinations(tmp_path, monk
     from backend.desktop import DesktopSettings
     opened, sent = [], []
     monkeypatch.setattr(desktop.webbrowser, 'open', opened.append)
-    menu = desktop.MenuBar(fake_rumps(), SimpleNamespace(owned=True), DesktopSettings(tmp_path/'desktop.json'),
+    menu = desktop.MenuBar(fake_rumps(), SimpleNamespace(owned=True,failed=lambda:False), DesktopSettings(tmp_path/'desktop.json'),
                            SimpleNamespace(enabled=lambda: False), desktop.ReadyReceipt(tmp_path/'ready'),
                            notifier=lambda *args: sent.append(args), events=lambda: [])
     menu.open_home()

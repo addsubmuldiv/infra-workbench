@@ -6,6 +6,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app import create_app
 
 
+def test_health_identity_stays_stable_until_backend_is_replaced(tmp_path):
+    with TestClient(create_app(tmp_path/'first',start_poll=False)) as client:
+        first=client.get('/api/health').json()
+        assert first['name']=='infra-workbench'
+        assert first['version']=='0.1.2'
+        assert len(first['instance'])==32
+        assert client.get('/api/health').json()['instance']==first['instance']
+    with TestClient(create_app(tmp_path/'second',start_poll=False)) as client:
+        assert client.get('/api/health').json()['instance']!=first['instance']
+
+
 def test_local_api_requires_custom_header_and_does_not_echo_password(tmp_path):
     app = create_app(tmp_path, start_poll=False)
     with TestClient(app) as client:

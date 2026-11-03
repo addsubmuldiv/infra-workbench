@@ -275,6 +275,10 @@ class ServiceHost:
             self.server.should_exit=True
             self.thread.join(timeout=20)
 
+    def failed(self):
+        return bool(self.owned and self.server and self.thread and
+                    (not self.thread.is_alive() or not self.server.started or self.server.should_exit))
+
 
 def ensure_tray_icon(shell, icon_data):
     """A missing shell icon must be added again, even if its process is alive."""
@@ -402,7 +406,8 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 ensure_tray_icon(shell,icon_data);return 0
             if message==0x113 and wp==1:
                 from backend.desktop_update import requested
-                if requested():
+                if requested() or service.failed():
+                    if service.failed():logging.error('Backend stopped; closing tray and floating monitor')
                     user.DestroyWindow(hwnd)
                     return 0
                 icon_data.tip = tr('Infra Workbench · 后台监控', 'Infra Workbench · Background monitoring')

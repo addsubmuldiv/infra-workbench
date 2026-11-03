@@ -344,7 +344,7 @@ class MenuBar:
 
     def tick(self, _):
         from backend.desktop_update import requested
-        if requested():
+        if requested() or self.service.failed():
             self.quit()
             return
         if self.locale != current_locale():

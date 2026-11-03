@@ -4,6 +4,7 @@ use infra_workbench_desktop::{is_download_url, is_service_url, valid_health, Des
 use std::{path::PathBuf, process::{Command, Stdio}, sync::atomic::{AtomicBool, Ordering}, time::{Duration, Instant}};
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 mod window_fade;
+mod lifecycle;
 mod quick_window;
 mod updater;
 use window_fade::restore_window;
@@ -23,21 +24,42 @@ fn status(window: &WebviewWindow, message: &str) {
     let _ = window.eval(format!("document.getElementById('status').textContent={text}"));
 }
 
-fn probe(client: &reqwest::blocking::Client) -> Result<bool, String> {
+fn probe_instance(client: &reqwest::blocking::Client) -> Result<Option<String>, String> {
     match client.get(format!("{SERVICE_URL}api/health")).send() {
         Ok(response) => {
             if !response.status().is_success() {
                 return Err("8765 端口上的服务无法通过工作台检查。未停止任何进程。".into());
             }
             let value = response.json::<serde_json::Value>().map_err(|_| "8765 端口被其他程序占用。未停止任何进程。")?;
-            if valid_health(&value) { Ok(true) } else { Err("8765 端口被其他程序占用。未停止任何进程。".into()) }
+            if valid_health(&value) { Ok(Some(value.get("instance").and_then(|v|v.as_str()).unwrap_or("legacy").to_owned())) } else { Err("8765 端口被其他程序占用。未停止任何进程。".into()) }
         }
-        Err(error) if error.is_connect() => Ok(false),
+        Err(error) if error.is_connect() => Ok(None),
         Err(_) => Err("本地后台响应超时，请检查系统托盘或菜单栏。未重复启动后台。".into()),
     }
 }
 
-fn start_runtime() -> Result<(), String> {
+fn probe(client:&reqwest::blocking::Client)->Result<bool,String>{probe_instance(client).map(|value|value.is_some())}
+
+fn watch_service(app:tauri::AppHandle){
+    std::thread::spawn(move || {
+        let Ok(client)=reqwest::blocking::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(2)).build() else {return;};
+        let mut watch=lifecycle::ServiceWatch::default();
+        #[cfg(windows)]
+        let quit=lifecycle::QuitSignal::new();
+        loop {
+            if updater::installing(&app){std::thread::sleep(Duration::from_secs(2));continue;}
+            #[cfg(windows)]
+            if quit.as_ref().map(|signal|signal.requested()).unwrap_or(false){app.exit(0);break;}
+            // A busy HTTP server is not a dead backend. Only confirmed loss of
+            // its listener or a different instance ends this desktop session.
+            let stopped=match probe_instance(&client){Ok(identity)=>watch.observe_identity(identity),Err(_)=>false};
+            if stopped {app.exit(0);break;}
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
+fn start_runtime() -> Result<std::process::Child, String> {
     let mut command;
     let data;
     if cfg!(debug_assertions) {
@@ -65,8 +87,7 @@ fn start_runtime() -> Result<(), String> {
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW; leave monitoring independent of the GUI.
     }
     // Dropping Child intentionally leaves the tray/menu-bar process alive.
-    command.spawn().map_err(|e| format!("无法启动后台：{e}"))?;
-    Ok(())
+    command.spawn().map_err(|e| format!("无法启动后台：{e}"))
 }
 
 fn connect(window: WebviewWindow) {
@@ -77,15 +98,21 @@ fn connect(window: WebviewWindow) {
             let client = reqwest::blocking::Client::builder().no_proxy()
                 .redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(2))
                 .build().map_err(|e| e.to_string())?;
-            if !probe(&client)? {
-                status(&window, "正在启动本地后台…");
-                start_runtime()?;
-                let deadline = Instant::now() + Duration::from_secs(45);
-                loop {
-                    if probe(&client)? { break; }
-                    if Instant::now() >= deadline { return Err("后台未能在 45 秒内就绪，请查看数据目录中的 desktop.log 或 macos-desktop.log。".into()); }
-                    std::thread::sleep(Duration::from_millis(300));
+            let deadline=Instant::now()+Duration::from_secs(60);
+            let mut child:Option<std::process::Child>=None;
+            let mut last_error=String::from("后台未能在 60 秒内就绪，请查看 desktop.log");
+            loop {
+                match probe(&client) {
+                    Ok(true)=>break,
+                    Ok(false)=>{
+                        let finished=if let Some(process)=child.as_mut(){process.try_wait().map_err(|e|e.to_string())?}else{None};
+                        if let Some(result)=finished {if !result.success(){return Err("后台启动失败，请查看 desktop.log".into());}}
+                        if child.is_none()||finished.is_some(){status(&window,"正在启动本地后台…");child=Some(start_runtime()?);}
+                    },
+                    Err(error)=>{last_error=error;status(&window,"正在等待本地后台恢复响应…");}
                 }
+                if Instant::now()>=deadline {return Err(last_error);}
+                std::thread::sleep(Duration::from_millis(300));
             }
             window.navigate(SERVICE_URL.parse().unwrap()).map_err(|e| e.to_string())?;
             Ok(())
@@ -159,6 +186,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![updater::desktop_update_status, updater::desktop_update_check, updater::desktop_update_download, updater::desktop_update_install, updater::desktop_update_safety_response, close_desktop, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
         .setup(|app| {
             if std::env::args().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
+            watch_service(app.handle().clone());
             if let Some((tool,host))=quick_window::request(&std::env::args().collect::<Vec<_>>()) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
             #[cfg(target_os = "macos")]
             app.set_menu(tauri::menu::Menu::default(app.handle())?)?;

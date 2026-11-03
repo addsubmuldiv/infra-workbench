@@ -71,7 +71,24 @@ def dispatch_interface(mode,desktop,open_browser=webbrowser.open,spawn=subproces
     else:raise RuntimeError('未找到桌面窗口程序，请先安装桌面版本，或在设置中选择浏览器启动。')
 
 
+def _signal_desktop_exit():
+    if sys.platform!='win32':return False
+    import ctypes
+    from ctypes import wintypes as w
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.OpenEventW.argtypes=[w.DWORD,w.BOOL,w.LPCWSTR];kernel.OpenEventW.restype=w.HANDLE
+    kernel.SetEvent.argtypes=[w.HANDLE];kernel.SetEvent.restype=w.BOOL
+    kernel.CloseHandle.argtypes=[w.HANDLE]
+    handle=kernel.OpenEventW(2,False,'Local\\InfraWorkbenchDesktopQuit')
+    if not handle:return False
+    try:return bool(kernel.SetEvent(handle))
+    finally:kernel.CloseHandle(handle)
+
+
 def shutdown_desktop(root=ROOT):
+    # Signal the resident process directly, independently of which executable
+    # the build/installation picker would select for the next launch.
+    if _signal_desktop_exit():return
     desktop=find_desktop(root)
     if desktop is not None:
         try:
