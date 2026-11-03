@@ -1,0 +1,49 @@
+# AI workbench v0.1.2 Implementation Plan
+
+> **For agentic workers:** Use superpowers:subagent-driven-development to implement and review each task sequentially. User approved implementation, individual commits, push and release build.
+
+**Goal:** Integrate Codex and the approved AI/terminal features into the existing workbench.
+
+**Architecture:** Keep the existing assistant, chat persistence, SSE and shared MCP dispatcher. Add engine adapters, scoped context and reusable tool-backed workflows. Remote work remains behind server-side machine and credential boundaries.
+
+**Tech Stack:** Python/FastAPI, official Codex App Server JSON RPC, React/TypeScript/xterm, existing Tauri desktop.
+
+**Spec:** User-approved roadmap in this chat. Explicitly deferred: terminal splits/workspace layouts, global transfers, dual-pane files, AI-assisted training log ingestion.
+
+## Global constraints
+
+- Implement sequentially; verify and commit each feature before starting the next.
+- Reuse existing business MCP tools; embedded agents never receive SSH passwords/private keys.
+- Machine scope is bound by the server, not model parameters. Native local tools have their own restrictions.
+- Preserve existing API profiles, Deep Agents, skills, streaming, cancellation and persistent remote jobs.
+- No secrets in git, output or release assets. No production remote writes for testing.
+- Final version 0.1.2; push commits and version tag, build signed Windows update release using existing workflow.
+
+## Review focus
+
+- Engine/session transitions cannot reuse broader permissions or stale remote targets.
+- Disconnect, cancel and process exit must not report incomplete operations as successful.
+- Untrusted terminal/file output cannot grant permission or initiate automated writes.
+- Automatic triggers need explicit opt-in, bounded executions and protection from recursive loops.
+- File/command actions quote paths and retain existing permission and credential protections.
+
+## Tasks and acceptance
+
+1. [ ] **Codex integration** — `backend/codex_*.py`, `backend/agent_chat.py`, assistant engine selector. Real installed CLI text/tool/continuation/cancel smoke; mocked protocol and scope tests; commit.
+2. [ ] **Terminal context to AI** — terminal selection/screen buffer attachment and explicit read limits, machine/session/cwd provenance, assistant launch/draft handoff; tests for truncation and scope; commit.
+3. [ ] **Port forwarding/service entry** — managed loopback local SSH forwarding, per-host start/stop/status, port conflict reporting, TensorBoard/Jupyter/custom service links, backend lifecycle cleanup; real local tunnel smoke where practical; commit.
+4. [ ] **Keyword highlighting** — configurable literal terminal rules with training presets, persistent preferences, safe bounded rendering and full-screen terminal behavior; tests/build; commit.
+5. [ ] **Reusable automation** — user-inspectable deterministic workflows over approved MCP tools, manual runs first, opt-in connect/output triggers only when reliable events exist, bounded run logs/cancel; AI create/edit via tools and skills; tests; commit.
+6. [ ] **Chat branches and steering** — branch before last turn preserves original, restores draft, clears engine opaque state; executing Codex can accept supplemental instructions, other engines explicitly report capability; tests; commit.
+7. [ ] **Additional agents** — integrate available external CLI agent through documented machine-readable protocol, shared MCP and chat events, honest capability/detection errors; tests and installed-runtime smoke; commit.
+8. [ ] **Images and terminal shortcuts** — safe remote image preview and archive extraction command fill without autoexecution, correct path tracking/platform support; tests/build; commit.
+9. [ ] **Release** — whole-change review, full backend/frontend/release checks, update docs/changelog and all version manifests to 0.1.2, build frontend, commit, push, tag and build GitHub release. Record exact artifact/workflow status.
+
+## Progress / rulings
+
+- Starting commit: a857649; worktree clean; feature branch `codex/ai-workbench-v012`.
+- Installed Codex 0.147.0 is logged in with ChatGPT; verify actual local protocol instead of assuming Netcatty's version-specific interface.
+- Ruling: work on a feature branch in the clean shared checkout to reuse the installed build environment; no changes to main until validated.
+- Ruling: optional API/SDK credentials will not be invented; unavailable external agent runtimes must have explicit setup status.
+
+Task 1 implementation: local Codex App Server, authenticated scoped real MCP, isolated native tools, engine picker, model discovery and scope-safe resume. Targeted tests and frontend build pass. Live CLI initialize/account/model/MCP inventory validated; cloud turn validation remains limited by response-stream request timeouts (90-second bounded smoke), not represented as a successful real model tool call.
