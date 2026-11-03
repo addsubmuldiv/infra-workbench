@@ -7,6 +7,23 @@ import pytest
 from backend.launcher import LaunchSettings, find_desktop, dispatch_interface, register_launch_routes
 
 
+def test_source_checkout_uses_newest_desktop_build_but_keeps_installed_binary_priority(tmp_path,monkeypatch):
+    import os
+    from types import SimpleNamespace
+    monkeypatch.setattr('backend.launcher.sys',SimpleNamespace(platform='win32'))
+    target=tmp_path/'desktop'/'src-tauri'/'target'
+    release=target/'release'/'infra-workbench-desktop.exe'
+    debug=target/'debug'/'infra-workbench-desktop.exe'
+    for binary in (release,debug):
+        binary.parent.mkdir(parents=True);binary.touch()
+    os.utime(release,(100,100));os.utime(debug,(200,200))
+    assert find_desktop(tmp_path)==debug
+    os.utime(release,(300,300))
+    assert find_desktop(tmp_path)==release
+    installed=tmp_path/'infra-workbench-desktop.exe';installed.touch();os.utime(installed,(50,50))
+    assert find_desktop(tmp_path)==installed
+
+
 def test_defaults_and_independent_mode_persistence(tmp_path):
     settings=LaunchSettings(tmp_path)
     assert settings.mode=='browser' and settings.show_floating

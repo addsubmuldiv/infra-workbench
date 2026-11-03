@@ -51,7 +51,13 @@ def find_desktop(root=ROOT):
         candidates += [base/'Infra Workbench.app'/'Contents'/'MacOS'/'infra-workbench-desktop'
                        for base in (Path.home()/'Applications', Path('/Applications'))]
     else:
-        candidates = (root/'infra-workbench-desktop.exe',root/'desktop'/'src-tauri'/'target'/'release'/'infra-workbench-desktop.exe',root/'desktop'/'src-tauri'/'target'/'debug'/'infra-workbench-desktop.exe')
+        installed=root/'infra-workbench-desktop.exe'
+        if installed.is_file():return installed
+        target=root/'desktop'/'src-tauri'/'target'
+        # A source checkout can have a stale release binary and a newer dev
+        # build. All launchers must choose the same, most recently built app.
+        builds=[target/profile/'infra-workbench-desktop.exe' for profile in ('release','debug')]
+        candidates=sorted((binary for binary in builds if binary.is_file()),key=lambda binary:binary.stat().st_mtime_ns,reverse=True)
     for candidate in candidates:
         if candidate.is_file():return candidate
     return None
