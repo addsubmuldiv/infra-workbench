@@ -1,3 +1,5 @@
+import * as terminalImages from '../src/terminalImages.ts';
+import * as terminalArchives from '../src/terminalArchives.ts';
 import * as terminalHighlights from '../src/terminalHighlights.ts';
 import * as terminalContext from '../src/terminalContext.ts';
 import {i18nMock} from './i18n-mock.mjs';
@@ -70,6 +72,10 @@ function harness(t,{tabs=null,initialStates={}}={}){
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const exports={};
   const require=name=>{
+    if(name==='./terminalImages')return terminalImages;
+    if(name==='./terminalArchives'||name==='./terminalArchives.ts')return terminalArchives;
+    if(name==='./SafeImageAddon')return {SafeImageAddon:class {dispose(){}}};
+    if(name==='./TerminalImageSettings')return ()=>null;
     if(name==='./terminalContext')return terminalContext;
     if(name==='./toolI18n'||name==='./toolI18n.ts')return toolTranslations;
     const translation=i18nMock(name);if(translation)return translation;
@@ -85,7 +91,7 @@ function harness(t,{tabs=null,initialStates={}}={}){
       const pathExports={};
       const source=fs.readFileSync(new URL('../src/'+name.slice(2)+'.ts',import.meta.url),'utf8');
       const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
-      new Function('exports',compiled)(pathExports);
+      new Function('exports','require',compiled)(pathExports,require);
       return pathExports;
     }
     if(name==='lucide-react'||name.endsWith('.css'))return {};
@@ -418,4 +424,23 @@ test('Command copy, paste and find stay local while Control+C remains a shell in
   clipboardListeners.get('paste')({clipboardData:{getData:()=> '中文 paste'},preventDefault(){},stopPropagation(){}});
   assert.equal(term.keyHandler({type:'keydown',key:'f',metaKey:true,ctrlKey:false,preventDefault(){}}),false);
   assert.deepEqual(socket.sent.filter(frame=>frame.type==='input').map(frame=>frame.data),['中文 paste']);
+});
+test('archive click fills one quoted command only at an empty confirmed prompt',async t=>{
+ const opened=[],{term,socket}=await view(t,(id,path)=>opened.push(path));
+ const printed='/data/训练 a\'b;.tar.gz';
+ const source=new headless.Terminal({cols:8,rows:20,allowProposedApi:true});t.after(()=>source.dispose());
+ await new Promise(resolve=>source.write(printed,resolve));term.cols=8;term.buffer=source.buffer;
+ const click=()=>{let links;term.links.provideLinks(2,value=>links=value);links[0].activate({metaKey:true,button:0,preventDefault(){}})};
+ click();assert.equal(socket.sent.filter(m=>m.type==='input').length,0);
+ socket.message({type:'shell',kind:'prompt',cwd:'/data',status:0});click();
+ const inputs=socket.sent.filter(m=>m.type==='input');assert.equal(inputs.length,1);assert.equal(inputs[0].data,"tar -xf '/data/训练 a'\\''b;.tar.gz' -C '/data' --keep-old-files");assert.ok(!/[\r\n]/.test(inputs[0].data));assert.deepEqual(opened,[]);
+ click();assert.equal(socket.sent.filter(m=>m.type==='input').length,1);
+ socket.message({type:'shell',kind:'start',cwd:'/data'});click();assert.equal(socket.sent.filter(m=>m.type==='input').length,1);
+});
+test('relative archives need a confirmed cwd and preserve an existing command',async t=>{
+ const {term,socket}=await view(t);
+ const text='./data.zip',line={isWrapped:false,length:text.length,translateToString:()=>text,getCell:index=>({getChars:()=>text[index],getWidth:()=>1})};term.buffer={active:{type:'normal',getLine:index=>index===0?line:undefined}};
+ const click=()=>{let links;term.links.provideLinks(1,value=>links=value);links[0].activate({ctrlKey:true,button:0,preventDefault(){}})};
+ socket.message({type:'shell',kind:'prompt',status:0});click();assert.equal(socket.sent.filter(m=>m.type==='input').length,0);
+ socket.message({type:'shell',kind:'prompt',cwd:'/data',status:0});term.input('keep my command');click();assert.deepEqual(socket.sent.filter(m=>m.type==='input').map(m=>m.data),['keep my command']);
 });

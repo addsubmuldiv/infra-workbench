@@ -2,6 +2,10 @@ import {t} from './i18n.ts';
 
 // App-owned tool UI copy. Remote output, paths and file content are never passed here.
 const english:Record<string,string>={
+  "图片显示暂不可用，终端可继续使用":"Image display unavailable; terminal remains usable",
+  "无法确定压缩包路径，请先确认当前目录":"Cannot resolve archive path; confirm the working directory first",
+  "解压命令已填入，请检查后按 Enter 执行":"Extraction command filled; review and press Enter to run",
+
   "没有可附加的终端内容":"No terminal content to attach",
   "已附加到 AI 草稿，请预览后发送":"Attached to AI draft; preview before sending",
   "选区 → AI":"Selection → AI",
