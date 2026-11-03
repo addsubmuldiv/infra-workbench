@@ -1,6 +1,7 @@
 """Deep Agents graph, virtual bundled skills and bounded Workbench tool bridge."""
 import asyncio
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -28,7 +29,6 @@ register_harness_profile('infra_workbench:configured', HarnessProfile(
     general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)))
 
 
-from .agent_limits import RunLimit
 
 
 def pack_state(value):
@@ -66,18 +66,12 @@ def bundled_files():
 class ToolTrace(AgentMiddleware):
     def __init__(self, turn, tools, allowed, secret, save, tool_names, skill_receipts=()):
         self.turn, self.workbench_tools, self.allowed, self.secret, self.save = turn, tools, allowed, secret, save
-        self.total, self.remote = 0, 0
         self.tool_names = tool_names
         self.skill_receipts = {item['name']: item for item in skill_receipts}
 
     async def awrap_tool_call(self, request, handler):
         call = request.tool_call
         name, args = call['name'], call['args']
-        self.total += 1
-        if name in self.tool_names:
-            self.remote += 1
-        if self.total > 16 or self.remote > 8:
-            raise RunLimit('已达本轮工具调用上限，已有检查结果保留，可继续追问。')
         trace = dict(id=call['id'], name=name, status='running', started=time.time(),
                      arguments=scrub(args, self.secret), output='')
         target = next((h['target'] for h in self.workbench_tools.inventory(self.allowed) if h['id'] == args.get('host_id')), None)
@@ -153,13 +147,7 @@ def repair_messages(messages):
 
 async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, save, start_text, on_text, sanitize, *, skills=None):
     turn = chat['turns'][-1]
-    model_calls = 0
-
     def model_start():
-        nonlocal model_calls
-        model_calls += 1
-        if model_calls > 12:
-            raise RunLimit('已达本轮模型步骤上限，已有检查结果保留，可继续追问。')
         start_text()
 
     gateway = gateway_for(tools)
@@ -230,7 +218,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
                           if path != '/skills' and not path.startswith('/skills/')}
         state['files'].update(files)
         state['skills_metadata'] = None  # Re-read the packaged library on each user turn.
-        config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': 100}
+        config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': sys.maxsize}
         # This application has private server data: never enable hosted tracing even
         # if LANGSMITH_TRACING was set in the parent process environment.
         with tracing_context(enabled=False):

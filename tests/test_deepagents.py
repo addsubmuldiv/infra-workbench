@@ -78,25 +78,43 @@ def test_skill_file_traversal_cannot_read_real_local_files(tmp_path):
     asyncio.run(run())
 
 
-def test_remote_tool_budget_stops_loop_and_next_turn_remains_usable(tmp_path):
+def test_long_tool_run_completes_and_next_turn_remains_usable(tmp_path):
     async def run():
         chat, model, tools = service(tmp_path)
         view = chat.create()
-        model.replies = [tool_message('list_hosts', {}, id=f'call-{i}') for i in range(9)]
+        model.replies = [tool_message('list_hosts', {}, id=f'call-{i}') for i in range(50)]
+        model.replies.append(dict(message=dict(role='assistant', content='查询完成')))
         result = chat.begin(view['id'], ChatMessageRequest(content='查询机器'))
         await chat.runs[result['active_run']]
         saved = chat.get(view['id'])
-        assert saved['turns'][-1]['status'] == 'limited'
-        assert len(tools.calls) == 8
+        assert saved['turns'][-1]['status'] == 'completed'
+        assert len(tools.calls) == 50
         model.replies = [dict(message=dict(role='assistant', content='可以继续'))]
         result = chat.begin(view['id'], ChatMessageRequest(content='继续'))
         await chat.runs[result['active_run']]
         assert chat.get(view['id'])['turns'][-1]['status'] == 'completed'
-        # Every preceding assistant call is paired, including the limited call.
+        # Every preceding assistant call is paired after a long run.
         messages = model.contexts[-1][1]
         called = [c['id'] for m in messages for c in m.get('tool_calls', [])]
         returned = [m['tool_call_id'] for m in messages if m['role'] == 'tool']
         assert sorted(called) == sorted(returned)
+        chat.store.db.close()
+    asyncio.run(run())
+
+
+def test_experiment_search_can_continue_past_eight_calls(tmp_path):
+    async def run():
+        chat, model, tools = service(tmp_path)
+        view = chat.create()
+        model.replies = [tool_message('read_file', {'file_path': '/skills/find-experiments/SKILL.md'}, id='skill')]
+        model.replies += [tool_message('list_hosts', {}, id=f'host-{i}') for i in range(9)]
+        model.replies += [dict(message=dict(role='assistant', content='检查完成'))]
+        result = chat.begin(view['id'], ChatMessageRequest(content='查找历史实验'))
+        await chat.runs[result['active_run']]
+        saved = chat.get(view['id'])
+        assert saved['turns'][-1]['status'] == 'completed'
+        assert len(tools.calls) == 9
+        assert any(s['name'] == 'find-experiments' for s in saved['turns'][-1]['skills_read'])
         chat.store.db.close()
     asyncio.run(run())
 
