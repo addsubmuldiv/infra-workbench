@@ -1,3 +1,4 @@
+import * as terminalHighlights from '../src/terminalHighlights.ts';
 import * as terminalContext from '../src/terminalContext.ts';
 import {i18nMock} from './i18n-mock.mjs';
 import * as toolTranslations from '../src/toolI18n.ts';
@@ -27,6 +28,8 @@ function harness(t,{tabs=null,initialStates={}}={}){
   class Terminal {
     cols=80;rows=24;output=[];writes=[];bottomCalls=0;
     constructor(options){this.options=options;terminals.push(this)}
+    buffer={active:{type:"normal",viewportY:0,baseY:0,cursorY:0,getLine:()=>undefined}};
+    onRender(){return {dispose(){}}} onScroll(){return {dispose(){}}} onWriteParsed(){return {dispose(){}}}
     loadAddon(){} open(){} focus(){} clear(){} dispose(){}
     onData(fn){this.input=fn;return {dispose(){}}}
     onResize(fn){this.resized=fn;return {dispose(){}}}
@@ -72,7 +75,8 @@ function harness(t,{tabs=null,initialStates={}}={}){
     const translation=i18nMock(name);if(translation)return translation;
     const mock=workspaceMock(name,react);if(mock)return mock;
     if(name==='react')return react;
-    if(name==='./TerminalCommands')return ()=>null;
+    if(name==='./TerminalCommands'||name==='./TerminalHighlightSettings')return ()=>null;
+    if(name==='./terminalHighlights')return terminalHighlights;
     if(name==='./AppConfirm')return {useAppConfirm:()=>({confirm:async()=>false,confirmation:null})};
     if(name==='@xterm/xterm')return {Terminal};
     if(name==='@xterm/addon-search')return {SearchAddon:class {onDidChangeResults(){return {dispose(){}}}clearDecorations(){}}};
