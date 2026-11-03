@@ -220,6 +220,8 @@ _controller_lock = threading.Lock()
 
 
 def get_monitor_controller():
+    if sys.platform != 'win32':
+        raise RuntimeError(tr('桌面浮窗目前支持 Windows', 'The floating monitor currently supports Windows'))
     global _controller
     with _controller_lock:
         if _controller is None:

@@ -212,6 +212,14 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("无法运行 Infra Workbench 桌面入口")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = &event {
+                if let Some(window) = app.get_webview_window("main") {
+                    if app.state::<DesktopSession>().request_show() {
+                        restore_window(&window, false);
+                    }
+                }
+            }
             if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
                 api.prevent_exit();
                 if let Some(window) = app.get_webview_window("main") {

@@ -230,7 +230,8 @@ def test_menu_health_poll_runs_off_ui_and_ready_is_removed_after_run(tmp_path):
     rumps = fake_rumps()
     menu = MenuBar(rumps, SimpleNamespace(owned=False), DesktopSettings(tmp_path/'desktop.json'),
                    SimpleNamespace(enabled=lambda: False), ready, notifier=lambda *args: None,
-                   events=lambda: [], health=lambda: health_calls.append(threading.get_ident()) or {'name': 'infra-workbench'})
+                   events=lambda: [], health=lambda: health_calls.append(threading.get_ident()) or {'name': 'infra-workbench'},
+                   language_state=lambda: {'values': {}})
     def event_loop():
         menu.tick(None)
         assert menu.healthy.wait(1)

@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from backend.desktop import (DATA, URL, DesktopSettings, EventCursor, ServiceHost,
                              deliver_events, get_api, notification_events)
+from backend.interface_language import tr, current_locale, update_shared_language
 
 NOTIFICATION_SCRIPT = '''on run argv
     display notification (item 2 of argv) with title (item 1 of argv)
@@ -285,10 +286,11 @@ class MainThreadNotifications:
 
 class MenuBar:
     def __init__(self, rumps, service, settings, startup, receipt, *, started_at=None,
-                 notifier=None, events=notification_events, health=None):
+                 notifier=None, events=notification_events, health=None, language_state=None):
         self.rumps, self.service, self.settings, self.startup, self.receipt = rumps, service, settings, startup, receipt
         self.started_at, self.events = started_at, events
         self.health = health or (lambda: get_api('health'))
+        self.language_state = language_state or (lambda: get_api('workspace-state'))
         self.notifier = notifier if notifier is not None else MacNotifier()
         if isinstance(self.notifier, MacNotifier) and not self.notifier.precise_clicks:
             logging.info('terminal-notifier unavailable; AppleScript notifications have no per-reservation click destination')
@@ -297,19 +299,26 @@ class MenuBar:
         self.worker = None
         self.app = rumps.App('Infra Workbench', title='IW', icon=str(ROOT/'backend'/'assets'/'workbench.png'),
                              template=False, quit_button=None)
-        self.notification_item = rumps.MenuItem('桌面通知', callback=self.toggle_notifications)
+        self.localized_items = []
+        self.locale = current_locale()
+        def item(zh, en, callback):
+            result = rumps.MenuItem(tr(zh, en), callback=callback)
+            self.localized_items.append((result, zh, en))
+            return result
+        self.notification_item = item('桌面通知', 'Desktop notifications', self.toggle_notifications)
         self.notification_item.state = int(settings.notifications)
-        self.startup_item = rumps.MenuItem('登录 macOS 时启动（下次登录生效）', callback=self.toggle_startup)
+        self.startup_item = item('登录 macOS 时启动（下次登录生效）', 'Start at login (next login)', self.toggle_startup)
         self.startup_item.state = int(startup.enabled())
-        self.app.menu = [rumps.MenuItem('打开工作台', callback=self.open_home), self.notification_item,
-                         rumps.MenuItem('打开卡预约', callback=self.open_reservations), self.startup_item,
-                         rumps.MenuItem('发送测试通知', callback=self.test_notification), None,
-                         rumps.MenuItem('退出菜单栏并停止后台监控' if service.owned else '退出菜单栏（已有服务继续运行）',
-                                        callback=self.quit)]
+        self.app.menu = [item('打开工作台', 'Open workbench', self.open_home), self.notification_item,
+                         item('打开卡预约', 'Open reservations', self.open_reservations), self.startup_item,
+                         item('发送测试通知', 'Send test notification', self.test_notification), None,
+                         item('退出菜单栏并停止后台监控' if service.owned else '退出菜单栏（已有服务继续运行）',
+                              'Quit and stop monitoring' if service.owned else 'Quit menu bar (existing service continues)', self.quit)]
         self.timer = rumps.Timer(self.tick, .2)
 
     def open_home(self, _=None):
-        webbrowser.open(URL)
+        from backend.launcher import open_preferred_interface
+        open_preferred_interface(self.settings.path.parent, ROOT)
 
     def open_reservations(self, _=None):
         webbrowser.open(URL+'#reservations')
@@ -328,11 +337,16 @@ class MenuBar:
 
     def test_notification(self, _=None):
         try:
-            self.notifier('Infra Workbench', '菜单栏通知测试：预约条件满足后会按桌面通知设置提醒。', '#reservations')
+            self.notifier('Infra Workbench', tr('菜单栏通知测试：预约条件满足后会按桌面通知设置提醒。',
+                          'Test notification: reservation alerts follow your desktop notification settings.'), '#reservations')
         except Exception:
             logging.exception('macOS test notification failed')
 
     def tick(self, _):
+        if self.locale != current_locale():
+            self.locale = current_locale()
+            for item, zh, en in self.localized_items:
+                item.title = tr(zh, en)
         self.ui_started.set()
         if self.exit_requested.is_set():
             self.quit()
@@ -351,6 +365,11 @@ class MenuBar:
                     if self.health().get('name') != 'infra-workbench':
                         raise RuntimeError('本地服务身份不匹配')
                     self.healthy.set()
+                if not self.service.owned:
+                    try:
+                        update_shared_language(self.language_state())
+                    except Exception:
+                        logging.debug('Cannot read attached service language', exc_info=True)
                 events = cursor.consume(self.events())
                 if events:
                     deliver_events(events, self.settings.notifications, self.dispatcher.submit)
@@ -369,6 +388,9 @@ class MenuBar:
 
     def quit(self, _=None):
         self.close()
+        if self.service.owned:
+            from backend.launcher import shutdown_desktop
+            shutdown_desktop(ROOT)
         self.rumps.quit_application()
 
     def close(self):
@@ -398,7 +420,8 @@ def launch(rumps, service, *, data=DATA, root=ROOT, menu_class=MenuBar, clock=ti
         if threading.current_thread() is threading.main_thread():
             previous_signal = signal.signal(signal.SIGTERM, lambda *_: menu.exit_requested.set())
         if open_browser:
-            webbrowser.open(URL)
+            from backend.launcher import open_preferred_interface
+            open_preferred_interface(data, root)
         menu.run()
     finally:
         if previous_signal is not None:
@@ -409,7 +432,11 @@ def launch(rumps, service, *, data=DATA, root=ROOT, menu_class=MenuBar, clock=ti
         service.stop()  # ServiceHost only stops a service owned by this process.
 
 
-def main(argv=None, *, platform=None, rumps_loader=load_rumps, service_factory=ServiceHost,
+def mac_service():
+    return ServiceHost(allow_existing=True)
+
+
+def main(argv=None, *, platform=None, rumps_loader=load_rumps, service_factory=mac_service,
          lock_factory=SingleInstance):
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-browser', action='store_true')
@@ -433,7 +460,8 @@ def main(argv=None, *, platform=None, rumps_loader=load_rumps, service_factory=S
             owner = lock.owner()
             print('已有 Infra Workbench 菜单栏进程：'+json.dumps(owner, ensure_ascii=False), file=sys.stderr)
             if not args.no_browser:
-                webbrowser.open(URL)
+                from backend.launcher import open_preferred_interface
+                open_preferred_interface(DATA, ROOT)
             return 0
         receipt = ReadyReceipt(DATA/'macos-desktop.ready', ROOT)
         lock.describe(dict(pid=receipt.pid, root=str(receipt.root), ready_path=str(receipt.path), token=receipt.token))

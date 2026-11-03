@@ -29,7 +29,9 @@ def test_dispatch_opens_exactly_one_selected_interface(tmp_path):
     with pytest.raises(RuntimeError):dispatch_interface('desktop',None,lambda _:calls.append('unexpected'),lambda _:calls.append('unexpected'))
 
 
-def test_settings_api_rejects_unavailable_desktop_and_saves_float_choice(tmp_path):
+def test_settings_api_rejects_unavailable_desktop_and_saves_float_choice(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr('backend.launcher.sys', SimpleNamespace(platform='win32'))
     app=FastAPI();choices=[]
     register_launch_routes(app,tmp_path,root=tmp_path,set_floating=choices.append)
     with TestClient(app) as client:
@@ -81,7 +83,7 @@ def test_float_workbench_action_reads_saved_interface_on_each_click(tmp_path,mon
     calls=[]
     monkeypatch.setattr('webbrowser.open',lambda url:None)
     monkeypatch.setattr(launcher,'find_desktop',lambda root:tmp_path/'desktop.exe')
-    monkeypatch.setattr(launcher,'dispatch_interface',lambda mode,desktop:calls.append(mode))
+    monkeypatch.setattr(launcher,'dispatch_interface',lambda mode,desktop,**kwargs:calls.append(mode))
     launcher.LaunchSettings(tmp_path).save_mode('desktop')
     instance.open_workbench()
     launcher.LaunchSettings(tmp_path).save_mode('browser')

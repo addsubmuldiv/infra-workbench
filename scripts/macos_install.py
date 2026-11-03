@@ -101,7 +101,7 @@ class MacInstaller:
     def launch(self, open_browser=True):
         if self.health() and self.desktop_ready():
             if open_browser:
-                webbrowser.open(URL)
+                self.open_interface()
             return
         self.data.mkdir(mode=0o700, parents=True, exist_ok=True)
         log = self.data/'macos-launch.log'
@@ -116,7 +116,7 @@ class MacInstaller:
             while time.monotonic() < deadline:
                 if self.health() and self.desktop_ready():
                     if open_browser:
-                        webbrowser.open(URL)
+                        self.open_interface()
                     return
                 if process.poll() is not None:
                     raise RuntimeError('菜单栏程序未就绪。若另一目录的工作台正在运行，请先退出；详情见 '+str(log))
@@ -132,6 +132,12 @@ class MacInstaller:
                     process.kill()
                     process.wait(timeout=3)
             raise
+
+    def open_interface(self):
+        if str(self.root) not in sys.path:
+            sys.path.insert(0, str(self.root))
+        from backend.launcher import open_preferred_interface
+        open_preferred_interface(self.data, self.root)
 
 
 @contextlib.contextmanager

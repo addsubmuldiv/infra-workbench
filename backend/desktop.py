@@ -216,7 +216,8 @@ class Startup:
 
 
 class ServiceHost:
-    def __init__(self):
+    def __init__(self, *, allow_existing=False):
+        self.allow_existing=allow_existing
         self.server=None
         self.thread=None
         self.owned=False
@@ -236,6 +237,8 @@ class ServiceHost:
             health=get_api('health')
             if health.get('name')!='infra-workbench':
                 raise RuntimeError(tr('8765 端口被其他程序占用，未停止任何进程', 'Port 8765 is in use by another program. No processes were stopped'))
+            if self.allow_existing:
+                return
             raise RuntimeError(tr('检测到独立后台占用 8765 端口，请先退出该后台，再启动托盘；托盘必须在自己的进程内运行后台服务', 'A standalone backend is using port 8765. Exit it before starting the tray, which must run its backend in the same process'))
         except (URLError,TimeoutError,OSError):
             pass

@@ -12,7 +12,9 @@ module.exports=async (page,fixture) => {
   await page.route('**/api/**',async route=>{
     const request=route.request(),path=new URL(request.url()).pathname;
     let data;
-    if(path==='/api/state')data={hosts:[host],rules:[],reservations:[],events:[],server_time:1700000000};
+    if(path==='/api/workspace-state')data={revision:0,values:{}};
+    else if(path==='/api/settings/agent')data={active_id:'legacy',default_id:'legacy',profiles:[],base_url:'',protocol:'auto',model:'',timeout_seconds:45,has_api_key:false};
+    else if(path==='/api/state')data={hosts:[host],rules:[],reservations:[],events:[],server_time:1700000000};
     else if(path==='/api/files/capabilities')data={editing:true,upload:true,search:true,terminal_cwd:true,transfer_progress:true,folder_download:true,folder_upload:true};
     else if(path==='/api/files/browse')data={path:'/demo',parent:'/',entries:[{name:'check.txt',path:'/demo/check.txt',kind:'file',symlink:false,size:content.length,modified:1700000000,accessible:true}],total:1,next_offset:null};
     else if(path==='/api/files/operation'){

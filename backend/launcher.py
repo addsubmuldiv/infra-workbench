@@ -38,7 +38,21 @@ class LaunchSettings:
 
 def find_desktop(root=ROOT):
     root=Path(root)
-    for candidate in (root/'infra-workbench-desktop.exe',root/'desktop'/'src-tauri'/'target'/'release'/'infra-workbench-desktop.exe',root/'desktop'/'src-tauri'/'target'/'debug'/'infra-workbench-desktop.exe'):
+    if sys.platform == 'darwin':
+        executable = Path(sys.executable).resolve()
+        candidates = []
+        # The frozen runtime sits beside the desktop binary inside the .app;
+        # ROOT points at PyInstaller's temporary extraction directory instead.
+        if executable.parent.name == 'MacOS' and executable.parent.parent.name == 'Contents':
+            candidates.append(executable.with_name('infra-workbench-desktop'))
+        target = root/'desktop'/'src-tauri'/'target'
+        candidates += [target/'release'/'bundle'/'macos'/'Infra Workbench.app'/'Contents'/'MacOS'/'infra-workbench-desktop',
+                       target/'release'/'infra-workbench-desktop', target/'debug'/'infra-workbench-desktop']
+        candidates += [base/'Infra Workbench.app'/'Contents'/'MacOS'/'infra-workbench-desktop'
+                       for base in (Path.home()/'Applications', Path('/Applications'))]
+    else:
+        candidates = (root/'infra-workbench-desktop.exe',root/'desktop'/'src-tauri'/'target'/'release'/'infra-workbench-desktop.exe',root/'desktop'/'src-tauri'/'target'/'debug'/'infra-workbench-desktop.exe')
+    for candidate in candidates:
         if candidate.is_file():return candidate
     return None
 
@@ -61,7 +75,7 @@ def shutdown_desktop(root=ROOT):
 
 def open_preferred_interface(data=None,root=ROOT):
     data=Path(data) if data is not None else Path(os.environ.get('IWB_DATA',str(Path(root)/'data')))
-    dispatch_interface(LaunchSettings(data).mode,find_desktop(root))
+    dispatch_interface(LaunchSettings(data).mode,find_desktop(root),open_browser=webbrowser.open)
 
 
 def register_launch_routes(app,data,root=ROOT,set_floating=None):
@@ -74,23 +88,27 @@ def register_launch_routes(app,data,root=ROOT,set_floating=None):
         show_floating:bool
     def view():
         value=LaunchSettings(data)
-        return dict(mode=value.mode,show_floating=value.show_floating,desktop_available=bool(find_desktop(root)))
+        available = sys.platform == 'win32'
+        return dict(mode=value.mode,show_floating=available and value.show_floating,
+                    floating_available=available,desktop_available=bool(find_desktop(root)))
     @app.get('/api/settings/launch')
     async def read_launch_settings():return view()
     @app.put('/api/settings/launch')
     async def write_launch_settings(body:SettingsBody):
         if body.mode=='desktop' and not find_desktop(root):
             raise HTTPException(400,'未找到桌面窗口程序，请先安装桌面版本。')
-        if set_floating is None:
-            from .floating_monitor import get_monitor_controller
-            control=get_monitor_controller().set_enabled
-        else:control=set_floating
-        control(body.show_floating)
+        enabled = sys.platform == 'win32' and body.show_floating
+        if sys.platform == 'win32':
+            if set_floating is None:
+                from .floating_monitor import get_monitor_controller
+                control=get_monitor_controller().set_enabled
+            else:control=set_floating
+            control(enabled)
         # The controller persists its own setting; keep injected/test implementations identical.
         path=Path(data)/'floating-monitor-enabled.json'
         path.parent.mkdir(parents=True,exist_ok=True)
         temp=path.with_suffix('.settings.tmp')
-        temp.write_text(json.dumps({'enabled':body.show_floating}),encoding='utf-8');temp.replace(path)
+        temp.write_text(json.dumps({'enabled':enabled}),encoding='utf-8');temp.replace(path)
         LaunchSettings(data).save_mode(body.mode)
         return view()
 

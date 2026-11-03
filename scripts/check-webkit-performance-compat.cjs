@@ -38,7 +38,11 @@ async function main(){
       await page.getByRole('button',{name:'精度对比',exact:true}).click();
       await page.getByRole('heading',{name:'基准日志',exact:true}).waitFor();
       await page.getByRole('button',{name:'设置',exact:true}).click();
-      await page.getByRole('heading',{name:'外部 Agent（MCP）',exact:true}).waitFor();
+      await page.getByRole('heading',{name:'设置',exact:true}).waitFor();
+      const launchSettings=page.locator('.settings-page').filter({has:page.getByRole('heading',{name:'启动与桌面浮窗',exact:true})});
+      await launchSettings.getByText('桌面资源浮窗目前仅支持 Windows。',{exact:true}).waitFor();
+      assert.equal(await launchSettings.getByRole('checkbox').count(),0);
+      assert.equal(await launchSettings.getByRole('radio',{name:'桌面窗口',exact:false}).isEnabled(),true);
       await page.getByRole('button',{name:'算力总览',exact:true}).click();
       await page.getByRole('button',{name:'打开 bench-01 终端',exact:true}).click();
       await page.locator('.xterm-helper-textarea').waitFor({state:'attached'});
