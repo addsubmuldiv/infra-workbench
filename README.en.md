@@ -55,6 +55,8 @@ Version 0.1.2 adds local Codex, Claude Code and OpenCode engines alongside exist
 | Availability alerts | Wait for a device count or specific device IDs, with a default two-minute idle period; edit, repeat, and inspect notification status. These alerts do not reserve hardware exclusively. |
 | Notifications | Receive Windows notifications; optionally configure SMTP and enable email separately for each availability alert. |
 | SSH terminals | Use multiple sessions, command history suggestions, output search, command templates, task completion alerts, and recoverable tmux sessions. Move, resize, minimize, or maximize the terminal. |
+| SSH tunnels | Use the chain icon on a machine card for dedicated local or remote forwards, connect/disconnect, network reconnect and optional startup connection. Tunnels run independently of VS Code. See [SSH tunnels](docs/SSH-TUNNELS.md). |
+| VS Code connection | Open the machine in local VS Code. Optionally select tunnels to connect first, wait for readiness, and retry or explicitly skip on failure. |
 | Server files | Browse and search directories, edit text, create, copy, cut, move, rename, upload, and download files or folders. Use alongside a terminal. |
 | Training comparison | Align supported training JSON logs by actual step and compare metrics, curves, and errors with links to source lines. |
 | Desktop resource monitor | Keep resource status visible on Windows; filter machines, inspect devices, collapse, resize, pin, or adjust opacity. Right-click a machine to open a standalone terminal or file window. |

@@ -20,6 +20,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
 from .port_forwarding import register_port_forwarding
+from .ssh_tunnels import register_ssh_tunnels
+from .vscode import register_vscode
 from .ssh import SSHService
 from .polling import collection_delay, startup_delay
 from .host_alias import HostAliasRequest
@@ -350,6 +352,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def lifespan(app):
         app.state.agent_chat.recover()
         async with app.state.mcp_server.session_manager.run():
+            if start_poll:
+                await app.state.ssh_tunnels.startup()
             task = asyncio.create_task(poll()) if start_poll else None
             mail_task = asyncio.create_task(mail.run()) if start_poll else None
             terminal_task=asyncio.create_task(app.state.terminals.watch_persistent(hosts)) if start_poll else None
@@ -409,6 +413,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 if not pending_collect.done():pending_collect.cancel()
             await asyncio.gather(*collect_tasks.values(),return_exceptions=True)
             await app.state.automation.close()
+            await app.state.ssh_tunnels.close()
             await app.state.port_forwarding.close()
             await ssh.close()
             resource_stats.close()
@@ -425,6 +430,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_desktop_notification_routes(app, store)
     register_terminal_routes(app,hosts,ssh,store,sudo)
     register_port_forwarding(app,store,ssh,hosts)
+    register_ssh_tunnels(app,store,ssh,hosts,ssh_passwords)
+    register_vscode(app)
     app.state.agent_service = AgentService(hosts,snapshots,ssh,ssh_passwords,collect)
     app.state.reservations, app.state.workbench_rules = reservations, rules
     async def refresh_assistant():
@@ -527,7 +534,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         for host in hosts:
             snap = snapshots.get(host['id'], dict(status='connecting', devices=[], collected_at=None))
             fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= reservations.max_sample_gap and snap['status'] == 'online')
-            items.append(dict(**host, sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), snapshot=dict(snap, fresh=fresh)))
+            items.append(dict(**host, sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})
@@ -701,6 +708,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 raise HTTPException(400,exc.message) from None
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
+            await app.state.ssh_tunnels.remove_host(host_id)
             await app.state.port_forwarding.remove_host(host_id)
             hosts.remove(host)
             app.state.clusters.remove_host(host_id)

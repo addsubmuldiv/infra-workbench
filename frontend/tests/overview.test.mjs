@@ -23,7 +23,7 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   const values=[],storage=new Map();let cursor=0,tree;
   const state={hosts:hostItems,rules:[],reservations,events:[],server_time:100};
   const react={createElement:(type,props,...children)=>typeof type==='function'&&['ClusterSidebar','Check'].includes(type.name)?type({...props,children}):({type,props:{...props,children}}),lazy:()=>()=>null,Suspense:'suspense',StrictMode:'strict',
-    useState:initial=>{const index=cursor++;if(!(index in values))values[index]=index===0?state:typeof initial==='function'?initial():initial;return [values[index],value=>{values[index]=typeof value==='function'?value(values[index]):value}]},
+    useState:initial=>{const index=cursor++;if(!(index in values))values[index]=initial&&typeof initial==='object'&&Array.isArray(initial.hosts)&&'server_time' in initial?state:typeof initial==='function'?initial():initial;return [values[index],value=>{values[index]=typeof value==='function'?value(values[index]):value}]},
     useRef:initial=>{const index=cursor++;if(!(index in values))values[index]={current:initial};return values[index]},useMemo:fn=>fn(),useEffect(){}};
   for(const [name,value] of Object.entries({window:{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},scrollTo(){}},document:{documentElement:{dataset:{}},getElementById:()=>({})},location:{hash}})){
     const original=Object.getOwnPropertyDescriptor(globalThis,name);Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});t.after(()=>{if(original)Object.defineProperty(globalThis,name,original);else delete globalThis[name]});
