@@ -141,15 +141,15 @@ def search_inventory(inventory, plan, now=None):
     rows, unavailable, unknown, self_unknown = [], [], [], []
     searched = 0
     for host in inventory:
-        alias = host['target']
-        if plan.host and plan.host.casefold() not in alias.casefold():
+        alias = host.get('alias') or host['target']
+        if plan.host and not any(plan.host.casefold() in value.casefold() for value in (alias,host['target'])):
             continue
         searched += 1
         snap = host['snapshot']
         stamp = snap.get('collected_at')
         fresh = snap.get('status') == 'online' and isinstance(stamp,(int,float)) and -5 <= now-stamp <= 30
         if plan.scope == 'hosts':
-            if not plan.keywords or any(word.casefold() in alias.casefold() for word in plan.keywords):
+            if not plan.keywords or any(word.casefold() in value.casefold() for word in plan.keywords for value in (alias,host['target'])):
                 rows.append(dict(type='host',host_id=host['id'],alias=alias,status=snap.get('status'),fresh=fresh,collected_at=stamp,device_ids=[]))
             continue
         if not fresh:

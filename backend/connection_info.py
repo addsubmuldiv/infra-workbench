@@ -69,7 +69,7 @@ async def describe_connection(ssh,passwords,host):
     known=cfg.get('userknownhostsfile','')
     try:known_paths=[expand_path(p.strip('"\''),cfg) for p in shlex.split(known,posix=False)]
     except ValueError:known_paths=[known];warnings.append('known_hosts 路径需在原环境解析。')
-    return dict(host_id=host['id'],alias=host['target'],hostname=cfg['hostname'],user=cfg['user'],port=int(cfg.get('port',22)),
+    return dict(host_id=host['id'],alias=host.get('alias') or host['target'],hostname=cfg['hostname'],user=cfg['user'],port=int(cfg.get('port',22)),
                 proxy_jump=proxy_jump,proxy_command=proxy_command,identity_files=identity_files,certificate_files=certs,
                 identities_only=cfg.get('identitiesonly')=='yes',identity_agent=agent,
                 host_key_alias=cfg.get('hostkeyalias'),user_known_hosts_files=known_paths,

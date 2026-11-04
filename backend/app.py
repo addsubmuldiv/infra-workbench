@@ -22,6 +22,7 @@ from .core import TransitionTracker, discover_aliases, eligible, parse_npu, pars
 from .port_forwarding import register_port_forwarding
 from .ssh import SSHService
 from .polling import collection_delay, startup_delay
+from .host_alias import HostAliasRequest
 from .store import Store
 from .credentials import create_credential_store
 from .sudo import SudoService
@@ -667,6 +668,25 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             return JSONResponse(ssh_passwords.forget(find(host_id)),headers={'Cache-Control':'no-store'})
         except AgentError as exc:
             raise HTTPException(400,exc.message) from None
+
+    @app.put('/api/hosts/{host_id}/alias')
+    @serialize_connections
+    async def save_host_alias(host_id: str, body: HostAliasRequest):
+        host = find(host_id)
+        previous = host.get('alias')
+        if body.alias:
+            host['alias'] = body.alias
+        else:
+            host.pop('alias', None)
+        try:
+            store.save('hosts', hosts)
+        except Exception:
+            if previous is None:
+                host.pop('alias', None)
+            else:
+                host['alias'] = previous
+            raise
+        return dict(host_id=host_id, alias=host.get('alias', ''), target=host['target'])
 
     @app.delete('/api/hosts/{host_id}')
     @serialize_connections

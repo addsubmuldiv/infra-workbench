@@ -119,7 +119,7 @@ class ChatTools:
         if name not in REGISTRY:raise ValueError('工具不存在或不在本阶段只读范围内')
         args=REGISTRY[name][0].model_validate(arguments)
         if name=='list_hosts':
-            return dict(items=[dict(host_id=h['id'],alias=h['target'],user=h['snapshot'].get('login_user') or h.get('user'),
+            return dict(items=[dict(host_id=h['id'],alias=h.get('alias') or h['target'],user=h['snapshot'].get('login_user') or h.get('user'),
                 status=h['snapshot'].get('status'),collected_at=h['snapshot'].get('collected_at')) for h in self.inventory(allowed)])
         if name=='search_fleet':
             patch=args.model_dump(include=args.model_fields_set,exclude={'refresh','unsupported'})
@@ -151,4 +151,4 @@ class ChatTools:
             result=json.loads(line[len('IWB_AGENT:'):])
         except ValueError:raise
         except Exception:raise ValueError('SSH 只读操作失败或超时，请检查连接、路径或权限') from None
-        return dict(host_id=host['id'],alias=host['target'],observed_at=time.time(),elapsed_ms=round((time.monotonic()-started)*1000),**result)
+        return dict(host_id=host['id'],alias=host.get('alias') or host['target'],observed_at=time.time(),elapsed_ms=round((time.monotonic()-started)*1000),**result)

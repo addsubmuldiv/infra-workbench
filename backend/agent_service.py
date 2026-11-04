@@ -3,6 +3,7 @@ import asyncio
 import time
 
 from .agent_query import query_hosts,resolve_host
+from .host_alias import matches_name
 from .agent_tools import validate_call
 from .connection_info import describe_connection
 from .agent_errors import response
@@ -37,7 +38,7 @@ class AgentService:
     async def call(self,name,arguments,budget=25):
         options=validate_call(name,arguments)
         if name=='find_hosts':
-            inventory=[h for h in self.inventory() if (options.get('name') or '').casefold() in h['target'].casefold()]
+            inventory=[h for h in self.inventory() if matches_name(h,options.get('name'))]
             semaphore=asyncio.Semaphore(8)
             async def address(host):
                 async with semaphore:
@@ -60,7 +61,7 @@ class AgentService:
             else:
                 targets=[]
                 for host in self.inventory():
-                    if (options.get('name') or '').casefold() not in host['target'].casefold():continue
+                    if not matches_name(host,options.get('name')):continue
                     devices=host['snapshot'].get('devices',[])
                     if devices and name=='search_hosts' and not any((not options.get('kind') or d['kind']==options['kind']) and
                         (options.get('model') or '').casefold() in d.get('name','').casefold() for d in devices):continue

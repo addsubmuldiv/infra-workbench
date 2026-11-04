@@ -9,6 +9,7 @@ from .agent_errors import AgentError
 
 INSTRUCTIONS='''你正在使用 Infra Workbench，查询用户电脑中已添加的服务器和 GPU/NPU 资源。
 机器查询工具：list_hosts、find_hosts、search_hosts、get_host、get_resources、get_ssh_info、get_ssh_password。
+用户用自定义别名描述机器时，使用 find_hosts(name="用户提供的别名")，同名不猜测，后续使用真实 host_id。
 用户用 IP、卡型号或卡数描述目标（例如“kill 950DT 那台机器的进程”）时先读取 find-hosts 技能，再 find_hosts；它不要求空闲或新鲜采样。多个候选时继续缩小范围或请用户确认，不自动选择第一台。uncertain 是信息不足的候选，不能当作已排除；旧采样只用于定位，操作前重新核对机器和进程。
 工作流程：不清楚有哪些机器时先 list_hosts；需要空闲训练设备时用 search_hosts，例如
 {"kind":"NPU","count":6,"min_free_gib":40,"idle":true,"refresh":true}。
@@ -62,7 +63,7 @@ def definition(name,title,description,properties,required,output,examples,recove
 
 TOOLS={tool['name']:tool for tool in [
     definition('find_hosts','按 IP、型号和卡数查找机器',
-        '使用前读取 find-hosts 技能（read_skill(name="find-hosts") 或 /skills/find-hosts/SKILL.md），了解自然语言条件拆解、IP尾号、多候选和连续筛选。按机器别名、SSH 目标地址/IP 子串、GPU/NPU 型号子串和物理卡数定位机器；不要求空闲，不检查显存，也不因离线或旧采样排除已知硬件。条件同时成立，card_count 是匹配型号/种类的物理卡数且精确匹配，不是最少数量。返回稳定 host_id、hostname、型号分组、设备数、物理卡数及采样时间；多 die 按 card_id 去重，无法确定物理卡数时返回 null。地址来自本机 SSH 配置，不做 DNS 或网络探测。items 为已匹配，uncertain 为信息不足的候选；多个候选必须继续缩小范围或询问用户，不能自动选择第一项。旧硬件信息可能已变化，执行进程操作前用真实 ID 重新查看资源与进程。',
+        '使用前读取 find-hosts 技能（read_skill(name="find-hosts") 或 /skills/find-hosts/SKILL.md），了解自然语言条件拆解、IP尾号、多候选和连续筛选。name 同时匹配自定义显示别名和原 SSH 连接目标；alias 返回显示名称，target 返回连接目标。按机器别名、SSH 目标地址/IP 子串、GPU/NPU 型号子串和物理卡数定位机器；不要求空闲，不检查显存，也不因离线或旧采样排除已知硬件。条件同时成立，card_count 是匹配型号/种类的物理卡数且精确匹配，不是最少数量。返回稳定 host_id、hostname、型号分组、设备数、物理卡数及采样时间；多 die 按 card_id 去重，无法确定物理卡数时返回 null。地址来自本机 SSH 配置，不做 DNS 或网络探测。items 为已匹配，uncertain 为信息不足的候选；多个候选必须继续缩小范围或询问用户，不能自动选择第一项。旧硬件信息可能已变化，执行进程操作前用真实 ID 重新查看资源与进程。',
         dict(name=NAME,ip=field('string','SSH 目标地址/IP 的子串，不匹配跳板地址；不做 DNS 查询。'),
              kind=field('string','设备种类。',enum=['GPU','NPU']),
              model=field('string','设备型号子串，不区分大小写，例如 950DT、910B、H200。'),

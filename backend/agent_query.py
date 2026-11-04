@@ -5,12 +5,14 @@ import time
 
 from .agent_errors import AgentError, response, recovery
 
+from .host_alias import host_label, matches_name
+
 GIB=1024**3
 
 
 def resolve_host(hosts, selector):
     by_id=[h for h in hosts if h['id']==selector]
-    matches=by_id or [h for h in hosts if h['target']==selector]
+    matches=by_id or [h for h in hosts if selector in (h['target'], h.get('alias'))]
     if not matches:
         raise AgentError('HOST_NOT_FOUND','没有此机器，请先 list_hosts 取得真实 ID。')
     if len(matches)!=1:
@@ -29,7 +31,7 @@ def summary(host, now, max_age=30):
     snap=host.get('snapshot') or {}
     elapsed=age(snap,now)
     devices=snap.get('devices') or []
-    return dict(host_id=host['id'],alias=host['target'],status=snap.get('status','connecting'),
+    return dict(host_id=host['id'],alias=host_label(host),target=host['target'],status=snap.get('status','connecting'),
                 collected_at=snap.get('collected_at'),age_seconds=elapsed,
                 fresh=snap.get('status')=='online' and elapsed is not None and elapsed<=max_age,
                 device_kinds=sorted({d['kind'] for d in devices}),device_count=len(devices),
@@ -70,9 +72,9 @@ def compact_resource(host,now,max_age):
 def query_hosts(hosts, tool, options=None, now=None):
     options=options or {};now=time.time() if now is None else now
     max_age=options.get('max_age',30)
-    ordered=sorted(hosts,key=lambda h:(h['target'].casefold(),h['id']))
+    ordered=sorted(hosts,key=lambda h:(host_label(h).casefold(),h['id']))
     name=(options.get('name') or '').casefold()
-    ordered=[h for h in ordered if name in h['target'].casefold()]
+    ordered=[h for h in ordered if matches_name(h,name)]
     if tool=='find_hosts':
         return find_hosts(ordered,options,now)
     if tool=='get_host' or (tool=='get_resources' and options.get('host_id')):
@@ -100,11 +102,11 @@ def query_hosts(hosts, tool, options=None, now=None):
         item=summary(host,now,max_age)
         matching=[d for d in all_devices if (not kind or d['kind']==kind) and model in d.get('name','').casefold()]
         if all_devices and not matching:
-            excluded.append(dict(host_id=host['id'],alias=host['target'],reason_code='DEVICE_FILTER_MISMATCH'))
+            excluded.append(dict(host_id=host['id'],alias=host_label(host),target=host['target'],reason_code='DEVICE_FILTER_MISMATCH'))
             continue
         if not item['fresh'] or not all_devices:
             uncertain=True
-            excluded.append(dict(host_id=host['id'],alias=host['target'],reason_code='STALE_SNAPSHOT' if all_devices else 'UNKNOWN_DEVICES',
+            excluded.append(dict(host_id=host['id'],alias=host_label(host),target=host['target'],reason_code='STALE_SNAPSHOT' if all_devices else 'UNKNOWN_DEVICES',
                                  status=item['status'],age_seconds=item['age_seconds']))
             continue
         groups=[];best=0;unknown=False;failures=[]
@@ -129,7 +131,7 @@ def query_hosts(hosts, tool, options=None, now=None):
             item['matched_groups']=groups;items.append(item)
         else:
             uncertain|=unknown
-            excluded.append(dict(host_id=host['id'],alias=host['target'],reason_code='UNKNOWN_RESOURCE_STATE' if unknown else 'INSUFFICIENT_DEVICES',
+            excluded.append(dict(host_id=host['id'],alias=host_label(host),target=host['target'],reason_code='UNKNOWN_RESOURCE_STATE' if unknown else 'INSUFFICIENT_DEVICES',
                                  required_count=count,eligible_count=best,missing_count=max(0,count-best),device_reasons=failures))
     error=AgentError('INCOMPLETE_RESOURCE_QUERY','部分机器资源无法确认；有效结果仍保留。',
                      dict(tool='search_hosts',arguments=dict(options,refresh=True),message='保留原始条件更新采样；查看 excluded 中未知状态或采集权限原因。')) if uncertain else None

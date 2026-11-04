@@ -8,7 +8,7 @@ def array(item):return dict(type='array',items=item)
 def scalar(kind,description='',nullable=False):
     return dict(type=[kind,'null'] if nullable else kind,description=description)
 S=scalar('string');N=scalar('number',nullable=True);B=scalar('boolean')
-HOST=obj(dict(host_id=S,alias=S,status=S,collected_at=scalar('number','Unix 时间戳（秒），无采样时 null。',nullable=True),age_seconds=scalar('number','采样年龄（秒），无法确定时 null。',nullable=True),fresh=B,
+HOST=obj(dict(host_id=S,alias=S,target=S,status=S,collected_at=scalar('number','Unix 时间戳（秒），无采样时 null。',nullable=True),age_seconds=scalar('number','采样年龄（秒），无法确定时 null。',nullable=True),fresh=B,
               device_kinds=array(S),device_count=scalar('integer'),connection_summary=obj(dict(user=scalar('string',nullable=True),port=scalar('integer',nullable=True),mode=S,software_auth=S))),('host_id','alias','status','fresh'))
 PROCESS=obj({key:scalar('integer' if key in ('pid','uid','effective_uid','parent_pid','memory_used') else 'string',nullable=key!='pid') for key in ('pid','name','user','memory_used','uid','effective_uid','parent_pid','cwd','executable','command','detail_status')},('pid',))
 PROCESS['properties']['memory_used']=scalar('integer','进程使用的设备显存，字节；无法读取时 null。',nullable=True)
