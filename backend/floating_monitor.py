@@ -1,4 +1,5 @@
 """Small native monitor. No browser or extra SSH collection; cached antialiased native-window drawing."""
+from backend.host_alias import host_label
 from backend.interface_language import tr, current_locale, translated_text
 import json
 import os
@@ -683,7 +684,7 @@ class FloatingMonitor:
         visible = self.visible_hosts() if mode == 'fleet' else ([self.selected()] if self.selected() else [])
         # Fleet cells show allocation state, not constantly changing memory/utilization.
         # Detail dialogs resolve current data on click, so keeping cells does not keep stale details.
-        drawing = [(h['id'], h['target'], [(d.get('display_id', d.get('id')), device_status(d, h.get('snapshot', {}).get('fresh') is True and not self.error),
+        drawing = [(h['id'], host_label(h), [(d.get('display_id', d.get('id')), device_status(d, h.get('snapshot', {}).get('fresh') is True and not self.error),
                     d.get('memory_used') if mode == 'single' else None, d.get('memory_total') if mode == 'single' else None)
                     for d in h.get('snapshot', {}).get('devices', [])]) for h in visible]
         signature = json.dumps((drawing, self.error, self.settings.values,self.viewport_size,self.scroll_offset,self.detail_offset,self.dpi_scale), sort_keys=True)
@@ -758,7 +759,7 @@ class FloatingMonitor:
         rr(1,1,width-2,height-2,32,outline='#d4dee7')
         c.create_line(1,49,width-2,49,fill='#e8edf2') if mode != 'compact' else None
         server_icon(17,16)
-        title = tr('关注的机器', 'Favorite machines') if mode == 'fleet' else (tr('‹ 返回总览', '‹ Overview') if mode == 'single' else (host['target'][:18] if host else 'GPU / NPU'))
+        title = tr('关注的机器', 'Favorite machines') if mode == 'fleet' else (tr('‹ 返回总览', '‹ Overview') if mode == 'single' else (host_label(host)[:18] if host else 'GPU / NPU'))
         text(47,26 if mode != 'compact' else 22,title,12,bold=True,tags='drag')
         c.tag_bind('all','<ButtonPress-1>',lambda event:self.start_drag(event) if event.y<round(40*scale*self.dpi_scale) and event.x<round((width-130)*scale*self.dpi_scale) and not self.resize_edge(event) else None)
         c.bind('<Motion>',self.resize_cursor)
@@ -834,7 +835,7 @@ class FloatingMonitor:
             for h in rows:
                 tag='minimal-host-'+h['id']
                 c.tag_bind(tag,'<Button-3>',lambda event,ident=h['id']:self.machine_context_menu(event,ident))
-                text(19,y+20,h['target'][:22],10,bold=True,width=max(60,width-130),tags=tag)
+                text(19,y+20,host_label(h)[:22],10,bold=True,width=max(60,width-130),tags=tag)
                 snapshot=h.get('snapshot',{})
                 fresh=snapshot.get('fresh') is True and not self.error
                 idle=sum(device_status(d,fresh)=='idle' for d in snapshot.get('devices',[]))
@@ -865,7 +866,7 @@ class FloatingMonitor:
                 server_icon(24,y+23,self.MUTED)
                 label_tag = 'host-'+h['id']
                 c.tag_bind(label_tag,'<Button-3>',lambda event,ident=h['id']:self.machine_context_menu(event,ident))
-                text(51,y+18,h['target'],9,bold=True,width=130,tags=label_tag)
+                text(51,y+18,host_label(h),9,bold=True,width=130,tags=label_tag)
                 text(185,y+64,tr('详情 ›', 'Details ›'),7,'#157e73',anchor='e',tags=label_tag)
                 devices=h.get('snapshot',{}).get('devices',[])
                 model=devices[0].get('name','') if devices else tr('暂无设备', 'No devices')
@@ -904,7 +905,7 @@ class FloatingMonitor:
                 c.bind('<MouseWheel>',scroll)
         elif mode == 'single' and host:
             rr(14,61,width-15,99,9,'#f4f8fa','#e1e7ee','selector')
-            text(27,80,host['target']+'  ▾',11,bold=True,width=width-60,tags='selector')
+            text(27,80,host_label(host)+'  ▾',11,bold=True,width=width-60,tags='selector')
             c.tag_bind('selector','<Button-1>',lambda e:self.host_menu())
             c.tag_bind('selector','<Button-3>',lambda event:self.machine_context_menu(event,host['id']))
             text(20,118,self.summary(host),10,'#16815c')
@@ -975,7 +976,7 @@ class FloatingMonitor:
     def host_menu(self):
         menu = self.tk.Menu(self.root, tearoff=False)
         for host in self.hosts:
-            menu.add_command(label=host['target'], command=lambda h=host: self.select_host(h['id']))
+            menu.add_command(label=host_label(host), command=lambda h=host: self.select_host(h['id']))
         try:
             menu.tk_popup(self.root.winfo_rootx()+10, self.root.winfo_rooty()+30)
         finally:
@@ -1050,7 +1051,7 @@ class FloatingMonitor:
             tip.configure(bg=self.palette['line'])
             body=self.tk.Frame(tip,bg=self.BG)
             body.pack(fill='both',expand=True,padx=1,pady=1)
-            self.label(body,f"{host['target']} · {device.get('display_id',device_id)} · {status}",fg=color,
+            self.label(body,f"{host_label(host)} · {device.get('display_id',device_id)} · {status}",fg=color,
                        font=('Microsoft YaHei UI',9,'bold'),wraplength=round(300*self.dpi_scale),justify='left').pack(anchor='w',padx=12,pady=(10,5))
             self.label(body,'\n'.join(line for line in lines if line),wraplength=round(480*self.dpi_scale),justify='left').pack(anchor='w',padx=12,pady=(0,10))
             tip.update_idletasks()

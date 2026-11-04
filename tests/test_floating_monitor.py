@@ -3,6 +3,40 @@ import json
 from backend.floating_monitor import MonitorSettings, device_status
 
 
+def test_alias_change_invalidates_floating_render_cache():
+    from types import SimpleNamespace
+    import pytest
+    from backend.floating_monitor import FloatingMonitor
+
+    class DrawReached(Exception):
+        pass
+
+    def draw(*args):
+        raise DrawReached
+
+    monitor = FloatingMonitor.__new__(FloatingMonitor)
+    monitor.hosts = [dict(id='a', target='10.0.0.1', alias='训练机 A3')]
+    monitor.visible_hosts = lambda: monitor.hosts
+    monitor.update_display_scale = lambda: None
+    monitor.hide_tooltip = lambda: None
+    monitor.viewport_size = (315, 260)
+    monitor.settings = SimpleNamespace(values={'mode': 'fleet'})
+    monitor.error = ''
+    monitor.last_render = None
+    monitor.scroll_offset = monitor.detail_offset = 0
+    monitor.dpi_scale = 1
+    monitor.canvas = SimpleNamespace(delete=draw)
+    with pytest.raises(DrawReached):
+        monitor.render()
+    monitor.render()  # Identical data should retain the cached drawing.
+    monitor.hosts[0]['alias'] = '测试机'
+    with pytest.raises(DrawReached):
+        monitor.render()
+    monitor.hosts[0].pop('alias')
+    with pytest.raises(DrawReached):
+        monitor.render()
+
+
 def test_hover_process_details_preserve_paths_and_all_processes():
     from backend.floating_monitor import process_tooltip_lines
     path = '/home/miniconda3/envs/' + 'training_environment_' * 8 + '/bin/python3.12'
