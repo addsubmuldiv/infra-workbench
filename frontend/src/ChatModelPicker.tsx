@@ -3,6 +3,7 @@ import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Check,ChevronDown,LoaderCircle,Settings2} from 'lucide-react';
 import {agentRequest,type AgentView} from './agentSettings';
+import {modelCacheKey,readModelCache,writeModelCache} from './modelCache';
 
 export function ChatModelPicker({model,openSettings}:{model?:string;openSettings?:()=>void}){
   const [current,setCurrent]=useState(model),[view,setView]=useState<AgentView|null>(null),[models,setModels]=useState<string[]|null>(null);
@@ -26,19 +27,28 @@ export function ChatModelPicker({model,openSettings}:{model?:string;openSettings
     return()=>{document.removeEventListener('pointerdown',outside);window.removeEventListener('resize',dismiss);window.removeEventListener('scroll',dismiss,true)};
   },[open]);
   useEffect(()=>setCurrent(model),[model]);
+  useEffect(()=>{
+    void load();
+    const timer=window.setInterval(()=>void load(),60*60*1000);
+    return()=>window.clearInterval(timer);
+  },[]);
   const close=()=>setOpen(false);
-  const load=async()=>{
+  const load=async(force=false)=>{
     const ticket=++generation.current;
-    setLoading(true);setError('');setModels(null);setView(null);setFilter('');
+    setLoading(true);setError('');setFilter('');
     try{
       const next=await agentRequest<AgentView>();
       if(ticket!==generation.current)return;
       setView(next);setCurrent(next.model);
+      const cacheKey=modelCacheKey(next),cached=readModelCache(cacheKey);
+      if(cached){setModels(cached.models);setTruncated(cached.truncated);if(!force&&!cached.stale)return}
+      else setModels(null);
       const list=await agentRequest<{models:string[];truncated:boolean}>('/models','POST',{
         profile_id:next.active_id,base_url:next.base_url,protocol:next.protocol,model:next.model,
         timeout_seconds:next.timeout_seconds,context_window:next.context_window
       });
       if(ticket!==generation.current)return;
+      writeModelCache(cacheKey,list);
       setView(next);setCurrent(next.model);setModels(list.models);setTruncated(list.truncated);
     }catch(e){if(ticket===generation.current)setError(e instanceof Error?e.message:ui("无法获取模型列表"))}
     finally{if(ticket===generation.current)setLoading(false)}
@@ -66,7 +76,8 @@ export function ChatModelPicker({model,openSettings}:{model?:string;openSettings
         </div>
         {truncated&&<p className="chat-model-state">{ui("模型较多，仅显示前 500 个；其他模型可在设置中手动填写。")}</p>}
       </>}
-      {error&&<><p className="chat-model-state error" role="alert">{error}</p><button type="button" onClick={()=>void load()}>{ui("重新获取模型列表")}</button>{view&&<><input aria-label={ui("手动输入模型 ID")} placeholder={ui("或手动输入模型 ID")} value={filter} onChange={event=>setFilter(event.target.value)}/><button type="button" disabled={!filter.trim()||!!switching} onClick={()=>void switchModel(filter.trim())}>{ui("切换到此模型")}</button></>}</>}
+      {error&&<><p className="chat-model-state error" role="alert">{error}</p><button type="button" onClick={()=>void load(true)}>{ui("重新获取模型列表")}</button>{view&&<><input aria-label={ui("手动输入模型 ID")} placeholder={ui("或手动输入模型 ID")} value={filter} onChange={event=>setFilter(event.target.value)}/><button type="button" disabled={!filter.trim()||!!switching} onClick={()=>void switchModel(filter.trim())}>{ui("切换到此模型")}</button></>}</>}
+      {models!==null&&<button type="button" className="chat-model-settings" disabled={loading} onClick={()=>void load(true)}>{ui("重新获取模型列表")}</button>}
       <button type="button" className="chat-model-settings" onClick={()=>{close();openSettings?.()}}><Settings2 size={13}/>{ui("打开模型设置")}</button>
     </div>,document.body)}
   </div>;

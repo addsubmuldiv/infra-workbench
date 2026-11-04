@@ -2,6 +2,7 @@ import {getLocale} from './i18n';
 import {t} from './i18n';
 import {ui} from './assistantLocale';
 import {AgentProfilePicker} from './AgentProfilePicker';
+import {modelCacheKey,writeModelCache} from './modelCache';
 import React,{useEffect,useState} from 'react';
 import {Bot,Check,ChevronDown,LoaderCircle,Plug,ShieldCheck,Trash2} from 'lucide-react';
 import {agentDirty,agentPayload,agentRequest,defaultAgentConfig,protocolNames,type ContextCapacity,type AgentConfig,type AgentTest,type AgentView} from './agentSettings';
@@ -59,6 +60,7 @@ export function AgentSettingsPage(){
   const fetchModels=()=>act('models',async()=>{
     const value=await agentRequest<{models:string[];truncated:boolean}>('/models','POST',agentPayload(form,key,remember));
     setModels(value.models);
+    if(saved&&!dirty)writeModelCache(modelCacheKey(saved),value);
     setMessage(value.models.length?t(`已获取 ${value.models.length} 个模型，请在下方列表中选择。${value.truncated?ui("当前仅显示部分模型，仍可手动填写其他模型 ID。"):''}`,`Fetched ${value.models.length} models. Choose one below. ${value.truncated?ui("当前仅显示部分模型，仍可手动填写其他模型 ID。"):''}`):ui("接口没有提供可选模型，请手动填写模型名称。"));
   });
   const test=()=>act('test',async()=>{
