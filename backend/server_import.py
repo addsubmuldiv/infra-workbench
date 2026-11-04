@@ -147,7 +147,7 @@ def safe_failure(error,*,key=False):
     # Classify only. Never echo arbitrary server output or exception arguments.
     text=str(getattr(error,'detail',error)).lower()
     if 'host key' in text or 'fingerprint' in text or '指纹' in text:
-        return '主机指纹未受信任或已变化，请先在终端核对指纹并信任后重试'
+        return '主机指纹校验失败，未覆盖已有指纹；请核实服务器身份或检查本机 known_hosts 配置'
     if isinstance(error,TimeoutError) or any(word in text for word in ('timed out','timeout','超时')):
         return '连接或验证超时，请检查网络、SSH 端口和服务器响应'
     if any(word in text for word in ('permission denied','authentication','password','密码')) and not key:

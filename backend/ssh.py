@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import subprocess
+import shlex
 import time
 import weakref
 from pathlib import Path
@@ -11,6 +12,7 @@ import asyncssh
 from .core import discover_aliases, install_key_script
 from .ssh_passwords import connection_identity
 from .ssh_proxy import SSHProxyConnector
+from .import_host_keys import ImportHostKeys
 
 
 class SSHCommandTimeout(TimeoutError):
@@ -19,10 +21,14 @@ class SSHCommandTimeout(TimeoutError):
 
 class ConnectionTrace(asyncssh.SSHClient):
     """Record handshake/auth boundaries without logging credentials."""
-    def __init__(self, host_id):
+    def __init__(self, host_id, host_keys=None):
         self.host_id = host_id
         self.started = time.monotonic()
         self.auth_started = False
+        self.host_keys = host_keys
+
+    def validate_host_public_key(self, host, addr, port, key):
+        return bool(self.host_keys and self.host_keys.validate(host, addr, port, key))
 
     def begin_auth(self, username):
         self.auth_started = True
@@ -71,7 +77,7 @@ class SSHService:
     def arguments(self, host):
         args = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
                 '-o', 'ConnectionAttempts=1', '-o', 'ClearAllForwardings=yes',
-                '-o', 'StrictHostKeyChecking=yes', '-o', 'PermitLocalCommand=no']
+                '-o', 'StrictHostKeyChecking='+('accept-new' if host.get('_import_identity') else 'yes'), '-o', 'PermitLocalCommand=no']
         if host.get('user'):
             args += ['-l', host['user']]
         if host.get('port'):
@@ -123,6 +129,41 @@ class SSHService:
         if expected and connection_identity(config) != expected:
             raise ValueError('导入预览后 SSH 配置已变化，请重新选择 Excel 并核对')
 
+    async def import_proxy(self, config, depth=0):
+        """Apply accept-new to every OpenSSH hop, including nested jump aliases."""
+        if depth > 8:
+            raise ValueError('SSH 跳板链过长或存在循环')
+        jumps = config.get('proxyjump')
+        if not jumps or jumps == 'none':
+            return config.get('proxycommand') if config.get('proxycommand') != 'none' else None
+        jumps = jumps.split(',')
+        user, separator, address = jumps[-1].rpartition('@')
+        if not separator:
+            address = jumps[-1]
+        port = None
+        if ':' in address and (not address.startswith('[') or ']:' in address):
+            address, port = address.rsplit(':', 1)
+        hop = dict(target=address.strip('[]'), user=user if separator else None,
+                   port=int(port) if port else None, manual=True)
+        resolved = await self.effective(hop)
+        if len(jumps) > 1:
+            resolved = dict(resolved, proxyjump=','.join(jumps[:-1]))
+        nested = await self.import_proxy(resolved, depth+1)
+        command = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new',
+                   '-o', 'ClearAllForwardings=yes', '-o', 'PermitLocalCommand=no', '-o', 'ConnectTimeout=20']
+        if self.custom_known_hosts:
+            command += ['-o', 'UserKnownHostsFile='+str(self.known_hosts)]
+        if nested:
+            value = (subprocess.list2cmdline(nested) if os.name == 'nt' else shlex.join(nested)) if isinstance(nested, list) else nested
+            command += ['-o', 'ProxyCommand='+value]
+        if hop['port']:
+            command += ['-p', str(hop['port'])]
+        endpoint = config['hostname']
+        if ':' in endpoint:
+            endpoint = '['+endpoint.strip('[]')+']'
+        destination = (hop['user']+'@' if hop['user'] else '')+hop['target']
+        return command+['-W', endpoint+':'+str(config.get('port',22)), destination]
+
     async def password_connection(self, host, password, key_only=False):
         cfg = await self.effective(host)
         self.check_import_identity(host, cfg)
@@ -134,15 +175,23 @@ class SSHService:
         if routed:
             timeout += 20
         # Import previews can verify a connection before assigning a host ID.
-        trace = ConnectionTrace(host.get('id', 'unsaved'))
+        importing = bool(host.get('_import_identity'))
+        host_keys = ImportHostKeys(self.known_hosts) if importing else None
+        if importing:
+            self.known_hosts.parent.mkdir(parents=True, exist_ok=True)
+        trace = ConnectionTrace(host.get('id', 'unsaved'), host_keys)
         options = dict(host=cfg['hostname'], port=int(cfg.get('port', 22)),
                        username=cfg.get('user'), password=password, config=None,
                        known_hosts=str(self.known_hosts), connect_timeout=timeout, login_timeout=timeout,
                        client_factory=lambda: trace,
                        preferred_auth=['publickey'] if key_only else ['password', 'keyboard-interactive'])
+        if importing and not self.known_hosts.exists():
+            options['known_hosts'] = b''
         if cfg.get('hostkeyalias') and cfg['hostkeyalias'] != 'none':
             options['host_key_alias'] = cfg['hostkeyalias']
-        if cfg.get('proxyjump') and cfg['proxyjump'] != 'none':
+        if importing and cfg.get('proxyjump') and cfg['proxyjump'] != 'none':
+            options['proxy_command'] = await self.import_proxy(cfg)
+        elif cfg.get('proxyjump') and cfg['proxyjump'] != 'none':
             # AsyncSSH inherits config=None for string tunnels, so an OpenSSH
             # jump alias would be looked up in DNS instead of ~/.ssh/config.
             jumps = cfg['proxyjump'].split(',')
@@ -188,6 +237,13 @@ class SSHService:
                             trace.host_id, 'authentication' if trace.auth_started else 'proxy_or_handshake',
                             time.monotonic() - trace.started, type(exc).__name__)
             raise
+        if host_keys:
+            try:
+                host_keys.save()
+            except Exception:
+                connection.close()
+                await connection.wait_closed()
+                raise
         self.connection_configs[connection] = cfg
         return connection
 
@@ -232,7 +288,12 @@ class SSHService:
                   '-o', 'Port='+str(config.get('port',22)), '-o', 'CanonicalizeHostname=no',
                   '-o', 'HostKeyAlias='+host_key_alias]
         if config.get('proxyjump') not in (None,'none'):
-            pinned += ['-o', 'ProxyJump='+config['proxyjump']]
+            if host.get('_import_identity'):
+                proxy_command = await self.import_proxy(config)
+                value = subprocess.list2cmdline(proxy_command) if os.name == 'nt' else shlex.join(proxy_command)
+                pinned += ['-o', 'ProxyCommand='+value]
+            else:
+                pinned += ['-o', 'ProxyJump='+config['proxyjump']]
         elif config.get('proxycommand') not in (None,'none'):
             pinned += ['-o', 'ProxyCommand='+config['proxycommand']]
         else:
@@ -268,6 +329,7 @@ class SSHService:
     async def connect(self, host, password=None, provision=False):
         if not password:
             if host.get('_import_identity'):
+                self.known_hosts.parent.mkdir(parents=True, exist_ok=True)
                 cfg = await self.effective(host)
                 self.check_import_identity(host, cfg)
                 code, out, err = await self.run_bound(host, 'printf iwb-connected', None, cfg, native=True)
@@ -276,6 +338,15 @@ class SSHService:
             if code != 0 or 'iwb-connected' not in out:
                 raise RuntimeError(err[-1000:] or 'SSH 连接失败')
             return dict(auth='password_session' if host['id'] in self.sessions else 'key', message='连接成功')
+        if host.get('_import_identity') and not provision:
+            # Honor existing OpenSSH keys/certificates/agent before trying a
+            # spreadsheet password. A key login does not validate that password.
+            try:
+                result = await self.connect(host, None)
+            except (RuntimeError, TimeoutError):
+                pass
+            else:
+                return dict(result, password_not_verified=True)
         conn = await self.password_connection(host, password)
         self.verified_configs[host['id']] = dict(self.connection_configs.get(conn) or await self.effective(host))
         old = self.sessions.pop(host['id'], None)

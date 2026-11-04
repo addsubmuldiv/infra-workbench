@@ -356,7 +356,7 @@ const english:Record<string,string>={
   "正在读取…": "Reading…",
   "选择 Excel 文件": "Choose Excel file",
   "选择服务器 Excel 文件": "Choose servers Excel file",
-  "提供的密码会在验证成功后自动存入系统凭据管理器，可在机器的「SSH 密码」中查看保存状态或删除。按 SSH 别名或实际地址、账号、端口匹配已有机器；只验证并补存密码，不重复添加，不修改原密钥和跳板。文件内重复目标会跳过。密码原文不显示在预览和报告中。未信任的主机指纹需先在终端核对。": "Verified passwords are saved automatically in the system credential manager. Check or remove them in the machine's SSH password settings. Existing machines are matched by SSH alias or address, account, and port; only passwords are verified and saved, without duplicate machines or changes to keys or jump hosts. Duplicate targets in the file are skipped. Passwords are hidden in previews and reports. Verify untrusted host fingerprints in a terminal first.",
+  "优先使用已有免密登录，免密不可用时再尝试表格密码。仅验证成功的密码会自动存入系统凭据管理器，可在机器的「SSH 密码」中查看保存状态或删除。按 SSH 别名或实际地址、账号、端口匹配已有机器；只验证并补存密码，不重复添加，不修改原密钥和跳板。文件内重复目标会跳过。密码原文不显示在预览和报告中。首次连接会自动保存主机指纹，无需终端确认；已有指纹发生变化时会拒绝连接。": "Existing key-based login is tried first; spreadsheet passwords are used only if it is unavailable. Only verified passwords are saved in the system credential manager. Check or remove them in the machine's SSH password settings. Existing machines are matched by SSH alias or address, account, and port; only passwords are verified and saved, without duplicate machines or changes to keys or jump hosts. Duplicate targets in the file are skipped. Passwords are hidden in previews and reports. Host fingerprints are saved automatically on first connection, without terminal confirmation. Connections are rejected if an existing fingerprint changes.",
   "总数 ": "Total ",
   "新增 ": "Added ",
   "失败 ": "Failed ",

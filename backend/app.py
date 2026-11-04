@@ -562,7 +562,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         if new:
             hosts.append(host)
         host['auth'] = result['auth']
-        if body.remember_password:
+        if body.remember_password and not result.get('password_not_verified'):
             try:
                 saved=await ssh_passwords.save(host,body.password.get_secret_value(),ssh.verified_configs.get(host['id']))
                 if saved.get('password_saved') is not True:raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','SSH 密码保存状态无法确认')

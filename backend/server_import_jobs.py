@@ -83,8 +83,9 @@ class ImportJobs:
                 try:
                     result=await asyncio.wait_for(self.connect(row),45)
                     if row.password:
-                        row.password_status='saved' if result.get('password_saved') else 'failed'
-                        row.password_reason=('已存入系统凭据管理器，可在机器的 SSH 密码设置中删除' if result.get('password_saved')
+                        row.password_status='not_saved' if result.get('password_not_verified') else 'saved' if result.get('password_saved') else 'failed'
+                        row.password_reason=('已使用已有免密登录；未验证或保存表格密码' if result.get('password_not_verified') else
+                                            '已存入系统凭据管理器，可在机器的 SSH 密码设置中删除' if result.get('password_saved')
                                              else '密码保存失败或无法确认，请在机器的 SSH 密码设置中重试；连接结果不受影响')
                     if result.get('skipped'):
                         row.status='skipped';row.host_id=result['host_id']
@@ -93,7 +94,7 @@ class ImportJobs:
                         continue
                     row.host_id=result['host_id'];row.status='imported';row.reason='登录成功，已添加'
                     if job.get('cluster_id') is not None:job['clusters'].assign_import(row.host_id,job['cluster_id'])
-                    if job['provision'] and row.password:row.key_status='queued'
+                    if job['provision'] and row.password and not result.get('password_not_verified'):row.key_status='queued'
                     elif job['provision']:row.key_status='done';row.key_reason='已通过无密码登录验证'
                 except Exception as exc:
                     row.status='failed';row.reason=safe_failure(exc)

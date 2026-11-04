@@ -198,3 +198,22 @@ def test_password_store_failure_does_not_turn_successful_import_into_failure(tmp
         result=until(client,key,lambda x:x['status']=='complete')
         assert result['success']==1 and result['failed']==0 and len(app.state.hosts)==1
         assert result['password_failed']==1 and result['rows'][0]['password_status']=='failed'
+
+
+def test_existing_key_import_does_not_store_unverified_password_or_provision_again(tmp_path):
+    vault=Vault();app=import_app(tmp_path,vault)
+    async def connect(*args):
+        return dict(auth='key',message='connected',password_not_verified=True)
+    async def forbidden(*args):raise AssertionError('must not reprovision a working key login')
+    app.state.ssh.connect=connect
+    app.state.server_imports.provision=forbidden
+    with TestClient(app) as client:
+        key=client.post('/api/imports/preview',headers={'X-IWB':'1'},content=sheet([
+            ['IP','账号','密码'],['192.0.2.10','u','unverified-password']])).json()['id']
+        client.post('/api/imports/'+key+'/start',headers={'X-IWB':'1'},json={'provision':True})
+        result=until(client,key,lambda job:job['status']=='complete')
+        assert result['success']==1 and result['failed']==0
+        assert result['rows'][0]['password_status']=='not_saved'
+        assert result['key_total']==result['key_done']==1
+        assert result['rows'][0]['key_status']=='done'
+        assert vault.values=={}

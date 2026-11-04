@@ -15,7 +15,7 @@ PASSWORD='SYNTHETIC-ALIAS-IMPORT-PASSWORD'
 HEADERS={'X-IWB':'1'}
 
 
-def alias_app(tmp_path,monkeypatch,*,deny=False):
+def alias_app(tmp_path,monkeypatch,*,deny=False,native_login=False):
     home=tmp_path/'synthetic-home';folder=home/'.ssh';folder.mkdir(parents=True)
     config=folder/'config'
     config.write_text('Host training training-copy\n  HostName 192.0.2.80\n  User config-user\n  Port 2222\n  ProxyJump jumper@192.0.2.9:2200\n  HostKeyAlias training-hostkey\nHost command-route\n  HostName 192.0.2.81\n  User config-user\n  Port 2223\n  ProxyCommand synthetic-proxy %h %p %r\n  HostKeyAlias command-hostkey\n',encoding='utf-8')
@@ -25,7 +25,8 @@ def alias_app(tmp_path,monkeypatch,*,deny=False):
         commands.append(list(args))
         if '-G' in args:
             return await native_command(self,[args[0],'-F',str(config),*args[1:]],source,timeout)
-        if args[-1]=='printf iwb-connected':return 0,'iwb-connected',''
+        if args[-1]=='printf iwb-connected':
+            return (0,'iwb-connected','') if native_login or '-i' in args else (255,'','Permission denied')
         raise AssertionError('unexpected native command; remote SSH is forbidden in this test')
     async def key(self):return str(tmp_path/'synthetic-key'),'ssh-ed25519 AAAATEST synthetic-only'
     class Connection:
@@ -221,7 +222,7 @@ def test_background_alias_identity_change_never_sends_password_or_key_write_to_n
 
 
 def test_passwordless_alias_native_connection_is_pinned_to_preview_configuration(tmp_path,monkeypatch):
-    app,_,commands,connections=alias_app(tmp_path,monkeypatch)
+    app,_,commands,connections=alias_app(tmp_path,monkeypatch,native_login=True)
     with TestClient(app) as client:
         preview=client.post('/api/imports/preview',headers=HEADERS,content=sheet([
             ['host','username'],['TrAiNiNg','sheet-user']
@@ -231,7 +232,7 @@ def test_passwordless_alias_native_connection_is_pinned_to_preview_configuration
         assert result['success']==1 and not connections,result
         native=[args for args in commands if args[-1]=='printf iwb-connected'][0]
         assert 'HostName=192.0.2.80' in native and 'User=sheet-user' in native and 'Port=2222' in native
-        assert any(arg.startswith('ProxyJump=jumper@') for arg in native)
+        assert any(arg.startswith('ProxyCommand=') and 'jumper@192.0.2.9' in arg and 'StrictHostKeyChecking=accept-new' in arg for arg in native)
         assert 'HostKeyAlias=training-hostkey' in native and native[-2]=='training'
         host=app.state.hosts[0]
         assert host['target']=='TrAiNiNg' and host['manual'] is False and host['auth']=='key'

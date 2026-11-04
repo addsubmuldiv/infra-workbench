@@ -79,7 +79,7 @@ export default function ServerImport({onChanged}:{onChanged:(ids:string[])=>void
   return <div className="server-import">
     <div className="import-intro"><FileSpreadsheet size={24}/><div><strong>{tt("从 Excel 批量添加服务器或补存密码")}</strong><p>{tt("首行表头：IP、账号、密码、端口。IP 列也可填写 SSH 别名。端口留空按 22 处理，非标准端口请填写。读取第一个工作表，一次最多 100 台。")}</p></div></div>
     <div className="import-file-actions"><a className="secondary" href="/api/imports/template" download><Download size={15}/>{tt("下载 Excel 模板")}</a><label className={'primary '+(busy||active?'disabled':'')}><Upload size={15}/>{busy?tt("正在读取…"):tt("选择 Excel 文件")}<input aria-label={tt("选择服务器 Excel 文件")} type="file" accept=".xlsx" disabled={busy||active} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void choose(file)}}/></label></div>
-    <p className="subtle">{tt("提供的密码会在验证成功后自动存入系统凭据管理器，可在机器的「SSH 密码」中查看保存状态或删除。按 SSH 别名或实际地址、账号、端口匹配已有机器；只验证并补存密码，不重复添加，不修改原密钥和跳板。文件内重复目标会跳过。密码原文不显示在预览和报告中。未信任的主机指纹需先在终端核对。")}</p>
+    <p className="subtle">{tt("优先使用已有免密登录，免密不可用时再尝试表格密码。仅验证成功的密码会自动存入系统凭据管理器，可在机器的「SSH 密码」中查看保存状态或删除。按 SSH 别名或实际地址、账号、端口匹配已有机器；只验证并补存密码，不重复添加，不修改原密钥和跳板。文件内重复目标会跳过。密码原文不显示在预览和报告中。首次连接会自动保存主机指纹，无需终端确认；已有指纹发生变化时会拒绝连接。")}</p>
     {error&&<div className="connection-error" role="alert">{error}</div>}
     {job&&<>
       {job.status==='preview'&&<><ClusterTarget value={clusterId} onChange={setClusterId} disabled={busy}/><p className="subtle">{t("仅新增成功的机器进入所选集群。已有机器补存密码时保留原归属。","Only newly added machines join this cluster. Existing machines retain their membership when saving passwords.")}</p></>}
