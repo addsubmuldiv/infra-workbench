@@ -6,6 +6,27 @@ export function historyDeviceKind(hosts:readonly {id:string;snapshot:{devices:re
  const selected=new Set(ids),kinds=new Set(hosts.filter(h=>selected.has(h.id)).flatMap(h=>h.snapshot.devices.map(d=>d.kind)).filter(kind=>kind==='GPU'||kind==='NPU'));
  return kinds.size===1?[...kinds][0]:current;
 }
+export type DisplayHistorySegment=HistorySegment&{bridged_unknown_seconds:number};
+/** Presentation only. Never feed these inferred bridges into statistics or alerts. */
+export function mergeHistoryDisplaySegments(segments:readonly HistorySegment[],maxGapSeconds=120):DisplayHistorySegment[]{
+ const result:DisplayHistorySegment[]=[];
+ const identity=(s:HistorySegment)=>JSON.stringify(s.devices.map(d=>{const item=d as {identity?:unknown;id?:unknown;uuid?:unknown;kind?:unknown};return item.identity??[item.id,item.uuid,item.kind]}).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))));
+ const same=(a:HistorySegment,b:HistorySegment)=>a.complete&&b.complete&&a.inventory_known&&b.inventory_known&&a.total_count===b.total_count&&a.idle_count===b.idle_count&&a.busy_count===b.busy_count&&a.machine_state===b.machine_state&&(a as {run_id?:string}).run_id===(b as {run_id?:string}).run_id&&identity(a)===identity(b);
+ for(let i=0;i<segments.length;i++){
+  const current={...segments[i],bridged_unknown_seconds:0},previous=result[result.length-1];
+  if(previous&&previous.end===current.start&&same(previous,current)){previous.end=current.end;continue}
+  if(previous&&previous.complete&&previous.idle_count>0&&previous.end===current.start&&!current.complete){
+   let j=i,end=current.start;
+   while(j<segments.length&&!segments[j].complete&&['sampling_gap','collection_failed'].includes(segments[j].reason??'')&&segments[j].start===end){end=segments[j].end;j++}
+   const next=segments[j];
+   if(j>i&&next&&next.start===end&&end-current.start<=maxGapSeconds&&same(previous,next)){
+    previous.bridged_unknown_seconds+=end-current.start;previous.end=next.end;i=j;continue;
+   }
+  }
+  result.push(current);
+ }
+ return result;
+}
 export function localDate(now=new Date()){return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`}
 export function shiftDate(date:string,days:number){const d=new Date(`${date}T12:00:00Z`);d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10)}
 export function heatColor(count:number,max:number){return `rgba(98, 189, 155, ${0.055+Math.min(1,Math.max(0,count)/Math.max(1,max))*.44})`}

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {idleLabel,segmentWidth,shiftDate,stepPath,heatColor,historyDeviceKind} from '../src/resourceHistoryModel.ts';
+import {idleLabel,segmentWidth,shiftDate,stepPath,heatColor,historyDeviceKind,mergeHistoryDisplaySegments} from '../src/resourceHistoryModel.ts';
 test('unknown inventory and incomplete data are never labelled exact zero',()=>{
  assert.equal(idleLabel({idle_count:0,unknown_count:null,inventory_known:false,complete:false},true),'Unknown inventory');
  assert.equal(idleLabel({idle_count:3,unknown_count:2,inventory_known:true,complete:false},true),'≥3, 2 unknown');
@@ -26,4 +26,18 @@ test('history follows selected hardware after host selection or delayed inventor
 test('mixed history scopes retain manual GPU or NPU selection',()=>{
  assert.equal(historyDeviceKind(kindHosts,['n','g'],'NPU'),'NPU');
  assert.equal(historyDeviceKind(kindHosts,['n','g'],'GPU'),'GPU');
+});
+
+const idle=(start,end,n=8,extra={})=>({start,end,idle_count:n,busy_count:8-n,unknown_count:0,total_count:8,inventory_known:true,complete:true,machine_state:n===8?'whole_idle':'partial_idle',reason:'',devices:[],run_id:'run',...extra});
+const gap=(start,end,reason='sampling_gap')=>({...idle(start,end,0),inventory_known:false,complete:false,total_count:null,unknown_count:null,machine_state:'unknown',reason});
+test('display merges repeated counts and a short reconnect without mutating source evidence',()=>{
+ const raw=[idle(0,10),idle(10,20),gap(20,30),idle(30,50)];const before=JSON.stringify(raw);
+ const result=mergeHistoryDisplaySegments(raw);
+ assert.equal(result.length,1);assert.equal(result[0].end,50);assert.equal(result[0].bridged_unknown_seconds,10);
+ assert.equal(JSON.stringify(raw),before);
+});
+test('display does not bridge long gaps, different counts, restart, unknown edges or identity changes',()=>{
+ for(const raw of [[idle(0,10),gap(10,200),idle(200,220)],[idle(0,10),gap(10,20),idle(20,30,4)],[idle(0,10),gap(10,20,'backend_stopped'),idle(20,30)],[idle(0,10),gap(10,20),idle(20,30,8,{run_id:'new'})],[gap(0,10),idle(10,20)],[idle(0,10),gap(10,20)]])assert.ok(mergeHistoryDisplaySegments(raw).length>1);
+ const a=idle(0,10,8,{devices:[{identity:['old']}]});const b=idle(20,30,8,{devices:[{identity:['new']}]});assert.equal(mergeHistoryDisplaySegments([a,gap(10,20),b]).length,3);
+ assert.equal(mergeHistoryDisplaySegments([idle(0,10),gap(10,20),idle(20,30)],0).length,3);
 });
