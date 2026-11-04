@@ -1,4 +1,5 @@
-"""Executed in memory on a Linux target through `python3 -`. No remote file installation."""
+"""Read-only Linux metrics probe, cached by content hash in the login user cache."""
+import sys
 import json
 import csv
 import os
@@ -210,7 +211,10 @@ def main():
         login_user = pwd.getpwuid(os.getuid()).pw_name if pwd else None
     except (KeyError, OSError, AttributeError):
         login_user = None
-    result = {'system': system_metrics(), 'login_user': login_user, 'tmux': tmux_sessions()}
+    slow = '--fast' not in sys.argv
+    result = {'system': system_metrics(), 'login_user': login_user}
+    if slow:
+        result['tmux'] = tmux_sessions()
     try:
         process_cutoff_ticks = int(float(read_text('/proc/uptime').split()[0])*os.sysconf('SC_CLK_TCK'))
     except (OSError, ValueError, IndexError, AttributeError):
@@ -227,7 +231,8 @@ def main():
         result['kind'] = None
         result['metrics'] = {'code': -1, 'out': '', 'error': '找不到 nvidia-smi 或 npu-smi'}
     result['ports'] = run(['ss', '-H', '-ltnp'])
-    result['users'] = run(['ps', '-eo', 'pid=,user='])
+    if slow:
+        result['users'] = run(['ps', '-eo', 'pid=,user='])
     pids = reported_process_ids(result['kind'], result['metrics']['out'], result.get('processes', {}).get('out', ''))
     result['process_details'] = {str(pid): read_process_details(pid, process_cutoff_ticks=process_cutoff_ticks) for pid in pids}
     print('IWB_JSON:' + json.dumps(result))

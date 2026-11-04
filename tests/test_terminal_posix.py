@@ -23,7 +23,7 @@ def test_non_windows_key_terminal_routes_to_native_posix_without_changing_ssh_op
     asyncio.run(scenario())
     args,cols,rows=received[0]
     assert args[:2]==['ssh','-o'] and '-T' not in args and '-tt' in args
-    assert 'BatchMode=yes' in args and 'StrictHostKeyChecking=yes' in args
+    assert 'BatchMode=no' in args and 'StrictHostKeyChecking=yes' in args
     assert args[-2]=='fixture' and '/data/a b' in args[-1]
     assert (cols,rows)==(100,24)
 

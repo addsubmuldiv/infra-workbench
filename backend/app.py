@@ -23,6 +23,7 @@ from .port_forwarding import register_port_forwarding
 from .ssh_tunnels import register_ssh_tunnels
 from .vscode import register_vscode
 from .ssh import SSHService
+from .probe_cache import ProbeCache
 from .polling import collection_delay, startup_delay
 from .host_alias import HostAliasRequest
 from .store import Store
@@ -59,8 +60,8 @@ class RefreshSettings(BaseModel):
     @field_validator('interval_seconds')
     @classmethod
     def valid_interval(cls, value):
-        if value not in (5, 10, 20, 30):
-            raise ValueError('刷新间隔必须为 5、10、20 或 30 秒')
+        if value not in (5, 10, 15, 20, 30):
+            raise ValueError('刷新间隔必须为 5、10、15、20 或 30 秒')
         return value
 
 
@@ -169,12 +170,12 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     ssh = SSHService(data)
     ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else create_credential_store('InfraWorkbench/ssh/'))
     sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store())
-    refresh_interval = store.load('refresh_interval_seconds', 10)
+    refresh_interval = store.load('refresh_interval_seconds', 15)
     if type(refresh_interval) is int and refresh_interval == 60:
         refresh_interval = 30
         store.save('refresh_interval_seconds', refresh_interval)
-    if type(refresh_interval) is not int or refresh_interval not in (5, 10, 20, 30):
-        refresh_interval = 10
+    if type(refresh_interval) is not int or refresh_interval not in (5, 10, 15, 20, 30):
+        refresh_interval = 15
     refresh_changed = asyncio.Event()
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
@@ -189,7 +190,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     invalid_rules = set()
     semaphore = asyncio.Semaphore(8)
     connection_lock = asyncio.Lock()
-    probe = (Path(__file__).parent/'remote_probe.py').read_text(encoding='utf-8')
+    probe = ProbeCache((Path(__file__).parent/'remote_probe.py').read_text(encoding='utf-8'))
 
     def serialize_connections(fn):
         @wraps(fn)
@@ -217,7 +218,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             stage = 'connection'
             collection_started_at = time.time()
             try:
-                code, out, err = await ssh.run(host, 'python3 -', probe)
+                code, out, err = await probe.run(ssh, host)
                 if code != 0:
                     stage = 'connection' if code == 255 else 'probe'
                     raise RuntimeError(err[-800:] or 'SSH 采集失败')
@@ -716,6 +717,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         reservations.remove_host(host_id)
         conn = ssh.sessions.pop(host_id, None)
         ssh.verified_configs.pop(host_id,None)
+        ssh.monitor_sessions.discard(host_id)
+        ssh.monitor_retry.pop(host_id, None)
+        ssh.monitor_locks.pop(host_id, None)
+        probe.slow.pop(host_id, None)
         if conn:
             conn.close()
         store.save('hosts', hosts)

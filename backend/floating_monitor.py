@@ -283,7 +283,7 @@ class FloatingMonitor:
         self.hovered = False
         self.force_preview = False
         self.time_label = None
-        self.interval = 10
+        self.interval = 15
         self.scroll_offset = 0
         self.canvas = None
         self._canvas_commands = []
@@ -475,8 +475,8 @@ class FloatingMonitor:
                 state = self.fetch()
                 failures = 0
                 result = (state, '')
-                interval = state.get('refresh_interval_seconds', 10)
-                delay = interval if interval in (5, 10, 20, 30) else 10
+                interval = state.get('refresh_interval_seconds', 15)
+                delay = interval if interval in (5, 10, 15, 20, 30) else 15
             except Exception:
                 failures += 1
                 result = (None, tr('后台暂不可用 · 状态未知', 'Backend unavailable · Status unknown'))
@@ -498,7 +498,7 @@ class FloatingMonitor:
             self.error = error
             if state is not None:
                 self.hosts = state.get('hosts', [])
-                self.interval = state.get('refresh_interval_seconds', 10)
+                self.interval = state.get('refresh_interval_seconds', 15)
             else:
                 for host in self.hosts:
                     host['snapshot']['fresh'] = False

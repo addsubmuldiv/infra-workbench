@@ -42,7 +42,8 @@ def directory_command(cwd):
 
 def terminal_arguments(ssh, host, cwd=None,command=None,config=None):
     args = ssh.arguments(host)
-    args = [arg for arg in args if arg!='-T']
+    # Interactive terminals must allow OpenSSH to prompt for login credentials.
+    args = ['BatchMode=no' if arg=='BatchMode=yes' else arg for arg in args if arg!='-T']
     result=args[:-1]+['-tt','-o','EscapeChar=none']+[args[-1]]
     if config:
         alias=config.get('hostkeyalias')

@@ -28,7 +28,11 @@ export function DesktopUpdateNotification({openSettings}:{openSettings:()=>void}
   useEffect(()=>{if(!isDemo)updater.start()},[]);
   useEffect(()=>{if(!['checking','downloading','installing'].includes(status.phase))return;const timer=window.setInterval(()=>void updater.run('status'),1000);return()=>clearInterval(timer)},[status.phase]);
   if(isDemo||!status.supported||!['available','downloaded'].includes(status.phase))return null;
-  return <aside className="desktop-update-notice" role="status"><span>{status.phase==='downloaded'?t('更新已下载，可安装并重启。','Update downloaded. Ready to install and restart.'):t('发现新版本：','New version available: ')+status.available_version}</span><button onClick={openSettings}>{t('查看更新','View update')}</button></aside>;
+  return <aside className="desktop-update-notice" role="status"><span>{status.phase==='downloaded'?t('更新已下载，可安装并重启。','Update downloaded. Ready to install and restart.'):t('发现新版本：','New version available: ')+status.available_version}</span><button onClick={()=>{
+    try{localStorage.setItem('iwb.settings.navigation',JSON.stringify({category:'about',ai:'models',integrations:'mcp'}))}catch{/* Optional navigation preference. */}
+    window.dispatchEvent(new Event('iwb:show-update-settings'));
+    openSettings();
+  }}>{t('查看更新','View update')}</button></aside>;
 }
 export function DesktopUpdates(){
   const status=useUpdates();

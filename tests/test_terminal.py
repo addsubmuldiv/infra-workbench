@@ -35,6 +35,9 @@ def test_native_arguments_keep_ssh_config_and_force_an_interactive_terminal(tmp_
     assert 'StrictHostKeyChecking=yes' in args and 'ClearAllForwardings=yes' in args
     assert args[-1]=='example-via-jump'
     assert 'EscapeChar=none' in args
+    assert 'BatchMode=no' in args
+    assert 'BatchMode=yes' not in args
+    assert 'BatchMode=yes' in service.arguments(host)
 
 
 @pytest.mark.parametrize('windows_pty',[None,dict(backend='conpty',buildNumber=26100)])

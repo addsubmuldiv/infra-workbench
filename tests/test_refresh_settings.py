@@ -4,9 +4,9 @@ from backend.app import create_app
 
 def test_refresh_interval_persists_and_validates(tmp_path):
     with TestClient(create_app(tmp_path, start_poll=False)) as client:
-        assert client.get('/api/state').json()['refresh_interval_seconds'] == 10
+        assert client.get('/api/state').json()['refresh_interval_seconds'] == 15
         assert client.put('/api/settings/refresh', json={'interval_seconds': 20}).status_code == 403
-        for seconds in (5, 10, 20, 30):
+        for seconds in (5, 10, 15, 20, 30):
             response = client.put('/api/settings/refresh', headers={'X-IWB': '1'}, json={'interval_seconds': seconds})
             assert response.status_code == 200
             assert client.get('/api/state').json()['refresh_interval_seconds'] == seconds

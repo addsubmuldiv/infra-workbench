@@ -47,6 +47,9 @@ class SSHService:
         self.known_hosts = Path(known_hosts) if known_hosts else Path.home()/'.ssh'/'known_hosts'
         self.custom_known_hosts = known_hosts is not None
         self.sessions = {}
+        self.monitor_sessions = set()
+        self.monitor_locks = {}
+        self.monitor_retry = {}
         self.verified_configs = {}
         self.connection_configs = weakref.WeakKeyDictionary()
 
@@ -164,8 +167,8 @@ class SSHService:
         destination = (hop['user']+'@' if hop['user'] else '')+hop['target']
         return command+['-W', endpoint+':'+str(config.get('port',22)), destination]
 
-    async def password_connection(self, host, password, key_only=False):
-        cfg = await self.effective(host)
+    async def password_connection(self, host, password, key_only=False, monitor=False):
+        cfg = await (self.effective_details(host) if monitor else self.effective(host))
         self.check_import_identity(host, cfg)
         # AsyncSSH connect_timeout covers proxy startup, handshake AND auth.
         # A separate short login timer would cut off that larger budget early.
@@ -218,7 +221,19 @@ class SSHService:
         elif cfg.get('proxycommand') and cfg['proxycommand'] != 'none':
             command = cfg['proxycommand'].replace('%h', cfg['hostname']).replace('%p', cfg.get('port', '22')).replace('%r', cfg.get('user', ''))
             options['proxy_command'] = command
-        if key_only:
+        if monitor:
+            options['preferred_auth'] = ['publickey']
+            keys = [host['key_path']] if host.get('key_path') else cfg.get('identityfile', [])
+            keys = [os.path.expanduser(key) for key in keys if key != 'none' and Path(os.path.expanduser(key)).is_file()]
+            if keys or 'identityfile' in cfg or host.get('key_path'):
+                options['client_keys'] = keys
+            if host.get('key_path') or cfg.get('identitiesonly') == 'yes' or cfg.get('identityagent') == 'none':
+                options['agent_path'] = None
+            elif cfg.get('identityagent') not in (None, 'none', 'SSH_AUTH_SOCK'):
+                options['agent_path'] = cfg['identityagent']
+            options['keepalive_interval'] = 60
+            options['keepalive_count_max'] = 3
+        elif key_only:
             options['client_keys'] = [host['key_path']]
             options['agent_path'] = None
         else:
@@ -247,7 +262,42 @@ class SSHService:
         self.connection_configs[connection] = cfg
         return connection
 
+    async def ensure_monitor_session(self, host):
+        """Prefer a persistent key session, retaining native SSH compatibility."""
+        if host.get('_import_identity'):
+            return
+        if restore := getattr(self, 'restore_session', None):
+            await restore(host)
+        key = host['id']
+        async with self.monitor_locks.setdefault(key, asyncio.Lock()):
+            session = self.sessions.get(key)
+            if session and not session.is_closed():
+                if key not in self.monitor_sessions:
+                    return
+                current = await self.effective(host)
+                original = self.connection_configs.get(session, {})
+                fields = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
+                if all(current.get(field) == original.get(field) for field in fields):
+                    return
+                session.close()
+                await session.wait_closed()
+                self.sessions.pop(key, None)
+                self.monitor_retry.pop(key, None)
+            if time.monotonic() < self.monitor_retry.get(key, 0):
+                return
+            try:
+                session = await self.password_connection(host, None, monitor=True)
+            except (asyncssh.Error, OSError, ValueError):
+                # Agent/certificate/provider features may require native OpenSSH.
+                self.monitor_retry[key] = time.monotonic() + 120
+                return
+            self.sessions[key] = session
+            self.monitor_sessions.add(key)
+            self.monitor_retry.pop(key, None)
+
     async def run(self, host, command, source=None):
+        if command.endswith('# IWB_MONITOR'):
+            await self.ensure_monitor_session(host)
         if restore := getattr(self, 'restore_session', None):
             await restore(host)
         session = self.sessions.get(host['id'])
@@ -337,7 +387,7 @@ class SSHService:
                 code, out, err = await self.run(host, 'printf iwb-connected')
             if code != 0 or 'iwb-connected' not in out:
                 raise RuntimeError(err[-1000:] or 'SSH 连接失败')
-            return dict(auth='password_session' if host['id'] in self.sessions else 'key', message='连接成功')
+            return dict(auth='password_session' if host['id'] in self.sessions and host['id'] not in self.monitor_sessions else 'key', message='连接成功')
         if host.get('_import_identity') and not provision:
             # Honor existing OpenSSH keys/certificates/agent before trying a
             # spreadsheet password. A key login does not validate that password.
@@ -352,6 +402,7 @@ class SSHService:
         old = self.sessions.pop(host['id'], None)
         if old:
             old.close()
+        self.monitor_sessions.discard(host['id'])
         self.sessions[host['id']] = conn
         if not provision:
             return dict(auth='password_session', message='密码登录成功；仅本次服务运行期间保持会话，不保存密码')
@@ -385,3 +436,6 @@ class SSHService:
             conn.close()
         await asyncio.gather(*(conn.wait_closed() for conn in self.sessions.values()), return_exceptions=True)
         self.sessions.clear()
+        self.monitor_sessions.clear()
+        self.monitor_locks.clear()
+        self.monitor_retry.clear()
