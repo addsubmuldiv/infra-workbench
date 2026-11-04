@@ -18,3 +18,4 @@ pyobjc-framework-Cocoa==13.0; sys_platform == 'darwin'
 PyYAML==6.0.3
 
 Pillow==13.0.0
+tzdata==2026.6

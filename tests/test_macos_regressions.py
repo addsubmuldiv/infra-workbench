@@ -97,7 +97,7 @@ def test_mac_menu_tracks_locale_and_quit_closes_resident_desktop(tmp_path, monke
     monkeypatch.setattr(launcher, 'open_preferred_interface', lambda data, root: calls.append(('open', data, root)))
     update_shared_language({'values': {'workspace:locale': 'en'}})
     try:
-        menu = mac.MenuBar(fake_rumps(), SimpleNamespace(owned=True), DesktopSettings(tmp_path/'desktop.json'),
+        menu = mac.MenuBar(fake_rumps(), SimpleNamespace(owned=True, failed=lambda: False), DesktopSettings(tmp_path/'desktop.json'),
                            SimpleNamespace(enabled=lambda: False), mac.ReadyReceipt(tmp_path/'ready'), notifier=lambda *args: None)
         assert menu.notification_item.title == 'Desktop notifications'
         menu.open_home()

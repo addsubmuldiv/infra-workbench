@@ -53,7 +53,7 @@ test('reservation summary excludes ready reservations and their machines but ope
   h.button('只看机器 alpha').props.onClick();h.render();
   assert.ok(h.text(summary()).includes('1 台机器 · 2 条等待中'));
   h.button('查看卡预约，2 条等待中').props.onClick();h.render();
-  assert.equal(h.button('卡预约').props['aria-current'],'page');
+  assert.equal(h.button('资源预约').props['aria-current'],'page');
   assert.deepEqual(h.find(n=>n.type==='Reservations').props.items,items);
 });
 
@@ -86,7 +86,7 @@ test('legacy connections page displays overview without a duplicate navigation e
 
 test('header AI toggle sits beside notifications and never selects a second navigation page',t=>{
   const h=harness(t);h.render();
-  for(const label of ['精度对比','卡预约','设置','算力总览']){
+  for(const label of ['精度对比','资源预约','设置','算力总览']){
     h.button(label).props.onClick();h.render();
     const nav=h.find(n=>n.type==='nav');
     assert.ok(!h.text(nav).includes('AI 助手'));
@@ -106,7 +106,7 @@ test('header AI toggle sits beside notifications and never selects a second navi
 
 test('machine names and checkboxes open overview from other workspace pages',t=>{
   const h=harness(t);h.render();
-  for(const label of ['卡预约','精度对比','设置']){
+  for(const label of ['资源预约','精度对比','设置']){
     h.button(label).props.onClick();h.render();
     h.button('只看机器 beta').props.onClick();h.render();
     assert.equal(h.button('算力总览').props['aria-current'],'page');

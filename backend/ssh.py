@@ -1,6 +1,8 @@
 import asyncio
+import logging
 import os
 import subprocess
+import time
 import weakref
 from pathlib import Path
 
@@ -9,6 +11,27 @@ import asyncssh
 from .core import discover_aliases, install_key_script
 from .ssh_passwords import connection_identity
 from .ssh_proxy import SSHProxyConnector
+
+
+class SSHCommandTimeout(TimeoutError):
+    error_stage = 'probe'
+
+
+class ConnectionTrace(asyncssh.SSHClient):
+    """Record handshake/auth boundaries without logging credentials."""
+    def __init__(self, host_id):
+        self.host_id = host_id
+        self.started = time.monotonic()
+        self.auth_started = False
+
+    def begin_auth(self, username):
+        self.auth_started = True
+        logging.info('SSH handshake completed host_id=%s elapsed=%.3fs',
+                     self.host_id, time.monotonic() - self.started)
+
+    def auth_completed(self):
+        logging.info('SSH authentication completed host_id=%s elapsed=%.3fs',
+                     self.host_id, time.monotonic() - self.started)
 
 
 class SSHService:
@@ -103,9 +126,19 @@ class SSHService:
     async def password_connection(self, host, password, key_only=False):
         cfg = await self.effective(host)
         self.check_import_identity(host, cfg)
+        # AsyncSSH connect_timeout covers proxy startup, handshake AND auth.
+        # A separate short login timer would cut off that larger budget early.
+        configured = cfg.get('connecttimeout', 'none')
+        timeout = float(configured) if configured not in (None, 'none', '0') else 20
+        routed = any(cfg.get(key) not in (None, 'none') for key in ('proxyjump', 'proxycommand'))
+        if routed:
+            timeout += 20
+        # Import previews can verify a connection before assigning a host ID.
+        trace = ConnectionTrace(host.get('id', 'unsaved'))
         options = dict(host=cfg['hostname'], port=int(cfg.get('port', 22)),
                        username=cfg.get('user'), password=password, config=None,
-                       known_hosts=str(self.known_hosts), connect_timeout=8, login_timeout=12,
+                       known_hosts=str(self.known_hosts), connect_timeout=timeout, login_timeout=timeout,
+                       client_factory=lambda: trace,
                        preferred_auth=['publickey'] if key_only else ['password', 'keyboard-interactive'])
         if cfg.get('hostkeyalias') and cfg['hostkeyalias'] != 'none':
             options['host_key_alias'] = cfg['hostkeyalias']
@@ -143,7 +176,18 @@ class SSHService:
             options['client_keys'] = []
         if options.get('proxy_command'):
             options['tunnel'] = SSHProxyConnector(options.pop('proxy_command'))
-        connection = await asyncssh.connect(**options)
+        try:
+            connection = await asyncssh.connect(**options)
+        except asyncio.TimeoutError:
+            stage = '目标 SSH 认证' if trace.auth_started else '跳板转发或目标 SSH 握手' if routed else '目标 SSH 握手'
+            logging.warning('SSH connection timeout host_id=%s stage=%s elapsed=%.3fs budget=%ss',
+                            trace.host_id, stage, time.monotonic() - trace.started, timeout)
+            raise TimeoutError(f'{stage}超时（连接总预算 {timeout:g} 秒）') from None
+        except asyncssh.Error as exc:
+            logging.warning('SSH connection failed host_id=%s phase=%s elapsed=%.3fs error_type=%s',
+                            trace.host_id, 'authentication' if trace.auth_started else 'proxy_or_handshake',
+                            time.monotonic() - trace.started, type(exc).__name__)
+            raise
         self.connection_configs[connection] = cfg
         return connection
 
@@ -157,9 +201,17 @@ class SSHService:
             fields = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
             if original is None or any(current.get(key)!=original.get(key) for key in fields):
                 raise ValueError('SSH 配置已变化，请重新连接这台机器后再配置 sudo')
-            done = await session.run(command, input=source, timeout=15)
+            started = time.monotonic()
+            try:
+                done = await session.run(command, input=source, timeout=35)
+            except asyncio.TimeoutError:
+                logging.warning('SSH command timeout host_id=%s elapsed=%.3fs session_closed=%s',
+                                host['id'], time.monotonic() - started, session.is_closed())
+                raise SSHCommandTimeout('远端命令等待结果超时（35 秒）；请检查远端负载及跳板链路') from None
             return done.exit_status, done.stdout, done.stderr
-        return await self.command(self.arguments(host)+[command], source)
+        # Native SSH includes target/jump authentication in this wall-clock
+        # budget, unlike an already authenticated AsyncSSH session above.
+        return await self.command(self.arguments(host)+[command], source, timeout=35)
 
     async def run_bound(self, host, command, source, config, *, native=False):
         """Pin secret-bearing commands to the endpoint resolved before validation."""

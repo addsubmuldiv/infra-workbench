@@ -15,6 +15,8 @@ Built for engineers training, fine-tuning, deploying, and debugging models acros
 
 *Screenshots use fictional machines and sample data. See the [illustrated user guide](docs/GUIDE.en.md). The interface supports Simplified Chinese and English. Switch under Settings → Interface language. The screenshots below show the English interface.*
 
+Resource planning now includes multi-machine availability alerts (all specified machines or any N candidates in a cluster) and daily resource history with device counts, machine-state stacks, heatmaps, coverage and explicit unknown intervals. Alerts do not lock resources. History starts with new observations and retains 30 days by default. See [resource history](docs/RESOURCE-HISTORY.md) and [reservations](docs/RESERVATIONS.md).
+
 ## What makes it AI-native
 
 The assistant works with the workbench's actual machine, resource, process, file, and reservation tools. It can carry out multi-step tasks and expose tool results for review: find free devices, inspect processes, read a specified log, or create an availability alert using the conditions you confirmed. External agents can also access workbench capabilities through MCP.
@@ -97,6 +99,8 @@ Under **Settings → Skills (设置 → 技能)**, create a draft or import Mark
 ## Requirements, updates, and data
 
 The local machine needs **Windows 10 / 11 and the OpenSSH client**. For source installation, if Python is missing, `安装.cmd` attempts to install Python 3.12 with WinGet; without WinGet, [install Python manually](https://www.python.org/downloads/windows/). Remote machines need Linux, Python 3, and `nvidia-smi` or `npu-smi`.
+
+Jump hosts may run Windows or Linux and only need an SSH service which permits TCP forwarding. The app uses `ProxyJump` / `ProxyCommand` from the local SSH configuration without detecting the jump host's OS or running collection scripts there. The Linux and Python 3 requirements apply to the final monitored machine. Programs specified in a custom `ProxyCommand` run locally and must be available on the local machine.
 
 Before updating, save edited files, handle terminal tasks, and exit through the tray menu. Pull the latest code and run `安装.cmd` again; existing machine configuration is retained and shortcuts are regenerated. Refreshing a page does not restart the backend.
 

@@ -27,7 +27,8 @@ def main():
             '--add-data', str(ROOT/'backend'/'assets')+os.pathsep+'backend/assets',
             '--add-data', str(ROOT/'backend'/'skills')+os.pathsep+'backend/skills',
             '--collect-submodules', 'deepagents', '--collect-submodules', 'langchain',
-            '--collect-submodules', 'langgraph', '--recursive-copy-metadata', 'deepagents']
+            '--collect-submodules', 'langgraph', '--recursive-copy-metadata', 'deepagents',
+            '--collect-all', 'tzdata']
     for theme_file in ('themes.css', 'journey.css'):
         args += ['--add-data', str(ROOT/'frontend'/'src'/theme_file)+os.pathsep+'frontend/src']
     # SSH/file probes read their own source to send it to the remote interpreter.

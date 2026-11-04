@@ -175,12 +175,26 @@ class MailService:
                     labels=reservation['labels'], wait_seconds=reservation['wait_seconds'],
                     minimum_gib=reservation['minimum_gib'], notified_at=reservation['notified_at'])
 
+    def prepare_group(self, reservation):
+        if not reservation.get('email_notify', False) or not self.config['enabled']:
+            return None
+        return dict(id=reservation['id'], group=True, email_notify=True, revision=self.config['revision'],
+                    url=urljoin(reservation.get('base_url', 'http://127.0.0.1:8765/'), reservation_link(reservation)),
+                    matched_hosts=copy.deepcopy(reservation['matched_hosts']), wait_seconds=reservation['wait_seconds'],
+                    minimum_gib=reservation['minimum_gib'], notified_at=reservation['notified_at'])
+
     def message(self, config, payload=None):
         message = EmailMessage()
         message['Subject'] = ('[Infra Workbench] 预约设备已空闲' if payload else '[Infra Workbench] 邮件通知测试')
         message['From'], message['To'] = config['sender'], ', '.join(config['recipients'])
         message['Date'], message['Message-ID'] = formatdate(localtime=True), make_msgid()
-        if payload:
+        if payload and payload.get('group'):
+            rows = '\n'.join(f"机器：{h['target']}；设备：{', '.join(h['labels'])}" for h in payload['matched_hosts'])
+            text = (f"多机预约条件已持续满足 {payload['wait_seconds']/60:g} 分钟。\n{rows}\n"
+                    f"每设备剩余显存要求：{payload['minimum_gib']:g} GiB\n\n"
+                    '这是提醒时的匹配结果，不锁定设备；启动训练前请再次检查当前占用。\n'
+                    f"查看预约详情：{payload['url']}\n请在运行 Infra Workbench 的电脑上打开此链接。")
+        elif payload:
             when = time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(payload['notified_at']))
             text = (f"机器：{payload['target']}\n设备：{', '.join(payload['labels'])}\n"
                     f"连续空闲：{payload['wait_seconds']/60:g} 分钟\n"

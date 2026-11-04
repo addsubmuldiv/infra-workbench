@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import re
 import time
@@ -20,6 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
 from .port_forwarding import register_port_forwarding
 from .ssh import SSHService
+from .polling import collection_delay, startup_delay
 from .store import Store
 from .credentials import create_credential_store
 from .sudo import SudoService
@@ -30,6 +32,8 @@ from .reservations import ReservationBook
 from .mail import MailService, register_mail_routes
 from .agent_api import AgentAPIService, register_agent_api_routes
 from .resource_history import ResourceHistory
+from .resource_stats import ResourceStats
+from .resource_stats_routes import register_resource_history_routes
 from .infra_assistant import InfraAssistant, register_assistant_routes
 from .agent_chat import AgentChat, register_chat_routes
 from .chat_tools import ChatTools
@@ -174,12 +178,13 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     mail = MailService(store, email_credential_store if email_credential_store is not None else create_credential_store('InfraWorkbench/mail/'))
     agent_api = AgentAPIService(store, agent_credential_store if agent_credential_store is not None else create_credential_store('InfraWorkbench/agent/'))
     resource_history = ResourceHistory(store)
+    resource_stats = ResourceStats(store)
     reservations = ReservationBook(store, mail, max_sample_gap=max(30, refresh_interval + 15))
     snapshots, locks = {}, {}
     collect_tasks = {}
     tracker = TransitionTracker()
     invalid_rules = set()
-    semaphore = asyncio.Semaphore(4)
+    semaphore = asyncio.Semaphore(8)
     connection_lock = asyncio.Lock()
     probe = (Path(__file__).parent/'remote_probe.py').read_text(encoding='utf-8')
 
@@ -196,11 +201,18 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             raise HTTPException(404, '找不到机器')
         return host
 
+    def observe_groups(host_id):
+        try:
+            app.state.group_reservations.observe(host_id)
+        except Exception:
+            logging.exception('Group reservation update failed host_id=%s', host_id)
+
     async def collect_once(host):
         host_id = host['id']
         async with locks.setdefault(host_id, asyncio.Lock()), semaphore:
             previous = snapshots.get(host_id, {})
             stage = 'connection'
+            collection_started_at = time.time()
             try:
                 code, out, err = await ssh.run(host, 'python3 -', probe)
                 if code != 0:
@@ -240,10 +252,14 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                             proc['user'] = users.get(str(proc['pid']))
                 snap = dict(host_id=host_id, status='online', collected_at=time.time(), devices=devices,
                             ports=parse_ports(raw['ports']), system=raw.get('system'), error=None, error_stage=None,
-                            login_user=raw.get('login_user'), tmux=raw.get('tmux'))
+                            login_user=raw.get('login_user'), tmux=raw.get('tmux'),
+                            collection_started_at=collection_started_at,
+                            freshness_seconds=max(45, refresh_interval + 40))
                 snapshots[host_id] = snap
                 resource_history.observe(host, snap)
+                resource_stats.observe(host, snap, collection_started_at=collection_started_at, refresh_interval=refresh_interval)
                 reservations.observe(host_id, snap)
+                observe_groups(host_id)
                 if previous.get('status') == 'error':
                     store.event(host_id, host['target']+'：采集已恢复')
                 for rule in [r for r in rules if r['host_id'] == host_id]:
@@ -269,11 +285,14 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                         store.event(host_id, host['target']+' · 卡 '+','.join(rule['devices'])+'：'+message)
                 return snap
             except Exception as exc:
+                stage = getattr(exc, 'error_stage', stage)
                 message = str(exc)[:1000] or '连接或采集超时'
                 snapshots[host_id] = dict(previous, host_id=host_id, status='error', error=message, error_stage=stage,
                                          devices=previous.get('devices', []), collected_at=previous.get('collected_at'))
                 resource_history.observe(host, snapshots[host_id])
+                resource_stats.observe(host, snapshots[host_id], collection_started_at=collection_started_at, refresh_interval=refresh_interval)
                 reservations.observe(host_id, snapshots[host_id])
+                observe_groups(host_id)
                 for rule in rules:
                     if rule['host_id'] == host_id:
                         tracker.reset(rule['id'])
@@ -291,10 +310,16 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     async def poll():
         async def loop(host):
+            await asyncio.sleep(startup_delay())
+            failures = 0
             while host in hosts:
+                snap = await collect(host)
+                failures = min(failures + 1, 8) if snap['status'] == 'error' else 0
+                # Queueing and slow connections must not consume the idle
+                # interval and turn an overloaded fleet into a tight retry loop.
                 started = time.monotonic()
-                await collect(host)
-                deadline = started + refresh_interval
+                delay = collection_delay(refresh_interval, failures)
+                deadline = started + delay
                 while True:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -303,7 +328,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                         await asyncio.wait_for(refresh_changed.wait(), remaining)
                     except asyncio.TimeoutError:
                         break
-                    deadline = started + refresh_interval
+                    delay = collection_delay(refresh_interval, failures)
+                    deadline = started + delay
         jobs = {}
         try:
             while True:
@@ -326,8 +352,39 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             task = asyncio.create_task(poll()) if start_poll else None
             mail_task = asyncio.create_task(mail.run()) if start_poll else None
             terminal_task=asyncio.create_task(app.state.terminals.watch_persistent(hosts)) if start_poll else None
+            async def expire_group_reservations():
+                while True:
+                    try:
+                        app.state.group_reservations.tick()
+                    except Exception:
+                        logging.exception('Group reservation expiration check failed')
+                    await asyncio.sleep(1)
+            group_task=asyncio.create_task(expire_group_reservations()) if start_poll else None
+            async def maintain_resource_history():
+                while True:
+                    pruning=asyncio.create_task(asyncio.to_thread(resource_stats.prune_batch, 1000))
+                    try:
+                        result=await asyncio.shield(pruning)
+                    except asyncio.CancelledError:
+                        # Let this bounded batch finish before closing SQLite.
+                        try:
+                            await pruning
+                        except Exception:
+                            logging.exception('Resource history cleanup failed during shutdown')
+                        raise
+                    except Exception:
+                        logging.exception('Resource history cleanup failed')
+                        result={'more':False}
+                    await asyncio.sleep(.1 if result['more'] else 3600)
+            history_task=asyncio.create_task(maintain_resource_history()) if start_poll else None
             import_cleanup=asyncio.create_task(app.state.server_imports.maintain())
             yield
+            if group_task:
+                group_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):await group_task
+            if history_task:
+                history_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):await history_task
             import_cleanup.cancel()
             with contextlib.suppress(asyncio.CancelledError):await import_cleanup
             await app.state.server_imports.close()
@@ -353,6 +410,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             await app.state.automation.close()
             await app.state.port_forwarding.close()
             await ssh.close()
+            resource_stats.close()
             store.db.close()
 
     app = FastAPI(title='Infra Workbench', lifespan=lifespan)
@@ -378,6 +436,12 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     from .command_tools import CommandTools
     app.state.clusters = ClusterService(store, hosts, CommandTools(probes, sudo, getattr(app.state, 'desktop_command_jobs', None)))
     register_cluster_routes(app, app.state.clusters)
+    from .group_reservations import GroupReservationService
+    from .group_reservation_routes import register_group_reservation_routes
+    app.state.group_reservations = GroupReservationService(store, hosts, snapshots, app.state.clusters, mail)
+    app.state.resource_stats = resource_stats
+    register_group_reservation_routes(app, app.state.group_reservations)
+    register_resource_history_routes(app, resource_stats, lambda: hosts)
     from .skill_service import SkillService
     from .skill_routes import register_skill_routes
     app.state.skills = SkillService(store)
@@ -470,7 +534,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             fresh = snap.get('status') == 'online' and now-(snap.get('collected_at') or 0) <= reservations.max_sample_gap
             status = ('active' if all(i in device_ids for i in rule['devices']) else 'needs_selection') if fresh else 'pending'
             visible_rules.append(dict(rule, status=status))
-        return dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
+        return dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, group_reservations=app.state.group_reservations.list()['items'], reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
     async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None):
         if body.remember_password and not body.password:

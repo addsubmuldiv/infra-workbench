@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import {pageFromHash,hostLocationFromHash,notificationLocation} from '../src/navigation.ts';
 
 test('every workspace page can be restored from its address',()=>{
-  for(const page of ['overview','precision','reservations','settings'])assert.equal(pageFromHash('#'+page),page);
+  for(const page of ['overview','precision','reservations','history','settings'])assert.equal(pageFromHash('#'+page),page);
   assert.equal(pageFromHash(''),'overview');
   assert.equal(pageFromHash('#unknown'),'overview');
+});
+
+test('group reservation notification links stay on the local reservation page',()=>{
+  assert.equal(notificationLocation('#reservations?group=abc123'),'#reservations?group=abc123');
+  assert.equal(notificationLocation('#reservations?group=../bad'),'#reservations');
 });
 
 test('legacy connections addresses open the unified overview',()=>{
