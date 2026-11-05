@@ -62,6 +62,70 @@ def test_settings_api_rejects_unavailable_desktop_and_saves_float_choice(tmp_pat
         assert client.put('/api/settings/launch',json={'mode':'invalid','show_floating':True}).status_code==422
 
 
+def test_startup_reuses_healthy_standalone_backend_without_requiring_tray(monkeypatch):
+    from types import SimpleNamespace
+    import backend.launcher as launcher
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self): return b'{"name":"infra-workbench"}'
+
+    monkeypatch.setattr(launcher, 'build_opener', lambda *args: SimpleNamespace(open=lambda *a, **kw: Response()))
+    monkeypatch.setattr('backend.local_service.loopback_listening', lambda **kwargs: True)
+    monkeypatch.setattr(launcher, 'tray_ready', lambda: pytest.fail('An existing backend does not require a tray'))
+    monkeypatch.setattr(launcher.subprocess, 'Popen', lambda *a, **kw: pytest.fail('Must not spawn a duplicate backend'))
+    monkeypatch.setattr(launcher.time, 'sleep', lambda _: pytest.fail('A healthy backend must be reused immediately'))
+    launcher.ensure_service(timeout=1)
+
+
+def test_startup_waits_for_tray_when_it_starts_the_backend(monkeypatch):
+    from types import SimpleNamespace
+    from urllib.error import URLError
+    import backend.launcher as launcher
+    clock = [0.]
+    children = []
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self): return b'{"name":"infra-workbench"}'
+
+    def open_health(*args, **kwargs):
+        if not children: raise URLError('not started')
+        return Response()
+
+    def spawn(*args, **kwargs):
+        children.append(SimpleNamespace(poll=lambda: None, returncode=None))
+        return children[-1]
+
+    monkeypatch.setattr(launcher, 'build_opener', lambda *args: SimpleNamespace(open=open_health))
+    monkeypatch.setattr('backend.local_service.loopback_listening', lambda **kwargs: bool(children))
+    monkeypatch.setattr(launcher, 'tray_ready', lambda: clock[0] >= .75)
+    monkeypatch.setattr(launcher.subprocess, 'Popen', spawn)
+    monkeypatch.setattr(launcher.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
+    monkeypatch.setattr(launcher.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(launcher.time, 'sleep', lambda value: clock.__setitem__(0, clock[0] + value))
+    launcher.ensure_service(timeout=2)
+    assert len(children) == 1 and clock[0] >= .75
+
+
+def test_startup_rejects_foreign_http_service_without_starting_a_tray(monkeypatch):
+    from types import SimpleNamespace
+    import backend.launcher as launcher
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self): return b'{"name":"another-app"}'
+
+    monkeypatch.setattr(launcher, 'build_opener', lambda *args: SimpleNamespace(open=lambda *a, **kw: Response()))
+    monkeypatch.setattr('backend.local_service.loopback_listening', lambda **kwargs: True)
+    monkeypatch.setattr(launcher.subprocess, 'Popen', lambda *a, **kw: pytest.fail('Must not spawn against a foreign service'))
+    with pytest.raises(RuntimeError, match='8765'):
+        launcher.ensure_service(timeout=1)
+
+
 def test_startup_retries_an_exiting_tray_duplicate_without_parallel_live_children(monkeypatch):
     from types import SimpleNamespace
     from urllib.error import URLError

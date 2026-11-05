@@ -154,8 +154,12 @@ def ensure_service(root=ROOT,timeout=90):
     def start_child():
         return subprocess.Popen([str(Path(sys.executable).with_name('pythonw.exe')),'-m','backend.desktop','--no-browser'],cwd=root,
                                 stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW)
-    child=None
-    if not health():child=start_child()
+    # Opening another interface only needs the shared HTTP service. A healthy
+    # service may be owned by a console/development entry, with no tray at all.
+    if health():
+        logging.info('Reusing existing healthy backend')
+        return
+    child=start_child()
     started=time.monotonic()
     while time.monotonic()-started<timeout:
         if health() and tray_ready():return
