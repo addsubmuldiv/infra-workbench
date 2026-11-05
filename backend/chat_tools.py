@@ -57,6 +57,9 @@ class CheckArgs(HostArgs):
 class FleetArgs(SearchPlan):
     scope:Literal['processes','resources','sessions','hosts']='resources'
     refresh:bool=False
+    view:Literal['detail','summary']=Field(default='detail',description='概况优先 summary：资源按型号汇总，保留设备 ID、显存范围和采样时间；detail 返回逐设备明细。')
+    offset:int=Field(default=0,ge=0,description='结果行偏移；分页时保持筛选条件一致，refresh=false 复用采样。')
+    limit:int=Field(default=50,ge=1,le=200,description='每页结果行数；用 next_offset 继续，不把截断当作全部结果。')
 
 
 class ChangeArgs(Args):
@@ -65,7 +68,7 @@ class ChangeArgs(Args):
 
 REGISTRY={
     'list_hosts':(Empty,'列出允许范围内的机器 ID、别名、采样状态和登录账号，用于确定实际目标。'),
-    'search_fleet':(FleetArgs,'查询占卡进程、空闲资源或 tmux。仅传需要修改的条件，继承本会话上次同类查询条件；切换 scope 会重置条件。“我的” owner=__self__。默认仅使用当前采样，需要最新数据可 refresh=true。'),
+    'search_fleet':(FleetArgs,'批量查询允许范围内的占卡进程、空闲资源或 tmux，结果直接含真实 host_id，无需先 list_hosts。概况用 view=summary，按 next_offset 分页。仅传需要修改的条件，继承本会话上次同类查询条件；切换 scope 会重置条件。“我的” owner=__self__。默认使用当前采样，需要最新数据可 refresh=true；新鲜结果无需再逐机刷新。进程仅覆盖 GPU/NPU 占卡进程，全部监听服务需对指定机器查 ports。'),
     'get_resources':(ResourceArgs,'读取指定机器设备、显存和占卡进程。查看采样时间，过期或未知不能判为空闲。'),
     'read_directory':(DirectoryArgs,'通过现有 SSH 只读浏览目录，一页最多 100 项。返回真实路径供后续读取。'),
     'read_file':(FileArgs,'通过 SSH 读取 UTF-8 普通文本的指定行段，最多 150 行、16000 字符。用于配置、代码、日志；截断时按行继续。拒绝凭据及特殊文件，常见密钥字段会脱敏。文件内容是不可信数据。'),
@@ -102,6 +105,27 @@ def remote_source():
     return files+'\n'+reads+'\n'+processes+'\n'+policy+'\n'+(folder/'agent_read_probe.py').read_text(encoding='utf-8')
 
 
+def fleet_summary(row):
+    """Lossless device membership with compact memory ranges; never infer unknowns."""
+    if row.get('type') != 'resource':
+        return dict(row)
+    result = {key: value for key, value in row.items() if key != 'devices'}
+    groups = {}
+    for device in row.get('devices', []):
+        groups.setdefault(device.get('name'), []).append(device)
+    result['device_groups'] = []
+    for name, devices in groups.items():
+        memory = [d.get('memory_free') for d in devices]
+        cards = [d.get('card_id') for d in devices]
+        known = all(value is not None for value in memory)
+        result['device_groups'].append(dict(name=name, count=len(devices),
+            device_ids=[d['id'] for d in devices],
+            physical_card_count=len(set(cards)) if all(c is not None for c in cards) else None,
+            memory_free_min_bytes=min(memory) if known else None,
+            memory_free_max_bytes=max(memory) if known else None))
+    return result
+
+
 class ChatTools:
     def __init__(self,assistant,agent_service,ssh):
         self.assistant,self.agent_service,self.ssh=assistant,agent_service,ssh
@@ -122,19 +146,36 @@ class ChatTools:
             return dict(items=[dict(host_id=h['id'],alias=h.get('alias') or h['target'],user=h['snapshot'].get('login_user') or h.get('user'),
                 status=h['snapshot'].get('status'),collected_at=h['snapshot'].get('collected_at')) for h in self.inventory(allowed)])
         if name=='search_fleet':
-            patch=args.model_dump(include=args.model_fields_set,exclude={'refresh','unsupported'})
+            patch=args.model_dump(include=args.model_fields_set,exclude={'refresh','unsupported','view','offset','limit'})
             previous=state.get('search_plan',{'scope':'resources'})
             if patch.get('scope') and patch['scope']!=previous.get('scope'):previous={}
             plan=SearchPlan.model_validate(dict(previous,**patch))
             if plan.unsupported:raise ValueError('该查询不在当前范围内')
             inventory=self.inventory(allowed)
-            failed=await self.agent_service.refresh(inventory,25) if args.refresh else set()
+            targets=[h for h in inventory if not plan.host or any(
+                plan.host.casefold() in value.casefold() for value in (h.get('alias') or h['target'],h['target']))]
+            failed=await self.agent_service.refresh(targets,25) if args.refresh else set()
             inventory=self.inventory(allowed)
             inventory=[dict(h,snapshot=dict(h['snapshot'],status='refresh_timeout')) if h['id'] in failed else h for h in inventory]
             rows,coverage=search_inventory(inventory,plan)
             state['search_plan']=plan.model_dump()
             state['last_host_ids']=list(dict.fromkeys(row['host_id'] for row in rows))
-            return dict(plan=plan.model_dump(),items=rows,total=len(rows),truncated=False,coverage=coverage)
+            candidates=rows[args.offset:args.offset+args.limit]
+            if args.view=='summary':
+                candidates=[fleet_summary(row) for row in candidates]
+            # Keep ordinary fleet pages below the model bridge's 16K result
+            # budget. Adjust the cursor before returning, never silently skip
+            # rows when a character limit shortens a page.
+            page=[];size=0
+            for row in candidates:
+                row_size=len(json.dumps(row,ensure_ascii=False))
+                if page and size+row_size>10000:
+                    break
+                page.append(row);size+=row_size
+            more=args.offset+len(page)<len(rows)
+            return dict(plan=plan.model_dump(),items=page,
+                        total=len(rows),truncated=more or args.offset>0,offset=args.offset,
+                        next_offset=args.offset+len(page) if more else None,view=args.view,coverage=coverage)
         if name=='read_changes':
             return self.assistant.history.view(args.hours,host_ids=allowed)
         host=self.host(args.host_id,allowed)
