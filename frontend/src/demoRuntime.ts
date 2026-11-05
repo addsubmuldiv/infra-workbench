@@ -68,6 +68,7 @@ export function createDemoRuntime(){
   if(path==='/rules'&&method==='POST'){if(!hosts.some(h=>h.id===body.host_id))return blocked();const rule={id:'demo-rule-'+(++serial),host_id:String(body.host_id),devices:Array.isArray(body.devices)?body.devices.map(String):[],minimum_gib:Number(body.minimum_gib??1),port:Number(body.port??29500)};rules.push(rule);return json(rule)}
   if(path.startsWith('/rules/')&&method==='DELETE'){rules=rules.filter(r=>r.id!==path.split('/')[2]);return json({ok:true})}
   if(path.startsWith('/hosts/')&&method==='DELETE'){const id=decodeURIComponent(path.split('/')[2]);if(!hosts.some(h=>h.id===id))return blocked();hosts=hosts.filter(h=>h.id!==id);reservations=reservations.filter(r=>r.host_id!==id);rules=rules.filter(r=>r.host_id!==id);return json({ok:true})}
+  if(/^\/hosts\/[^/]+\/refresh$/.test(path)&&method==='POST'){const host=hosts.find(h=>h.id===decodeURIComponent(path.split('/')[2]));if(!host)return blocked();update();return json(host.snapshot)}
   if(path==='/refresh'&&method==='POST')return json({ok:true});
   return blocked();
  };

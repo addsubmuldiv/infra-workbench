@@ -13,6 +13,11 @@ export function singleFlight<T>(read:()=>Promise<T>):()=>Promise<T>{
 function reuseJson(previous:unknown,next:unknown):unknown{
   if(Object.is(previous,next))return previous;
   if(!previous||!next||typeof previous!=='object'||typeof next!=='object'||Array.isArray(previous)!==Array.isArray(next))return next;
+  if(Array.isArray(previous)&&Array.isArray(next)&&[...previous,...next].every(item=>item&&typeof item==='object'&&typeof item.id==='string')){
+    const byId=new Map(previous.map(item=>[item.id,item]));
+    const items=next.map(item=>reuseJson(byId.get(item.id),item));
+    return items.length===previous.length&&items.every((item,index)=>item===previous[index])?previous:items;
+  }
   const old=previous as Record<string,unknown>,value=next as Record<string,unknown>;
   const keys=Object.keys(value);
   let same=keys.length===Object.keys(old).length;

@@ -46,28 +46,50 @@ class ProbeCache:
         self.source, self.clock = source, clock
         self.digest = hashlib.sha256(source.encode()).hexdigest()
         self.slow = {}
+        self.stats = {}
+        self.details = {}
 
     def command(self, install, slow):
         return 'python3 -c '+shlex.quote(BOOTSTRAP)+' '+self.digest+' '+str(int(install))+' '+str(slow)+' # IWB_MONITOR'
 
-    async def run(self, ssh, host):
+    async def run(self, ssh, host, force_slow=False):
         key = host['id']
+        stats = self.stats[key] = dict(request_bytes=0, response_bytes=0, commands=0)
+        async def run(command, source=None):
+            stats['commands'] += 1
+            stats['request_bytes'] += len(command.encode()) + len((source or '').encode())
+            code, out, err = await ssh.run(host, command, source) if source is not None else await ssh.run(host, command)
+            stats['response_bytes'] += len(out.encode()) + len(err.encode())
+            return code, out, err
         # Metadata must never cross a target/user/route change.
         identity = tuple(str(host.get(k)) for k in ('target','user','port','key_path'))
         if hasattr(ssh, 'effective'):
             config = await ssh.effective(host)
             identity += tuple(str(config.get(k)) for k in ('hostname','user','port','proxyjump','proxycommand','hostkeyalias'))
         cached = self.slow.get(key)
-        slow = cached is None or cached['identity'] != identity or self.clock()-cached['at'] >= 60
-        result = await ssh.run(host, self.command(False, slow))
+        slow = force_slow or cached is None or cached['identity'] != identity or self.clock()-cached['at'] >= 60
+        result = await run(self.command(False, slow))
         if result[0] == 73 and 'IWB_CACHE_MISS' in result[1].splitlines():
-            result = await ssh.run(host, self.command(True, slow), self.source)
+            result = await run(self.command(True, slow), self.source)
             if result[0] == 73 and 'IWB_CACHE_MISS' in result[1].splitlines():
                 # Read-only homes and unusual filesystems keep working in memory.
-                result = await ssh.run(host, 'python3 -'+('' if slow else ' --fast')+' # IWB_MONITOR', self.source)
+                result = await run('python3 -'+('' if slow else ' --fast')+' # IWB_MONITOR', self.source)
         code, out, err = result
         if code == 0 and 'IWB_JSON:' in out:
             raw = json.loads(out.split('IWB_JSON:')[-1].strip())
+            previous_cache = self.details.get(key, {})
+            same_boot = bool(raw.get('boot_id') and raw['boot_id'] == previous_cache.get('boot_id'))
+            previous = previous_cache.get('items', {}) if same_boot and cached and cached['identity'] == identity else {}
+            details = raw.get('process_details', {})
+            for pid, detail in details.items():
+                old = previous.get(pid, {})
+                if (not slow and detail.get('identity_verified') and old.get('identity_verified')
+                        and detail.get('start_ticks') is not None
+                        and detail['start_ticks'] == old.get('start_ticks')):
+                    for field in ('cwd', 'executable', 'command', 'command_truncated', 'details_collected_at'):
+                        if field in old:
+                            detail[field] = old[field]
+            self.details[key] = dict(boot_id=raw.get('boot_id'), items=details)
             if slow:
                 self.slow[key] = dict(identity=identity, at=self.clock(),
                                       data={k:raw[k] for k in ('tmux','users') if k in raw})

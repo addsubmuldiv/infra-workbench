@@ -24,7 +24,7 @@ from .ssh_tunnels import register_ssh_tunnels
 from .vscode import register_vscode
 from .ssh import SSHService
 from .probe_cache import ProbeCache
-from .polling import collection_delay, startup_delay
+from .polling import FleetSchedule
 from .state_changes import StateChanges
 from .snapshot_sections import section_views
 from .host_alias import HostAliasRequest
@@ -189,6 +189,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     reservations = ReservationBook(store, mail, max_sample_gap=max(30, refresh_interval + 15))
     snapshots, locks = {}, {}
     collect_tasks = {}
+    collection_metrics = {}
     tracker = TransitionTracker()
     invalid_rules = set()
     semaphore = asyncio.Semaphore(8)
@@ -214,9 +215,19 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         except Exception:
             logging.exception('Group reservation update failed host_id=%s', host_id)
 
-    async def collect_once(host):
+    async def collect_once(host, force_slow=False):
         host_id = host['id']
+        queued_at = time.monotonic()
+        metric = collection_metrics.setdefault(host_id, {})
+        metric.update(status='queued', requested_at=time.time())
+        state_changes.publish()
         async with locks.setdefault(host_id, asyncio.Lock()), semaphore:
+            started = time.monotonic()
+            stamp = time.time()
+            if metric.get('started_at') is not None:
+                metric['actual_interval_seconds'] = round(stamp-metric['started_at'], 4)
+            metric.update(status='collecting', started_at=stamp, queue_seconds=round(started-queued_at, 4))
+            state_changes.publish()
             previous = snapshots.get(host_id, {})
             stage = 'connection'
             collection_started_at = time.time()
@@ -225,7 +236,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             sections.setdefault('devices', dict(status='error', collected_at=previous.get('collected_at')))
             partial['sections'] = sections
             try:
-                code, out, err = await probe.run(ssh, host)
+                code, out, err = await probe.run(ssh, host, force_slow=force_slow)
                 if code != 0:
                     stage = 'connection' if code == 255 else 'probe'
                     raise RuntimeError(err[-800:] or 'SSH 采集失败')
@@ -264,9 +275,11 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                         metadata = elevated.get(str(proc['pid']), raw.get('process_details', {}).get(str(proc['pid']), {}))
                         proc['detail_source'] = 'sudo' if str(proc['pid']) in elevated else 'user'
                         for field in ('user', 'uid', 'effective_uid', 'parent_pid', 'cwd', 'executable', 'command',
-                                      'command_truncated', 'identity_verified', 'detail_status', 'errors'):
+                                      'command_truncated', 'identity_verified', 'detail_status', 'errors', 'details_collected_at'):
                             if field in metadata:
                                 proc[field] = metadata[field]
+                        if str(proc['pid']) in elevated:
+                            proc['details_collected_at'] = collection_started_at
                         if not metadata:
                             proc['user'] = users.get(str(proc['pid']))
                 snap = dict(host_id=host_id, status='online', collected_at=time.time(), devices=devices,
@@ -321,48 +334,58 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                     store.event(host_id, host['target']+('：SSH 连接失败' if stage == 'connection' else '：已连接，设备解析失败' if stage == 'parse' else '：已连接，远端采集失败'))
                 return snapshots[host_id]
             finally:
+                sample = probe.stats.get(host_id, {})
+                metric.update(status='idle', duration_seconds=round(time.monotonic()-started, 4),
+                              finished_at=time.time(), **sample)
+                metric['samples'] = metric.get('samples', 0) + 1
+                metric['total_response_bytes'] = metric.get('total_response_bytes', 0) + sample.get('response_bytes', 0)
+                metric['total_request_bytes'] = metric.get('total_request_bytes', 0) + sample.get('request_bytes', 0)
                 state_changes.publish()
 
-    async def collect(host):
+    async def collect(host, force_slow=False):
         key=host['id']
         task=collect_tasks.get(key)
         if task is None or task.done():
-            task=asyncio.create_task(collect_once(host));collect_tasks[key]=task
+            task=asyncio.create_task(collect_once(host, force_slow=force_slow));collect_tasks[key]=task
             task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         return await asyncio.shield(task)
 
     async def poll():
-        async def loop(host):
-            await asyncio.sleep(startup_delay())
-            failures = 0
-            while host in hosts:
-                snap = await collect(host)
-                failures = min(failures + 1, 8) if snap['status'] == 'error' else 0
-                # Queueing and slow connections must not consume the idle
-                # interval and turn an overloaded fleet into a tight retry loop.
-                started = time.monotonic()
-                delay = collection_delay(refresh_interval, failures)
-                deadline = started + delay
-                while True:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    try:
-                        await asyncio.wait_for(refresh_changed.wait(), remaining)
-                    except asyncio.TimeoutError:
-                        break
-                    delay = collection_delay(refresh_interval, failures)
-                    deadline = started + delay
+        schedule = FleetSchedule()
         jobs = {}
+
+        async def one(host):
+            try:
+                snap = await collect(host)
+                schedule.finish(host['id'], time.monotonic(), snap['status'] == 'error')
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logging.exception('Scheduled collection failed')
+                schedule.finish(host['id'], time.monotonic(), True)
+
         try:
             while True:
-                for host in list(hosts):
-                    if host['id'] not in jobs:
-                        jobs[host['id']] = asyncio.create_task(loop(host))
-                for host_id in list(jobs):
-                    if not any(h['id'] == host_id for h in hosts):
-                        jobs.pop(host_id).cancel()
-                await asyncio.sleep(1)
+                now = time.monotonic()
+                schedule.reconcile([host['id'] for host in hosts], refresh_interval, now)
+                for key in list(jobs):
+                    if key not in schedule.due:
+                        jobs.pop(key).cancel()
+                    elif jobs[key].done():
+                        jobs.pop(key).result()
+                due_hosts = (h for h in hosts if h['id'] not in jobs and schedule.due[h['id']] <= now)
+                for host in sorted(due_hosts, key=lambda h: schedule.due[h['id']]):
+                    key = host['id']
+                    if key not in jobs and schedule.due[key] <= now:
+                        jobs[key] = asyncio.create_task(one(host))
+                # Wake promptly on interval changes; membership is checked at
+                # least every 100ms. At most one job exists per machine.
+                try:
+                    upcoming = [at for key, at in schedule.due.items() if key not in jobs]
+                    delay = max(.001, min(.1, min(upcoming)-time.monotonic())) if upcoming else .1
+                    await asyncio.wait_for(refresh_changed.wait(), delay)
+                except asyncio.TimeoutError:
+                    pass
         finally:
             for task in jobs.values():
                 task.cancel()
@@ -545,6 +568,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         previous_changed = refresh_changed
         refresh_changed = asyncio.Event()
         previous_changed.set()
+        state_changes.publish()
         return dict(interval_seconds=refresh_interval)
 
     @app.get('/api/state/changes')
@@ -559,7 +583,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             snap = snapshots.get(host['id'], dict(status='connecting', devices=[], collected_at=None))
             fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= reservations.max_sample_gap and snap['status'] == 'online')
             sections = section_views(snap, now, reservations.max_sample_gap)
-            items.append(dict(**host, sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
+            items.append(dict(**host, collection=collection_metrics.get(host['id']), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})
@@ -745,6 +769,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         ssh.monitor_retry.pop(host_id, None)
         ssh.monitor_locks.pop(host_id, None)
         probe.slow.pop(host_id, None)
+        probe.details.pop(host_id, None)
+        probe.stats.pop(host_id, None)
+        collection_metrics.pop(host_id, None)
+        collect_tasks.pop(host_id, None)
         if conn:
             conn.close()
         store.save('hosts', hosts)
@@ -772,6 +800,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 raise HTTPException(400, 'sudo 设置验证失败，请检查机器连接及授权') from None
             store.save('hosts', hosts)
             snapshots.pop(host_id, None)
+            collection_metrics.pop(host_id, None)
+            probe.slow.pop(host_id, None)
+            probe.details.pop(host_id, None)
+            probe.stats.pop(host_id, None)
         return result
 
     @app.delete('/api/hosts/{host_id}/sudo')
@@ -784,11 +816,15 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
             snapshots.pop(host_id, None)
+            collection_metrics.pop(host_id, None)
+            probe.slow.pop(host_id, None)
+            probe.details.pop(host_id, None)
+            probe.stats.pop(host_id, None)
         return result
 
     @app.post('/api/hosts/{host_id}/refresh')
     async def refresh(host_id: str):
-        return await collect(find(host_id))
+        return await collect(find(host_id), force_slow=True)
 
     @app.post('/api/preflight')
     async def preflight(body: CheckRequest):

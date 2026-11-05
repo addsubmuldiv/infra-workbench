@@ -117,7 +117,7 @@ def redact_arguments(arguments):
     return result
 
 
-def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None):
+def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None, include_details=True):
     if not isinstance(pid, int) or pid <= 0:
         raise ValueError('invalid PID')
     folder = Path(proc_root)/str(pid)
@@ -158,22 +158,23 @@ def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None):
                 result['parent_pid'] = int(line.split()[1])
     except (OSError, ValueError, IndexError) as exc:
         result['errors']['user'] = error_code(exc)
-    for field in ('cwd', 'executable'):
+    if include_details:
+        for field in ('cwd', 'executable'):
+            try:
+                result[field] = os.readlink(folder/('exe' if field == 'executable' else field))
+            except OSError as exc:
+                result['errors'][field] = error_code(exc)
         try:
-            result[field] = os.readlink(folder/('exe' if field == 'executable' else field))
+            with folder.joinpath('cmdline').open('rb') as source:
+                raw = source.read(65537)
+            result['command_truncated'] = len(raw)>65536
+            # Drop a truncated argument rather than disclose part of a sensitive value.
+            if result['command_truncated']:
+                raw = raw[:65536].rsplit(b'\0', 1)[0]
+            args = [part.decode('utf-8', errors='replace') for part in raw.split(b'\0') if part]
+            result['command'] = ' '.join(shlex.quote(arg) for arg in redact_arguments(args)) or None
         except OSError as exc:
-            result['errors'][field] = error_code(exc)
-    try:
-        with folder.joinpath('cmdline').open('rb') as source:
-            raw = source.read(65537)
-        result['command_truncated'] = len(raw)>65536
-        # Drop a truncated argument rather than disclose part of a sensitive value.
-        if result['command_truncated']:
-            raw = raw[:65536].rsplit(b'\0', 1)[0]
-        args = [part.decode('utf-8', errors='replace') for part in raw.split(b'\0') if part]
-        result['command'] = ' '.join(shlex.quote(arg) for arg in redact_arguments(args)) or None
-    except OSError as exc:
-        result['errors']['command'] = error_code(exc)
+            result['errors']['command'] = error_code(exc)
     try:
         after = start_time()
     except (OSError, ValueError, IndexError) as exc:
@@ -184,6 +185,8 @@ def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None):
             result[field] = None
         result['detail_status'] = 'not_visible_or_exited' if after is None else 'process_changed'
         return result
+    result['start_ticks'] = before if before == after else None
+    result['details_collected_at'] = None
     result['identity_verified'] = before is not None and before == after and process_cutoff_ticks is not None
     if result['errors']:
         result['detail_status'] = 'partial'
@@ -212,7 +215,8 @@ def main():
     except (KeyError, OSError, AttributeError):
         login_user = None
     slow = '--fast' not in sys.argv
-    result = {'system': system_metrics(), 'login_user': login_user}
+    result = {'system': system_metrics(), 'login_user': login_user,
+              'boot_id': read_text('/proc/sys/kernel/random/boot_id').strip() or None}
     if slow:
         result['tmux'] = tmux_sessions()
     try:
@@ -234,7 +238,11 @@ def main():
     if slow:
         result['users'] = run(['ps', '-eo', 'pid=,user='])
     pids = reported_process_ids(result['kind'], result['metrics']['out'], result.get('processes', {}).get('out', ''))
-    result['process_details'] = {str(pid): read_process_details(pid, process_cutoff_ticks=process_cutoff_ticks) for pid in pids}
+    result['process_details'] = {str(pid): read_process_details(pid, process_cutoff_ticks=process_cutoff_ticks, include_details=slow) for pid in pids}
+    if slow:
+        stamp = time.time()
+        for detail in result['process_details'].values():
+            detail['details_collected_at'] = stamp
     print('IWB_JSON:' + json.dumps(result))
 
 

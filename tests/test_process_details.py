@@ -131,3 +131,19 @@ def test_api_attaches_details_to_device_without_losing_gpu_occupation(tmp_path):
         assert p['pid'] == 4308 and p['cwd'] == '/data/project'
         assert p['memory_used'] == 23796*1024**2
         assert p['executable'] == '/opt/venv/bin/python'
+
+
+def test_fast_process_details_check_identity_without_reading_heavy_fields(tmp_path, monkeypatch):
+    folder = tmp_path/'4308'
+    folder.mkdir()
+    (folder/'stat').write_text(stat_line(4308, 100))
+    (folder/'status').write_text('Uid:\t1001\t1001\t1001\t1001\nPPid:\t4000\n')
+    import backend.remote_probe as probe
+    def forbidden(path):
+        raise AssertionError('fast sample must not resolve cwd or executable')
+    monkeypatch.setattr(probe.os, 'readlink', forbidden)
+    value = read_process_details(4308, proc_root=tmp_path, process_cutoff_ticks=200, include_details=False)
+    assert value['identity_verified'] is True
+    assert value['start_ticks']=='100'
+    assert value['command'] is None and value['details_collected_at'] is None
+    assert 'command' not in value['errors']

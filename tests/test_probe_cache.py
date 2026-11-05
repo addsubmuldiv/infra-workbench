@@ -141,3 +141,34 @@ def test_monitor_honors_disabled_agent(tmp_path, monkeypatch):
         monkeypatch.setattr(asyncssh,'connect',connect)
         await service.password_connection({'id':'a'},None,monitor=True)
     asyncio.run(scenario())
+
+
+def test_probe_payload_statistics_and_safe_detail_reuse():
+    class SSH:
+        def __init__(self): self.pid_start='100'; self.boot='fixture-boot'; self.calls=[]
+        async def run(self,host,command,source=None):
+            slow=' True ' in command
+            detail=dict(identity_verified=True,start_ticks=self.pid_start,command='python train.py' if slow else None,
+                        cwd='/synthetic' if slow else None,details_collected_at=123 if slow else None)
+            out='IWB_JSON:'+json.dumps({'boot_id':self.boot,'process_details':{'42':detail}},ensure_ascii=False)
+            self.calls.append((command,source,out))
+            return 0,out,'中文'
+    async def scenario():
+        ssh=SSH();cache=ProbeCache('pass',clock=lambda:0);host={'id':'a','target':'first'}
+        await cache.run(ssh,host)
+        code,out,err=await cache.run(ssh,host)
+        detail=json.loads(out.split('IWB_JSON:')[1])['process_details']['42']
+        assert detail['command']=='python train.py' and detail['details_collected_at']==123
+        command,source,wire_out=ssh.calls[-1]
+        assert cache.stats['a']==dict(request_bytes=len(command.encode()),response_bytes=len(wire_out.encode())+len('中文'.encode()),commands=1)
+        ssh.pid_start='200'
+        out=(await cache.run(ssh,host))[1]
+        assert json.loads(out.split('IWB_JSON:')[1])['process_details']['42']['command'] is None
+        out=(await cache.run(ssh,host,force_slow=True))[1]
+        assert json.loads(out.split('IWB_JSON:')[1])['process_details']['42']['command']=='python train.py'
+        ssh.boot='rebooted'
+        out=(await cache.run(ssh,host))[1]
+        assert json.loads(out.split('IWB_JSON:')[1])['process_details']['42']['command'] is None
+        out=(await cache.run(ssh,dict(host,target='second')))[1]
+        assert ' True ' in ssh.calls[-1][0]
+    asyncio.run(scenario())

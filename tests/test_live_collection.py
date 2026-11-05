@@ -82,3 +82,27 @@ def test_state_wait_wakes_all_windows_and_handles_restart_and_timeout():
         assert await changes.wait(1, 'old-instance', timeout=1) == dict(instance='instance-a', revision=1)
         assert await changes.wait(1, 'instance-a', timeout=.001) == dict(instance='instance-a', revision=1)
     asyncio.run(run())
+
+
+def test_collection_diagnostics_measure_payload_and_shared_refresh(tmp_path):
+    app = create_app(tmp_path, start_poll=False)
+    app.state.hosts.append(dict(id='a', target='synthetic', auth='key'))
+    calls=[]
+    async def run(host, command, source=None):
+        calls.append(command)
+        await asyncio.sleep(.01)
+        return 255, '', 'synthetic failure'
+    app.state.ssh.run=run
+    async def scenario():
+        results=await asyncio.gather(*(app.state.agent_service.collect(app.state.hosts[0]) for _ in range(3)))
+        assert len(calls)==1
+        assert all(value['status']=='error' for value in results)
+    with TestClient(app) as client:
+        client.portal.call(scenario)
+        host=client.get('/api/state').json()['hosts'][0]
+        metric=host['collection']
+        assert metric['samples']==1 and metric['status']=='idle'
+        assert metric['duration_seconds']>=.01 and metric['queue_seconds']>=0
+        assert metric['response_bytes']==len('synthetic failure'.encode())
+        assert metric['request_bytes']==len(calls[0].encode())
+        assert 'collection' not in host['snapshot']

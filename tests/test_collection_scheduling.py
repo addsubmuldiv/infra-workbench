@@ -21,6 +21,7 @@ def test_failed_collection_backoff_is_exponential_and_bounded(interval, failures
 
 def test_startup_collects_eight_hosts_concurrently(tmp_path):
     store = Store(tmp_path / 'workbench.db')
+    store.save('refresh_interval_seconds', 5)
     store.save('hosts', [dict(id=str(i), target=str(i), auth='key') for i in range(17)])
     store.db.close()
     app = create_app(tmp_path)
@@ -42,7 +43,7 @@ def test_startup_collects_eight_hosts_concurrently(tmp_path):
 
     app.state.ssh.run = run
     with TestClient(app):
-        assert started.wait(5), 'eight collection slots should start after startup jitter'
+        assert started.wait(5), 'eight slots should be occupied while slow probes span scheduled slots'
         assert peak == 8
 
 

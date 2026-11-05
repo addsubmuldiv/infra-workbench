@@ -2,3 +2,5 @@
 .workspace>div{min-width:0;white-space:nowrap}.workspace .badge{display:none}
 
 .chip-origin{font-size:9px;color:#7f9d9e;margin-top:7px;line-height:1.5}
+
+.collection-summary{display:flex;flex-wrap:wrap;gap:10px;padding:6px 18px;color:var(--muted);font-size:12px}.collection-summary:empty{display:none}.collection-summary details{display:inline-block;margin-left:10px}.collection-summary details p{max-width:640px}

@@ -34,3 +34,12 @@ test('a failed state read releases the slot so polling can recover',async()=>{
   const read=singleFlight(()=>{if(++calls===1)throw new Error('offline');return Promise.resolve('recovered')});
   await assert.rejects(read(),/offline/);assert.equal(await read(),'recovered');
 });
+
+test('inserting, removing and reordering hosts preserve unchanged host references by identity',()=>{
+  const a={id:'a',snapshot:{fresh:true,devices:[]}},b={id:'b',snapshot:{fresh:true,devices:[]}};
+  const before={server_time:10,hosts:[a,b]};
+  const removed=reuseStateSnapshot(before,{server_time:11,hosts:[structuredClone(b)]});
+  assert.equal(removed.hosts[0],b);
+  const reordered=reuseStateSnapshot(before,{server_time:12,hosts:[structuredClone(b),structuredClone(a)]});
+  assert.equal(reordered.hosts[0],b);assert.equal(reordered.hosts[1],a);
+});

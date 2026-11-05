@@ -20,9 +20,16 @@ const hosts=[host('alpha','NPU',8),host('beta','GPU',4),host('offline','GPU',2,f
 hosts[1].snapshot.devices.slice(1).forEach(d=>d.processes=[{pid:123,user:'test'}]);
 
 function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
-  const values=[],storage=new Map();let cursor=0,tree;
+  const values=[],storage=new Map(),cardRenders=new Map();let cursor=0,tree;
   const state={hosts:hostItems,rules:[],reservations,events:[],server_time:100};
-  const react={createElement:(type,props,...children)=>typeof type==='function'&&['ClusterSidebar','Check'].includes(type.name)?type({...props,children}):({type,props:{...props,children}}),lazy:()=>()=>null,Suspense:'suspense',StrictMode:'strict',
+  const react={memo:(fn,compare)=>{fn.testCompare=compare;return fn},createElement:(type,props,...children)=>{
+    if(type?.name==='MachineView'){
+      const previous=cardRenders.get(props.key);
+      if(previous&&type.testCompare(previous.props,props))return previous.tree;
+      const tree=type({...props,children});cardRenders.set(props.key,{props,tree,count:(previous?.count??0)+1});return tree;
+    }
+    return typeof type==='function'&&['ClusterSidebar','Check'].includes(type.name)?type({...props,children}):({type,props:{...props,children}})
+  },lazy:()=>()=>null,Suspense:'suspense',StrictMode:'strict',
     useState:initial=>{const index=cursor++;if(!(index in values))values[index]=initial&&typeof initial==='object'&&Array.isArray(initial.hosts)&&'server_time' in initial?state:typeof initial==='function'?initial():initial;return [values[index],value=>{values[index]=typeof value==='function'?value(values[index]):value}]},
     useRef:initial=>{const index=cursor++;if(!(index in values))values[index]={current:initial};return values[index]},useMemo:fn=>fn(),useEffect(){}};
   for(const [name,value] of Object.entries({window:{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},scrollTo(){}},document:{documentElement:{dataset:{}},getElementById:()=>({})},location:{hash}})){
@@ -41,7 +48,7 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   const metrics=()=>find(n=>n.props?.['aria-label']==='全部机器资源总览').props.children.map(card=>text(card.props.children.find(n=>n?.type==='strong')));
   const button=label=>find(n=>n.type==='button'&&(n.props['aria-label']===label||n.props.children.includes(label)));
   const finderCount=()=>text(find(n=>n.props?.className==='match-count').props.children.find(n=>n?.type==='strong'));
-  return {render,find,text,metrics,button,finderCount};
+  return {render,find,text,metrics,button,finderCount,cardRenders};
 }
 
 test('reservation summary excludes ready reservations and their machines but opens all reservations',t=>{
@@ -211,7 +218,7 @@ test('SSH password button highlights only confirmed saved credentials and update
   assert.equal(h.button('alpha SSH 密码设置').props.title,'SSH 密码已保存，点击管理');
   assert.ok(!h.button('beta SSH 密码设置').props.className.includes('enabled'));
   assert.ok(!h.button('offline SSH 密码设置').props.className.includes('enabled'));
-  items[0].ssh_password.password_saved=false;h.render();
+  items[0]={...items[0],ssh_password:{...items[0].ssh_password,password_saved:false}};h.render();
   assert.ok(!h.button('alpha SSH 密码设置').props.className.includes('enabled'));
   h.button('alpha SSH 密码设置').props.onClick();h.render();
   assert.ok(h.find(n=>n.type==='SSHPasswordDialog'));
@@ -228,4 +235,31 @@ test('demo prevents entering real SSH credentials while leaving resource browsin
  assert.equal(h.find(n=>n.type==='AddMachine'),undefined);
  h.button('只看机器 beta').props.onClick();h.render();
  assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 beta'));
+});
+
+
+test('manual refresh reports progress, shares repeated clicks and reports collection failure',async t=>{
+  const original=globalThis.fetch;let finish,calls=0;
+  globalThis.fetch=async url=>{
+    if(url.includes('/hosts/')){calls++;return new Promise(resolve=>{finish=()=>resolve({ok:true,json:async()=>({status:'error',error:'Synthetic probe failure'})})})}
+    return {ok:true,json:async()=>({hosts,rules:[],reservations:[],events:[],server_time:100})};
+  };
+  t.after(()=>{globalThis.fetch=original});
+  const h=harness(t);h.render();
+  const first=h.button('刷新 alpha').props.onClick();
+  h.button('刷新 alpha').props.onClick();h.render();
+  assert.equal(calls,1);assert.equal(h.button('刷新 alpha').props.disabled,true);
+  assert.ok(h.text(h.find(n=>n.props?.className==='collection-summary')).includes('正在刷新'));
+  finish();await first;h.render();
+  assert.equal(h.button('刷新 alpha').props.disabled,false);
+  assert.ok(h.text(h.find(n=>n.props?.className==='collection-summary')).includes('手动刷新失败'));
+});
+
+
+test('machine selection rerenders only its own card and unrelated notice does not redraw cards',t=>{
+  const h=harness(t);h.render();
+  assert.equal(h.cardRenders.get('alpha').count,1);assert.equal(h.cardRenders.get('beta').count,1);
+  h.find(n=>n.type==='input'&&n.props['aria-label']==='选择 alpha 设备 0').props.onChange();h.render();
+  assert.equal(h.cardRenders.get('alpha').count,2);assert.equal(h.cardRenders.get('beta').count,1);
+  h.render();assert.equal(h.cardRenders.get('alpha').count,2);assert.equal(h.cardRenders.get('beta').count,1);
 });
