@@ -153,7 +153,6 @@
 | `backend/terminal_tmux.py:11` | `def run(*args):return subprocess.run(base+list(args),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=8)` |
 | `frontend/src/agentChat.ts:67` | `const timer=setTimeout(finish,delay);signal.addEventListener('abort',finish,{once:true});` |
 | `frontend/src/assistantLocale.ts:145` | `"STARTTLS（通常为 587 端口）": "STARTTLS (usually port 587)",` |
-| `frontend/src/AutomationSettings.tsx:13` | `useEffect(()=>{let alive=true;const refresh=()=>{if(alive)void load().catch(e=>setError(String(e)))};refresh();const timer=setInterval(refresh,3000);return()=>{alive=false;clearInterval(timer)}},[]);` |
 | `frontend/src/ChatModelPicker.tsx:32` | `const timer=window.setInterval(()=>void load(),60*60*1000);` |
 | `frontend/src/ClusterPanel.tsx:36` | `if(live&&!done)tick=setTimeout(poll,1500);` |
 | `frontend/src/ClusterPanel.tsx:38` | `tick=setTimeout(poll,1500);` |

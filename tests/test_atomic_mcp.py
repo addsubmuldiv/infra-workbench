@@ -49,7 +49,14 @@ def test_shared_catalog_scope_schema_and_actual_remote_script(tmp_path):
     async def run():
         app=fixture_app(tmp_path/'app');service=app.state.mcp_service.scoped({}, {'a'})
         assert set(catalog()) <= service.catalog().keys()
-        assert {'run_automation','cancel_automation','set_automation_enabled','list_automation_runs'} <= service.catalog().keys()
+        removed = {'list_automations', 'create_automation', 'update_automation', 'run_automation',
+                   'cancel_automation', 'set_automation_enabled', 'list_automation_runs'}
+        assert removed.isdisjoint(service.catalog())
+        assert not hasattr(app.state, 'automation')
+        assert not any(route.path.startswith('/api/automations') for route in app.routes)
+        for name in removed:
+            with pytest.raises(AgentError, match='INVALID_ARGUMENT'):
+                await service.call(name, {})
         examples={
             'get_ssh_config':{},'test_tcp_connection':dict(port=22),'test_ssh_authentication':{},
             'list_command_jobs':{},'search_file_contents':dict(path='/tmp',query='x'),
@@ -104,27 +111,6 @@ def test_config_and_snippets_use_bound_host(tmp_path):
         app.state.agent_chat.store.db.close()
     asyncio.run(run())
 
-
-def test_automation_controls_and_run_scope(tmp_path):
-    async def run():
-        app=fixture_app(tmp_path);service=app.state.mcp_service.scoped({}, {'a'})
-        manager=app.state.automation
-        draft=dict(name='check',host_ids=['a'],steps=[dict(tool='get_resources',arguments=dict(host_id='a'))])
-        item=(await service.call('create_automation',draft))['data']
-        await service.call('set_automation_enabled',dict(id=item['id'],enabled=True))
-        assert item['id'] in manager.enabled
-        forbidden=app.state.mcp_service.scoped({}, {'b'})
-        for name in ('run_automation','cancel_automation','list_automation_runs'):
-            with pytest.raises(AgentError):await forbidden.call(name,dict(id=item['id']))
-        started=await service.call('run_automation',dict(id=item['id']))
-        task=manager.tasks[item['id']];await task
-        rows=(await service.call('list_automation_runs',dict(id=item['id'])))['data']['items']
-        assert len(rows)==1 and rows[0]['id']==started['data']['id']
-        await service.call('cancel_automation',dict(id=item['id']))
-        await service.call('set_automation_enabled',dict(id=item['id'],enabled=False))
-        assert item['id'] not in manager.enabled
-        app.state.agent_chat.store.db.close()
-    asyncio.run(run())
 
 
 def test_authentication_is_independent_and_does_not_provision(tmp_path):

@@ -29,7 +29,7 @@ Infra Workbench 是面向 AI 工程师的 AI 原生服务器工作台，在 Wind
 | 终端与文件 | 打开对应机器的工具；长任务使用 tmux；需要时配置隧道及 VS Code | [终端](TERMINAL.md)、[文件](FILES.md)、[SSH 隧道](SSH-TUNNELS.md) |
 | AI 助手 | 配置模型接口或已安装并登录的本机引擎，核对机器范围和工具记录 | [模型接口](AGENT.md)、[Codex](CODEX.md)、[其他引擎](EXTERNAL-AGENTS.md) |
 | 预约、历史与对比 | 设置空闲提醒，积累资源采样，再对比训练日志 | [资源预约](RESERVATIONS.md)、[资源历史](RESOURCE-HISTORY.md)、[精度对比](PRECISION.md) |
-| 按需设置 | 找到语言、Skills、自动化、MCP、邮件和帮助入口 | [自动化](AUTOMATION.md)、[Skills](USER-SKILLS.md)、[MCP](MCP.md) |
+| 按需设置 | 找到语言、Skills、MCP、邮件和帮助入口 | [Skills](USER-SKILLS.md)、[MCP](MCP.md) |
 
 预约不会锁定硬件或自动启动训练；历史缺失数据保留为未知。广播命令、真实终端和 AI 工具可能修改远端，执行前确认机器范围。
 

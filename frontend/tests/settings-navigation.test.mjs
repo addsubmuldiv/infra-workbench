@@ -54,3 +54,10 @@ test('about and help can replay the real guide without navigating into demo',t=>
   assert.ok(h.all().some(n=>n.type==='a'&&n.props.href==='?demo=1'));
 });
 
+
+test('removed automation navigation falls back to general',t=>{
+  const h=harness(t,'{"category":"automation"}');
+  assert.equal(h.all().find(n=>n.props?.['aria-current']==='page').props.children[1].props.children,'通用');
+  assert.equal(h.panels().length,1);
+  assert.ok(!h.all().some(n=>n.type==='button'&&n.props.children?.[1]?.props?.children==='自动化'));
+});

@@ -1,5 +1,9 @@
 # 统一 MCP 与业务技能
 
+## 移除自动化流程（2026-11-05）
+
+已移除自动化设置页面、流程 HTTP 接口、七个流程 MCP 工具、终端事件触发和 `manage-automation` 内置技能。AI 对话与其他 Skills 保留。旧流程和运行记录仍保留在本地数据库，但不再加载或执行。已运行的后台需要重启才能卸载旧服务。
+
 ## MCP 输出预算与原生按需加载（2026-11-05）
 
 框架接入详见 [DEEPAGENTS.md](DEEPAGENTS.md)。业务 skill 初始只展示名称和用途；读取后由 Deep Agents `SkillsMiddleware` 的 `metadata.include_tools` 披露相关 MCP schema。独立工具有 `/tool-skills/mcp-工具名/SKILL.md` 按需入口。原有 MCP 全目录仍供外部客户端发现，内置模型不会每轮发送全部参数定义；披露不是权限校验。
@@ -139,7 +143,6 @@ sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH �
 
 open_cluster_terminals 创建专用持久会话并返回交接入口，不等于客户端已打开界面。受限助手不能通过集群扩大机器范围；修改归类需要相关集群全部成员权限。接口与 MCP 共用服务。界面和使用限制见 [CLUSTERS.md](CLUSTERS.md)。
 
-
 ## 单点工具扩展（2026-11-04）
 
 新增十二个确定性工具；不调用大模型、不执行诊断流程：
@@ -157,8 +160,6 @@ open_cluster_terminals 创建专用持久会话并返回交接入口，不等于
 - `save_terminal_snippet`：创建命令收藏；提供 snippet_id 时修改现有收藏，不执行命令。
 - `delete_terminal_snippet`：删除命令收藏，不执行命令。
 
-另新增 `run_automation`、`cancel_automation`、`set_automation_enabled` 和 `list_automation_runs`，复用已有流程服务。创建/修改流程仍不自动启用或执行；运行和启用必须来自用户明确要求。取消流程不会自动取消已启动的远端命令任务，应使用 cancel_command_job 并读回。运行记录按创建时机器范围过滤，不能借修改流程成员读取旧的越权结果。
-
 所有新增工具使用共享目录和参数 schema，先验证机器范围。文件工具复用 model_paths 的真实路径保护；结果经过脱敏。分页大小和返回字节范围用于分批读取，不限制任务调用次数。目录扫描、文件哈希可能受现有 SSH 操作超时影响，超时不代表完整结果。
 
-验证入口：`.venv/Scripts/python.exe -m pytest tests/test_atomic_mcp.py tests/test_unified_mcp.py tests/test_mcp.py tests/test_automation.py -q`。其中 Linux 探针集成测试在 Windows+WSL 执行真实 Python 子进程，systemd 命令使用隔离 fixture，不操作真实服务。
+验证入口：`.venv/Scripts/python.exe -m pytest tests/test_atomic_mcp.py tests/test_unified_mcp.py tests/test_mcp.py -q`。其中 Linux 探针集成测试在 Windows+WSL 执行真实 Python 子进程，systemd 命令使用隔离 fixture，不操作真实服务。

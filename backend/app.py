@@ -455,7 +455,6 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             for pending_collect in collect_tasks.values():
                 if not pending_collect.done():pending_collect.cancel()
             await asyncio.gather(*collect_tasks.values(),return_exceptions=True)
-            await app.state.automation.close()
             await app.state.ssh_tunnels.close()
             await app.state.port_forwarding.close()
             await ssh.close()
@@ -497,8 +496,6 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     from .skill_routes import register_skill_routes
     app.state.skills = SkillService(store)
     register_mcp(app, app.state.agent_service, probes)
-    from .automation import register_automation
-    register_automation(app, store, hosts, app.state.mcp_service)
     app.state.mcp_service.skills = app.state.skills
     register_skill_routes(app, app.state.skills, lambda: list(app.state.mcp_service.scoped({}, None).catalog()))
     app.state.agent_chat = AgentChat(store,agent_api,MCPGateway(app.state.mcp_service))

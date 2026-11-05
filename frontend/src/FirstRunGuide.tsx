@@ -26,9 +26,9 @@ const steps=[
     ['可等待单台指定卡、指定多台机器，或集群中任意几台满足条件；预约只负责空闲提醒，不锁卡，也不自动启动训练。','Wait for selected devices, a fixed set of hosts, or any qualifying hosts in a cluster. Alerts do not lock devices or start training.'],
     ['历史图表需要先积累采样，缺失时段保留为未知。精度对比用于读取日志并按训练步数核对指标。','History needs time to collect samples; gaps remain unknown. Precision comparison reads logs and aligns metrics by training step.'],
   ]},
-  {title:['按需配置，随时回来','Configure what you need and return anytime'],location:['设置 → 通用、AI 助手、自动化、集成服务、关于与帮助','Settings → General, AI assistant, Automation, Integrations, About and help'],items:[
+  {title:['按需配置，随时回来','Configure what you need and return anytime'],location:['设置 → 通用、AI 助手、集成服务、关于与帮助','Settings → General, AI assistant, Integrations, About and help'],items:[
     ['通用设置管理语言、启动方式和桌面浮窗；AI 助手管理模型与 Skills；集成服务管理 MCP 和邮件通知。','General contains language, launch preferences, and the desktop monitor; AI assistant contains models and Skills; Integrations contains MCP and email.'],
-    ['自动化流程需检查后明确启用。完成或跳过引导后不会反复弹出；可在“关于与帮助”中重播，也可进入隔离演示试用。','Review automation workflows before explicitly enabling them. This guide stays dismissed after completion or skipping; replay it in About and help, or try the isolated demo.'],
+    ['完成或跳过引导后不会反复弹出；可在“关于与帮助”中重播，也可进入隔离演示试用。','This guide stays dismissed after completion or skipping; replay it in About and help, or try the isolated demo.'],
   ]},
 ] as const;
 

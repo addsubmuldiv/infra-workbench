@@ -27,7 +27,7 @@ Replay it under **Settings → About and help → Replay getting-started guide**
 | Terminals, files, and remote development | Use tmux for long tasks; configure tunnels and VS Code when needed | [Terminals](TERMINAL.md), [Files](FILES.md), [SSH tunnels](SSH-TUNNELS.md) |
 | AI assistant | Configure a model connection or install and authenticate a local engine; check host scope and tool records | [Model connections](AGENT.md), [Codex](CODEX.md), [Other engines](EXTERNAL-AGENTS.md) |
 | Alerts, history, and comparison | Set availability alerts, collect history samples, and compare training logs | [Alerts](RESERVATIONS.md), [History](RESOURCE-HISTORY.md), [Precision](PRECISION.md) |
-| Optional settings | Find language, Skills, automation, MCP, email, and help | [Automation](AUTOMATION.md), [Skills](USER-SKILLS.md), [MCP](MCP.md) |
+| Optional settings | Find language, Skills, MCP, email, and help | [Skills](USER-SKILLS.md), [MCP](MCP.md) |
 
 Availability alerts do not lock hardware or start training, and history gaps remain unknown. Broadcast commands, terminals, and AI tools may modify remote machines; verify the target scope first. Some linked technical guides are currently in Chinese.
 
