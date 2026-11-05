@@ -28,6 +28,10 @@ SSH 复核确认：原生 OpenSSH 监控的 8 秒和跳板子进程的 20 秒预
 
 - Node 生成、版本、发布测试：13 项通过。
 - 前端完整测试：354 项通过；普通构建通过。
-- 最终后端完整回归、演示构建和重新打包结果：完成后补充。
+- 后端完整回归：982 passed、14 skipped（13 项依赖弃用警告）；演示构建通过。
+- Windows x64 开发安装包重新构建成功；冻结自检 `ok=true`、`frozen=true`、`policy_checks=14`。
+- 复审修正提交：`18cdc0ae6ca55a19549578bd86c879cf2f53ef92`。新包 `Infra-Workbench-0.2.1-internal-defaults-18cdc0a-x64-setup.exe`，50254823 字节。
+- SHA-256：`290b62f2b3de5e6290980e06d2641bea513a0cabb05e739e0177a197504b3381`，复制前后相同。交付目录：`release/internal-defaults/`。
+- 本轮没有重新启动正式后台、连接真实服务器、调用真实模型或运行安装器。
 
 审查不能保证软件没有任何缺陷。干净 Windows 电脑的实际安装与交互、真实 SSH/模型调用及 macOS 仍未在本轮执行。
