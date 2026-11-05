@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "binaries/_internal/": "_internal/"
+    }
+  }
+}

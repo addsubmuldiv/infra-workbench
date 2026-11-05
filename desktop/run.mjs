@@ -28,5 +28,6 @@ run(process.execPath,[npmCli,'run','build'],path.join(root,'frontend'));
 if(mode==='build')run(python,[path.join(directory,'build_runtime.py')]);
 const args=[path.join(directory,'node_modules/@tauri-apps/cli/tauri.js'),mode];
 if(mode==='build')args.push('--config','src-tauri/tauri.bundle.conf.json','--bundles',process.platform==='win32'?'nsis':'app,dmg');
+if(mode==='build'&&process.platform==='win32')args.push('--config','src-tauri/tauri.bundle.windows.conf.json');
 if(mode==='build'&&process.env.IWB_UNSIGNED_BUILD==='1')args.push('--config',JSON.stringify({bundle:{createUpdaterArtifacts:false}}));
 run(process.execPath,[...args,...process.argv.slice(3)],directory);

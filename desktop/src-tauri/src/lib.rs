@@ -8,7 +8,7 @@ impl Default for DesktopSession {
     fn default()->Self { Self {ready:AtomicBool::new(false),requested:AtomicBool::new(true)} }
 }
 impl DesktopSession {
-    pub fn request_show(&self)->bool { self.requested.store(true,Ordering::SeqCst);self.ready.load(Ordering::SeqCst) }
+    pub fn request_show(&self)->bool { self.requested.store(true,Ordering::SeqCst);true }
     pub fn hide(&self) { self.requested.store(false,Ordering::SeqCst); }
     pub fn mark_ready(&self)->bool { self.ready.store(true,Ordering::SeqCst);self.requested.load(Ordering::SeqCst) }
 }
@@ -74,12 +74,20 @@ mod tests {
 mod session_tests {
     use super::DesktopSession;
     #[test]
-    fn cold_window_waits_for_ready_but_reopening_reuses_ready_view() {
+    fn cold_window_shows_bootstrap_and_reopening_reuses_the_same_view() {
         let state=DesktopSession::default();
-        assert!(!state.request_show());
+        assert!(state.request_show());
         assert!(state.mark_ready());
         state.hide();
         assert!(state.request_show());
+    }
+    #[test]
+    fn reopening_while_loading_shows_feedback_and_honors_a_later_close() {
+        let state=DesktopSession::default();
+        state.hide();
+        assert!(state.request_show());
+        state.hide();
+        assert!(!state.mark_ready());
     }
     #[test]
     fn closing_while_loading_does_not_reopen_unexpectedly() {

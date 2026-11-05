@@ -19,9 +19,10 @@ fn bootstrap_url(url: &reqwest::Url) -> bool {
         && (url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost"))
 }
 
-fn status(window: &WebviewWindow, message: &str) {
-    let text = serde_json::to_string(message).unwrap();
-    let _ = window.eval(format!("document.getElementById('status').textContent={text}"));
+fn status(window: &WebviewWindow, stage: &str, percent: u8, error: Option<&str>) {
+    let stage = serde_json::to_string(stage).unwrap();
+    let error = serde_json::to_string(error.unwrap_or("")).unwrap();
+    let _ = window.eval(format!("window.__iwbStartup?.update({stage},{percent},{error})"));
 }
 
 fn probe_instance(client: &reqwest::blocking::Client) -> Result<Option<String>, String> {
@@ -107,18 +108,19 @@ fn connect(window: WebviewWindow) {
                     Ok(false)=>{
                         let finished=if let Some(process)=child.as_mut(){process.try_wait().map_err(|e|e.to_string())?}else{None};
                         if let Some(result)=finished {if !result.success(){return Err("后台启动失败，请查看 desktop.log".into());}}
-                        if child.is_none()||finished.is_some(){status(&window,"正在启动本地后台…");child=Some(start_runtime()?);}
+                        if child.is_none()||finished.is_some(){status(&window,"backend",20,None);child=Some(start_runtime()?);}
                     },
-                    Err(error)=>{last_error=error;status(&window,"正在等待本地后台恢复响应…");}
+                    Err(error)=>{last_error=error;status(&window,"waiting",20,None);}
                 }
                 if Instant::now()>=deadline {return Err(last_error);}
                 std::thread::sleep(Duration::from_millis(300));
             }
+            status(&window,"health",70,None);
             window.navigate(SERVICE_URL.parse().unwrap()).map_err(|e| e.to_string())?;
             Ok(())
         })();
         if let Err(error) = result {
-            status(&window, &error);
+            status(&window, "error",20,Some(&error));
             if handle.state::<DesktopSession>().mark_ready() { restore_window(&window,false); }
         }
         handle.state::<Connecting>().0.store(false, Ordering::SeqCst);
@@ -143,7 +145,7 @@ fn desktop_ready(window: WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-const READY_SCRIPT: &str = r#"
+const READY_SCRIPT: &str = concat!(include_str!("../../bootstrap/startup.js"), r#"
 (() => {
   if (location.origin !== 'http://127.0.0.1:8765') return;
   let pending=false;
@@ -156,13 +158,13 @@ const READY_SCRIPT: &str = r#"
     setTimeout(() => {
       const invoke=window.__TAURI_INTERNALS__?.invoke;
       if (!invoke) { pending=false;setTimeout(ready,50);return; }
-      invoke('desktop_ready').then(()=>observer.disconnect()).catch(()=>{pending=false;setTimeout(ready,100)});
+      invoke('desktop_ready').then(()=>{window.__iwbStartup?.update('frontend',100);window.__iwbStartup?.finish();observer.disconnect()}).catch(()=>{pending=false;setTimeout(ready,100)});
     },100);
   }
   observer.observe(document,{childList:true,subtree:true});
   ready();
 })();
-"#;
+"#);
 
 // Serialize window creation with updater installation, just like quick windows.
 fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
@@ -177,7 +179,7 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
     let navigation_app=app.clone();
     let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
-        .visible(false)
+        .visible(true)
         .background_color(tauri::window::Color(242,245,249,255))
         .initialization_script(READY_SCRIPT)
         .disable_drag_drop_handler() // Keep HTML file/folder upload handlers in the shared UI.
