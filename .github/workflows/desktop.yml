@@ -3,8 +3,12 @@ name: Desktop packages
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: 'Source branch or tag to build (blank uses the selected branch)'
+        type: string
+        required: false
       include_macos:
-        description: 'Also build experimental macOS packages'
+        description: 'Also build experimental macOS packages (Apple Silicon and Intel)'
         type: boolean
         default: false
   workflow_call:
@@ -31,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ (github.event_name == 'pull_request' || inputs.include_macos) && fromJSON('["windows-latest","macos-15"]') || fromJSON('["windows-latest"]') }}
+        os: ${{ (github.event_name == 'pull_request' || inputs.include_macos) && fromJSON('["windows-latest","macos-15","macos-15-intel"]') || fromJSON('["windows-latest"]') }}
     steps:
       - uses: actions/checkout@v7
         with:
