@@ -22,12 +22,16 @@ class WorkbenchMCPService:
         self.allowed, self.embedded = allowed, embedded
         self.skills = skills
         self.skill_snapshot = skill_snapshot
+        self._embedded_catalog = None
+        self._input_validators = {}
 
     def scoped(self, state, allowed, skill_snapshot=None):
         return WorkbenchMCPService(self.probes, self.legacy, self.operations,
                                    state=state, allowed=allowed, embedded=True, skills=self.skills, skill_snapshot=skill_snapshot)
 
     def catalog(self):
+        if self.embedded and self._embedded_catalog is not None:
+            return self._embedded_catalog
         catalog = copy.deepcopy(TOOLS) if self.legacy is not None else {}
         for public, original in PROBES.items():
             if public in catalog:
@@ -52,13 +56,19 @@ class WorkbenchMCPService:
         if self.embedded:
             for name in PRIVATE:
                 catalog.pop(name, None)
+        if self.embedded:self._embedded_catalog = catalog
         return catalog
 
     async def call(self, name, arguments):
         catalog = self.catalog()
         if name not in catalog or not isinstance(arguments, dict):
             raise AgentError('INVALID_ARGUMENT', '未知工具或参数不是 JSON 对象。')
-        if next(Draft202012Validator(catalog[name]['inputSchema']).iter_errors(arguments), None):
+        schema=catalog[name]['inputSchema']
+        cached=self._input_validators.get(name)
+        if cached is None or cached[0]!=schema:
+            cached=(copy.deepcopy(schema),Draft202012Validator(schema))
+            self._input_validators[name]=cached
+        if next(cached[1].iter_errors(arguments), None):
             raise AgentError('INVALID_ARGUMENT', '参数不符合工具 inputSchema。')
         if self.operations is not None:
             from .atomic_mcp import catalog as atomic_catalog, call as atomic_call

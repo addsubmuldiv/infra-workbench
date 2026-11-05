@@ -95,7 +95,7 @@ def skill_tool_files(files, tools):
         files[f'/tool-skills/{key}/SKILL.md']=create_file_data(
             '---\n'+yaml.safe_dump(meta,allow_unicode=True,sort_keys=False)+'---\n'
             f'Reading this skill activates `{tool.name}`. Use its loaded schema for exact parameters. '
-            'Existing authorization, host scope and cancellation checks still apply.\n'+tool.description)
+            'Existing authorization, host scope and cancellation checks still apply.\n')
     return files
 
 
@@ -134,7 +134,7 @@ class ToolTrace(AgentMiddleware):
                                  tool_call_id=call['id'], name=name, status='error')
         finally:
             trace['finished'] = time.time()
-            self.save()
+            if trace['status']=='cancelled':self.save()
         trace['output'] = scrub(output, self.secret)[:7000]
         if isinstance(output, str) and output.startswith(('Error:', 'Error ')):
             trace['status'] = 'failed'
@@ -181,7 +181,7 @@ def repair_messages(messages):
     return result
 
 
-async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, save, start_text, on_text, sanitize, *, skills=None):
+async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, save, start_text, on_text, sanitize, *, skills=None, context=None):
     turn = chat['turns'][-1]
     def model_start():
         start_text()
@@ -192,8 +192,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
     skill_details = None
     if skills is not None:
         with skills.lock:
-            text_files, receipts = skills.snapshot()
-            skill_details = {item['name']: skills.read(item['name']) for item in receipts}
+            text_files, receipts, skill_details = skills.snapshot(include_details=True)
         files = {path: create_file_data(content) for path, content in text_files.items()}
     else:
         files, receipts = bundled_files(), []
@@ -201,9 +200,9 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
     turn['skills_read'] = []
     selected = turn.get('selected_skill_names', [])
     if selected:
-        instructions += '\n用户明确选择本轮技能，请先读取对应 SKILL.md，再结合任务使用：' + json.dumps(selected, ensure_ascii=False)
+        context=dict(context or {}, selected_skill_names=selected)
     async with gateway.session(chat['state'], allowed, skill_details) as client:
-        mcp_tools = await discover_tools(client, secret)
+        mcp_tools = await discover_tools(client, secret, native_offload=True)
         files=skill_tool_files(files,mcp_tools)
         mcp_tools=[tool.model_copy(update={'extras':dict(tool.extras or {},defer_loading=True)}) for tool in mcp_tools]
         capacity = await provider.context_capacity() if hasattr(provider, 'context_capacity') else dict(
@@ -226,7 +225,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
             return record
         model = WorkbenchChatModel(provider, on_start=model_start, on_text=on_text, sanitize=sanitize,
                                    context_window=capacity['tokens'], on_context=context_usage,
-                                   on_timing=model_timing('response'))
+                                   on_timing=model_timing('response'), turn_context=context)
         class SummaryModel(WorkbenchChatModel):
             async def _agenerate(self, *args, **kwargs):
                 turn['context_compaction'] = dict(status='running', started=time.time())
@@ -259,7 +258,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
         graph = create_deep_agent(
             model=model, system_prompt=instructions, tools=mcp_tools,
             backend=backend, skills=['/skills/'], checkpointer=saver,
-            middleware=[FilesystemMiddleware(backend=backend, tools=fs_tools,permissions=fs_permissions),
+            middleware=[FilesystemMiddleware(backend=backend, tools=fs_tools,permissions=fs_permissions,tool_token_limit_before_evict=4000),
                         TodoListMiddleware(),
                         *([memory.middleware] if memory is not None else []),
                         create_summarization_middleware(summary_model, backend,token_counter=count_visible_tokens),

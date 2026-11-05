@@ -11,6 +11,7 @@ from .agent_tools import TOOLS,INSTRUCTIONS
 
 
 def create_mcp(service):
+    output_validators = {}
     def catalog():
         return service.catalog() if hasattr(service,'catalog') else TOOLS
 
@@ -27,7 +28,12 @@ def create_mcp(service):
         try:
             value=await service.call(params.name,params.arguments if params.arguments is not None else {})
             # Validate without printing validation exceptions (they can contain secrets).
-            if next(Draft202012Validator(catalog()[params.name]['outputSchema']).iter_errors(value),None):
+            schema=catalog()[params.name]['outputSchema']
+            cached=output_validators.get(params.name)
+            if cached is None or cached[0]!=schema:
+                cached=(copy.deepcopy(schema),Draft202012Validator(schema))
+                output_validators[params.name]=cached
+            if next(cached[1].iter_errors(value),None):
                 raise AgentError('INTERNAL_ERROR','工具结果未通过 schema 校验，请检查后台版本。')
         except AgentError as exc:
             value=response(error=exc)

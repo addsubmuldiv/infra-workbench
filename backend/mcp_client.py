@@ -33,6 +33,30 @@ def bounded_result(value, secret, arguments=None):
                          {'message':'Use summary or smaller pages; inspect operation IDs before retrying writes.'}),partial=True),secret)
 
 
+def native_result(value, secret):
+    """Keep artifacts lossless and navigable with native line-based read_file.
+
+    Pretty JSON handles ordinary tables. A single huge string needs escaped
+    chunks: native read_file has a character budget but no character cursor.
+    Concatenating the decoded chunks recovers the exact sanitized JSON text.
+    """
+    output=scrub(value,secret)
+    if len(output)<=16000:return output
+    try:
+        decoded=json.loads(output)
+        pretty=json.dumps(decoded,ensure_ascii=False,indent=2)
+    except ValueError:
+        decoded=None
+        pretty=output
+    if all(len(line)<=2000 for line in pretty.splitlines()):return pretty
+    return json.dumps(dict(ok=decoded.get('ok') if isinstance(decoded,dict) and type(decoded.get('ok')) is bool else None,
+        encoding='json-text-chunks',
+        instructions='Concatenate decoded chunks in order to recover the complete sanitized JSON result. Read virtual file line pages; do not repeat the original operation.',
+        characters=len(output),chunk_characters=1000,
+        chunks=[output[offset:offset+1000] for offset in range(0,len(output),1000)]),
+        ensure_ascii=False,indent=2)
+
+
 class MCPGateway:
     def __init__(self, service):
         self.service = service
@@ -71,7 +95,7 @@ def gateway_for(tools):
     return tools if isinstance(tools, MCPGateway) else MCPGateway(WorkbenchMCPService(tools))
 
 
-async def discover_tools(client, secret):
+async def discover_tools(client, secret, *, native_offload=False):
     from langchain_core.tools import StructuredTool
     specs, cursor = [], None
     from mcp import types
@@ -86,7 +110,10 @@ async def discover_tools(client, secret):
         async def call(**kwargs):
             result = await client.call_tool(name, kwargs)
             value = result.structured_content
-            return bounded_result(value if value is not None else [v.model_dump() for v in result.content], secret, kwargs)
+            value = value if value is not None else [v.model_dump() for v in result.content]
+            # Native FilesystemMiddleware stores the complete sanitized result
+            # and substitutes a preview plus a virtual read_file path.
+            return native_result(value, secret) if native_offload else bounded_result(value, secret, kwargs)
         return call
 
     # Only the MCP discovery result defines callable tool names and schemas.

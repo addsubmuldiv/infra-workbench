@@ -92,7 +92,7 @@ def test_agent_settings_are_available_without_exposing_credentials(tmp_path):
         response = client.get('/api/settings/agent')
         assert response.status_code == 200
         value = response.json()
-        assert value['protocol'] == 'auto'
+        assert value['protocol'] == 'responses'
         assert value['has_api_key'] is False
         assert 'api_key' not in value
 
@@ -124,13 +124,15 @@ def test_endpoint_changes_never_reuse_saved_key_and_model_changes_can(client):
     assert client.get('/api/settings/agent').json()['has_api_key']
 
 
-@pytest.mark.parametrize('path,want', [('/responses', '/responses'), ('/chat/completions', '/chat/completions')])
+@pytest.mark.parametrize('path,want', [('/responses', '/responses'), ('/chat/completions', '/responses')])
 def test_explicit_protocols_accept_full_endpoint_and_return_real_text(client, path, want):
     protocol = 'responses' if path == '/responses' else 'chat_completions'
+    legacy_protocol = protocol
+    protocol = 'responses'
     data = ({'status':'completed','output':[{'type':'reasoning'}, {'type':'message','content':[{'type':'output_text','text':'Hello'}]}]}
             if protocol == 'responses' else {'choices':[{'message':{'content':'Hello'}}]})
     with provider(lambda _: (200, data)) as (url, calls):
-        save(client, url+path, protocol=protocol)
+        save(client, url+path, protocol=legacy_protocol)
         result = client.post('/api/settings/agent/test', headers=HEADERS)
         assert result.status_code == 200
         assert result.json()['preview'] == 'Hello'
@@ -145,15 +147,15 @@ def test_explicit_protocols_accept_full_endpoint_and_return_real_text(client, pa
             assert body['messages'][0]['role'] == 'user'
 
 
-def test_auto_falls_back_only_for_an_unsupported_responses_route(client):
+def test_legacy_auto_never_falls_back_for_unsupported_responses_route(client):
     def reply(path):
         return ((404, {'detail':'route not found'}) if path.endswith('/responses')
                 else (200, {'choices':[{'message':{'content':'compatible'}}]}))
     with provider(reply) as (url, calls):
         save(client, url)
         result = client.post('/api/settings/agent/test', headers=HEADERS)
-        assert result.status_code == 200 and result.json()['protocol'] == 'chat_completions'
-        assert [call['path'] for call in calls] == ['/gateway/v1/responses', '/gateway/v1/chat/completions']
+        assert result.status_code == 400
+        assert [call['path'] for call in calls] == ['/gateway/v1/responses']
 
 
 @pytest.mark.parametrize('status,data', [(401, {'error':{'message':KEY}}), (429, {'error':{'message':KEY}}),
@@ -181,7 +183,7 @@ def test_models_can_use_an_unsaved_key_without_saving_or_leaking_it(client):
 
 
 def test_unauthenticated_local_service_works_and_secrets_echoed_by_proxies_are_hidden(client):
-    data = {'choices':[{'message':{'content':'reply '+KEY}}]}
+    data = {'output':[{'type':'message','content':[{'type':'output_text','text':'reply '+KEY}]}]}
     with provider(lambda _: (200, data)) as (url, calls):
         save(client, url, protocol='chat_completions')
         response = client.post('/api/settings/agent/test', headers=HEADERS)

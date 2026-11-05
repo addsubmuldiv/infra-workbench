@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import time
+from contextlib import asynccontextmanager
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
@@ -47,7 +48,12 @@ class AgentAPISettings(BaseModel):
     model_config = ConfigDict(extra='forbid')
     profile_id: str | None = Field(default=None, max_length=64)
     base_url: str = Field(default='https://api.openai.com/v1', max_length=2048)
-    protocol: Literal['auto', 'responses', 'chat_completions'] = 'auto'
+    protocol: Literal['responses'] = 'responses'
+
+    @field_validator('protocol', mode='before')
+    @classmethod
+    def migrate_protocol(cls, value):
+        return 'responses' if value in ('auto', 'chat_completions') else value
     model: str = Field(default='', max_length=200)
     timeout_seconds: int = Field(default=45, ge=5, le=120)
     api_key: SecretStr | None = Field(default=None, max_length=2048)
@@ -93,6 +99,8 @@ class AgentAPIService:
         self.config = store.load('agent_api_settings', AgentAPISettings().model_dump(exclude={'api_key', 'remember', 'profile_id'}))
         collection = store.load('agent_api_profiles', None)
         self.profiles = collection['profiles'] if collection else {'legacy': dict(name='GLM' if 'glm' in self.config.get('model','').lower() else '现有模型配置', config=dict(self.config))}
+        for profile in self.profiles.values():
+            profile['config']['protocol'] = 'responses'
         # Resume the last selected API; the default must not override it.
         self.active_id = collection['active_id'] if collection else 'legacy'
         self.default_id = collection.get('default_id', self.active_id) if collection else 'legacy'
@@ -120,8 +128,19 @@ class AgentAPIService:
         secret = self.key_for(frozen.config)
         # Freeze credentials too: editing/deleting a profile must not affect a running turn.
         frozen.credential = lambda config=None: dict(identity=credential_identity(frozen.config), api_key=secret) if secret else None
+        frozen._http_client = None
         frozen.lock = asyncio.Lock()
         return frozen
+
+    @asynccontextmanager
+    async def connection(self):
+        # A frozen provider belongs to one chat run; headers are per request.
+        async with httpx.AsyncClient(timeout=self.config['timeout_seconds'], follow_redirects=False) as client:
+            self._http_client = client
+            try:
+                yield
+            finally:
+                self._http_client = None
 
     def activate(self, id):
         if id not in self.profiles:
@@ -279,7 +298,7 @@ class AgentAPIService:
         if key:
             headers['Authorization'] = 'Bearer ' + key
         try:
-            async with asyncio.timeout(config['timeout_seconds']), httpx.AsyncClient(timeout=config['timeout_seconds'], follow_redirects=False) as client:
+            async with asyncio.timeout(config['timeout_seconds']), provider_client(config, getattr(self, '_http_client', None)) as client:
                 async with client.stream('GET' if payload is None else 'POST', config['base_url'] + path,
                                          headers=headers, json=payload) as response:
                     raw = bytearray()
@@ -326,51 +345,25 @@ class AgentAPIService:
         if not config['model']:
             raise ValueError('请先填写并保存模型名称')
         key = self.key_for(config)
-        protocols = ['responses', 'chat_completions'] if config['protocol'] == 'auto' else [config['protocol']]
-        for index, protocol in enumerate(protocols):
-            if protocol == 'responses':
-                path = '/responses'
-                payload = dict(model=config['model'], input=text, store=False, stream=False)
-            else:
-                path = '/chat/completions'
-                payload = dict(model=config['model'], messages=[dict(role='user', content=text)], stream=False)
-            if fast and urlsplit(config['base_url']).hostname == 'open.bigmodel.cn' and config['model'].startswith('glm-'):
-                if protocol == 'responses':
-                    payload['reasoning'] = dict(effort='none')
-                else:
-                    payload['thinking'] = dict(type='disabled')
-            try:
-                data = await self.request(config, key, path, payload)
-            except ProviderFailure as exc:
-                if exc.unsupported and index + 1 < len(protocols):
-                    continue
-                raise
-            if protocol == 'responses':
-                if data.get('status') not in (None, 'completed'):
-                    raise ProviderFailure('模型响应尚未完成或被中断，请检查模型服务')
-                output = data.get('output')
-                chunks = []
-                for item in output if isinstance(output, list) else []:
-                    if not isinstance(item, dict) or item.get('type') != 'message':
-                        continue
-                    content = item.get('content')
-                    for part in content if isinstance(content, list) else []:
-                        if isinstance(part, dict) and part.get('type') == 'output_text' and isinstance(part.get('text'), str):
-                            chunks.append(part['text'])
-                result = ''.join(chunks)
-            else:
-                choices = data.get('choices')
-                first = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
-                message = first.get('message')
-                result = message.get('content', '') if isinstance(message, dict) else ''
-                if isinstance(result, list):
-                    result = ''.join(part.get('text', '') for part in result if isinstance(part, dict) and part.get('type') == 'text' and isinstance(part.get('text'), str))
-            if not isinstance(result, str) or not result.strip():
-                raise ProviderFailure('接口已响应，但没有返回有效文本，请检查协议与模型是否匹配')
-            # Some proxies echo request headers; never send a configured secret back to the browser.
-            if key:
-                result = result.replace(key, '[已隐藏 API key]')
-            return dict(text=result, protocol=protocol, model=config['model'])
+        payload = dict(model=config['model'], input=text, store=False, stream=False)
+        if fast and urlsplit(config['base_url']).hostname == 'open.bigmodel.cn' and config['model'].startswith('glm-'):
+            payload['reasoning'] = dict(effort='none')
+        data = await self.request(config, key, '/responses', payload)
+        if data.get('status') not in (None, 'completed'):
+            raise ProviderFailure('模型响应尚未完成或被中断，请检查模型服务')
+        chunks = []
+        for item in data.get('output', []) if isinstance(data.get('output'), list) else []:
+            if not isinstance(item, dict) or item.get('type') != 'message':
+                continue
+            for part in item.get('content', []) if isinstance(item.get('content'), list) else []:
+                if isinstance(part, dict) and part.get('type') == 'output_text' and isinstance(part.get('text'), str):
+                    chunks.append(part['text'])
+        result = ''.join(chunks)
+        if not result.strip():
+            raise ProviderFailure('接口已响应，但没有返回有效文本，请检查 Responses 支持与模型名称')
+        if key:
+            result = result.replace(key, '[已隐藏 API key]')
+        return dict(text=result, protocol='responses', model=config['model'])
 
     async def context_capacity(self, *, refresh=False):
         from .agent_context import resolve_context
@@ -531,3 +524,12 @@ def register_agent_api_routes(app, service):
             return await service.models(body)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
+
+
+@asynccontextmanager
+async def provider_client(config, client=None):
+    if client is not None:
+        yield client
+    else:
+        async with httpx.AsyncClient(timeout=config['timeout_seconds'], follow_redirects=False) as owned:
+            yield owned

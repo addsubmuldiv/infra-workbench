@@ -57,7 +57,7 @@ GROUPS = {
         'logDownload precision-sync'),
     'assistant': group(
         'test_agent_api test_agent_profiles test_agent_context test_agent_memory test_agent_chat '
-        'test_assistant_efficiency test_chat_stream test_compaction_accounting test_deepagents '
+        'test_assistant_efficiency test_assistant_performance test_chat_stream test_compaction_accounting test_deepagents '
         'test_model_stream test_model_turn test_codex_agent test_external_agents test_user_skills '
         'test_skill_integration test_unified_mcp test_mcp_output_budget test_mcp_query_economy',
         'agentChat agentChatStreaming agentSettings assistant-chat-streaming assistant-engine-picker '

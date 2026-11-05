@@ -65,7 +65,7 @@ Start with `run_deep_agent` and `create_deep_agent` in [`agent_runtime.py`](../b
 
 1. The chat layer receives the message and prepares the current model configuration, allowed host scope, and skill snapshot.
 2. `agent_runtime.py` restores framework state and constructs the Deep Agents graph.
-3. `WorkbenchChatModel` in `agent_langchain.py` converts LangChain messages and tool schemas into the existing model API format. Modules including `agent_api.py` handle underlying configuration and transport, with protocols including Responses and Chat Completions.
+3. `WorkbenchChatModel` in `agent_langchain.py` converts LangChain messages and tool schemas into the existing model API format. Modules including `agent_api.py` handle underlying configuration and transport, using the Responses protocol.
 4. The model reads skills as needed and selects tools. Through in-process MCP SDK message streams, `mcp_client.py` performs real protocol initialization, discovery, and calls without making HTTP requests to the backend's own listening port.
 5. The shared MCP dispatcher routes requests to business services, which validate parameters, host scope, and paths before accessing SQLite or SSH.
 6. Tool records and text deltas return to the UI, and framework state is saved with the conversation. Restoration handles unfinished tool messages so interrupted operations are not automatically replayed.

@@ -209,9 +209,17 @@ class ChatTools:
                 status=h['snapshot'].get('status'),collected_at=h['snapshot'].get('collected_at')) for h in self.inventory(allowed)],args.offset,args.limit,budget=8000)
         if name=='search_fleet':
             patch=args.model_dump(include=args.model_fields_set,exclude={'refresh','unsupported','view','offset','limit'})
-            previous=state.get('search_plan',{'scope':'resources'})
-            if patch.get('scope') and patch['scope']!=previous.get('scope'):previous={}
+            # Commit inheritance before the first await: completion order must
+            # never choose the scope of a later follow-up. Filters are per scope.
+            scope=patch.get('scope') or state.get('search_plan',{}).get('scope','resources')
+            previous=state.setdefault('search_plans',{}).get(scope)
+            if previous is None:
+                legacy=state.get('search_plan',{})
+                previous=legacy if legacy.get('scope')==scope else {'scope':scope}
             plan=SearchPlan.model_validate(dict(previous,**patch))
+            committed_plan=plan.model_dump()
+            state['search_plans'][scope]=committed_plan
+            state['search_plan']=committed_plan
             if plan.unsupported:raise ValueError('该查询不在当前范围内')
             inventory=self.inventory(allowed)
             targets=[h for h in inventory if not plan.host or any(
@@ -220,8 +228,8 @@ class ChatTools:
             inventory=self.inventory(allowed)
             inventory=[dict(h,snapshot=dict(h['snapshot'],status='refresh_timeout')) if h['id'] in failed else h for h in inventory]
             rows,coverage=search_inventory(inventory,plan)
-            state['search_plan']=plan.model_dump()
-            state['last_host_ids']=list(dict.fromkeys(row['host_id'] for row in rows))
+            if state.get('search_plan') is committed_plan:
+                state['last_host_ids']=list(dict.fromkeys(row['host_id'] for row in rows))
             if args.view=='summary':
                 rows=fleet_summaries(rows)
             candidates=rows[args.offset:args.offset+args.limit]

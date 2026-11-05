@@ -97,7 +97,7 @@ def test_slots_are_accepted_by_os_credential_store(client):
 def test_snapshot_routes_http_to_original_endpoint_and_key(client):
     import asyncio
     from test_agent_api import provider
-    with provider(lambda path:(200,{'choices':[{'message':{'role':'assistant','content':'first'}}]})) as (url_a,req_a), provider(lambda path:(200,{'choices':[{'message':{'role':'assistant','content':'second'}}]})) as (url_b,req_b):
+    with provider(lambda path:(200,{'output':[{'type':'message','content':[{'type':'output_text','text':'first'}]}]})) as (url_a,req_a), provider(lambda path:(200,{'output':[{'type':'message','content':[{'type':'output_text','text':'second'}]}]})) as (url_b,req_b):
         service=client.app.state.agent_api
         save(client,url_a,protocol='chat_completions',model='model-a')
         frozen=service.snapshot()

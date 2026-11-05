@@ -195,15 +195,23 @@ class SkillService:
             result.update(package_view(payload['raw']),versions=versions)
             return result
 
-    def snapshot(self):
-        files, receipts={},[]
+    def snapshot(self, *, include_details=False):
+        files, receipts, details = {}, [], {}
         with self.lock:
-            for item in self.catalog():
-                if not item['enabled']:continue
-                detail=self.read(item['name'])
+            payloads=list(self._builtins().values())
+            for name, active, enabled in self.db.execute('SELECT name,active,enabled FROM user_skills ORDER BY name').fetchall():
+                if enabled:
+                    payload=self._version(name,active)
+                    payload['enabled']=True
+                    payloads.append(payload)
+            for payload in payloads:
+                if not payload['enabled']:continue
+                item=self._metadata(payload)
+                detail=dict(item, **package_view(payload['raw']), versions=[item])
                 files.update({f"/skills/{item['name']}/{p}":v for p,v in detail['files'].items()})
                 receipts.append({k:item[k] for k in ('name','version','source')})
-        return files,receipts
+                details[item['name']]=detail
+        return (files,receipts,details) if include_details else (files,receipts)
 
     def create_draft(self, files, skill_name=None, base_version=None):
         with self.lock:

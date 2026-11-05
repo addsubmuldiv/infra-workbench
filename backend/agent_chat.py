@@ -5,6 +5,7 @@ import json
 import re
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Literal
 from datetime import datetime,timezone,timedelta
 
@@ -20,7 +21,7 @@ async def run_deep_agent(*args,**kwargs):
 
 
 RULES='''你是 Infra Workbench 中面向用户的服务器助手，使用自然简洁的中文。
-技能目录先看名称和用途，按需 read_file 读取 SKILL.md；框架会在读取后加载相关工具参数。独立 MCP 工具也有 tool-skills 入口，不要猜参数或把所有技能正文读一遍。工具返回 RESULT_TOO_LARGE 只表示模型未收到完整结果，不表示原操作失败；按返回 ID 核对写入状态，使用摘要或更小的详情页，禁止盲目重试写入。Native skill disclosure loads tool schemas on demand; oversized receipts do not prove operation failure.
+用户明确选择技能时，先读取当前上下文 selected_skill_names 对应的 SKILL.md。技能目录先看名称和用途，按需 read_file 读取 SKILL.md；框架会在读取后加载相关工具参数。独立 MCP 工具也有 tool-skills 入口，不要猜参数或把所有技能正文读一遍。工具返回 RESULT_TOO_LARGE 只表示模型未收到完整结果，不表示原操作失败；按返回 ID 核对写入状态，使用摘要或更小的详情页，禁止盲目重试写入。Native skill disclosure loads tool schemas on demand; oversized receipts do not prove operation failure.
 概况查询优先批量工具，资源概况用 search_fleet(scope="resources",view="summary")，占卡进程用 scope="processes"；结果已经提供真实 host_id，无需先按别名枚举机器。复用本轮新鲜完整结果，仅在过期、失败、用户追问详情或执行操作前补查。拿到足够证据就回答，不为凑齐无关信息继续调用；全局占卡进程不等于全部服务，说明范围，按需补查指定机器端口。分页保持筛选条件并使用 refresh=false，检查 total/next_offset/coverage，不把截断或未知解释为空闲。General overviews: batch queries first, reuse fresh evidence, fetch details only when needed, and report coverage honestly.
 业务流程优先读取匹配的已启用 skill；以 MCP tools/list 公开的工具和参数为准。已读取业务技能并获得工具 schema 后，无需再读同一工具的说明技能。互不依赖的只读查询在同一模型轮次并行调用；同时查资源与占卡进程时，两次 search_fleet 显式设置各自 scope、view="summary"，需要新采样则两次均 refresh=true，共用进行中的采集。翻页 refresh=false。Parallel independent read-only calls in one turn; concurrent fleet refreshes share in-flight collection.
 查找某次实验、历史训练或运行目录时，先读取 find-experiments 技能，从服务器目录、配置、启动脚本和日志检索；只有用户询问当前运行状态时才优先查进程。没有当前进程不能否定历史实验存在。复用已有机器 ID 和已查路径，不重复无变化的查询。
@@ -363,9 +364,10 @@ class AgentChat:
                 await run_external_agent(chat,self.tools,allowed,instructions,lambda:self.save(chat),start_text,on_text,skills=self.skills)
             else:
                 chat['last_engine']='deepagents'
-                await run_deep_agent(chat,provider,self.tools,allowed,instructions,secret,
-                                     lambda:self.save(chat),start_text,on_text,
-                                     lambda text:visible_stream_text(text,secret,final=True), skills=self.skills)
+                async with provider.connection() if hasattr(provider,'connection') else no_connection():
+                    await run_deep_agent(chat,provider,self.tools,allowed,RULES,secret,
+                                         lambda:self.save(chat),start_text,on_text,
+                                         lambda text:visible_stream_text(text,secret,final=True), skills=self.skills, context=context)
         except asyncio.CancelledError:
             status='cancelled';note='本轮处理已取消；已完成的步骤保留在记录中；未确认的写入请先核对状态。'
         except TimeoutError:
@@ -458,3 +460,8 @@ def register_chat_routes(app,service):
 
     @app.post('/api/assistant/chats/{chat_id}/cancel')
     async def cancel(chat_id:str):return await service.cancel(chat_id)
+
+
+@asynccontextmanager
+async def no_connection():
+    yield

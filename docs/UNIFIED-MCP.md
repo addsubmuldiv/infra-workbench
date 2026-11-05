@@ -175,3 +175,15 @@ open_cluster_terminals 创建专用持久会话并返回交接入口，不等于
 所有新增工具使用共享目录和参数 schema，先验证机器范围。文件工具复用 model_paths 的真实路径保护；结果经过脱敏。分页大小和返回字节范围用于分批读取，不限制任务调用次数。目录扫描、文件哈希可能受现有 SSH 操作超时影响，超时不代表完整结果。
 
 验证入口：`.venv/Scripts/python.exe -m pytest tests/test_atomic_mcp.py tests/test_unified_mcp.py tests/test_mcp.py -q`。其中 Linux 探针集成测试在 Windows+WSL 执行真实 Python 子进程，systemd 命令使用隔离 fixture，不操作真实服务。
+
+## 内置助手交互成本整改（2026-11-05）
+
+- 内置模型统一使用 Responses，包括连接测试、摘要和流式工具调用。旧 `auto` / `chat_completions` 配置在加载及保存时规范为 `responses`，保留地址与凭据；不再探测或回退到 `/chat/completions`。
+- 每轮使用冻结的模型配置和独立 HTTP 客户端，复用这一轮的连接，结束、失败或取消时关闭；不会将另一个配置的密钥附到复用请求中。
+- 原生技能、记忆等静态系统提示先组装，动态时间/机器范围/筛选状态在模型适配层追加。动态内容仍计入实际上下文检查；缓存命中与节约量由服务商决定。
+- `search_fleet` 在首次等待采集之前更新会话筛选状态，按 scope 分别保存条件；跟进默认使用最近发起的查询 scope，采集完成顺序不再决定继承结果。显式切换 scope 可恢复该 scope 的条件，翻页仍需保持条件一致。
+- 原生运行路径不再先用 16000 字符限制把大结果替换成错误。完整脱敏结果交给 `FilesystemMiddleware`，设置 `tool_token_limit_before_evict=4000`（当前框架按 4 字符估算一个 token，因此超过约 16000 字符触发卸载）。模型得到预览及 `/large_tool_results/…` 路径，可用虚拟 `read_file` 分页查看。普通 JSON 格式化为多行；超长单字段使用带 encoding 说明的 JSON 文本块，按顺序拼接解码后的 chunks 可恢复完整脱敏 JSON，避免原生按行分页无法访问长单行尾部；文件随本会话图状态保留，不会写到服务器文件系统。业务摘要与分页仍是首选。独立 `bounded_result` 的兼容路径仍保留安全分页和明确错误。
+- 已被业务 skill 覆盖的工具不再生成重复 fallback skill；独立工具入口只负责披露 schema，不再重复长说明。技能快照一次读取当前已启用版本，不重复获取全部版本历史；当前轮冻结快照，变更下一轮生效。MCP 目录和 schema 校验器在受限运行实例内复用，实际机器范围和操作权限仍逐次校验。
+- 每个工具保存开始与完整结束记录，取消仍落盘。模型请求保留服务商实际返回的 input/output/cached/reasoning token 数（缺失保持缺失），另记逻辑请求 JSON 字节数和首次可见文本耗时；两者不是网络线速统计，也不能单独分解服务端排队/推理时间。上下文估算与服务商计费用量分开。
+
+English: Responses-only calls use a per-run frozen client, stable prompt prefixes, scope-specific follow-up filters, native full-result offloading and paged virtual reads. Native skill disclosure stays lazy. Actual provider counters are optional and distinct from local estimates. Host authorization, redaction and cancellation remain enforced.

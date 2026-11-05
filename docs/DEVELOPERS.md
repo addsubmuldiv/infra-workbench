@@ -65,7 +65,7 @@ Windows 终端路径使用 `pywinpty`；macOS 菜单栏和凭据集成使用 `ru
 
 1. 聊天层接收用户消息，准备当前模型配置、机器范围和技能快照。
 2. `agent_runtime.py` 恢复框架状态，构建 Deep Agents 图。
-3. `agent_langchain.py` 的 `WorkbenchChatModel` 将 LangChain 消息与工具 schema 转换为现有模型接口格式。底层接口配置及传输由 `agent_api.py` 等模块承担，支持的协议包括 Responses 和 Chat Completions。
+3. `agent_langchain.py` 的 `WorkbenchChatModel` 将 LangChain 消息与工具 schema 转换为现有模型接口格式。底层接口配置及传输由 `agent_api.py` 等模块承担，统一使用 Responses 协议。
 4. 模型按需读取技能，再选择工具。`mcp_client.py` 经 MCP SDK 的进程内消息流执行真实的初始化、发现和调用协议，无须向后台自己的 HTTP 端口绕行。
 5. 共享 MCP 分发器将请求交给业务服务，执行参数、机器范围和路径检查，再访问数据库或 SSH。
 6. 工具记录和文本增量回到界面，框架状态随会话保存。下一轮恢复时会处理未完成的工具消息，避免自动重放中断操作。

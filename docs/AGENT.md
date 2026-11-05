@@ -7,14 +7,14 @@
 ## 配置与测试
 
 1. 填写服务商提供的 API URL，例如 `https://api.example.com/v1`。OpenAI 官方地址为 `https://api.openai.com/v1`。
-2. 选择协议：默认「自动兼容」，先使用 Responses，路由不支持时尝试 Chat Completions；也可明确指定其中一种。
+2. 内置模型接口统一使用 Responses；旧配置的 auto / chat_completions 会迁移，接口地址和密钥保持不变。服务商或网关需要提供 Responses 端点。
 3. 填写 API key。无需认证的本地模型服务可以留空。
 4. 输入模型 ID，或点击「获取模型」读取该地址的模型列表。列表使用当前表单，获取成功不会自动保存 URL 或 key；不支持列表查询的服务可以手动输入。
 5. 点击「保存 Agent 设置」，再点击「测试连接」。测试发送一条固定的简短消息，显示实际使用的协议、模型、耗时及回复预览，可能产生少量 API 费用。
 
 支持粘贴完整的 `/responses` 或 `/chat/completions` URL，保存时移除末尾端点并保留原网关路径。例如 `https://gateway.example/custom/v1/responses` 的基础地址为 `https://gateway.example/custom/v1`。不会擅自追加 `/v1`，请保留服务商要求的路径。
 
-仅有 HTTP 200 不算测试成功，必须解析到模型返回的非空文本。认证失败、权限不足、限流、服务端错误、无文本及未完成的 Responses 响应都会明确失败，不自动切换协议重试。自动兼容仅在 Responses 返回 404、405 或 501，且不是已识别的模型不存在错误时尝试 Chat Completions；自动模式一次测试因此可能请求两个端点。
+仅有 HTTP 200 不算测试成功，必须解析到模型返回的非空文本。认证失败、权限不足、限流、服务端错误、无文本及未完成的 Responses 响应都会明确失败，不自动切换协议或请求旧端点。
 
 ## API key
 
@@ -26,7 +26,7 @@
 
 ## 兼容范围
 
-模型列表使用当前地址的 `GET /models`，与所选的 Responses/Chat Completions 协议无关。支持 OpenAI、DeepSeek、Kimi、MiniMax 和 GLM 标准接口的 `data[].id`，以及 GLM Responses 接口的 `models[].slug`；兼容网关也可返回 `models` 数组中的 `id`、`model` 或 `name`。不会用展示名称替代已提供的模型 ID，也不会擅自更换域名或发送密钥到其他地址。
+模型列表使用当前地址的 `GET /models`，与Responses 文本调用无关。支持 OpenAI、DeepSeek、Kimi、MiniMax 和 GLM 标准接口的 `data[].id`，以及 GLM Responses 接口的 `models[].slug`；兼容网关也可返回 `models` 数组中的 `id`、`model` 或 `name`。不会用展示名称替代已提供的模型 ID，也不会擅自更换域名或发送密钥到其他地址。
 
 常用基础地址（请以账号及套餐文档为准）：
 
@@ -43,7 +43,7 @@
 
 参考：[OpenAI 模型列表](https://developers.openai.com/api/reference/resources/models/methods/list)、[DeepSeek 模型列表](https://api-docs.deepseek.com/zh-cn/api/list-models/)、[MiniMax OpenAI SDK](https://platform.minimax.cn/docs/api-reference/text-openai-api)。GLM Responses 的 `models[].slug` 格式已用配置地址实测。
 
-当前支持 Bearer 认证或无认证的 OpenAI Responses 与 Chat Completions 文本接口，可用于实现相应协议的网关和本地服务。不是所有服务商的原生协议都能直接接入；Anthropic 原生 Messages、自定义认证头、Azure 查询参数等尚未实现，可以通过 OpenAI 兼容网关接入。
+当前支持 Bearer 认证或无认证的 OpenAI Responses 文本接口，可用于实现相应协议的网关和本地服务。不是所有服务商的原生协议都能直接接入；Anthropic 原生 Messages、自定义认证头、Azure 查询参数等尚未实现，可以通过 OpenAI 兼容网关接入。
 
 URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；密钥会发给填写的服务地址，使用远端服务时应采用 HTTPS。HTTPS 保持证书验证，网络请求沿用后台进程的代理环境变量。
 
@@ -61,7 +61,7 @@ URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；�
 
 打开「AI 助手 → 对话」，直接描述需要了解的机器、资源或文件。沿用设置中的模型和 API key，每轮使用发起时所选的接口配置。提示词和工具说明均为中文。原有「跨机器查找」「资源变化摘要」仍可独立使用。
 
-例如先问「找出我的 vLLM 占卡进程」，再问「检查刚才那台的监听端口」；也可以指定机器和绝对路径，读取配置文件。多个目标无法明确区分时，助手应先澄清。模型生成的文字会陆续显示，工具卡片同步更新目标机器、参数、返回内容、耗时和失败状态，展开可核对原始结果。Responses 和 Chat Completions 均支持流式工具调用，完整参数通过校验后才会执行。
+例如先问「找出我的 vLLM 占卡进程」，再问「检查刚才那台的监听端口」；也可以指定机器和绝对路径，读取配置文件。多个目标无法明确区分时，助手应先澄清。模型生成的文字会陆续显示，工具卡片同步更新目标机器、参数、返回内容、耗时和失败状态，展开可核对原始结果。Responses 支持流式工具调用，完整参数通过校验后才会执行。
 
 生成中可以点击「取消本轮」，已有文字和已完成的工具记录会保留。断线重连或刷新后会读取当前会话快照；切换会话、关闭页面仅断开显示连接，不等于取消后台任务。阅读前文时不会强制滚回最新文字，回到对话底部后继续跟随。后台会分批保存生成中的文字，不逐字写入数据库；正常完成时保存完整回复。
 
@@ -85,7 +85,7 @@ URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；�
 
 会话及工具片段保存在本机 SQLite，浏览器仅保存当前会话 ID。默认保留最近 7 天、约 30 段会话，单段对话不设固定轮数上限；Deep Agents harness 在上下文较长时自动生成摘要，后续请求使用摘要和近期消息。摘要状态随会话保存，本地可见聊天记录保留。可以新建、切换、删除对话，刷新后可恢复；后台退出后的未完成步骤标记为中断。取消本轮会停止继续调度，不撤销已完成的读取或模型费用，共享采集可能继续完成。
 
-运行限制以当前后台实现为准。工具结果过长时明确标记截断；模型应缩小范围、分页读取或下一轮继续。兼容 Responses 原生 `function_call/function_call_output` 和 Chat Completions 原生 `tool_calls`；服务商除支持文本外还需要支持函数工具调用，连接测试通过本身不能证明这一点。
+运行限制以当前后台实现为准。工具结果过长时明确标记截断；模型应缩小范围、分页读取或下一轮继续。使用 Responses 原生 `function_call/function_call_output`；服务商除支持文本外还需要支持函数工具调用，连接测试通过本身不能证明这一点。
 
 对话会把允许范围内的机器别名/ID、账号、用户问题、近期对话及实际读取的文件/SSH 结果发送到所配置模型。常见凭据字段、已配置的 API key 和私钥文本会被过滤，常见凭据路径拒绝读取，但自动过滤不能识别所有秘密；不要让模型读取含机密的业务文件。远端文件内容作为不可信数据处理，不能赋予额外执行权限。工具返回与模型结论可分开核对；自然语言结论仍可能出错。
 
@@ -109,7 +109,7 @@ URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；�
 
 变化和最小基线存入本地 SQLite，变化最多保留 7 天、10000 条，每次显示最新 100 条，超出范围明确提示。基线只记录 PID、进程名、用户名和设备状态，不保存完整启动命令或工作目录。它与通知中心独立，不额外发送桌面或邮件通知。
 
-对官方 GLM 接口，两个功能会关闭模型思考以减少延迟：Responses 使用 `reasoning.effort=none`，Chat Completions 使用 `thinking.type=disabled`。其他兼容服务不附加这些 GLM 参数。连接测试仍只检查文本通信。
+对官方 GLM 接口，两个功能会关闭模型思考以减少延迟：Responses 使用 `reasoning.effort=none`。其他兼容服务不附加这些 GLM 参数。连接测试仍只检查文本通信。
 
 ## 开发接口
 
@@ -125,7 +125,7 @@ URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；�
 
 修改和外部请求操作沿用本机页面的 `X-IWB` 与 Origin 校验，响应设置 `Cache-Control: no-store`。`backend/agent_api.py` 的文本适配器供后续内置功能复用；工具目录以实时 MCP tools/list 为准。
 
-协议参考：[OpenAI 文本生成](https://developers.openai.com/api/docs/guides/text)、[Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)。
+协议参考：[OpenAI Responses](https://developers.openai.com/api/reference/resources/responses/methods/create)。
 
 统一 MCP 架构、能力目录和验证见 [UNIFIED-MCP.md](UNIFIED-MCP.md)。取消不会撤销已完成的写入，结果未知时先查询状态，避免重复预约。
 

@@ -86,9 +86,7 @@ def test_fragmented_utf8_and_split_key_never_leak_to_callback(client):
                    dict(type='response.function_call_arguments.delta', output_index=0, item_id='fc', delta='{"host_'),
                    dict(type='response.function_call_arguments.delta', output_index=0, item_id='fc', delta='id":"a"}'),
                    dict(type='response.completed', response=dict(status='completed'))]),
-    ('chat_completions', [dict(choices=[dict(index=0, delta=dict(tool_calls=[dict(index=0, id='call', type='function', function=dict(name='inspect', arguments='{"host_'))]))]),
-                          dict(choices=[dict(index=0, delta=dict(tool_calls=[dict(index=0, function=dict(arguments='id":"a"}'))]))]),
-                          dict(choices=[dict(index=0, delta={}, finish_reason='tool_calls')])]),
+
 ])
 def test_tool_arguments_are_assembled_before_return(client, protocol, chunks):
     with stream_provider([event(x) for x in chunks]) as (url, _):
@@ -131,33 +129,22 @@ def test_cancellation_interrupts_waiting_provider(client):
         asyncio.run(run())
 
 
-def test_stream_auto_fallback_only_for_unsupported_http_route(client):
+def test_stream_legacy_auto_never_falls_back(client):
     def reply(path):
         if path.endswith('/responses'): return 404, dict(error=dict(code='unsupported'))
         return 200, dict(choices=[dict(message=dict(content='fallback'), finish_reason='stop')])
     with provider(reply) as (url, requests):
         save(client, url)
         seen = []
-        assert asyncio.run(turn(client, seen.append))['protocol'] == 'chat_completions'
-        assert seen == ['fallback']
-        assert len(requests) == 2
+        with pytest.raises(ProviderFailure): asyncio.run(turn(client, seen.append))
+        assert seen == []
+        assert len(requests) == 1
 
 
-@pytest.mark.parametrize('chunks,success', [
-    ([dict(choices=[dict(index=0, delta=dict(content='第一'))]),
-      dict(choices=[dict(index=0, delta=dict(content='部分'), finish_reason='stop')])], True),
-    ([dict(choices=[dict(index=0, delta=dict(content='partial'))])], False),
-    ([dict(choices=[dict(index=0, delta=dict(content='partial'), finish_reason='length')])], False),
-])
-def test_chat_text_requires_successful_finish(client, chunks, success):
-    with stream_provider([event(x) for x in chunks]) as (url, _):
-        save(client, url, protocol='chat_completions')
-        seen = []
-        if success:
-            assert asyncio.run(turn(client, seen.append))['message']['content'] == '第一部分'
-            assert seen == ['第一', '第一部分']
-        else:
-            with pytest.raises(ProviderFailure): asyncio.run(turn(client, seen.append))
+def test_chat_stream_is_not_accepted_as_responses(client):
+    with stream_provider([event(dict(choices=[dict(delta=dict(content='partial'),finish_reason='stop')]))]) as (url, _):
+        save(client,url,protocol='chat_completions')
+        with pytest.raises(ProviderFailure): asyncio.run(turn(client,lambda _:None))
 
 
 def test_oversized_stream_is_rejected(client):

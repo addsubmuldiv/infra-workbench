@@ -24,14 +24,15 @@ def test_responses_tool_calls_are_replayed_with_matching_outputs(client):
             dict(type='function_call_output',call_id='call-123',output='{"ok":true}')]
 
 
-def test_chat_completions_uses_system_and_tool_roles(client):
-    data={'choices':[{'message':{'role':'assistant','content':None,'tool_calls':[{'id':'call-chat','type':'function','function':{'name':'inspect','arguments':'{}'}}]}}]}
+def test_legacy_chat_configuration_uses_responses(client):
+    data={'output':[{'type':'function_call','call_id':'call-chat','name':'inspect','arguments':'{}'}]}
     with provider(lambda _: (200,data)) as (url,calls):
         save(client,url,protocol='chat_completions')
         result=asyncio.run(client.app.state.agent_api.turn('规则',[dict(role='user',content='检查')],[dict(name='inspect',description='检查',parameters={'type':'object','properties':{}})]))
         assert result['message']['tool_calls'][0]['id']=='call-chat'
-        assert calls[0]['body']['messages'][0]==dict(role='system',content='规则')
-        assert calls[0]['body']['tools'][0]['function']['name']=='inspect'
+        assert calls[0]['path'].endswith('/responses')
+        assert calls[0]['body']['instructions']=='规则'
+        assert calls[0]['body']['tools'][0]['name']=='inspect'
 
 
 def test_deepseek_responses_preserves_reasoning_for_tool_followup(client, monkeypatch):

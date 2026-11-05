@@ -47,7 +47,7 @@ export function createDemoRuntime(){
   if(path==='/state'&&method==='GET'){update();return json({hosts,rules,reservations,events,server_time:now(),refresh_interval_seconds:interval,reservation_modes:['fixed','count']})}
   if(path==='/settings/refresh'&&method==='PUT'){interval=Number(body.interval_seconds)||15;return json({interval_seconds:interval})}
   if(path==='/settings/mail'&&method==='GET')return json({enabled:false,host:'',port:465,security:'ssl',username:'',sender:'',recipients:[],can_remember:false,has_password:false,password_saved:false,credential_error:'',last_test:null,last_delivery:null,reservation_available:false});
-  if(path==='/settings/agent'&&method==='GET')return json({active_id:'demo',default_id:'demo',profiles:[{id:'demo',name:'Demo (preset)',model:'Demo'}],base_url:'',protocol:'auto',model:'Demo',timeout_seconds:45,can_remember:false,has_api_key:false,api_key_saved:false,credential_error:'',last_test:null});
+  if(path==='/settings/agent'&&method==='GET')return json({active_id:'demo',default_id:'demo',profiles:[{id:'demo',name:'Demo (preset)',model:'Demo'}],base_url:'',protocol:'responses',model:'Demo',timeout_seconds:45,can_remember:false,has_api_key:false,api_key_saved:false,credential_error:'',last_test:null});
   if(path==='/settings/launch'&&method==='GET')return json({mode:'browser',desktop_available:false,show_floating:false,floating_available:false});
   if(path==='/mcp-info'&&method==='GET')return json({path:'/mcp',transport:'disabled in demo',tools:[]});
   if(path==='/skills'&&method==='GET'||path==='/skills/drafts'&&method==='GET')return json({items:[]});

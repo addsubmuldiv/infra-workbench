@@ -6,7 +6,7 @@ import re
 
 import httpx
 
-from .agent_api import ProviderFailure
+from .agent_api import ProviderFailure, provider_client
 
 
 class TextSink:
@@ -70,35 +70,17 @@ class ResponseStream:
                 if not isinstance(output, list):
                     output = [item for _, item in sorted(self.items.items()) if item.get('type') == 'function_call']
                     output += [dict(type='message', content=[dict(type='output_text', text=''.join(value for _, value in sorted(self.parts.items())))])]
-                self.result = dict(status='completed', output=output)
+                self.result = dict(status='completed', output=output, usage=response.get('usage'))
             self.content = ''.join(value for _, value in sorted(self.parts.items()))
-        else:
-            for choice in event.get('choices', []):
-                if choice.get('index', 0) != 0:
-                    continue
-                delta = choice.get('delta') or {}
-                if isinstance(delta.get('content'), str):
-                    self.content += delta['content']
-                for call in delta.get('tool_calls') or []:
-                    index = call['index']
-                    target = self.calls.setdefault(index, dict(id='', type='function', function=dict(name='', arguments='')))
-                    target['id'] += call.get('id') or ''
-                    for field in ('name', 'arguments'):
-                        target['function'][field] += (call.get('function') or {}).get(field) or ''
-                finish = choice.get('finish_reason')
-                if finish:
-                    if finish not in ('stop', 'tool_calls', 'function_call'):
-                        raise ProviderFailure('模型响应被中断或未完成，本轮未能完成')
-                    self.result = dict(choices=[dict(message=dict(content=self.content, tool_calls=[value for _, value in sorted(self.calls.items())]))])
         self.sink.emit(self.content)
 
 
-async def request_stream(config, key, path, payload, protocol, sink):
+async def request_stream(config, key, path, payload, protocol, sink, *, client=None):
     headers = {'Accept': 'text/event-stream'}
     if key:
         headers['Authorization'] = 'Bearer ' + key
     try:
-        async with asyncio.timeout(config['timeout_seconds']), httpx.AsyncClient(timeout=config['timeout_seconds'], follow_redirects=False) as client:
+        async with asyncio.timeout(config['timeout_seconds']), provider_client(config, client) as client:
             async with client.stream('POST', config['base_url'] + path, headers=headers, json=payload) as response:
                 raw = bytearray()
                 is_sse = response.is_success and 'text/event-stream' in response.headers.get('content-type', '').lower()
@@ -152,10 +134,6 @@ async def request_stream(config, key, path, payload, protocol, sink):
                     raise ProviderFailure('接口没有返回有效模型响应')
                 if protocol == 'responses' and data.get('status') not in (None, 'completed'):
                     raise ProviderFailure('模型响应被中断或未完成，本轮未能完成')
-                if protocol != 'responses':
-                    for choice in data.get('choices', []):
-                        if choice.get('finish_reason') not in (None, 'stop', 'tool_calls', 'function_call'):
-                            raise ProviderFailure('模型响应被中断或未完成，本轮未能完成')
                 return data
     except (httpx.TimeoutException, TimeoutError):
         raise ProviderFailure('请求超时，请检查网络或增加请求超时时间') from None

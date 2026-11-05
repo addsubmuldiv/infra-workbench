@@ -77,11 +77,8 @@ export function AgentSettingsPage(){
         <div className="agent-form-heading"><Plug size={18}/><div><h3>{ui("连接设置")}</h3><p>{ui("支持 OpenAI 官方接口、兼容网关和本地模型服务。")}</p></div></div>
         <fieldset className="agent-fields" disabled={!!pending||!saved}>
           <label className="form-label">{ui("接口 URL")}<input aria-label={ui("Agent 接口 URL")} type="url" required maxLength={2048} spellCheck={false} autoComplete="off" value={form.base_url} placeholder="https://api.example.com/v1" onChange={event=>change('base_url',event.target.value)}/></label>
-          <p className="settings-help">{ui("填写服务商提供的 API 地址，通常以 /v1 结尾；也支持粘贴完整的 /responses 或 /chat/completions 地址。")}</p>
-          <label className="form-label">{ui("接口协议")}<select aria-label={ui("Agent 接口协议")} value={form.protocol} onChange={event=>change('protocol',event.target.value as AgentConfig['protocol'])}>
-            <option value="auto">{ui("自动兼容（优先 Responses）")}</option><option value="responses">OpenAI Responses</option><option value="chat_completions">OpenAI Chat Completions</option>
-          </select></label>
-          <p className="settings-help">{ui("自动模式先尝试 Responses；接口明确不支持时再尝试 Chat Completions。服务商指定协议时，也可以手动选择。")}</p>
+          <p className="settings-help">{ui("填写支持 Responses 的 API 地址，通常以 /v1 结尾；也支持粘贴完整的 /responses 地址。")}</p>
+          <label className="form-label">{ui("接口协议")}<input aria-label={ui("Agent 接口协议")} value="OpenAI Responses" readOnly/></label>
           <label className="form-label">API key<input aria-label="Agent API key" type="password" autoComplete="new-password" maxLength={2048} value={key} placeholder={saved?.has_api_key?ui("已配置，留空保留原 key"):ui("填写 API key；无认证的本地服务可留空")} onChange={event=>{setKey(event.target.value);setResult(null);setMessage('');setError('');setModels([])}}/></label>
           <label className="settings-remember"><input type="checkbox" disabled={!saved?.can_remember} checked={remember&&!!saved?.can_remember} onChange={event=>{setRemember(event.target.checked);setResult(null)}}/>{ui("记住 API key，保存到系统安全存储")}</label>
           <p className="settings-help">{saved?.can_remember?ui("取消勾选后，key 仅在本次后台运行期间有效。"):ui("当前环境仅支持在本次后台运行期间保留 key。")}{ui("更换接口地址时需要重新填写 key。")}</p>

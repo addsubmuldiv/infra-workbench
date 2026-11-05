@@ -66,12 +66,14 @@ class WorkbenchChatModel(BaseChatModel):
     _sanitize: Any = PrivateAttr(default=None)
     _on_context: Any = PrivateAttr(default=None)
     _on_timing: Any = PrivateAttr(default=None)
+    _turn_context: Any = PrivateAttr(default=None)
 
-    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None, context_window=ASSISTANT_CONTEXT_FALLBACK_TOKENS, on_context=None, on_timing=None):
+    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None, context_window=ASSISTANT_CONTEXT_FALLBACK_TOKENS, on_context=None, on_timing=None, turn_context=None):
         super().__init__(profile={'max_input_tokens': context_window})
         self._provider = provider
         self._on_context = on_context
         self._on_timing = on_timing
+        self._turn_context = turn_context
         self._on_start, self._on_text = on_start, on_text
         if sanitize is not None:
             self._sanitize = sanitize
@@ -105,6 +107,10 @@ class WorkbenchChatModel(BaseChatModel):
         display = self._tools is not None
         if display and self._on_start:
             self._on_start()
+        if self._turn_context is not None:
+            # Native skill/memory prompts have now been assembled. Keep the
+            # stable prefix intact and count this trusted context as real input.
+            messages=[*messages,SystemMessage(content='Current authorized turn context:\n'+json.dumps(self._turn_context,ensure_ascii=False))]
         actual_tokens=count_tokens_approximately(messages,tools=self._tools or [])
         if display and self._on_context:
             self._on_context(actual_tokens, 'request')
@@ -117,6 +123,7 @@ class WorkbenchChatModel(BaseChatModel):
         options = {}
         if display and self._on_text and getattr(self._provider, 'supports_streaming', False):
             options['on_text'] = self._on_text
+        response = {}
         started, clock, status = time.time(), time.monotonic(), 'failed'
         try:
             response = await self._provider.turn(instructions, wire_messages(messages), self._tools or [], **options)
@@ -124,7 +131,9 @@ class WorkbenchChatModel(BaseChatModel):
         finally:
             if self._on_timing:
                 self._on_timing(dict(started=started, finished=time.time(),
-                                     elapsed_ms=round((time.monotonic()-clock)*1000), status=status))
+                                     elapsed_ms=round((time.monotonic()-clock)*1000), status=status,
+                                     **({'usage':response['usage']} if response.get('usage') else {}),
+                                     **response.get('metrics',{})))
         raw = response['message']
         calls, invalid = [], []
         for call in raw.get('tool_calls', []):
@@ -144,7 +153,14 @@ class WorkbenchChatModel(BaseChatModel):
         content = self._sanitize(raw.get('content', '')) if self._sanitize else raw.get('content', '')
         if display and self._on_text:
             self._on_text(content, final=True)
-        reply = AIMessage(content=content, tool_calls=calls, additional_kwargs=(
+        usage=response.get('usage') or {}
+        usage_metadata=None
+        if all(type(usage.get(k)) is int for k in ('input_tokens','output_tokens')):
+            usage_metadata=dict(input_tokens=usage['input_tokens'],output_tokens=usage['output_tokens'],
+                                total_tokens=usage.get('total_tokens',usage['input_tokens']+usage['output_tokens']))
+            if 'cached_tokens' in usage:usage_metadata['input_token_details']={'cache_read':usage['cached_tokens']}
+            if 'reasoning_tokens' in usage:usage_metadata['output_token_details']={'reasoning':usage['reasoning_tokens']}
+        reply = AIMessage(content=content, tool_calls=calls, usage_metadata=usage_metadata, additional_kwargs=(
             {'reasoning_content':self._clean_arguments(raw['reasoning_content'])} if raw.get('reasoning_content') else {}))
         if display and self._on_context:
             self._on_context(count_tokens_approximately([*messages, reply], tools=self._tools), 'response')
