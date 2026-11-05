@@ -38,6 +38,11 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'start.ps1') -Destination $fixture
     $runLauncher = 'install.cmd'
     Copy-Item -LiteralPath (Join-Path $root 'install.cmd') -Destination $fixture
+    # Installer tests must not compile an EXE or write a real desktop shortcut.
+    Set-Content -LiteralPath (Join-Path $fixture 'scripts\build-launcher.ps1') -Encoding ASCII -Value @'
+param([switch]$DesktopShortcut)
+Add-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'commands.log') -Value 'launcher-build'
+'@
     $fakeBackground = @'
 param([switch]$NoBrowser)
 Add-Content -LiteralPath (Join-Path $PSScriptRoot 'commands.log') -Value 'tray-launch'
@@ -164,21 +169,39 @@ function Test-PortAvailable { return $false }
     try { Invoke-Checked $shell @('-NoProfile', '-Command', 'exit 7') } catch { $caught = $_.Exception.Message.Contains('exit 7') }
     Assert-True $caught 'Native failure exit code was not propagated.'
     Pass 'native nonzero exit codes are surfaced'
-    Assert-True ([bool](Find-Python)) 'Python 3.11+ discovery failed on this test machine.'
+    $releasePython = Find-Python
+    Assert-True ([bool]$releasePython) 'Python 3.11+ discovery failed on this test machine.'
     Pass 'real Python discovery works'
 
     # Build an actual Git archive in the fixture, without touching the user's repo.
+    # Replace the synthetic installer Python with a real, pip-free environment.
+    Remove-Item -LiteralPath (Join-Path $fixture '.venv\Scripts\python.exe')
+    Invoke-Checked $releasePython @('-m', 'venv', '--without-pip', (Join-Path $fixture '.venv'))
     Copy-Item -LiteralPath (Join-Path $root 'scripts\release-windows.ps1') -Destination (Join-Path $fixture 'scripts')
     New-Item -ItemType Directory -Path (Join-Path $fixture 'docs') -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $fixture 'install.cmd') -Value '@echo test'
     foreach ($folder in @('backend','backend\assets')) { New-Item -ItemType Directory -Path (Join-Path $fixture $folder) -Force | Out-Null }
     foreach ($file in @('scripts\WorkbenchLauncher.cs','scripts\build-launcher.ps1','backend\launcher.py','backend\assets\workbench.ico')) { Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $fixture $file) }
+    # Source archives now validate generated policy and byte-bound frontend assets.
+    # Supply their real helpers and generated inputs rather than bypassing checks.
+    foreach ($folder in @('desktop', 'config', 'frontend\src')) { New-Item -ItemType Directory -Path (Join-Path $fixture $folder) -Force | Out-Null }
+    foreach ($file in @('scripts\source_archive.py', 'desktop\frontend_inventory.py', 'config\internal-defaults.jsonc', 'frontend\src\internalDefaults.ts', 'scripts\generate-internal-defaults.mjs', 'scripts\internal-defaults-schema.mjs')) {
+        Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $fixture $file)
+    }
+    Copy-Item -Path (Join-Path $root 'backend\*.py') -Destination (Join-Path $fixture 'backend')
+    Set-Content -LiteralPath (Join-Path $fixture 'frontend\package.json') -Encoding ASCII -Value '{"version":"0.0.0-fixture"}'
+    $index = Join-Path $fixture 'frontend\dist\index.html'
+    $policy = [IO.File]::ReadAllText((Join-Path $fixture 'frontend\src\internalDefaults.ts')).Replace("`r`n", "`n")
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $policyHash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($policy))).Replace('-', '').ToLowerInvariant() } finally { $sha.Dispose() }
+    $inventory = @{version=2; appVersion='0.0.0-fixture'; internalPolicySha256=$policyHash; files=@{'index.html'=@{size=(Get-Item -LiteralPath $index).Length; sha256=(Get-FileHash -LiteralPath $index -Algorithm SHA256).Hash.ToLowerInvariant()}}}
+    Set-Content -LiteralPath (Join-Path $fixture 'frontend\dist\.iwb-build.json') -Encoding ASCII -Value ($inventory | ConvertTo-Json -Depth 5)
     Set-Content -LiteralPath (Join-Path $fixture 'README.md') -Value '# Fixture'
     Set-Content -LiteralPath (Join-Path $fixture 'docs\WINDOWS.md') -Value '# Fixture setup'
     New-Item -ItemType Directory -Path (Join-Path $fixture 'data') -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $fixture 'data\private-test.txt') -Value 'synthetic-private-data'
     Invoke-Checked git.exe @('-C', $fixture, 'init', '-b', 'main', '--quiet')
-    Invoke-Checked git.exe @('-C', $fixture, 'add', '--', 'install.cmd', 'install.ps1', 'start.ps1', 'background.ps1', 'backend', 'scripts', 'frontend/dist/index.html', 'README.md', 'docs')
+    Invoke-Checked git.exe @('-C', $fixture, 'add', '--', 'install.cmd', 'install.ps1', 'start.ps1', 'background.ps1', 'backend', 'scripts', 'desktop', 'config', 'frontend', 'README.md', 'docs')
     Invoke-Checked git.exe @('-C', $fixture, '-c', 'user.name=Installer Test', '-c', 'user.email=installer-test@example.invalid', 'commit', '--quiet', '-m', 'Test fixture')
     Run-Fixture -Script 'scripts/release-windows.ps1' -Arguments @()
     Assert-True ($runExit -eq 0) ('Release generation failed: ' + $runOutput)

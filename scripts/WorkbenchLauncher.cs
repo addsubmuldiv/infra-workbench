@@ -29,7 +29,7 @@ internal static class WorkbenchLauncher {
             if (!Installed(root)) {
                 var install = new ProcessStartInfo {
                     FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe"),
-                    Arguments = "-NoProfile -ExecutionPolicy Bypass -File " + Quote(Path.Combine(root,"install.ps1")) + " -NoLaunch -InstallPython",
+                    Arguments = "-NoProfile -ExecutionPolicy Bypass -File " + Quote(Path.Combine(root,"install.ps1")) + " -NoLaunch -InstallPython -SkipLauncherBuild",
                     WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = false, WindowStyle = ProcessWindowStyle.Normal
                 };
                 using (var process = Process.Start(install)) {

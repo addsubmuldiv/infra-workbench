@@ -5,7 +5,9 @@ param(
     [switch]$RebuildFrontend,
     [switch]$Repair,
     [switch]$NoBrowser,
-    [switch]$Console
+    [switch]$Console,
+    # Used by the running GUI launcher: Windows locks its executable until exit.
+    [switch]$SkipLauncherBuild
 )
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
@@ -57,8 +59,10 @@ try {
         } finally { Pop-Location }
     }
     if (-not (Test-Path -LiteralPath 'frontend\dist\index.html')) { throw 'Frontend build is missing. Run install.cmd -RebuildFrontend with Node.js installed.' }
-    Write-Host 'Creating the application launcher and desktop shortcut...'
-    & (Join-Path $PSScriptRoot 'scripts\build-launcher.ps1') -DesktopShortcut
+    if (-not $SkipLauncherBuild) {
+        Write-Host 'Creating the application launcher and desktop shortcut...'
+        & (Join-Path $PSScriptRoot 'scripts\build-launcher.ps1') -DesktopShortcut
+    }
     Write-Host 'Installation complete. Next time, double-click Infra Workbench on your desktop.' -ForegroundColor Green
     Write-Host 'MCP endpoint (after service startup): http://127.0.0.1:8765/mcp'
     if (-not $NoLaunch) {

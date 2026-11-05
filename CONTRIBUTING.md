@@ -29,6 +29,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-backgroun
 
 部署脚本测试使用临时目录和模拟命令，覆盖安装重试、成功标记、重复安装、依赖变化和退出码；不修改真实主机、不启动正式服务、不安装系统 Python。
 
+部署测试中的源码打包检查会另外创建不含 pip 的临时 Python 环境，并运行真实的启动器编译、内部参数校验和前端资源清单校验，需要本机具备 Python、Node.js 和 Windows .NET Framework 编译器。它不创建真实桌面快捷方式，也不写入正在使用的数据目录。
+
+默认后端测试不打开原生托盘或浮窗。浮窗菜单实测需显式设置 `IWB_TEST_FLOATING_UI=1`，再运行 `python -m pytest tests/test_floating_context_menu.py -q`；它会打开测试窗口，适合在允许操作桌面的独立验证环境中执行。该测试在子进程中创建和清理 Tk 对象，结束前等待采集线程并在创建线程上回收对象，避免其他测试线程触发 Tcl 崩溃。默认测试仍会运行不创建窗口的 Tcl 生命周期回归用例。
+
 ## 代码结构
 
 | 位置 | 职责 |
