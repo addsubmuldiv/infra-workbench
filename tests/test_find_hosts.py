@@ -106,3 +106,24 @@ def test_external_http_mcp_supports_identity_lookup(tmp_path):
                 assert [h['host_id'] for h in result.structured_content['data']['items']] == ['fixtureid']
                 Draft202012Validator(TOOLS['find_hosts']['outputSchema']).validate(result.structured_content)
     asyncio.run(run())
+
+
+def test_hardware_lookup_resolves_only_possible_hosts_including_unknown(tmp_path):
+    async def run():
+        app=fixture_app(tmp_path);service=app.state.agent_service
+        service.hosts.append(dict(id='c',target='unknown',manual=False))
+        service.snapshots['a']=inventory()[0]['snapshot']
+        service.snapshots['b']=dict(status='online',devices=[dict(id='0',kind='GPU',name='OtherGPU')])
+        seen=[]
+        async def effective(host):
+            seen.append(host['id'])
+            if host['id']=='c':raise ValueError('unknown address')
+            return dict(hostname='10.0.0.177')
+        service.ssh.effective=effective
+        result=await service.call('find_hosts',dict(model='950DT',ip='177'))
+        assert seen==['a','c']
+        assert [h['host_id'] for h in result['data']['items']]==['a']
+        assert [h['host_id'] for h in result['data']['uncertain']]==['c']
+        assert result['partial']
+        app.state.agent_chat.store.db.close()
+    asyncio.run(run())

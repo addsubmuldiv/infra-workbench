@@ -55,3 +55,19 @@ English: Independent read-only calls use the native parallel tool node; concurre
 
 合并同期 main 查询优化后再次重启，并在另一个新标签页和空白对话复测：44.133 秒，仍为 3 次模型调用、4 次工具调用，0 次分页、压缩和重复调用。前两次模型请求各约 8.4 秒，上次约 4.1 和 5.7 秒；两次最终验证耗时为 36.5–44.1 秒，不能把单次较快结果当作固定延迟保证。
 2026-11-05: 内置模型传输已统一为 Responses；大工具结果使用原生 FilesystemMiddleware 完整卸载和虚拟分页读取。原生 memory、skills 和 summarization 保持启用，未另建一套上下文压缩框架。详见 [统一 MCP 文档](UNIFIED-MCP.md#内置助手交互成本整改2026-11-05)。
+
+## 常用技能的调用开销
+
+`read-server-files`、`inspect-training-logs`、`compare-training-runs`、`find-experiments` 和 `manage-reservations` 使用原生 `metadata.include_tools` 显式声明工具。声明存在时以声明为准，兼容未声明技能的旧推导方式；正文中“不要调用某工具”不会越过声明自动披露该工具。未被已启用业务技能覆盖的 MCP 工具仍生成独立发现入口。
+
+文件已知路径直接读取；近期日志使用尾部窗口，文件内容检索使用限定范围的搜索；两份日志同轮并行读取并复用返回快照。实验检索先搜索命中再取证据，不逐一打开所有候选文件。预约查询显式使用 reservations 分区，完整成功写入回执可直接报告；不明结果仍须核对状态后再决定是否重试。
+
+`find_hosts` 先应用不依赖地址的硬件和名称条件，仅为仍可能匹配的机器解析 SSH 地址；保留硬件或地址未知的候选。没有新增地址缓存，不改变 SSH 连接目标，也不使用旧资源采样证明当前空闲。
+
+Responses 函数工具默认显式设置 `strict=false`，保留原 MCP schema 的可选字段和默认值；调用方明确提供的 strict 值仍保留。省略 strict 时，API 会尝试严格 schema 规范化，可能让本来可省略的筛选字段需要填写。服务端 schema 校验、机器范围和取消行为不变。依据：[OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)。
+
+2026-11-05 在 Codex 内置浏览器的新标签页和空白对话中，用真实配置的模型及隔离合成机器/文件验证，无真实 SSH 连接或真实预约。读配置案例暴露了无关筛选字段和重复定位：修复前 42.922 秒、9 次模型调用、10 次工具调用；显式保留可选字段后同句为 16.971 秒、4 次工具调用。近期日志案例为 14.746 秒、4 次工具调用，直接 tail_server_file，未逐页翻日志或扩大为进程巡检。耗时包含模型接口波动，合成 I/O 不代表实际远端耗时；不能据此宣称所有技能都按同一比例提速。
+
+English: Explicit native tool declarations take precedence over text mentions. Known file paths skip discovery; recent logs use tail reads; independent log snapshots are read in parallel. Reservation sections are explicit and ambiguous writes still require reconciliation. Hardware prefiltering retains uncertain host candidates. Responses tools preserve optional fields without implicit strict normalization, while shared server validation remains in force. The browser measurements use a real model with isolated synthetic I/O, not real-server latency benchmarks.
+
+合并同期助手原生 MCP/Responses 更新后的双日志案例为 18.626 秒、6 次工具调用；两次 read_training_log 在同一模型轮次并行执行，随后一次 compare_training_logs 返回 100 个共同 step 的全量统计，未读取逐步曲线。预约/监控和实验检索本轮只做说明与相关契约验证，未逐项做真实模型测速，也未写入真实预约、通知或远端文件。本轮仅执行相关测试：模型请求/流式、主机定位、技能集成，以及四项披露/范围/分区回归，共 40 项通过，未运行全量。

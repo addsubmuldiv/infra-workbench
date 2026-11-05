@@ -89,3 +89,25 @@ def test_chat_selection_lists_have_no_count_ceiling():
     assert len(request.selected_skill_names) == 40
     for field in ('selected_host_ids', 'selected_skill_names', 'terminal_attachments'):
         assert 'maxItems' not in ChatMessageRequest.model_json_schema()['properties'][field]
+
+
+def test_responses_preserves_optional_tool_fields_without_strict_normalization():
+    from types import SimpleNamespace
+    from backend.agent_model_turn import model_turn
+    async def run():
+        for explicit in (None,True):
+            captured=[]
+            async def request(config,key,path,payload):
+                captured.append(payload)
+                return dict(status='completed',output=[dict(type='function_call',call_id='lookup',name='find_hosts',arguments='{"name":"node-a"}')])
+            service=SimpleNamespace(config=dict(base_url='https://api.openai.com/v1',model='test-model',protocol='responses'),key_for=lambda config:'synthetic-key',request=request)
+            schema=dict(type='object',properties=dict(name=dict(type='string'),card_count=dict(type='integer',minimum=1)),required=['name'])
+            tool=dict(name='find_hosts',description='Find by supplied conditions only',parameters=schema)
+            if explicit is not None:tool['strict']=explicit
+            result=await model_turn(service,'rules',[dict(role='user',content='node-a')],[tool])
+            sent=captured[0]['tools'][0]
+            assert sent['strict'] is (False if explicit is None else explicit)
+            assert sent['parameters']==schema and sent['parameters']['required']==['name']
+            assert result['message']['tool_calls'][0]['function']['arguments']=='{"name":"node-a"}'
+            assert ('strict' in tool)==(explicit is not None)
+    asyncio.run(run())

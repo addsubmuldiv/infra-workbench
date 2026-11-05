@@ -36,7 +36,9 @@ async def model_turn(service,instructions,messages,tools,*,on_text=None):
     sink=TextSink(emit,key) if on_text is not None else None
     protocol='responses'
     payload=dict(model=config['model'],instructions=instructions,input=response_input(messages,reasoning=deepseek),store=False,stream=False)
-    if tools:payload.update(tools=[dict(type='function',**tool) for tool in tools],tool_choice='auto')
+    # Preserve optional MCP fields instead of Responses strict normalization.
+    # The shared MCP server still validates arguments and host scope.
+    if tools:payload.update(tools=[dict(tool,type='function',strict=tool.get('strict',False)) for tool in tools],tool_choice='auto')
     if deepseek:payload.update(reasoning=dict(effort='high'))
     if urlsplit(config['base_url']).hostname=='open.bigmodel.cn' and config['model'].startswith('glm-'):
         payload.update(reasoning=dict(effort='none'))

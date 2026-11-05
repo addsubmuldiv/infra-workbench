@@ -80,8 +80,12 @@ def skill_tool_files(files, tools):
         if len(parts)!=3:continue
         meta=yaml.safe_load(parts[1]) or {}
         metadata=dict(meta.get('metadata') or {})
-        mentioned={name for name in names if re.search(r'(?<![\w])'+re.escape(name)+r'(?![\w])',text)}
-        mentioned.update(set(str(metadata.get('include_tools','')).split()) & names)
+        if 'include_tools' in metadata:
+            # Native declarations are authoritative, including an empty list.
+            # A prohibition mentioning a tool must not disclose its schema.
+            mentioned=set(str(metadata['include_tools']).split()) & names
+        else:
+            mentioned={name for name in names if re.search(r'(?<![\w])'+re.escape(name)+r'(?![\w])',text)}
         covered.update(mentioned)
         metadata['include_tools']=' '.join(sorted(mentioned));meta['metadata']=metadata
         files[path]=create_file_data('---\n'+yaml.safe_dump(meta,allow_unicode=True,sort_keys=False)+'---\n'+parts[2].lstrip())

@@ -39,6 +39,11 @@ class AgentService:
         options=validate_call(name,arguments)
         if name=='find_hosts':
             inventory=[h for h in self.inventory() if matches_name(h,options.get('name'))]
+            # Hardware/name filters need no address resolution. Keep all
+            # uncertain candidates, then resolve only hosts still possible.
+            preliminary=query_hosts(inventory,name,{k:v for k,v in options.items() if k!='ip'},time.time())['data']
+            possible={h['host_id'] for h in preliminary['items']+preliminary['uncertain']}
+            inventory=[h for h in inventory if h['id'] in possible]
             semaphore=asyncio.Semaphore(8)
             async def address(host):
                 async with semaphore:

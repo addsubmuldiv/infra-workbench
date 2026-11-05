@@ -106,3 +106,72 @@ def test_real_graph_can_create_validate_install_then_use_next_turn(tmp_path):
         assert probes.calls==[]
         chat.store.db.close()
     asyncio.run(run())
+
+
+def test_explicit_native_tool_metadata_overrides_mentions_and_keeps_fallback():
+    from backend.agent_runtime import skill_tool_files
+    from deepagents.backends.utils import create_file_data,file_data_to_string
+    from langchain_core.tools import StructuredTool
+    import yaml
+    tools=[StructuredTool.from_function(lambda: 'ok',name=n,description=n) for n in ['read_config','write_config']]
+    files={'/skills/read/SKILL.md':create_file_data('---\nname: read\ndescription: Read config\nmetadata:\n  include_tools: read_config\n---\nUse read_config. Do not call write_config.')}
+    result=skill_tool_files(files,tools)
+    meta=yaml.safe_load(file_data_to_string(result['/skills/read/SKILL.md']).split('---',2)[1])
+    assert meta['metadata']['include_tools']=='read_config'
+    assert '/tool-skills/mcp-write-config/SKILL.md' in result
+    assert '/tool-skills/mcp-read-config/SKILL.md' not in result
+
+
+def test_file_skill_discloses_tail_search_without_write_operations(tmp_path):
+    from test_unified_mcp import fixture_app
+    from test_agent_chat import Model
+    async def run():
+        app=fixture_app(tmp_path);chat=app.state.agent_chat;model=Model();chat.provider=model
+        model.replies=[tool_message('read_file',{'file_path':'/skills/read-server-files/SKILL.md'}),dict(message=dict(role='assistant',content='ready'))]
+        view=chat.create();started=chat.begin(view['id'],ChatMessageRequest(content='read config'))
+        await chat.runs[started['active_run']]
+        exposed={t['name'] for t in model.contexts[1][2]}
+        assert {'find_hosts','read_server_file','tail_server_file','search_file_contents'}<=exposed
+        assert not {'file_operation','execute_server_command','signal_server_process'}&exposed
+        assert chat.get(view['id'])['turns'][-1]['status']=='completed'
+        chat.store.db.close()
+    asyncio.run(run())
+
+
+def test_native_parallel_log_reads_feed_one_exact_comparison(tmp_path):
+    import ast,json
+    from test_unified_mcp import fixture_app
+    from test_agent_chat import Model
+    from backend.log_reader import parse_lines
+    async def run():
+        app=fixture_app(tmp_path);chat=app.state.agent_chat
+        paths=[];both=asyncio.Event()
+        async def ssh_run(host,command,source):
+            node=ast.parse(source).body[-1].value.args[0].args[0]
+            request=json.loads(ast.literal_eval(node));paths.append(request['path'])
+            if len(paths)==2:both.set()
+            await asyncio.wait_for(both.wait(),2)
+            loss=1 if request['path'].endswith('a.jsonl') else 2
+            data=parse_lines([json.dumps(dict(step=1,loss=loss))])
+            data.update(path=request['path'],bytes=30,truncated=False)
+            return 0,'IWB_LOG:'+json.dumps(dict(ok=True,result=data)),''
+        app.state.ssh.run=ssh_run
+        class ComparisonModel(Model):
+            async def turn(self,instructions,messages,tools):
+                if len(self.contexts)==2:
+                    ids={v['path']:k for k,v in app.state.log_snapshots.items()}
+                    self.replies.insert(0,tool_message('compare_training_logs',dict(baseline=ids['/runs/a.jsonl'],candidate=ids['/runs/b.jsonl'],metrics=['loss'])))
+                return await super().turn(instructions,messages,tools)
+        model=ComparisonModel();chat.provider=model
+        calls=[tool_message('read_training_log',dict(host_id='a',path=p),id='log-'+str(i))['message']['tool_calls'][0] for i,p in enumerate(['/runs/a.jsonl','/runs/b.jsonl'])]
+        model.replies=[tool_message('read_file',{'file_path':'/skills/compare-training-runs/SKILL.md'}),dict(message=dict(role='assistant',content='',tool_calls=calls)),dict(message=dict(role='assistant',content='comparison ready'))]
+        view=chat.create();started=chat.begin(view['id'],ChatMessageRequest(content='compare two logs',selected_host_ids=['a'],restrict_to_selected=True))
+        await chat.runs[started['active_run']]
+        turn=chat.get(view['id'])['turns'][-1]
+        assert turn['status']=='completed' and all(t['status']=='succeeded' for t in turn['tools'])
+        assert len(paths)==2 and len(turn['model_calls'])==4
+        result=json.loads(turn['tools'][-1]['output'])['data']
+        assert result['metrics'][0]['max_abs_error']==1
+        assert 'baseline_series' not in result['metrics'][0]
+        chat.store.db.close()
+    asyncio.run(run())
