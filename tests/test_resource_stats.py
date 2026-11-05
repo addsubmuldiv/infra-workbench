@@ -232,3 +232,30 @@ def test_prune_uses_independent_transaction_and_bounded_lock(tmp_path):
     finally:
         stats.store.db.rollback()
     assert stats.store.load('uncommitted-history-test',None) is None
+
+def test_auxiliary_history_instances_do_not_stop_active_recorder(tmp_path):
+    store=Store(tmp_path/'stats.db')
+    stats=ResourceStats(store)
+    with store.db:
+        store.db.execute('UPDATE resource_recording_runs SET started=90 WHERE id=?',(stats.run_id,))
+    stats.observe({'id':'a'},sample(device()),now=100)
+    auxiliary=ResourceStats(store)
+    with store.db:
+        store.db.execute('UPDATE resource_recording_runs SET started=110 WHERE id=?',(auxiliary.run_id,))
+    stats.observe({'id':'a'},sample(device()),now=120)
+    result=stats.query(['a'],100,140,now=140)
+    assert result['summary']['complete_seconds']==40
+    assert not any(s['reason']=='backend_stopped' for s in result['hosts'][0]['segments'])
+
+
+def test_actual_replacement_recorder_closes_previous_run(tmp_path):
+    store=Store(tmp_path/'stats.db')
+    first=ResourceStats(store)
+    first.observe({'id':'a'},sample(device()),now=100)
+    second=ResourceStats(store)
+    with store.db:
+        store.db.execute('UPDATE resource_recording_runs SET started=90 WHERE id=?',(first.run_id,))
+        store.db.execute('UPDATE resource_recording_runs SET started=110 WHERE id=?',(second.run_id,))
+    second.observe({'id':'a'},sample(device()),now=120)
+    segments=second.query(['a'],100,140,now=140)['hosts'][0]['segments']
+    assert any(s['start']==110 and s['end']==120 and s['reason']=='backend_stopped' for s in segments)

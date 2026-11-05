@@ -160,13 +160,19 @@ class ResourceStats:
         retention = now-RETENTION_SECONDS
         with self._reader() as db:
             run_rows=db.execute('SELECT id,started,ended FROM resource_recording_runs ORDER BY started').fetchall()
-            runs={row[0]:row[2] for row in run_rows}
-            for before,after in zip(run_rows,run_rows[1:]):
-                runs[before[0]]=min(before[2],after[1]) if before[2] is not None else after[1]
             first_row=db.execute("SELECT value FROM resource_stats_metadata WHERE key='recording_started_at'").fetchone()
             first=first_row[0] if first_row else None
             hosts=[]; count=0; row_count=0
             for host_id in host_ids:
+                # Creating a query-only app also creates a run. Only runs that
+                # sampled this host can establish an inferred restart boundary;
+                # continued observations prove the earlier recorder was alive.
+                observed_runs=dict(db.execute('SELECT run_id,MAX(COALESCE(last_observed_at,observed_at)) FROM resource_observations WHERE host_id=? GROUP BY run_id',(host_id,)))
+                host_runs=[row for row in run_rows if row[0] in observed_runs]
+                runs={row[0]:row[2] for row in host_runs}
+                for before,after in zip(host_runs,host_runs[1:]):
+                    if observed_runs[before[0]] < after[1]:
+                        runs[before[0]]=min(before[2],after[1]) if before[2] is not None else after[1]
                 rows = db.execute('SELECT observed_at,fresh_until,name,status,reason,devices,run_id,id,COALESCE(last_observed_at,observed_at) FROM resource_observations WHERE host_id=? AND observed_at<? AND (observed_at>=? OR id=(SELECT id FROM resource_observations WHERE host_id=? AND observed_at<? ORDER BY observed_at DESC,id DESC LIMIT 1)) ORDER BY observed_at,id LIMIT 100001',(host_id,end,start,host_id,start)).fetchall()
                 row_count+=len(rows)
                 if row_count>100000: raise ValueError('资源历史样本过多，请缩短时间范围或减少机器')

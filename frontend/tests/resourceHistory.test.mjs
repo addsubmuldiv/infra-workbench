@@ -41,3 +41,8 @@ test('display does not bridge long gaps, different counts, restart, unknown edge
  const a=idle(0,10,8,{devices:[{identity:['old']}]});const b=idle(20,30,8,{devices:[{identity:['new']}]});assert.equal(mergeHistoryDisplaySegments([a,gap(10,20),b]).length,3);
  assert.equal(mergeHistoryDisplaySegments([idle(0,10),gap(10,20),idle(20,30)],0).length,3);
 });
+
+test('unknown hatching covers only unknown devices above the confirmed idle count',()=>{
+ assert.equal(stepPath([idle(0,10,3)],0,10,8,'unknown_count'),'');
+ assert.equal(stepPath([idle(0,10,3,{unknown_count:2,complete:false})],0,10,8,'unknown_count'),'M0,120V80H1000V120Z');
+});

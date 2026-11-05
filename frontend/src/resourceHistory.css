@@ -5,3 +5,5 @@
 .rh-merge-toggle{display:flex;align-items:center;gap:8px;margin:14px 0 6px;font-size:12px;color:var(--muted)}.rh-merge-toggle input{accent-color:var(--accent)}
 
 .rh-heat-ticks{font-size:11px;color:var(--muted)}.rh-heat-ticks .rh-axis{margin:0}.rh-filters input[type=time]{padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--input);color:var(--text)}
+
+.rh-plot-wrap{position:relative}.rh-plot-tooltip{position:absolute;top:0;transform:translateX(-50%);pointer-events:none;z-index:2;display:grid;gap:6px;max-width:min(360px,90%);padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel,#182330);color:var(--text);box-shadow:0 4px 16px #0004;font-size:12px}.rh-plot-tooltip strong{font-weight:500}
