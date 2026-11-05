@@ -1,5 +1,6 @@
+import {UI_RENDER_COALESCE_MS} from './internalDefaults.ts';
 // Throttle, rather than debounce: continuous streams still repaint regularly.
-export function latestUpdate<T>(render:(value:T)=>void,{schedule=(fn:()=>void)=>setTimeout(fn,100),cancel=clearTimeout}:{schedule?:(fn:()=>void)=>ReturnType<typeof setTimeout>;cancel?:(id:ReturnType<typeof setTimeout>)=>void}={}){
+export function latestUpdate<T>(render:(value:T)=>void,{schedule=(fn:()=>void)=>setTimeout(fn,UI_RENDER_COALESCE_MS),cancel=clearTimeout}:{schedule?:(fn:()=>void)=>ReturnType<typeof setTimeout>;cancel?:(id:ReturnType<typeof setTimeout>)=>void}={}){
   let timer:ReturnType<typeof setTimeout>|undefined,latest:T,disposed=false;
   return {
     push(value:T,immediate=false){

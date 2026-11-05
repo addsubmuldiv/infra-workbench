@@ -1,3 +1,4 @@
+import {UI_IMPORT_POLL_MS,UI_IMPORT_RETRY_MS} from './internalDefaults.ts';
 import {IMPORTS_MAX_ROWS} from './internalDefaults';
 import {capacityError} from './internalPolicy';
 import {ClusterTarget} from './ClusterTarget';
@@ -49,11 +50,11 @@ export default function ServerImport({onChanged}:{onChanged:(ids:string[])=>void
       try{
         const value=await importRequest('/'+job.id,{signal:abort.signal});
         if(abort.signal.aborted)return;
-        receive(value);setError('');if(importActive(value))timer=setTimeout(poll,1000);
+        receive(value);setError('');if(importActive(value))timer=setTimeout(poll,UI_IMPORT_POLL_MS);
       }catch(e){if(!abort.signal.aborted){
         setError(e instanceof Error?e.message:tt("获取进度失败"));
         if(e instanceof Error&&'status' in e&&e.status===404)setJob(old=>old?{...old,status:'interrupted'}:null);
-        else timer=setTimeout(poll,2500);
+        else timer=setTimeout(poll,UI_IMPORT_RETRY_MS);
       }}
     };
     void poll();return()=>{abort.abort();if(timer)clearTimeout(timer)};

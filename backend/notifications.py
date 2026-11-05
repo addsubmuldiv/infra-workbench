@@ -1,3 +1,4 @@
+from .internal_defaults import NOTIFICATIONS_MAX_AGE_SECONDS
 """Keep connection churn in the UI, never in desktop notification history."""
 import math
 import time
@@ -8,7 +9,7 @@ QUIET_SUFFIXES = (
     '：已连接，远端采集失败',
     '：已连接，设备解析失败',
 )
-MAX_NOTIFICATION_AGE = 120
+MAX_NOTIFICATION_AGE = NOTIFICATIONS_MAX_AGE_SECONDS
 
 
 def should_notify(event, now=None):

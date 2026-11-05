@@ -1,10 +1,11 @@
+from .internal_defaults import ASSISTANT_CONTEXT_FALLBACK_TOKENS, ASSISTANT_METADATA_TIMEOUT_SECONDS, ASSISTANT_METADATA_SUCCESS_CACHE_SECONDS, ASSISTANT_METADATA_FAILURE_CACHE_SECONDS
 """Read model capacity only from the configured provider's exact model metadata."""
 from urllib.parse import quote
 import asyncio
 import hashlib
 import time
 
-FALLBACK_CONTEXT = 32000
+FALLBACK_CONTEXT = ASSISTANT_CONTEXT_FALLBACK_TOKENS
 
 def model_capacity(item):
     if not isinstance(item, dict):
@@ -35,7 +36,7 @@ async def resolve_context(service, *, refresh=False):
         if config['model']:
             try:
                 # Metadata lookup must not consume the full model-response timeout.
-                async with asyncio.timeout(8):
+                async with asyncio.timeout(ASSISTANT_METADATA_TIMEOUT_SECONDS):
                     try:
                         data = await service.request(config, key, '/models')
                     except ValueError:
@@ -55,5 +56,5 @@ async def resolve_context(service, *, refresh=False):
                 pass
         result = dict(tokens=tokens or FALLBACK_CONTEXT, source='provider' if tokens else 'fallback',
                       trigger_tokens=int((tokens or FALLBACK_CONTEXT) * .85))
-        service._context_cache = (identity, time.monotonic() + (3600 if tokens else 60), result)
+        service._context_cache = (identity, time.monotonic() + (ASSISTANT_METADATA_SUCCESS_CACHE_SECONDS if tokens else ASSISTANT_METADATA_FAILURE_CACHE_SECONDS), result)
         return dict(result)

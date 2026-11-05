@@ -1,3 +1,4 @@
+import {UI_NOTICE_DURATION_MS} from './internalDefaults.ts';
 import {RefreshIntervalPicker} from './RefreshIntervalPicker';
 import {TunnelManagerButton} from './TunnelManager';
 import {HostAliasDialog} from './HostAliasDialog';
@@ -202,7 +203,7 @@ function App(){
     document.documentElement.dataset.theme=preferences.theme;
     if(!savePreferences(browserStorage(),preferences)&&!storageWarning.current){storageWarning.current=true;setNotice(ui("工作空间偏好暂时无法保存，请检查本地后台连接。"))}
   },[preferences]);
-  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),7000);return()=>clearTimeout(t)},[notice]);
+  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),UI_NOTICE_DURATION_MS);return()=>clearTimeout(t)},[notice]);
   useEffect(()=>{
     if(!pendingLocation||!state.server_time)return;
     const host=state.hosts.find(host=>host.id===pendingLocation.hostId);

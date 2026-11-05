@@ -46,16 +46,18 @@ def test_connection_transfer_and_history_consumers_use_generated_values(tmp_path
     config=json.loads(subprocess.check_output(['node','--input-type=module','-e',f'import {{parseConfig}} from {json.dumps((ROOT/"scripts/generate-internal-defaults.mjs").as_uri())};import {{readFileSync}} from "node:fs";console.log(JSON.stringify(parseConfig(readFileSync("config/internal-defaults.jsonc","utf8"))));'],cwd=ROOT,text=True))
     config['history'].update(changes_retention_days=2,resources_retention_days=3,changes_max_events=4)
     config['transfers']['concurrency']=3
+    config['assistant']['context_fallback_tokens']=12345
     (tmp_path/'config').mkdir();(tmp_path/'backend').mkdir()
     (tmp_path/'config/internal-defaults.jsonc').write_text(json.dumps(config),encoding='utf-8')
     for name in PROBES:shutil.copyfile(ROOT/'backend'/name,tmp_path/'backend'/name)
     subprocess.run(['node','--input-type=module','-e',f'import {{generateInternalDefaults}} from {json.dumps((ROOT/"scripts/generate-internal-defaults.mjs").as_uri())};generateInternalDefaults({json.dumps(str(tmp_path))});'],check=True)
     code='''import sys,importlib.util,json
 spec=importlib.util.spec_from_file_location('backend.internal_defaults',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);sys.modules['backend.internal_defaults']=m
-from backend import resource_history,resource_stats,file_transfers
+from backend import resource_history,resource_stats,file_transfers,agent_context
 assert resource_history.RETENTION==2*86400
 assert resource_stats.RETENTION_SECONDS==3*86400
 assert resource_history.MAX_EVENTS==4
 assert file_transfers.FileTransfers(None).slots._value==3
+assert agent_context.FALLBACK_CONTEXT==12345
 '''
     subprocess.run([sys.executable,'-c',code,str(tmp_path/'backend/internal_defaults.py')],check=True,cwd=ROOT)

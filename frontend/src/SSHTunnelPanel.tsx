@@ -1,3 +1,4 @@
+import {UI_TUNNEL_POLL_MS} from './internalDefaults.ts';
 import {useEffect,useId,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {ArrowDown,Link2,LoaderCircle,Plus,Unplug,X} from 'lucide-react';
@@ -42,7 +43,7 @@ export function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;on
         const data:TunnelRule[]=await tunnelRequest(host.id);
         if(active&&!acting.current){setRules(data);onRules(data);setLoaded(true);if(!initialized.current){initialized.current=true;if(data[0])choose(data[0])}}
       }catch(e){if(active)setError(e instanceof Error?e.message:String(e))}
-      if(active)timer=setTimeout(load,2000);
+      if(active)timer=setTimeout(load,UI_TUNNEL_POLL_MS);
     }
     void load();const clock=setInterval(()=>setNow(Date.now()),1000);
     return()=>{active=false;mounted.current=false;clearTimeout(timer);clearInterval(clock)};

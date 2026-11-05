@@ -1,3 +1,4 @@
+import {UI_RESERVATION_POLL_MS} from './internalDefaults.ts';
 import React,{useEffect,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {CalendarClock,ChevronDown,Plus,X} from 'lucide-react';
@@ -17,7 +18,7 @@ const statusLabel=(status:string)=>({waiting:t('等待资源','Waiting for resou
 export function GroupReservations({hosts,draft,onDraft,refreshKey=0}:{hosts:Host[];draft:GroupDraft|null;onDraft:(draft:GroupDraft|null)=>void;refreshKey?:number}){
   useLocale();const [items,setItems]=useState<GroupReservation[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(''),[expanded,setExpanded]=useState<string|null>(()=>new URLSearchParams(location.hash.split('?')[1]??'').get('group'));
   const load=async()=>{try{const data=await clusterApi('/group-reservations');setItems(Array.isArray(data)?data:data.items??[]);setError('')}catch(e){setError(String(e instanceof Error?e.message:e))}};
-  useEffect(()=>{void load();const timer=setInterval(()=>void load(),5000);const hash=()=>setExpanded(new URLSearchParams(location.hash.split('?')[1]??'').get('group'));window.addEventListener('hashchange',hash);return()=>{clearInterval(timer);window.removeEventListener('hashchange',hash)}},[refreshKey]);
+  useEffect(()=>{void load();const timer=setInterval(()=>void load(),UI_RESERVATION_POLL_MS);const hash=()=>setExpanded(new URLSearchParams(location.hash.split('?')[1]??'').get('group'));window.addEventListener('hashchange',hash);return()=>{clearInterval(timer);window.removeEventListener('hashchange',hash)}},[refreshKey]);
   const act=async(id:string,path:string,method='POST',body:unknown={})=>{setBusy(id);try{await clusterApi('/group-reservations/'+id+path,method,body);await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy('')}};
   return <section className="group-reservations"><div className="section-heading"><h2>{t('多机与集群预约','Multi-machine and cluster alerts')} <span>{items.filter(i=>!['ready','cancelled'].includes(i.status)).length} {t('条等待中','pending')}</span></h2><button className="primary" onClick={()=>onDraft({})}><Plus size={15}/>{t('新建多机预约','New multi-machine alert')}</button></div><p className="subtle">{t('指定机器全部满足，或集群内任意几台满足后提醒。这里只发送一次提醒，不锁定资源。','Notify when all specified machines, or any required number in a cluster, qualify. Alerts do not lock resources.')}</p>{error&&<p className="connection-error" role="alert">{error}<button onClick={()=>void load()}>{t('重试','Retry')}</button></p>}
     {!items.length&&!error&&<div className="group-empty">{t('还没有多机预约。可以选择固定机器，或等待集群中任意几台空闲。','No multi-machine alerts yet. Choose specific machines, or wait for any machines in a cluster.')}</div>}

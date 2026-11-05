@@ -1,3 +1,4 @@
+import {UI_SERVICE_POLL_MS} from './internalDefaults.ts';
 import './servicePanel.css';
 import {useEffect,useState} from 'react';
 import {t} from './i18n';
@@ -9,7 +10,7 @@ async function request(host:string,path='',method='GET',body?:unknown){
 export function ServicePanel({host,close}:{host:{id:string;target:string};close:()=>void}){
   const [rules,setRules]=useState<Rule[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [name,setName]=useState('TensorBoard'),[remote,setRemote]=useState(6006),[local,setLocal]=useState(0);
-  useEffect(()=>{let alive=true;const load=()=>request(host.id).then(data=>{if(alive)setRules(data)}).catch(e=>{if(alive)setError(String(e.message))});void load();const timer=setInterval(load,3000);return()=>{alive=false;clearInterval(timer)}},[host.id]);
+  useEffect(()=>{let alive=true;const load=()=>request(host.id).then(data=>{if(alive)setRules(data)}).catch(e=>{if(alive)setError(String(e.message))});void load();const timer=setInterval(load,UI_SERVICE_POLL_MS);return()=>{alive=false;clearInterval(timer)}},[host.id]);
   async function act(path:string,method='POST',body?:unknown){setBusy(true);setError('');try{await request(host.id,path,method,body);setRules(await request(host.id))}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}
   return <div className="modal-shade"><section className="modal service-panel" role="dialog" aria-modal="true" aria-label={t('远程服务','Remote services')} style={{width:'min(760px,95vw)',maxHeight:'85vh',overflow:'auto'}}>
     <h2>{host.target} · {t('远程服务','Remote services')}</h2><p>{t('仅将远端 127.0.0.1 端口转发到本机。请先在远端启动服务。关闭此面板后转发仍会运行，退出软件后停止。','Forwards remote loopback ports to this computer. Start the service remotely first. Tunnels continue after closing this panel and stop when the app exits.')}</p>
