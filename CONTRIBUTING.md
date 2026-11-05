@@ -1,5 +1,7 @@
 # 开发与 Windows 分发
 
+首次参与项目，建议先读[开发者导览](docs/DEVELOPERS.md)，了解整体架构、Deep Agents 与 MCP 的分工、主要依赖和贡献入口。
+
 普通使用者参阅 [Windows 部署文档](docs/WINDOWS.md)。开发环境需要 Git、Python 3.11+ 和 Node.js 24。
 
 ## 本地开发
@@ -76,7 +78,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release-window
 
 ## 远程仓库
 
-GitHub 仓库：[addsubmuldiv/infra-workbench](https://github.com/addsubmuldiv/infra-workbench)。当前按私有仓库分发，克隆需要已获访问权限的 GitHub 身份。
+GitHub 仓库：[addsubmuldiv/infra-workbench](https://github.com/addsubmuldiv/infra-workbench)。若仓库尚未公开，克隆需要已获访问权限的 GitHub 身份。
 
 ```powershell
 git clone https://github.com/addsubmuldiv/infra-workbench.git
@@ -91,7 +93,7 @@ cd infra-workbench
 git push -u origin main
 ```
 
-目前没有选定开源许可证。公开发布前需要确认代码与图像资源的授权；内部试用不要据此推断获得任意再分发许可。
+项目采用 [MIT 许可证](LICENSE)。贡献代码和图像资源时，请确认你有权提交，并保留需要的第三方署名与许可说明。
 
 ## 版本号维护
 

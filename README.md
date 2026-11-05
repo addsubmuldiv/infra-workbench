@@ -113,7 +113,7 @@ AI 助手默认停靠在右侧，可边查看机器边对话。拖动标题栏�
 
 [桌面浮窗](docs/FLOATING-MONITOR.md) · [批量导入](docs/IMPORT.md) · [安装与排障](docs/WINDOWS.md) · [后台与通知](docs/BACKGROUND.md) · [卡预约](docs/RESERVATIONS.md) · [邮件通知](docs/MAIL.md) · [SSH 终端](docs/TERMINAL.md) · [服务器文件](docs/FILES.md) · [精度对比](docs/PRECISION.md)
 
-[数据与凭据](SECURITY.md) · [开发指南](CONTRIBUTING.md)
+[数据与凭据](SECURITY.md) · [开发指南](CONTRIBUTING.md) · [开发者架构与贡献导览](docs/DEVELOPERS.md)
 
 [macOS 适配与验证范围](docs/MACOS.md)
 
