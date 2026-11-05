@@ -71,3 +71,9 @@ Responses 函数工具默认显式设置 `strict=false`，保留原 MCP schema �
 English: Explicit native tool declarations take precedence over text mentions. Known file paths skip discovery; recent logs use tail reads; independent log snapshots are read in parallel. Reservation sections are explicit and ambiguous writes still require reconciliation. Hardware prefiltering retains uncertain host candidates. Responses tools preserve optional fields without implicit strict normalization, while shared server validation remains in force. The browser measurements use a real model with isolated synthetic I/O, not real-server latency benchmarks.
 
 合并同期助手原生 MCP/Responses 更新后的双日志案例为 18.626 秒、6 次工具调用；两次 read_training_log 在同一模型轮次并行执行，随后一次 compare_training_logs 返回 100 个共同 step 的全量统计，未读取逐步曲线。预约/监控和实验检索本轮只做说明与相关契约验证，未逐项做真实模型测速，也未写入真实预约、通知或远端文件。本轮仅执行相关测试：模型请求/流式、主机定位、技能集成，以及四项披露/范围/分区回归，共 40 项通过，未运行全量。
+
+真实 SSH 只读复验（2026-11-05）：在 Codex 内置浏览器中，三个场景均新开标签页并创建空白对话。读取系统文件 15.983 秒、4 次工具调用；寻找真实训练日志并读取末尾 34.703 秒、12 次调用（含目录分页与尾部窗口缩小）；给定两份日志路径后的精确比较 20.476 秒、6 次调用，两份日志并行读取。全部无完全重复调用或压缩，不修改远端文件。训练日志持续增长，统计基于读取时的快照；日志发现和已知路径读取不是相同开销。
+
+复验发现真实 JSON 日志使用 optimizer_steps，现将其作为 iteration/global_step/step 之后的步数别名，同时排除在数值指标之外，避免把步数当作比较指标。已有字段优先级、无效步数检查、轨迹与重复记录处理保持原规则。修复前两份日志不能解析，修复后已重启后台并完成同一提示的独立新对话复测。只运行 tests/test_log_compare.py 与 tests/test_log_routes.py，共 18 项通过；未运行全量。私有路径与原始日志不提交，独立实测报告保留在忽略目录 work/real-machine-skills-2026-11-05/。
+
+English: Real SSH browser verification used new tabs and empty chats for file reading, log discovery/tail reading, and exact comparison. The reader now accepts optimizer_steps as a fallback step field without exposing it as a metric. Eighteen related parser/API tests passed; no full suite or remote-file writes were performed. Growing logs are compared using captured snapshots.

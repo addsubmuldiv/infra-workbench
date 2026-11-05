@@ -81,3 +81,25 @@ def test_overflow_values_and_missing_selected_metric_do_not_misreport_precision(
     with pytest.raises(ValueError,match='数值范围'): compare_logs(a,b,metrics=['loss'])
     with pytest.raises(ValueError,match='所选指标'): compare_logs(a,b,metrics=['does-not-exist'])
     assert parsed([dict(iteration=True,loss=1),dict(iteration=1,loss=True),dict(iteration=2,loss=1)])['skipped_lines']==2
+
+
+def test_optimizer_steps_aligns_real_style_metrics_without_treating_steps_as_metric():
+    a=parsed([dict(optimizer_steps=10,mean_recent_loss=.4,gradient_norm=.5),dict(optimizer_steps=20,mean_recent_loss=.2,gradient_norm=.3)])
+    b=parsed([dict(optimizer_steps=10,mean_recent_loss=.3,gradient_norm=.4),dict(optimizer_steps=20,mean_recent_loss=.4,gradient_norm=.4)])
+    assert [r['step'] for r in a['records']]==[10,20]
+    assert 'optimizer_steps' not in a['groups'][0]['metrics']
+    result=compare_logs(a,b,metrics=['mean_recent_loss'],view='summary')
+    assert result['alignment']['common_steps']==2
+    assert result['metrics'][0]['mae']==pytest.approx(.15)
+    assert result['metrics'][0]['max_abs_error']==pytest.approx(.2)
+
+
+@pytest.mark.parametrize('value',[True,-1,1.5,'not-a-step',None])
+def test_optimizer_steps_rejects_invalid_step_values(value):
+    assert parsed([dict(optimizer_steps=value,mean_recent_loss=.2)])['records']==[]
+
+
+def test_explicit_step_keeps_priority_over_optimizer_step_alias():
+    data=parsed([dict(step=7,optimizer_steps=99,mean_recent_loss=.2)])
+    assert data['records'][0]['step']==7
+    assert 'optimizer_steps' not in data['records'][0]['metrics']

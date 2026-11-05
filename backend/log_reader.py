@@ -22,7 +22,7 @@ def format_bytes(value):
 
 # END GENERATED INTERNAL DEFAULTS
 
-RESERVED={'iteration','step','global_step','rank','global_rank','local_rank','world_size'}
+RESERVED={'iteration','step','global_step','optimizer_steps','rank','global_rank','local_rank','world_size'}
 
 
 def numeric(value):
@@ -33,7 +33,7 @@ def numeric(value):
 
 
 def step_of(row):
-    for key in ('iteration','global_step','step'):
+    for key in ('iteration','global_step','step','optimizer_steps'):
         value=row.get(key)
         if isinstance(value,str):
             match=re.fullmatch(r'\s*(\d+)(?:\s*/\s*\d+)?\s*',value)
