@@ -1,6 +1,6 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use infra_workbench_desktop::{is_download_url, is_service_url, valid_health, DesktopSession, SERVICE_URL};
+use infra_workbench_desktop::{is_download_url, is_service_url, DesktopSession, SERVICE_URL};
 use std::{path::PathBuf, process::{Command, Stdio}, sync::atomic::{AtomicBool, Ordering}, time::{Duration, Instant}};
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 mod window_fade;
@@ -11,6 +11,20 @@ use window_fade::restore_window;
 
 #[derive(Default)]
 struct Connecting(AtomicBool);
+
+fn startup_trace(message: &str) {
+    use std::io::Write;
+    let data = std::env::var_os("IWB_DATA").map(PathBuf::from)
+        .or_else(|| dirs::data_local_dir().map(|base| base.join("InfraWorkbench")));
+    if let Some(data) = data {
+        if std::fs::create_dir_all(&data).is_ok() {
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(data.join("startup.log")) {
+                let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+                let _ = writeln!(file, "{time} desktop_pid={} {message}", std::process::id());
+            }
+        }
+    }
+}
 
 fn bootstrap_url(url: &reqwest::Url) -> bool {
     matches!(url.scheme(), "tauri" | "http" | "https")
@@ -26,17 +40,7 @@ fn status(window: &WebviewWindow, stage: &str, percent: u8, error: Option<&str>)
 }
 
 fn probe_instance(client: &reqwest::blocking::Client) -> Result<Option<String>, String> {
-    match client.get(format!("{SERVICE_URL}api/health")).send() {
-        Ok(response) => {
-            if !response.status().is_success() {
-                return Err("8765 端口上的服务无法通过工作台检查。未停止任何进程。".into());
-            }
-            let value = response.json::<serde_json::Value>().map_err(|_| "8765 端口被其他程序占用。未停止任何进程。")?;
-            if valid_health(&value) { Ok(Some(value.get("instance").and_then(|v|v.as_str()).unwrap_or("legacy").to_owned())) } else { Err("8765 端口被其他程序占用。未停止任何进程。".into()) }
-        }
-        Err(error) if error.is_connect() => Ok(None),
-        Err(_) => Err("本地后台响应超时，请检查系统托盘或菜单栏。未重复启动后台。".into()),
-    }
+    infra_workbench_desktop::startup_probe::probe_instance(client, ([127,0,0,1],8765).into())
 }
 
 fn probe(client:&reqwest::blocking::Client)->Result<bool,String>{probe_instance(client).map(|value|value.is_some())}
@@ -88,12 +92,15 @@ fn start_runtime() -> Result<std::process::Child, String> {
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW; leave monitoring independent of the GUI.
     }
     // Dropping Child intentionally leaves the tray/menu-bar process alive.
-    command.spawn().map_err(|e| format!("无法启动后台：{e}"))
+    let child = command.spawn().map_err(|e| format!("无法启动后台：{e}"))?;
+    startup_trace(&format!("runtime launched pid={}", child.id()));
+    Ok(child)
 }
 
 fn connect(window: WebviewWindow) {
     let handle = window.app_handle().clone();
     if handle.state::<Connecting>().0.swap(true, Ordering::SeqCst) { return; }
+    startup_trace("connecting to 127.0.0.1:8765");
     std::thread::spawn(move || {
         let result = (|| -> Result<(), String> {
             let client = reqwest::blocking::Client::builder().no_proxy()
@@ -104,13 +111,13 @@ fn connect(window: WebviewWindow) {
             let mut last_error=String::from("后台未能在 60 秒内就绪，请查看 desktop.log");
             loop {
                 match probe(&client) {
-                    Ok(true)=>break,
+                    Ok(true)=>{startup_trace("backend health ready");break;},
                     Ok(false)=>{
                         let finished=if let Some(process)=child.as_mut(){process.try_wait().map_err(|e|e.to_string())?}else{None};
-                        if let Some(result)=finished {if !result.success(){return Err("后台启动失败，请查看 desktop.log".into());}}
-                        if child.is_none()||finished.is_some(){status(&window,"backend",20,None);child=Some(start_runtime()?);}
+                        if let Some(result)=finished {if !result.success(){return Err(format!("后台启动失败（{result}），请查看 desktop.log 和 startup.log"));}}
+                        if child.is_none(){startup_trace("no reachable listener; starting bundled runtime");status(&window,"backend",20,None);child=Some(start_runtime()?);}
                     },
-                    Err(error)=>{last_error=error;status(&window,"waiting",20,None);}
+                    Err(error)=>{if last_error!=error{startup_trace(&error);}last_error=error;status(&window,"waiting",20,None);}
                 }
                 if Instant::now()>=deadline {return Err(last_error);}
                 std::thread::sleep(Duration::from_millis(300));
@@ -120,6 +127,7 @@ fn connect(window: WebviewWindow) {
             Ok(())
         })();
         if let Err(error) = result {
+            startup_trace(&format!("startup failed: {error}"));
             status(&window, "error",20,Some(&error));
             if handle.state::<DesktopSession>().mark_ready() { restore_window(&window,false); }
         }

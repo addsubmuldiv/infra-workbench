@@ -3,14 +3,23 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const script=()=>readFileSync(new URL('../../desktop/bootstrap/startup.js',import.meta.url),'utf8');
-function harness(origin='http://127.0.0.1:8765',lang='en') {
- const nodes=new Map(),intervals=new Map(),timeouts=new Map(),observers=[];let now=0,nextId=0,reloads=0;
+function harness(origin='http://127.0.0.1:8765',lang='en',readyState='complete') {
+ const nodes=new Map(),intervals=new Map(),timeouts=new Map(),observers=[],documentListeners=new Map();let now=0,nextId=0,reloads=0;
  const element=()=>({style:{},attributes:{},listeners:{},setAttribute(k,v){this.attributes[k]=v},remove(){this.removed=true},addEventListener(k,fn){this.listeners[k]=fn}});
- const document={documentElement:{lang,appendChild(node){nodes.set(node.id,node)}},createElement:element,getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)}};
+ const document={readyState,addEventListener(name,fn){documentListeners.set(name,fn)},documentElement:{lang,appendChild(node){nodes.set(node.id,node)}},createElement:element,getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)}};
  class MutationObserver {constructor(callback){this.callback=callback;observers.push(this)} observe(target,options){this.options=options} disconnect(){this.disconnected=true}}
  const window={};const context={window,document,MutationObserver,setTimeout(fn,delay){const id=++nextId;timeouts.set(id,{fn,delay});return id},clearTimeout(id){timeouts.delete(id)},location:{origin,reload(){reloads++}},navigator:{language:'en-US'},performance:{now:()=>now},setInterval(fn){const id=++nextId;intervals.set(id,fn);return id},clearInterval(id){intervals.delete(id)},Date};
- vm.runInNewContext(script(),context);return {window,nodes,intervals,timeouts,observers,get reloads(){return reloads},tick(ms){now=ms;intervals.forEach(fn=>fn())},setLang(value){document.documentElement.lang=value;observers.filter(o=>!o.disconnected).forEach(o=>o.callback())}};
+ vm.runInNewContext(script(),context);return {window,nodes,intervals,timeouts,observers,get reloads(){return reloads},loaded(){document.readyState='interactive';documentListeners.get('DOMContentLoaded')?.()},tick(ms){now=ms;intervals.forEach(fn=>fn())},setLang(value){document.documentElement.lang=value;observers.filter(o=>!o.disconnected).forEach(o=>o.callback())}};
 }
+
+test('native document-start injection waits until blocking stylesheets have loaded',()=>{
+ const h=harness('http://tauri.localhost','zh-CN','loading');
+ assert.equal(h.window.__iwbStartup,undefined);
+ assert.equal(h.nodes.size,0);
+ h.loaded();
+ assert.ok(h.window.__iwbStartup);
+ assert.equal(h.nodes.get('iwb-startup-percent').textContent,'5%');
+});
 test('bootstrap uses OS fallback, progresses only at milestones, and counts elapsed independently',()=>{
  const h=harness('http://tauri.localhost','zh-CN');
  assert.equal(h.nodes.get('iwb-startup-percent').textContent,'5%');
@@ -37,6 +46,15 @@ test('frontend timeout exposes an accessible retry and clicking it reloads',()=>
  assert.equal(h.nodes.get('iwb-startup-panel').attributes['aria-busy'],'false');
  assert.match(h.nodes.get('iwb-startup-status').textContent,/did not finish loading/);
  h.nodes.get('iwb-startup-retry').listeners.click();assert.equal(h.reloads,1);
+});
+test('startup failure stops elapsed time and does not suggest continued loading',()=>{
+ const h=harness();h.tick(60000);
+ h.window.__iwbStartup.update('error',20,'本地后台响应超时');
+ assert.equal(h.intervals.size,0);
+ h.tick(420000);h.setLang('zh-CN');
+ assert.match(h.nodes.get('iwb-startup-elapsed').textContent,/60 秒/);
+ assert.equal(h.nodes.get('iwb-startup-slow').hidden,true);
+ assert.match(h.nodes.get('iwb-startup-note').textContent,/停止/);
 });
 test('normal finish removes overlay and clears timers and locale observer',()=>{
  const h=harness();assert.equal(h.intervals.size,1);assert.equal(h.timeouts.size,1);
