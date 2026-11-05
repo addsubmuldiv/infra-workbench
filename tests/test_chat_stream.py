@@ -11,6 +11,47 @@ def decode(frame):
     return next(line[7:] for line in lines if line.startswith('event: ')),json.loads(next(line[6:] for line in lines if line.startswith('data: ')))
 
 
+def test_opt_in_deltas_send_suffixes_and_changed_fields_then_complete_snapshot(tmp_path):
+    async def run():
+        h, _, _ = service(tmp_path)
+        c = h.create()
+        c.update(active_run='run', updated=1, turns=[dict(id='turn', role='assistant', status='running',
+                    content='前文🌍'*5000, tools=[dict(id='tool', status='running', output='x'*5000)])])
+        h.live[c['id']] = c
+        stream = h.events(c['id'], interval=0, deltas=True)
+        _, snapshot = decode(await anext(stream))
+        c['turns'][-1]['content'] += '新增🚀'
+        c['updated'] = 2
+        h.notify(c['id'])
+        name, patch = decode(await anext(stream))
+        assert name == 'patch'
+        assert patch['base_updated'] == 1 and patch['turn_id'] == 'turn'
+        assert patch['changes'] == dict(content_append='新增🚀')
+        assert len(json.dumps(patch)) < 500
+        c['turns'][-1]['tools'][0].update(status='succeeded', output='done')
+        c['updated'] = 3
+        h.notify(c['id'])
+        _, patch = decode(await anext(stream))
+        assert patch['changes'] == dict(tools=[dict(id='tool', status='succeeded', output='done')])
+        # Sanitization can revise text, so support replacement as well as append.
+        c['turns'][-1]['content'] = '[redacted]'
+        c['updated'] = 4
+        h.notify(c['id'])
+        _, patch = decode(await anext(stream))
+        assert patch['changes'] == dict(content='[redacted]')
+        c['active_run'] = None
+        c['turns'][-1]['status'] = 'completed'
+        c['updated'] = 5
+        h.notify(c['id'])
+        name, final = decode(await anext(stream))
+        assert name == 'turn' and final['turn']['content'] == '[redacted]'
+        assert snapshot['turns'][-1]['content'].startswith('前文🌍')
+        await stream.aclose()
+        assert not h.listeners
+        h.store.db.close()
+    asyncio.run(run())
+
+
 class StreamingModel(Model):
     supports_streaming=True
 

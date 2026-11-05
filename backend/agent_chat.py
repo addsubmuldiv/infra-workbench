@@ -8,7 +8,7 @@ import uuid
 from typing import Literal
 from datetime import datetime,timezone,timedelta
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel,ConfigDict,Field,field_validator
 from .chat_tools import scrub
@@ -150,13 +150,15 @@ class AgentChat:
     def current(self,chat_id):
         return self.live[chat_id] if chat_id in self.live else self.get(chat_id)
 
-    async def events(self,chat_id,*,interval=.04,heartbeat=15):
+    async def events(self,chat_id,*,interval=.04,heartbeat=15,deltas=False):
         """Coalesced current-turn updates; disconnect never cancels the model."""
         wake=asyncio.Event();self.listeners.setdefault(chat_id,set()).add(wake)
         def frame(name,data):return 'event: '+name+'\ndata: '+json.dumps(data,ensure_ascii=False)+'\n\n'
         try:
             chat=self.current(chat_id)
             running=bool(chat['active_run'])
+            previous = copy.deepcopy(chat['turns'][-1]) if chat['turns'] else None
+            previous_updated = chat['updated']
             yield frame('snapshot',self.view(chat))
             if not running:return
             last=0
@@ -172,7 +174,17 @@ class AgentChat:
                     if exc.status_code!=404:raise
                     yield frame('deleted',dict(chat_id=chat_id));return
                 running=bool(chat['active_run'])
-                yield frame('turn',dict(chat_id=chat_id,title=chat['title'],updated=chat['updated'],active_run=chat['active_run'],turn=chat['turns'][-1]))
+                turn = chat['turns'][-1]
+                update = dict(chat_id=chat_id,title=chat['title'],updated=chat['updated'],active_run=chat['active_run'])
+                if deltas and running and previous and previous['id'] == turn['id']:
+                    changes = {key:value for key,value in turn.items() if key not in previous or value != previous[key]}
+                    if 'content' in changes and changes['content'].startswith(previous.get('content', '')):
+                        changes['content_append'] = changes.pop('content')[len(previous.get('content', '')):]
+                    event = frame('patch',dict(update,base_updated=previous_updated,turn_id=turn['id'],changes=changes))
+                else:
+                    event = frame('turn',dict(update,turn=turn))
+                previous, previous_updated = copy.deepcopy(turn), chat['updated']
+                yield event
                 last=time.monotonic()
                 if not running:return
         finally:
@@ -423,9 +435,9 @@ def register_chat_routes(app,service):
     async def get(chat_id:str):return service.view(service.get(chat_id))
 
     @app.get('/api/assistant/chats/{chat_id}/events')
-    async def events(chat_id:str):
+    async def events(chat_id:str,request:Request):
         service.get(chat_id)
-        return StreamingResponse(service.events(chat_id),media_type='text/event-stream',headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
+        return StreamingResponse(service.events(chat_id,deltas=request.headers.get('x-iwb-stream') == 'delta-v1'),media_type='text/event-stream',headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
 
     @app.delete('/api/assistant/chats/{chat_id}')
     async def delete(chat_id:str):

@@ -12,6 +12,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeHighlight from 'rehype-highlight';
 import DOMPurify from 'dompurify';
 import * as terminalInput from '../src/terminalInput.ts';
+import * as latestUpdate from '../src/latestUpdate.ts';
 
 const diagramJs=ts.transpileModule(fs.readFileSync(new URL('../src/MermaidDiagram.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
 const diagramExports={};
@@ -29,6 +30,7 @@ new Function('require','exports',js)(name=>{
   const localized=i18nMock(name);if(localized)return localized;
   if(name==='react')return React;
   if(name==='react-markdown')return ReactMarkdown;
+  if(name==='./latestUpdate')return latestUpdate;
   if(name==='./terminalInput')return terminalInput;
   if(name==='remark-gfm')return remarkGfm;
   if(name==='remark-math-extended')return remarkMath;
@@ -39,6 +41,13 @@ new Function('require','exports',js)(name=>{
   throw new Error('Unexpected import: '+name);
 },exports);
 const render=content=>renderToStaticMarkup(React.createElement(exports.ChatMarkdown,{children:content}));
+
+test('streaming uses readable plain code and defers expensive math/highlighting until complete',()=>{
+  const text='```python\nprint(1)\n```\n\n\\(x^2\\)';
+  const streaming=renderToStaticMarkup(React.createElement(exports.ChatMarkdown,{children:text,streaming:true}));
+  assert.match(streaming,/print\(1\)/);assert.doesNotMatch(streaming,/hljs|class="katex"/);
+  const complete=render(text);assert.match(complete,/hljs/);assert.match(complete,/class="katex"/);
+});
 
 test('LaTeX backslash delimiters render math without interpreting code examples',()=>{
   assert.match(render(String.raw`能量 \(E=mc^2\)。`),/class="katex"/);

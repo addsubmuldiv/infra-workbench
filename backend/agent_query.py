@@ -6,6 +6,7 @@ import time
 from .agent_errors import AgentError, response, recovery
 
 from .host_alias import host_label, matches_name
+from .snapshot_sections import section_views
 
 GIB=1024**3
 
@@ -47,7 +48,7 @@ def unit(devices):
 def resource(host, now, max_age):
     snap=host.get('snapshot') or {}
     result=summary(host,now,max_age)
-    result.update(system=copy.deepcopy(snap.get('system')),devices=copy.deepcopy(snap.get('devices',[])),
+    result.update(system=copy.deepcopy(snap.get('system')),sections=section_views(snap,now,max_age),devices=copy.deepcopy(snap.get('devices',[])),
                   count_unit=unit(snap.get('devices',[])),process_scope='accelerator_processes',
                   error_stage=snap.get('error_stage'))
     return result
@@ -65,7 +66,7 @@ def compact_resource(host,now,max_age):
             occupied_devices=sum(bool(d.get('processes')) for d in ds) if result['fresh'] else 0,
             unknown_devices=sum(d.get('processes_known') is not True for d in ds) if result['fresh'] else len(ds),
             alarm_devices=sum(d.get('health')=='Alarm' for d in ds)))
-    result.update(system=copy.deepcopy(snap.get('system')),count_unit=unit(devices),device_groups=groups)
+    result.update(system=copy.deepcopy(snap.get('system')),sections=section_views(snap,now,max_age),count_unit=unit(devices),device_groups=groups)
     return result
 
 

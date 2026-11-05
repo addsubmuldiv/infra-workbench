@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +25,8 @@ from .vscode import register_vscode
 from .ssh import SSHService
 from .probe_cache import ProbeCache
 from .polling import collection_delay, startup_delay
+from .state_changes import StateChanges
+from .snapshot_sections import section_views
 from .host_alias import HostAliasRequest
 from .store import Store
 from .credentials import create_credential_store
@@ -165,6 +167,7 @@ def parse_ports(result):
 
 def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None, agent_credential_store=None):
     service_instance=uuid.uuid4().hex
+    state_changes = StateChanges(service_instance)
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
@@ -217,6 +220,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             previous = snapshots.get(host_id, {})
             stage = 'connection'
             collection_started_at = time.time()
+            partial = dict(previous)
+            sections = {key: dict(value, status='error') for key, value in previous.get('sections', {}).items()}
+            sections.setdefault('devices', dict(status='error', collected_at=previous.get('collected_at')))
+            partial['sections'] = sections
             try:
                 code, out, err = await probe.run(ssh, host)
                 if code != 0:
@@ -226,6 +233,14 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 if 'IWB_JSON:' not in out:
                     raise ValueError('远端未返回有效采集结果；请检查 Python3')
                 raw = json.loads(out.split('IWB_JSON:')[-1].strip())
+                # Independent successful sections survive a device/driver parse failure.
+                for name in ('system', 'ports'):
+                    value = raw.get(name)
+                    known = isinstance(value, dict) and (name != 'ports' or value.get('code') == 0)
+                    if known:
+                        partial[name] = parse_ports(value) if name == 'ports' else value
+                    sections[name] = dict(status='known' if known else 'error',
+                                          collected_at=collection_started_at if known else sections.get(name, {}).get('collected_at'))
                 if raw['metrics']['code'] != 0:
                     metrics = raw['metrics']
                     tool = 'npu-smi' if raw.get('kind') == 'NPU' else 'nvidia-smi' if raw.get('kind') == 'GPU' else '设备采集命令'
@@ -259,6 +274,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                             login_user=raw.get('login_user'), tmux=raw.get('tmux'),
                             collection_started_at=collection_started_at,
                             freshness_seconds=max(45, refresh_interval + 40))
+                sections['devices'] = dict(status='known', collected_at=collection_started_at)
+                snap['sections'] = sections
                 snapshots[host_id] = snap
                 resource_history.observe(host, snap)
                 resource_stats.observe(host, snap, collection_started_at=collection_started_at, refresh_interval=refresh_interval)
@@ -291,7 +308,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             except Exception as exc:
                 stage = getattr(exc, 'error_stage', stage)
                 message = str(exc)[:1000] or '连接或采集超时'
-                snapshots[host_id] = dict(previous, host_id=host_id, status='error', error=message, error_stage=stage,
+                snapshots[host_id] = dict(partial, host_id=host_id, status='error', error=message, error_stage=stage,
                                          devices=previous.get('devices', []), collected_at=previous.get('collected_at'))
                 resource_history.observe(host, snapshots[host_id])
                 resource_stats.observe(host, snapshots[host_id], collection_started_at=collection_started_at, refresh_interval=refresh_interval)
@@ -303,6 +320,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 if previous.get('status') != 'error':
                     store.event(host_id, host['target']+('：SSH 连接失败' if stage == 'connection' else '：已连接，设备解析失败' if stage == 'parse' else '：已连接，远端采集失败'))
                 return snapshots[host_id]
+            finally:
+                state_changes.publish()
 
     async def collect(host):
         key=host['id']
@@ -528,6 +547,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         previous_changed.set()
         return dict(interval_seconds=refresh_interval)
 
+    @app.get('/api/state/changes')
+    async def wait_state_change(revision: int = Query(default=-1, ge=-1), instance: str = Query(default='', max_length=64)):
+        return JSONResponse(await state_changes.wait(revision, instance), headers={'Cache-Control': 'no-store'})
+
     @app.get('/api/state')
     async def state():
         now = time.time()
@@ -535,7 +558,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         for host in hosts:
             snap = snapshots.get(host['id'], dict(status='connecting', devices=[], collected_at=None))
             fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= reservations.max_sample_gap and snap['status'] == 'online')
-            items.append(dict(**host, sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh)))
+            sections = section_views(snap, now, reservations.max_sample_gap)
+            items.append(dict(**host, sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})

@@ -5,6 +5,36 @@ const base={id:'a'.repeat(32),title:'对话',created:1,updated:2,active_run:'run
 const event=(content,updated=3,active_run='run1')=>({type:'turn',data:{chat_id:base.id,title:'问题',updated,active_run,turn:{id:'t1',role:'assistant',content,created:2,status:active_run?'running':'completed'}}});
 const frame=(type,data)=>`event: ${type}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`;
 
+test('delta appends unicode without replacing unchanged history and tools; gaps require resync',()=>{
+  const tools=[{id:'tool',status:'running'}];
+  const before={...base,turns:[base.turns[0],{...base.turns[1],content:'你好🌍',tools}]};
+  const patch={type:'patch',data:{chat_id:base.id,title:'问题',updated:3,base_updated:2,active_run:'run1',turn_id:'t1',changes:{content_append:'🚀'}}};
+  const next=chatAPI.applyChatEvent(before,patch);
+  assert.equal(next.turns[1].content,'你好🌍🚀');
+  assert.equal(next.turns[0],before.turns[0]);assert.equal(next.turns[1].tools,tools);
+  assert.equal(chatAPI.applyChatEvent(next,patch),next);
+  assert.throws(()=>chatAPI.applyChatEvent(before,{...patch,data:{...patch.data,base_updated:1}}),/./);
+  assert.equal(chatAPI.applyChatEvent(next,{...patch,data:{...patch.data,updated:4,turn_id:'old-turn'}}),next);
+});
+
+test('SSE accepts delta events and final turn restores authoritative text',async()=>{
+  const patch={chat_id:base.id,title:'问题',updated:3,base_updated:2,active_run:'run1',turn_id:'t1',changes:{content_append:'你好🌍'}};
+  let chat=base;const texts=[];
+  const abort=new AbortController();
+  await chatAPI.watchChat(base.id,{signal:abort.signal,onEvent:e=>{chat=chatAPI.applyChatEvent(chat,e);texts.push(chat.turns[1].content)},request:async()=>
+    new Response(frame('snapshot',base)+frame('patch',patch)+frame('turn',event('完成🚀',4,null).data),{headers:{'Content-Type':'text/event-stream'}})});
+  assert.equal(chat.turns[1].content,'完成🚀');assert.equal(chat.active_run,null);
+  assert.deepEqual(texts,['','你好🌍','完成🚀']);
+});
+
+test('missing delta baseline reconnects to a snapshot rather than corrupting content',async()=>{
+  const patch={chat_id:base.id,title:'问题',updated:4,base_updated:3,active_run:'run1',turn_id:'t1',changes:{content_append:'missing-prefix'}};
+  let chat=base,calls=0;const errors=[];
+  await chatAPI.watchChat(base.id,{signal:new AbortController().signal,retryMs:0,onError:e=>errors.push(e),onEvent:e=>{chat=chatAPI.applyChatEvent(chat,e)},request:async()=>
+    new Response(++calls===1?frame('snapshot',base)+frame('patch',patch):frame('snapshot',{...base,updated:5,active_run:null,turns:[base.turns[0],{...base.turns[1],status:'completed',content:'authoritative 🌍'}]}),{headers:{'Content-Type':'text/event-stream'}})});
+  assert.equal(calls,2);assert.equal(errors.length,1);assert.equal(chat.turns[1].content,'authoritative 🌍');
+});
+
 test('fragmented UTF8 and CRLF SSE delivers text before stream completion',async()=>{
   assert.equal(typeof chatAPI.watchChat,'function');
   let source;const received=[];const abort=new AbortController();

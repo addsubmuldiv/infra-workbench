@@ -31,6 +31,7 @@ export function chatRequest<T>(path='',method='GET',body?:unknown,signal?:AbortS
 export type ChatEvent=
   |{type:'snapshot';data:Chat}
   |{type:'turn';data:{chat_id:string;title:string;updated:number;active_run:string|null;turn:ChatTurn}}
+  |{type:'patch';data:{chat_id:string;title:string;updated:number;base_updated:number;active_run:string|null;turn_id:string;changes:Partial<ChatTurn>&{content_append?:string}}}
   |{type:'deleted';data:{chat_id:string}};
 
 export function applyChatEvent(chat:Chat,event:ChatEvent):Chat|null{
@@ -38,6 +39,15 @@ export function applyChatEvent(chat:Chat,event:ChatEvent):Chat|null{
   const value=event.data;
   if(value.chat_id!==chat.id)return chat;
   if(event.type==='deleted')return null;
+  if(event.type==='patch'){
+    const patch=event.data,latest=chat.turns[chat.turns.length-1];
+    if(patch.updated<=chat.updated||latest?.role!=='assistant'||latest.id!==patch.turn_id||chat.active_run!==patch.active_run)return chat;
+    if(patch.base_updated!==chat.updated)throw new Error(ui("对话更新格式不正确，正在重新连接。"));
+    const {content_append,...changes}=patch.changes;
+    const turn={...latest,...changes};
+    if(content_append!==undefined)turn.content=latest.content+content_append;
+    return {...chat,title:patch.title,updated:patch.updated,active_run:patch.active_run,turns:[...chat.turns.slice(0,-1),turn]};
+  }
   const update=event.data;
   if(update.updated<chat.updated||chat.active_run&&update.active_run&&chat.active_run!==update.active_run)return chat;
   const latest=chat.turns[chat.turns.length-1];
@@ -64,7 +74,7 @@ export async function watchChat(id:string,{signal,onEvent,onError,request=fetch,
     let reader:ReadableStreamDefaultReader<Uint8Array>|undefined;
     const cancel=()=>{void reader?.cancel().catch(()=>{})};
     try{
-      const response=await request('/api/assistant/chats/'+encodeURIComponent(id)+'/events',{method:'GET',cache:'no-store',credentials:'same-origin',signal,headers:{'Accept':'text/event-stream','X-IWB':'1'}});
+      const response=await request('/api/assistant/chats/'+encodeURIComponent(id)+'/events',{method:'GET',cache:'no-store',credentials:'same-origin',signal,headers:{'Accept':'text/event-stream','X-IWB':'1','X-IWB-Stream':'delta-v1'}});
       if(signal.aborted){void response.body?.cancel().catch(()=>{});return}
       if(!response.ok){
         if(response.status===404){
@@ -88,10 +98,12 @@ export async function watchChat(id:string,{signal,onEvent,onError,request=fetch,
       const line=(value:string)=>{
         if(!value){
           if(data.length){
-            if(type==='snapshot'||type==='turn'||type==='deleted'){
+            if(type==='snapshot'||type==='turn'||type==='patch'||type==='deleted'){
               const payload=JSON.parse(data.join('\n'));
               if(!payload||typeof payload!=='object'||(type==='snapshot'?payload.id:payload.chat_id)!==id)throw new Error(ui("对话更新格式不正确，正在重新连接。"));
               if(type==='snapshot'&&!Array.isArray(payload.turns)||type==='turn'&&(!payload.turn||typeof payload.turn.content!=='string'))throw new Error(ui("对话更新格式不正确，正在重新连接。"));
+              if(type==='patch'&&(!payload.changes||typeof payload.changes!=='object'||Array.isArray(payload.changes)||typeof payload.turn_id!=='string'||!Number.isFinite(payload.base_updated)||!Number.isFinite(payload.updated)||
+                payload.changes.content_append!==undefined&&typeof payload.changes.content_append!=='string'||payload.changes.content!==undefined&&typeof payload.changes.content!=='string'))throw new Error(ui("对话更新格式不正确，正在重新连接。"));
               if(!signal.aborted)onEvent({type,data:payload} as ChatEvent);
               if(type==='deleted'||(type==='snapshot'||type==='turn')&&payload.active_run===null)finished=true;
             }

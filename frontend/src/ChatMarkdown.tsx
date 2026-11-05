@@ -1,5 +1,7 @@
 import {ui} from './assistantLocale';
-import React from 'react';
+import React,{useEffect,useRef,useState} from 'react';
+import {useLocale} from './i18n';
+import {latestUpdate} from './latestUpdate';
 import Markdown,{type Components} from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math-extended';
@@ -27,7 +29,25 @@ const components:Components={
 const plugins=[remarkGfm,remarkMath];
 const rehypePlugins:React.ComponentProps<typeof Markdown>['rehypePlugins']=[rehypeKatex,[rehypeHighlight,{plainText:['mermaid']}]];
 
-// Reparse the current text on each stream update, including unfinished fences.
-export function ChatMarkdown({children}:{children:string}){
-  return <div className="chat-markdown"><Markdown remarkPlugins={plugins} rehypePlugins={rehypePlugins} skipHtml components={components}>{children}</Markdown></div>;
-}
+const streamingPlugins=[remarkGfm];
+const streamingComponents:Components={...components,pre:({node,children,...props})=>
+  <div className="chat-code-container"><pre {...props}>{children}</pre><button className="chat-code-insert" onClick={event=>{
+    const element=event.currentTarget;window.dispatchEvent(new CustomEvent(TERMINAL_PICK_EVENT,{detail:{text:element.previousElementSibling?.textContent||'',element}}));
+  }}>{ui('填入终端…')}</button></div>};
+
+// Completed replies reuse their parsed tree. Streaming text is parsed at most
+// every 100ms; syntax highlighting, math and diagram layout wait for completion.
+const MarkdownBody=React.memo(function MarkdownBody({children,streaming}:{children:string;streaming:boolean}){
+  useLocale();
+  return <Markdown remarkPlugins={streaming?streamingPlugins:plugins} rehypePlugins={streaming?[]:rehypePlugins} skipHtml components={streaming?streamingComponents:components}>{children}</Markdown>;
+});
+export const ChatMarkdown=React.memo(function ChatMarkdown({children,streaming=false}:{children:string;streaming?:boolean}){
+  const [visible,setVisible]=useState(children);
+  const buffer=useRef<ReturnType<typeof latestUpdate<string>>|null>(null);
+  useEffect(()=>{
+    const pending=latestUpdate(setVisible);buffer.current=pending;
+    return()=>{pending.dispose();buffer.current=null};
+  },[]);
+  useEffect(()=>{buffer.current?.push(children,!streaming)},[children,streaming]);
+  return <div className="chat-markdown"><MarkdownBody streaming={streaming}>{streaming?visible:children}</MarkdownBody></div>;
+});
