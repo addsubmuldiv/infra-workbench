@@ -1,3 +1,4 @@
+from .internal_defaults import FILES_UPLOAD_MAX_BYTES, FILES_FOLDER_UPLOAD_MAX_BYTES
 """Ephemeral transfers with bounded spooling, cancellation and real SSH progress."""
 import asyncio
 import contextlib
@@ -13,7 +14,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-MAX_UPLOAD=512*1024*1024
+MAX_UPLOAD=FILES_UPLOAD_MAX_BYTES
 
 
 class FileTransfers:
@@ -29,6 +30,8 @@ class FileTransfers:
 
     def create(self,host,directory,name,size,kind='file'):
         self.prune()
+        limit = FILES_FOLDER_UPLOAD_MAX_BYTES if kind == 'folder' else MAX_UPLOAD
+        if type(size) is not int or not 0 <= size <= limit: raise HTTPException(400,f'上传内容不能超过 {limit} 字节')
         if len(self.uploads)>=32:
             finished=[(key,job) for key,job in self.uploads.items() if job['status'] in ('done','error','cancelled') and job.get('task') is None]
             if finished: self.uploads.pop(min(finished,key=lambda pair:pair[1]['touched'])[0])

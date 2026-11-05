@@ -6,6 +6,20 @@ import sys
 from pathlib import Path
 
 
+# BEGIN GENERATED INTERNAL DEFAULTS
+# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
+# 原始训练日志下载上限，单位：字节。
+MAX_DOWNLOAD = 536870912
+# 普通文件下载上限，单位：字节；与日志下载分别维护。
+MAX_FILE_DOWNLOAD = 536870912
+
+def format_bytes(value):
+    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if value >= size and value % size == 0: return str(value // size) + " " + unit
+    return str(value) + " B"
+
+# END GENERATED INTERNAL DEFAULTS
+
 def send_header(value):
     sys.stdout.buffer.write(b'IWB_FILE:'+json.dumps(value,ensure_ascii=True).encode('ascii')+b'\n')
     sys.stdout.buffer.flush()
@@ -22,13 +36,13 @@ def main(request):
         fd=os.open(path,os.O_RDONLY|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0))
         before=os.fstat(fd)
         if not stat.S_ISREG(before.st_mode): raise ValueError('只能下载普通日志文件')
-        if before.st_size>512*1024*1024: raise ValueError('原始日志超过 512 MiB，请使用 SSH 文件工具下载')
+        if before.st_size>MAX_DOWNLOAD: raise ValueError(f'原始日志超过 {format_bytes(MAX_DOWNLOAD)}，请使用 SSH 文件工具下载')
     except FileNotFoundError:
         reject('找不到远端日志，请确认机器和文件路径');return
     except PermissionError:
         reject('当前 SSH 账号没有读取此日志的权限');return
     except (OSError,ValueError):
-        reject('文件不可下载：请选择不超过 512 MiB 的普通日志文件');return
+        reject(f'文件不可下载：请选择不超过 {format_bytes(MAX_DOWNLOAD)} 的普通日志文件');return
     try:
         send_header(dict(ok=True,size=before.st_size))
         remaining=before.st_size

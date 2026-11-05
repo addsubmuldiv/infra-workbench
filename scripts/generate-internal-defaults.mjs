@@ -26,8 +26,9 @@ function rejectDuplicates(text){
  }
  value();
 }
+export function stripComments(text){return text.replace(/("(?:[^"\\]|\\.)*")|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g,(match,string)=>string??match.replace(/[^\r\n]/g,' '));}
 export function parseConfig(text){
- const config=JSON.parse(text);rejectDuplicates(text);
+ text=stripComments(text);const config=JSON.parse(text);rejectDuplicates(text);
  function validate(value,schema,prefix=''){
   if(!value||Array.isArray(value)||typeof value!=='object')throw new Error(`Expected object: ${prefix}`);
   for(const key of Object.keys(value))if(!Object.hasOwn(schema,key))throw new Error(`Unknown key: ${prefix}${key}`);
@@ -42,17 +43,18 @@ export function parseConfig(text){
  return config;
 }
 export function generateInternalDefaults(root=ROOT,{check=false}={}){
- const config=parseConfig(readFileSync(path.join(root,'config/internal-defaults.json'),'utf8'));
- const entries=Object.entries(config).sort().flatMap(([group,fields])=>Object.entries(fields).sort().map(([key,value])=>({name:`${group}_${key}`.toUpperCase(),value,frontend:SCHEMA[group][key].frontend})));
- const heading='Generated from config/internal-defaults.json. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs';
- const outputs=[['backend/internal_defaults.py',`# ${heading}\n`+entries.map(e=>`${e.name} = ${e.value}\n`).join('')],['frontend/src/internalDefaults.ts',`// ${heading}\n`+entries.filter(e=>e.frontend).map(e=>`export const ${e.name} = ${e.value};\n`).join('')]];
+ const config=parseConfig(readFileSync(path.join(root,'config/internal-defaults.jsonc'),'utf8'));
+ const entries=Object.entries(config).sort().flatMap(([group,fields])=>Object.entries(fields).sort().map(([key,value])=>({name:`${group}_${key}`.toUpperCase(),value,frontend:SCHEMA[group][key].frontend,description:SCHEMA[group][key].description})));
+ const heading='Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs';
+ const formatter='\ndef format_bytes(value):\n    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):\n        if value >= size and value % size == 0: return str(value // size) + " " + unit\n    return str(value) + " B"\n';
+ const outputs=[['backend/internal_defaults.py',`# ${heading}\n`+entries.map(e=>`# ${e.description}\n${e.name} = ${e.value}\n`).join('')+formatter],['frontend/src/internalDefaults.ts',`// ${heading}\n`+entries.filter(e=>e.frontend).map(e=>`// ${e.description}\nexport const ${e.name} = ${e.value};\n`).join('')]];
  for(const [file,aliases] of Object.entries(PROBES)){
   const source=readFileSync(path.join(root,file),'utf8').replace(/\r\n/g,'\n');
   const begin='# BEGIN GENERATED INTERNAL DEFAULTS',end='# END GENERATED INTERNAL DEFAULTS';
   if(source.split(begin).length!==2||source.split(end).length!==2||source.indexOf(end)<source.indexOf(begin))throw new Error(`Missing or duplicate generated markers: ${file}`);
   const block=begin+'\n# '+heading+'\n'+Object.entries(aliases).map(([name,target])=>{
-   const entry=entries.find(e=>e.name===target);if(!entry)throw new Error(`Unknown probe constant ${target}`);return `${name} = ${entry.value}\n`;
-  }).join('')+end;
+   const entry=entries.find(e=>e.name===target);if(!entry)throw new Error(`Unknown probe constant ${target}`);return `# ${entry.description}\n${name} = ${entry.value}\n`;
+  }).join('')+formatter+'\n'+end;
   outputs.push([file,source.slice(0,source.indexOf(begin))+block+source.slice(source.indexOf(end)+end.length)]);
  }
  const changed=outputs.filter(([file,content])=>!existsSync(path.join(root,file))||readFileSync(path.join(root,file),'utf8').replace(/\r\n/g,'\n')!==content);

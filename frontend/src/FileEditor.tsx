@@ -1,3 +1,5 @@
+import {FILES_TEXT_EDIT_MAX_BYTES} from './internalDefaults';
+import {capacityError,formatBytes} from './internalPolicy';
 import {useLocale} from './i18n';
 import {toolText as tt} from './toolI18n';
 import React,{useEffect,useState,useRef} from 'react';
@@ -48,7 +50,7 @@ export function FileEditor({host,path,close,saved,changed,busyChanged,closeReque
     <div className="file-editor-body" hidden={minimized}>
     {error&&<p className="file-error" role="alert">{error}</p>}{message&&<p className="file-inline" role="status">{message}</p>}
     {doc?<React.Suspense fallback={<p className="file-inline">{tt("正在加载编辑工具…")}</p>}><TextEditor value={text} readOnly={busy} onChange={value=>{setText(value);setMessage('')}}/></React.Suspense>:busy?<p className="file-inline"><LoaderCircle size={16} className="spin"/>{tt("正在打开文本文件…")}</p>:<p className="file-inline">{tt("可关闭此窗口，使用下载功能在本地打开文件。")}</p>}
-    <div className="file-editor-footer"><span>UTF-8 · {doc?.newline??'—'} · {text.split('\n').length} {tt(" 行 · 文本上限 1 MiB")}</span><span>{dirty?tt("尚未保存"):tt("Ctrl/⌘+S 保存")}</span></div>
+    <div className="file-editor-footer"><span>UTF-8 · {doc?.newline??'—'} · {text.split('\n').length} {capacityError(` 行 · 文本上限 ${formatBytes(FILES_TEXT_EDIT_MAX_BYTES)}`,` lines · Text limit ${formatBytes(FILES_TEXT_EDIT_MAX_BYTES)}`)}</span><span>{dirty?tt("尚未保存"):tt("Ctrl/⌘+S 保存")}</span></div>
     </div>
     {!minimized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'file-edge-resize edge-'+edge+(edge==='se'?' file-window-resize':'')} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?tt("调整文本编辑器大小"):undefined} tabIndex={edge==='se'?0:undefined} onPointerDown={event=>startGesture(event,edge)} onKeyDown={event=>{const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>resizeFileWindow(old,'se',...offset,viewport()))}}}/>)}
     {pendingClose&&createPortal(<div className="file-confirm-shade"><div className="file-confirm" role="alertdialog" aria-label={tt("保存文件修改")}><h3>{tt("保存修改后再关闭？")}</h3><p>{path}</p><p>{tt("未保存的内容会丢失。")}</p><div><button className="secondary" disabled={busy} onClick={()=>setPendingClose(null)}>{tt("取消")}</button><button className="secondary" disabled={busy} onClick={()=>pendingClose.after()}>{tt("不保存")}</button><button className="primary" disabled={busy} onClick={async()=>{if(await save())pendingClose.after();else setPendingClose(null)}}>{tt("保存并关闭")}</button></div></div></div>,document.body)}

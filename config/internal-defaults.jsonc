@@ -1,0 +1,120 @@
+// 软件内部策略，不是用户配置。容量上限放大需同时审查 schema 和资源消耗。
+// 改完运行 node scripts/generate-internal-defaults.mjs；重新构建并提交生成产物。
+{
+  "files": {
+    // 单个文件上传上限，单位：字节；后台、客户端和远端接收探针共用。
+    "upload_max_bytes": 536870912,
+    // 文件夹上传包总大小上限，单位：字节；包含清单和文件内容。
+    "folder_upload_max_bytes": 536870912,
+    // 文件夹上传最多包含的文件和目录数，隐式父目录也计数。
+    "folder_upload_max_entries": 10000,
+    // 文件夹清单的 UTF-8 大小上限，单位：字节。
+    "folder_manifest_max_bytes": 1048576,
+    // 普通文件下载上限，单位：字节；与日志下载分别维护。
+    "download_max_bytes": 536870912,
+    // 文件夹下载 ZIP 和源文件总量上限，单位：字节。
+    "folder_download_max_bytes": 536870912,
+    // 文件夹下载最多扫描/归档的条目数。
+    "folder_download_max_entries": 10000,
+    // 在线文本编辑和保存上限，单位：字节；超过后使用下载或终端。
+    "text_edit_max_bytes": 1048576,
+    // 单次复制内容大小上限，单位：字节。
+    "copy_max_bytes": 67108864,
+    // 单次复制最多包含的文件和目录数。
+    "copy_max_entries": 1000
+  },
+  "logs": {
+    // 原始训练日志下载上限，单位：字节。
+    "download_max_bytes": 536870912,
+    // 日志对比最多读取的原始数据量，单位：字节。
+    "read_max_bytes": 67108864,
+    // 每份日志最多解析的训练记录数。
+    "read_max_records": 10000,
+    // 单行日志上限，单位：字节；防止异常长行消耗内存。
+    "line_max_bytes": 65536
+  },
+  "imports": {
+    // 导入 Excel 文件上限，单位：字节。
+    "workbook_max_bytes": 2097152,
+    // 一次最多导入的服务器行数，不包含表头。
+    "max_rows": 100,
+    // 工作表最多允许的数据行数，不含表头；包括空行。
+    "sheet_max_rows": 1000,
+    // 工作表最多允许的列数，含未识别的列。
+    "sheet_max_columns": 32,
+    // Excel ZIP 最多包含的归档条目数，防止异常归档。
+    "zip_max_entries": 2000,
+    // Excel ZIP 解压后总量上限，单位：字节。
+    "zip_max_expanded_bytes": 16777216
+  },
+  "skills": {
+    // 导入技能包大小上限，单位：字节。
+    "upload_max_bytes": 2097152,
+    // 技能文件解压后总量上限，单位：字节。
+    "total_max_bytes": 8388608,
+    // 每个技能文件大小上限，单位：UTF-8 字节；工具文本字段同时使用此容量值。
+    "file_max_bytes": 1048576,
+    // 技能包最多允许的文件数；解压校验和 MCP schema 同步。
+    "max_files": 128
+  },
+  "ssh": {
+    // SSH 默认连接预算，单位：秒；保留现有 SSH 配置覆盖优先级。
+    "connect_timeout_seconds": 20,
+    // 跳板连接追加预算，单位：秒；不表示每一跳都重复追加。
+    "jump_extra_timeout_seconds": 20,
+    // 远端资源采集命令超时，单位：秒；不用于任意用户长任务。
+    "collection_timeout_seconds": 35,
+    // SSH 保活间隔，单位：秒；不覆盖现有显式 SSH 配置。
+    "keepalive_interval_seconds": 60,
+    // 连续保活无响应的次数上限。
+    "keepalive_count_max": 3
+  },
+  "transfers": {
+    // 后台最多并行处理的上传任务数；不是状态队列容量。
+    "concurrency": 2,
+    // 最多保留的上传任务数；优先回收已完成任务。
+    "max_jobs": 32,
+    // 非活动传输任务保留时间，单位：秒；进行中任务不按此规则清理。
+    "idle_expiry_seconds": 600,
+    // 上传发送与远端验证阶段预算，单位：秒。
+    "send_timeout_seconds": 600
+  },
+  "history": {
+    // 资源变化事件保留天数；不改变资源新鲜度规则。
+    "changes_retention_days": 7,
+    // 资源变化事件最多保留条数。
+    "changes_max_events": 10000,
+    // 资源观测历史保留天数；过期/未知判断仍由业务规则处理。
+    "resources_retention_days": 30
+  },
+  "assistant": {
+    // 无法取得模型容量且用户未手填时的默认上下文，单位：token。
+    "context_fallback_tokens": 32000,
+    // 成功获取模型容量的缓存时间，单位：秒；按模型和凭据身份隔离。
+    "metadata_success_cache_seconds": 3600,
+    // 模型容量查询失败后缓存默认值的时间，单位：秒。
+    "metadata_failure_cache_seconds": 60,
+    // 模型容量元数据查询总预算，单位：秒；不占满聊天回复超时。
+    "metadata_timeout_seconds": 8
+  },
+  "notifications": {
+    // 通知最大有效期，单位：秒；超过后不补发陈旧通知。
+    "max_age_seconds": 120
+  },
+  "ui": {
+    // 集群预约列表刷新间隔，单位：毫秒。
+    "reservation_poll_ms": 5000,
+    // 机器服务规则列表刷新间隔，单位：毫秒。
+    "service_poll_ms": 3000,
+    // 活动 SSH 隧道状态刷新间隔，单位：毫秒。
+    "tunnel_poll_ms": 2000,
+    // 导入任务正常状态查询间隔，单位：毫秒。
+    "import_poll_ms": 1000,
+    // 导入任务查询异常后的重试间隔，单位：毫秒。
+    "import_retry_ms": 2500,
+    // 主界面短提示显示时间，单位：毫秒。
+    "notice_duration_ms": 7000,
+    // 高频渲染更新合并延迟，单位：毫秒；不改变采样频率。
+    "render_coalesce_ms": 100
+  }
+}

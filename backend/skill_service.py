@@ -1,3 +1,4 @@
+from .internal_defaults import SKILLS_UPLOAD_MAX_BYTES, SKILLS_TOTAL_MAX_BYTES, SKILLS_FILE_MAX_BYTES, SKILLS_MAX_FILES, format_bytes
 """Transactional, application-owned user skill packages. No imported code executes."""
 import base64
 import copy
@@ -16,10 +17,10 @@ from pathlib import Path
 
 import yaml
 
-UPLOAD_LIMIT = 2 * 1024 * 1024
-TOTAL_LIMIT = 8 * 1024 * 1024
-FILE_LIMIT = 1024 * 1024
-COUNT_LIMIT = 128
+UPLOAD_LIMIT = SKILLS_UPLOAD_MAX_BYTES
+TOTAL_LIMIT = SKILLS_TOTAL_MAX_BYTES
+FILE_LIMIT = SKILLS_FILE_MAX_BYTES
+COUNT_LIMIT = SKILLS_MAX_FILES
 NAME = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*\Z')
 
 
@@ -354,7 +355,7 @@ class SkillService:
             return dict(name=name,status='deleted',effective='next_turn')
 
     def import_package(self,filename,content):
-        if len(content)>UPLOAD_LIMIT:raise SkillError('导入文件不能超过 2 MiB')
+        if len(content)>UPLOAD_LIMIT:raise SkillError(f'导入文件不能超过 {format_bytes(UPLOAD_LIMIT)}')
         if filename.lower().endswith('.md'):
             try: text=content.decode('utf-8-sig')
             except UnicodeError:raise SkillError('Markdown 文件必须是 UTF-8 文本') from None

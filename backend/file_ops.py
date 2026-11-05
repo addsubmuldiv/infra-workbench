@@ -9,10 +9,23 @@ import stat
 import sys
 import tempfile
 
-TEXT_LIMIT = 1024*1024
-COPY_LIMIT = 64*1024*1024
+
+
+# BEGIN GENERATED INTERNAL DEFAULTS
+# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
+# 在线文本编辑和保存上限，单位：字节；超过后使用下载或终端。
+TEXT_LIMIT = 1048576
+# 单次复制内容大小上限，单位：字节。
+COPY_LIMIT = 67108864
+# 单次复制最多包含的文件和目录数。
 ENTRY_LIMIT = 1000
 
+def format_bytes(value):
+    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if value >= size and value % size == 0: return str(value // size) + " " + unit
+    return str(value) + " B"
+
+# END GENERATED INTERNAL DEFAULTS
 
 class Conflict(ValueError):
     pass
@@ -33,10 +46,10 @@ def text_file(path):
         if not stat.S_ISREG(info.st_mode):
             raise ValueError('仅支持打开普通文本文件')
         if info.st_size>TEXT_LIMIT:
-            raise ValueError('文本编辑上限为 1 MiB，请下载后编辑')
+            raise ValueError(f'文本编辑上限为 {format_bytes(TEXT_LIMIT)}，请下载后编辑')
         raw = stream.read(TEXT_LIMIT+1)
         if len(raw)>TEXT_LIMIT:
-            raise ValueError('文本编辑上限为 1 MiB，请下载后编辑')
+            raise ValueError(f'文本编辑上限为 {format_bytes(TEXT_LIMIT)}，请下载后编辑')
     try:
         content = raw.decode('utf-8-sig')
     except UnicodeDecodeError:
@@ -92,7 +105,7 @@ def copy_budget(path):
         elif not stat.S_ISLNK(info.st_mode):
             raise ValueError('不能复制设备、管道或套接字等特殊文件')
         if total>COPY_LIMIT or count>ENTRY_LIMIT:
-            raise ValueError('单次复制上限为 64 MiB、1000 项，请使用终端复制大型文件')
+            raise ValueError(f'单次复制上限为 {format_bytes(COPY_LIMIT)}、{ENTRY_LIMIT} 项，请使用终端复制大型文件')
 
 
 def perform(request):
@@ -114,7 +127,7 @@ def perform(request):
             content = content.replace('\r\n','\n').replace('\n','\r\n')
         raw = (b'\xef\xbb\xbf' if original.startswith(b'\xef\xbb\xbf') else b'')+content.encode('utf-8')
         if len(raw)>TEXT_LIMIT:
-            raise ValueError('保存内容不能超过 1 MiB')
+            raise ValueError(f'保存内容不能超过 {format_bytes(TEXT_LIMIT)}')
         # Replacing somebody else's file would silently change its ownership.
         if hasattr(os,'getuid') and info.st_uid != os.getuid():
             raise ValueError('只能在网页中保存当前 SSH 用户拥有的文件')
@@ -176,7 +189,7 @@ def perform(request):
                     block=incoming.read(1024*1024)
                     if not block: break
                     budget[0]+=len(block)
-                    if budget[0]>COPY_LIMIT: raise ValueError('复制内容超过 64 MiB，已取消复制')
+                    if budget[0]>COPY_LIMIT: raise ValueError(f'复制内容超过 {format_bytes(COPY_LIMIT)}，已取消复制')
                     outgoing.write(block)
             shutil.copystat(source,target,follow_symlinks=False)
         else: raise ValueError('源文件类型已变化，不能复制特殊文件')

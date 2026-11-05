@@ -1,3 +1,5 @@
+import {SKILLS_UPLOAD_MAX_BYTES} from './internalDefaults.ts';
+import {formatBytes} from './internalPolicy.ts';
 import {t} from './i18n.ts';
 export type SkillReceipt={name:string;version:number|string;source:string};
 export type SkillMeta=SkillReceipt&{description:string;enabled:boolean;warnings:string[]};
@@ -16,7 +18,7 @@ export async function skillRequest<T>(path='',method='GET',body?:unknown,signal?
   return response.json() as Promise<T>;
 }
 export async function importSkill(file:File,signal?:AbortSignal,request:typeof fetch=fetch):Promise<SkillDraft>{
-  if(file.size>2*1024*1024)throw new Error(t('导入文件不能超过 2 MiB。','Imported files must not exceed 2 MiB.'));
+  if(file.size>SKILLS_UPLOAD_MAX_BYTES)throw new Error(t(`导入文件不能超过 ${formatBytes(SKILLS_UPLOAD_MAX_BYTES)}。`,`Imported files must not exceed ${formatBytes(SKILLS_UPLOAD_MAX_BYTES)}.`));
   if(!/\.(md|zip)$/i.test(file.name))throw new Error(t('请选择 Markdown 或 ZIP 文件。','Select a Markdown or ZIP file.'));
   const response=await checked(await request('/api/skills/import?filename='+encodeURIComponent(file.name),{method:'POST',signal,headers:{'Content-Type':'application/octet-stream','X-IWB':'1'},body:file}));
   return response.json() as Promise<SkillDraft>;

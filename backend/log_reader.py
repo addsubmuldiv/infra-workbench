@@ -6,9 +6,22 @@ import re
 import stat
 from pathlib import Path
 
-MAX_BYTES=64*1024*1024
-MAX_RECORDS=10000
-MAX_LINE=65536
+# BEGIN GENERATED INTERNAL DEFAULTS
+# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
+# 日志对比最多读取的原始数据量，单位：字节。
+MAX_BYTES = 67108864
+# 每份日志最多解析的训练记录数。
+MAX_RECORDS = 10000
+# 单行日志上限，单位：字节；防止异常长行消耗内存。
+MAX_LINE = 65536
+
+def format_bytes(value):
+    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if value >= size and value % size == 0: return str(value // size) + " " + unit
+    return str(value) + " B"
+
+# END GENERATED INTERNAL DEFAULTS
+
 RESERVED={'iteration','step','global_step','rank','global_rank','local_rank','world_size'}
 
 
@@ -98,7 +111,7 @@ def read_log(path,max_bytes=MAX_BYTES):
     try:
         before=os.fstat(fd)
         if not stat.S_ISREG(before.st_mode): raise ValueError('请选择普通日志文件')
-        if before.st_size>max_bytes: raise ValueError('日志大小超过 64 MiB，请拆分后对比；未返回部分结果')
+        if before.st_size>max_bytes: raise ValueError(f'日志大小超过 {format_bytes(max_bytes)}，请拆分后对比；未返回部分结果')
         remaining=before.st_size
         def lines():
             nonlocal remaining
@@ -107,7 +120,7 @@ def read_log(path,max_bytes=MAX_BYTES):
                     raw=stream.readline(min(MAX_LINE+1,remaining))
                     if not raw: raise ValueError('读取期间日志被截断，请重新读取')
                     remaining-=len(raw)
-                    if len(raw)>MAX_LINE: raise ValueError('日志单行过长（超过 64 KiB）')
+                    if len(raw)>MAX_LINE: raise ValueError(f'日志单行过长（超过 {format_bytes(MAX_LINE)}）')
                     yield raw.decode('utf-8-sig',errors='replace')
         result=parse_lines(lines())
         after=os.fstat(fd)

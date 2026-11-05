@@ -5,8 +5,19 @@ import os
 import sys
 import tempfile
 
-MAX_UPLOAD=512*1024*1024
 
+
+# BEGIN GENERATED INTERNAL DEFAULTS
+# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
+# 单个文件上传上限，单位：字节；后台、客户端和远端接收探针共用。
+MAX_UPLOAD = 536870912
+
+def format_bytes(value):
+    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if value >= size and value % size == 0: return str(value // size) + " " + unit
+    return str(value) + " B"
+
+# END GENERATED INTERNAL DEFAULTS
 
 def receive(stream,ready=None):
     line=stream.readline(16385)

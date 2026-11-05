@@ -1,3 +1,5 @@
+import {FILES_UPLOAD_MAX_BYTES,FILES_FOLDER_UPLOAD_MAX_BYTES} from './internalDefaults.ts';
+import {capacityError,formatBytes} from './internalPolicy.ts';
 import {toolText as tt} from './toolI18n.ts';
 export type TransferProgress={stage:'preparing'|'packing'|'receiving'|'sending'|'verifying'|'done'|'download_remote'|'download_browser';loaded:number;total:number|null};
 type UploadStatus={id:string;status:string;total:number;received:number;sent:number;error?:string;path?:string};
@@ -34,7 +36,7 @@ export async function uploadFile(host:string,directory:string,file:File,signal:A
 }
 export async function uploadPayload(host:string,directory:string,name:string,body:Blob,kind:'file'|'folder',signal:AbortSignal,progress:(value:TransferProgress)=>void,fetcher:typeof fetch=fetch,sender=sendUpload):Promise<string>{
   if(signal.aborted)throw aborted();
-  if(body.size>512*1024*1024)throw new Error(tt("上传内容不能超过 512 MiB"));
+  if(body.size>(kind==='folder'?FILES_FOLDER_UPLOAD_MAX_BYTES:FILES_UPLOAD_MAX_BYTES))throw new Error(capacityError(`上传内容不能超过 ${formatBytes(kind==='folder'?FILES_FOLDER_UPLOAD_MAX_BYTES:FILES_UPLOAD_MAX_BYTES)}`,`Upload must not exceed ${formatBytes(kind==='folder'?FILES_FOLDER_UPLOAD_MAX_BYTES:FILES_UPLOAD_MAX_BYTES)}`));
   const job:UploadStatus=await jsonRequest('/api/files/uploads',{method:'POST',body:JSON.stringify({host_id:host,path:directory,name,size:body.size,...(kind==='folder'?{kind}:{})}),signal},fetcher);
   const url='/api/files/uploads/'+job.id;
   try{

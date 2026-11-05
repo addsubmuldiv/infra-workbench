@@ -454,4 +454,100 @@ const english:Record<string,string>={
   "文件夹及清单总大小不能超过 512 MiB": "Folder and manifest must not exceed 512 MiB"
 };
 const chinese=Object.fromEntries(Object.entries(english).map(([zh,en])=>[en,zh]));
-export function toolText(text:string):string {const zh=chinese[text]??text;return t(zh,english[zh]??text)}
+const limitTemplates:[string,string][]=[
+  [
+    "文本编辑上限为 {size}，请下载后编辑",
+    "Text editing limit is {size}. Download the file to edit it."
+  ],
+  [
+    "保存内容不能超过 {size}",
+    "Saved content must not exceed {size}"
+  ],
+  [
+    "单次复制上限为 {size}、{count} 项，请使用终端复制大型文件",
+    "Copy limit is {size} and {count} items. Use a terminal for larger copies."
+  ],
+  [
+    "复制内容超过 {size}，已取消复制",
+    "Copy exceeded {size} and was canceled"
+  ],
+  [
+    "文件夹最多支持 {count} 项",
+    "Folders support up to {count} items"
+  ],
+  [
+    "文件夹总大小不能超过 {size}",
+    "Folder size must not exceed {size}"
+  ],
+  [
+    "文件不能为空，且不能超过 {size}",
+    "File must not be empty or exceed {size}"
+  ],
+  [
+    "导入文件不能超过 {size}",
+    "Imported files must not exceed {size}"
+  ],
+  [
+    "上传内容不能超过 {count} 字节",
+    "Upload must not exceed {count} bytes"
+  ],
+  [
+    "日志文件大小无效或超过 {size}",
+    "Invalid log size or file exceeds {size}"
+  ],
+  [
+    "原始日志超过 {size}，请使用 SSH 文件工具下载",
+    "Original log exceeds {size}. Use SSH file tools to download it."
+  ],
+  [
+    "文件不可下载：请选择不超过 {size} 的普通日志文件",
+    "Select a regular log file no larger than {size}"
+  ],
+  [
+    "日志大小超过 {size}，请拆分后对比；未返回部分结果",
+    "Log exceeds {size}. Split it before comparing; no partial result was returned."
+  ],
+  [
+    "日志单行过长（超过 {size}）",
+    "Log line exceeds {size}"
+  ],
+  [
+    "一次最多导入 {count} 台服务器，请拆分表格",
+    "Import supports at most {count} servers. Split the workbook."
+  ],
+  [
+    "文件夹超过 {count} 项，请选择更具体的子目录",
+    "Folder exceeds {count} items. Select a smaller subdirectory."
+  ],
+  [
+    "文件夹内容超过 {size}，请选择更小的子目录",
+    "Folder content exceeds {size}. Select a smaller subdirectory."
+  ],
+  [
+    "ZIP 超过 {size}，请选择更小的子目录",
+    "ZIP exceeds {size}. Select a smaller subdirectory."
+  ],
+  [
+    "表格不超过 {count} 列",
+    "Workbook supports at most {count} columns"
+  ],
+  [
+    "表格不超过 {count} 行，请删除多余空行或拆分文件",
+    "Workbook supports at most {count} rows. Remove empty rows or split the file."
+  ],
+  [
+    "请只保留服务器列表：最多 {count} 台，表格不超过 {count} 行、{count} 列",
+    "Keep only the server list: up to {count} servers, {count} rows and {count} columns"
+  ]
+];
+const escapePattern=(text:string)=>text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+export function toolText(text:string):string {
+ const zh=chinese[text]??text;
+ if(english[zh])return t(zh,english[zh]);
+ for(const [pattern,en] of limitTemplates){
+  const regex=new RegExp('^'+pattern.split(/(\{(?:size|count)\})/).map(token=>token==='{size}'?'([0-9]+ (?:B|KiB|MiB|GiB))':token==='{count}'?'([0-9]+)':escapePattern(token)).join('')+'$');
+  const match=zh.match(regex);
+  if(match){let i=0;return t(zh,en.replace(/\{(?:size|count)\}/g,()=>match[++i]));}
+ }
+ return text;
+}

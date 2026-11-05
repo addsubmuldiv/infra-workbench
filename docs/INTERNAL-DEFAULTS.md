@@ -1,6 +1,6 @@
 # 内部策略维护
 
-`config/internal-defaults.json` 是内部策略的唯一数值来源；应用版本继续使用 `version.json`。配置不是用户设置，不从数据目录或环境变量加载，也没有热更新。
+`config/internal-defaults.jsonc` 是内部策略的唯一数值来源；应用版本继续使用 `version.json`。配置不是用户设置，不从数据目录或环境变量加载，也没有热更新。
 
 ```sh
 node scripts/generate-internal-defaults.mjs

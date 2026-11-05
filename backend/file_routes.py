@@ -1,10 +1,11 @@
+from .internal_defaults import FILES_TEXT_EDIT_MAX_BYTES, FILES_COPY_MAX_BYTES, FILES_FOLDER_UPLOAD_MAX_BYTES
 import asyncio
 import json
 from pathlib import Path
 from typing import Literal
 
 from fastapi import HTTPException,Request
-from pydantic import Field,field_validator
+from pydantic import Field,field_validator,model_validator
 
 from .log_routes import LogLocation
 from .log_download import original_log_response
@@ -24,7 +25,13 @@ class SearchRequest(LogLocation):
 class UploadRequest(LogLocation):
     kind:Literal['file','folder']='file'
     name:str=Field(min_length=1,max_length=255)
-    size:int=Field(ge=0,le=MAX_UPLOAD)
+    size:int=Field(ge=0,le=max(MAX_UPLOAD,FILES_FOLDER_UPLOAD_MAX_BYTES))
+
+    @model_validator(mode='after')
+    def size_limit(self):
+        limit = FILES_FOLDER_UPLOAD_MAX_BYTES if self.kind == 'folder' else MAX_UPLOAD
+        if self.size > limit: raise ValueError(f'上传内容不能超过 {limit} 字节')
+        return self
 
     @field_validator('name')
     @classmethod
@@ -41,7 +48,7 @@ class DownloadRequest(LogLocation):
 class FileOperation(LogLocation):
     op:Literal['read','save','copy','move','mkdir','create']
     destination:str|None=Field(default=None,min_length=1,max_length=4096)
-    content:str|None=Field(default=None,max_length=1024*1024)
+    content:str|None=Field(default=None,max_length=FILES_TEXT_EDIT_MAX_BYTES)
     revision:str|None=Field(default=None,min_length=64,max_length=64,pattern=r'^[a-f0-9]{64}$')
 
 
@@ -59,7 +66,7 @@ def register_file_routes(app,ssh,find):
     @app.get('/api/files/capabilities')
     async def capabilities():
         return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,folder_download=True,folder_upload=True,
-                    operations=['read','save','copy','move','mkdir','create'],text_limit=1024*1024,copy_limit=64*1024*1024,upload_limit=MAX_UPLOAD)
+                    operations=['read','save','copy','move','mkdir','create'],text_limit=FILES_TEXT_EDIT_MAX_BYTES,copy_limit=FILES_COPY_MAX_BYTES,upload_limit=MAX_UPLOAD)
 
     @app.post('/api/files/search')
     async def search(body:SearchRequest):

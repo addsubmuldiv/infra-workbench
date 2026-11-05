@@ -1,3 +1,5 @@
+import {IMPORTS_WORKBOOK_MAX_BYTES} from './internalDefaults.ts';
+import {capacityError,formatBytes} from './internalPolicy.ts';
 import {toolText as tt} from './toolI18n.ts';
 export type ImportRow={row:number;target:string;user:string;port:number;status:string;reason:string;host_id:string|null;key_status:string;key_reason:string;password_status?:string;password_reason?:string};
 export type ImportJob={id:string;status:string;total:number;processed:number;success:number;failed:number;skipped:number;valid:number;key_total:number;key_done:number;key_failed:number;password_saved?:number;password_failed?:number;rows:ImportRow[]};
@@ -15,5 +17,5 @@ export async function importRequest(path:string,options:RequestInit={}):Promise<
 
 export function validateImportFile(file:Pick<File,'name'|'size'>){
   if(!file.name.toLowerCase().endsWith('.xlsx'))throw new Error(tt("请选择 .xlsx 格式的 Excel 文件；旧版 .xls 请先另存为 .xlsx"));
-  if(!file.size||file.size>2*1024*1024)throw new Error(tt("文件不能为空，且不能超过 2 MiB"));
+  if(!file.size||file.size>IMPORTS_WORKBOOK_MAX_BYTES)throw new Error(capacityError(`文件不能为空，且不能超过 ${formatBytes(IMPORTS_WORKBOOK_MAX_BYTES)}`,`File must not be empty or exceed ${formatBytes(IMPORTS_WORKBOOK_MAX_BYTES)}`));
 }

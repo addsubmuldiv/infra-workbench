@@ -32,7 +32,7 @@ def test_folder_archive_preserves_tree_hidden_empty_unicode_and_binary(tmp_path)
 
 def test_folder_archive_bounds_and_invalid_paths_fail_without_success(tmp_path):
     folder=tmp_path/'data';folder.mkdir();(folder/'a').write_bytes(b'x'*32)
-    for kwargs,reason in [({'max_size':16},'512 MiB'),({'max_entries':1},'项')]:
+    for kwargs,reason in [({'max_size':16},'16 B'),({'max_entries':1},'项')]:
         with pytest.raises(ValueError,match=reason):build_archive(str(folder),io.BytesIO(),**kwargs)
     with pytest.raises((NotADirectoryError,ValueError)):build_archive(str(folder/'a'),io.BytesIO())
     with pytest.raises(FileNotFoundError):build_archive(str(folder/'missing'),io.BytesIO())

@@ -6,9 +6,21 @@ import sys
 import tempfile
 import zipfile
 
-MAX_SIZE=512*1024*1024
-MAX_ENTRIES=10000
 
+
+# BEGIN GENERATED INTERNAL DEFAULTS
+# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
+# 文件夹下载 ZIP 和源文件总量上限，单位：字节。
+MAX_SIZE = 536870912
+# 文件夹下载最多扫描/归档的条目数。
+MAX_ENTRIES = 10000
+
+def format_bytes(value):
+    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if value >= size and value % size == 0: return str(value // size) + " " + unit
+    return str(value) + " B"
+
+# END GENERATED INTERNAL DEFAULTS
 
 def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
     path=os.path.abspath(os.path.expanduser(path))
@@ -38,14 +50,14 @@ def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
                 if depth>64:raise ValueError('目录层级超过 64 层，请选择更具体的子目录')
                 before_dir=directory_info(directory,fd)
                 count+=1
-                if count>max_entries:raise ValueError('文件夹超过 10000 项，请选择更具体的子目录')
+                if count>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
                 archive.writestr(arcpath+'/',b'')
                 # Bound listing memory even for a single exceptionally wide directory.
                 entries=[]
                 with os.scandir(fd if anchored else directory) as iterator:
                     for entry in iterator:
                         seen+=1
-                        if seen>max_entries:raise ValueError('文件夹超过 10000 项，请选择更具体的子目录')
+                        if seen>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
                         entries.append(entry)
                 for entry in sorted(entries,key=lambda item:item.name):
                     info=entry.stat(follow_symlinks=False) if anchored else os.stat(entry.path,follow_symlinks=False)
@@ -61,10 +73,10 @@ def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
                             visit(os.path.join(directory,name),child,arcpath+'/'+name,depth+1)
                         else:
                             count+=1
-                            if count>max_entries:raise ValueError('文件夹超过 10000 项，请选择更具体的子目录')
+                            if count>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
                             if not stat.S_ISREG(before.st_mode):raise ValueError('只能打包普通文件')
                             total+=before.st_size
-                            if total>max_size:raise ValueError('文件夹内容超过 512 MiB，请选择更小的子目录')
+                            if total>max_size:raise ValueError(f'文件夹内容超过 {format_bytes(max_size)}，请选择更小的子目录')
                             remaining=before.st_size
                             with archive.open(arcpath+'/'+name,'w') as output:
                                 while remaining:
@@ -74,11 +86,11 @@ def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
                             if signature(before)!=signature(os.fstat(child)):raise ValueError('打包期间文件发生变化，请重试')
                     finally:
                         if child is not None:os.close(child)
-                    if target.tell()>max_size:raise ValueError('ZIP 超过 512 MiB，请选择更小的子目录')
+                    if target.tell()>max_size:raise ValueError(f'ZIP 超过 {format_bytes(max_size)}，请选择更小的子目录')
                 if signature(before_dir)!=signature(directory_info(directory,fd)):raise ValueError('打包期间目录发生变化，请重试')
             visit(path,root_fd,root,0)
         size=target.tell()
-        if size>max_size:raise ValueError('ZIP 超过 512 MiB，请选择更小的子目录')
+        if size>max_size:raise ValueError(f'ZIP 超过 {format_bytes(max_size)}，请选择更小的子目录')
         return dict(size=size,skipped=skipped)
     finally:
         if root_fd is not None:os.close(root_fd)

@@ -1,3 +1,4 @@
+from .internal_defaults import LOGS_DOWNLOAD_MAX_BYTES, FILES_DOWNLOAD_MAX_BYTES, FILES_FOLDER_DOWNLOAD_MAX_BYTES, format_bytes
 """Read complete original bytes over SSH; spool before issuing a download."""
 import asyncio
 import contextlib
@@ -14,11 +15,12 @@ from fastapi import HTTPException,Request
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
-MAX_DOWNLOAD=512*1024*1024
+MAX_DOWNLOAD=LOGS_DOWNLOAD_MAX_BYTES
 
 
-def download_script(path,folder=False):
+def download_script(path,folder=False,file_download=False):
     source=(Path(__file__).parent/('folder_download_probe.py' if folder else 'log_download_probe.py')).read_text(encoding='utf-8')
+    if file_download and not folder: source += '\nMAX_DOWNLOAD = MAX_FILE_DOWNLOAD\n'
     return source+'\nmain(json.loads('+repr(json.dumps(dict(path=path),ensure_ascii=True))+'))\n'
 
 
@@ -27,7 +29,7 @@ def download_filename(host,path):
     return re.sub(r'[\x00-\x1f\x7f<>:"/\\|?*]','_',name).strip(' .')[:180] or 'training.log'
 
 
-async def receive_file(reader,target,disconnected=None,on_progress=None):
+async def receive_file(reader,target,disconnected=None,on_progress=None,max_bytes=MAX_DOWNLOAD):
     consumed=0
     while True:
         line=await reader.readline()
@@ -39,7 +41,7 @@ async def receive_file(reader,target,disconnected=None,on_progress=None):
     except ValueError: raise ValueError('远端文件信息无效') from None
     if not metadata.get('ok'): raise ValueError(str(metadata.get('error','无法读取远端文件'))[:300])
     size=metadata.get('size')
-    if type(size) is not int or not 0<=size<=MAX_DOWNLOAD: raise ValueError('日志文件大小无效或超过 512 MiB')
+    if type(size) is not int or not 0<=size<=max_bytes: raise ValueError(f'日志文件大小无效或超过 {format_bytes(max_bytes)}')
     remaining=size
     if on_progress: on_progress(0,size)
     while remaining:
@@ -102,8 +104,8 @@ async def original_log_response(ssh,host,path,request:Request,label='日志',on_
     target=tempfile.TemporaryFile(mode='w+b')
     try:
         async def transfer():
-            async with open_download(ssh,host,download_script(path,folder)) as (reader,wait):
-                metadata=await receive_file(reader,target,request.is_disconnected,on_progress)
+            async with open_download(ssh,host,download_script(path,folder,file_download=label=='文件')) as (reader,wait):
+                metadata=await receive_file(reader,target,request.is_disconnected,on_progress,max_bytes=FILES_FOLDER_DOWNLOAD_MAX_BYTES if folder else FILES_DOWNLOAD_MAX_BYTES if label=='文件' else MAX_DOWNLOAD)
                 if await wait()!=0: raise ValueError('下载期间日志发生变化或连接断开，请重试；未保存部分文件')
                 return metadata
         metadata=await asyncio.wait_for(transfer(),300)

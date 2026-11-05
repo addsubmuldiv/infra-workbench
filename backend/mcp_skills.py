@@ -1,3 +1,4 @@
+from .internal_defaults import SKILLS_MAX_FILES, SKILLS_FILE_MAX_BYTES, IMPORTS_WORKBOOK_MAX_BYTES, format_bytes
 """Publish application-owned skills and truthful UI/transport handoffs."""
 import re
 from pathlib import Path
@@ -8,7 +9,7 @@ from .agent_schema import envelope
 ROOT = Path(__file__).with_name('skills')
 ENTRIES = {
     'credentials': 'SSH、sudo、模型和邮箱凭据在软件连接/设置界面输入和保存，不经模型传递。',
-    'server_import': '在服务器导入界面选择 Excel，或客户端以原始字节 POST /api/imports/preview（上限 2 MiB，X-IWB: 1）。然后用 get_import_status/start_import。',
+    'server_import': f'在服务器导入界面选择 Excel，或客户端以原始字节 POST /api/imports/preview（上限 {format_bytes(IMPORTS_WORKBOOK_MAX_BYTES)}，X-IWB: 1）。然后用 get_import_status/start_import。',
     'upload': '先 create_upload，再由本机客户端以原始字节 PUT /api/files/uploads/{id}，X-IWB: 1。文件夹使用应用规定的归档格式。get_upload 查询状态。',
     'terminal': '在软件终端界面选择机器。客户端 POST /api/hosts/{host_id}/terminal-ticket（X-IWB: 1）取得短效票据，再连接同源 WebSocket /api/terminal/{host_id}，子协议 iwb-terminal 和票据。MCP 不转发交互键盘或任意命令。',
     'model_settings': '在设置 → Agent 模型接口选择模型、填写地址与凭据并测试，不允许当前 Agent 修改自身模型连接。',
@@ -51,8 +52,8 @@ def call(name, args):
 
 
 # Management tools write only to the application-owned user skill store.
-FILES = {'type': 'object', 'minProperties': 1, 'maxProperties': 128,
-         'additionalProperties': {'type': 'string', 'maxLength': 1048576}}
+FILES = {'type': 'object', 'minProperties': 1, 'maxProperties': SKILLS_MAX_FILES,
+         'additionalProperties': {'type': 'string', 'maxLength': SKILLS_FILE_MAX_BYTES}}
 REV = {'type': 'integer', 'minimum': 1}
 NAME = {'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$', 'maxLength': 64}
 

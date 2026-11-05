@@ -1,3 +1,4 @@
+from .internal_defaults import IMPORTS_SHEET_MAX_ROWS, IMPORTS_SHEET_MAX_COLUMNS, IMPORTS_WORKBOOK_MAX_BYTES, IMPORTS_MAX_ROWS, IMPORTS_ZIP_MAX_ENTRIES, IMPORTS_ZIP_MAX_EXPANDED_BYTES, format_bytes
 """Bounded in-memory Excel parsing. Public rows never contain passwords."""
 import io
 import re
@@ -8,8 +9,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from pydantic import SecretStr
 
-MAX_FILE=2*1024*1024
-MAX_ROWS=100
+MAX_FILE=IMPORTS_WORKBOOK_MAX_BYTES
+MAX_ROWS=IMPORTS_MAX_ROWS
 HEADERS={
     'target':{'ip','ip地址','服务器ip','主机地址','服务器地址','地址','host','hostname','ssh别名','别名','主机'},
     'user':{'账号','帐号','用户名','账户','user','username','account'},
@@ -50,24 +51,24 @@ class ImportRow:
 
 
 def parse_workbook(data):
-    if not data or len(data)>MAX_FILE:raise WorkbookError('文件不能为空，且不能超过 2 MiB')
+    if not data or len(data)>MAX_FILE:raise WorkbookError(f'文件不能为空，且不能超过 {format_bytes(MAX_FILE)}')
     book=None
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             entries=archive.infolist()
-            if len(entries)>2000 or sum(x.file_size for x in entries)>16*1024*1024:
+            if len(entries)>IMPORTS_ZIP_MAX_ENTRIES or sum(x.file_size for x in entries)>IMPORTS_ZIP_MAX_EXPANDED_BYTES:
                 raise WorkbookError('Excel 解压后过大，请只保留服务器列表')
         book=load_workbook(io.BytesIO(data),read_only=True,data_only=False,keep_links=False)
         sheet=book.worksheets[0]
-        if (sheet.max_row or 0)>1001 or (sheet.max_column or 0)>32:
-            raise WorkbookError('请只保留服务器列表：最多 100 台，表格不超过 1000 行、32 列')
+        if (sheet.max_row or 0)>IMPORTS_SHEET_MAX_ROWS+1 or (sheet.max_column or 0)>IMPORTS_SHEET_MAX_COLUMNS:
+            raise WorkbookError(f'请只保留服务器列表：最多 {MAX_ROWS} 台，表格不超过 {IMPORTS_SHEET_MAX_ROWS} 行、{IMPORTS_SHEET_MAX_COLUMNS} 列')
         # Some producers write an incorrect dimension. Count actual rows and
         # stop at the limit instead of trusting a smaller reported range.
         sheet.reset_dimensions()
-        iterator=sheet.iter_rows(max_col=33)
+        iterator=sheet.iter_rows(max_col=IMPORTS_SHEET_MAX_COLUMNS+1)
         header=next(iterator,[]);columns={}
         for index,cell in enumerate(header):
-            if index>=32 and cell.value not in (None,''):raise WorkbookError('表格不超过 32 列')
+            if index>=IMPORTS_SHEET_MAX_COLUMNS and cell.value not in (None,''):raise WorkbookError(f'表格不超过 {IMPORTS_SHEET_MAX_COLUMNS} 列')
             value=re.sub(r'[\s_\-]+','',str(cell.value or '').lstrip('\ufeff')).lower()
             key=next((key for key,names in HEADERS.items() if value in names),None)
             if key:
@@ -76,10 +77,10 @@ def parse_workbook(data):
         if not {'target','user'}<=columns.keys():raise WorkbookError('首行必须包含 IP 和账号列，可选密码、端口列')
         rows=[];seen={}
         for number,cells in enumerate(iterator,2):
-            if number>1001:raise WorkbookError('表格不超过 1000 行，请删除多余空行或拆分文件')
-            if cells[32].value not in (None,''):raise WorkbookError('表格不超过 32 列')
+            if number>IMPORTS_SHEET_MAX_ROWS+1:raise WorkbookError(f'表格不超过 {IMPORTS_SHEET_MAX_ROWS} 行，请删除多余空行或拆分文件')
+            if cells[IMPORTS_SHEET_MAX_COLUMNS].value not in (None,''):raise WorkbookError(f'表格不超过 {IMPORTS_SHEET_MAX_COLUMNS} 列')
             if all(cell.value in (None,'') for cell in cells):continue
-            if len(rows)>=MAX_ROWS:raise WorkbookError('一次最多导入 100 台服务器，请拆分表格')
+            if len(rows)>=MAX_ROWS:raise WorkbookError(f'一次最多导入 {MAX_ROWS} 台服务器，请拆分表格')
             values={key:cells[index] for key,index in columns.items()}
             target=values['target'].value;user=values['user'].value
             row=ImportRow(number,str(target or '').strip(),str(user or '').strip())
@@ -136,7 +137,7 @@ def import_template():
         for cell in row:cell.number_format='@'
     sheet.freeze_panes='A2';sheet.auto_filter.ref='A1:D3'
     notes=book.create_sheet('填写说明')
-    for text in ['请替换示例 IP、账号、密码；删除不用的示例行。','程序只读取第一个工作表，首行为表头。','IP 和账号必填；IP 列也可填写本机 SSH 配置中的别名。账号必填并覆盖别名账号；端口留空时沿用别名端口，普通地址默认为 22；填写端口则覆盖别名端口。密码留空时使用已有免密。','密码列请使用文本格式，避免丢失前导零。提供的密码验证成功后自动保存到系统凭据管理器，可在机器的 SSH 密码设置中删除。','一次最多 100 台；文件内重复行跳过。按 SSH 别名或实际地址、账号、端口匹配已有机器；只补存密码，不重复添加、不更改密钥或跳板。匹配多台时请改填唯一 SSH 别名。','勾选后台配置免密后，先完成导入，再单独排队追加并验证公钥；已有机器仅补存密码，不执行此操作。']:
+    for text in ['请替换示例 IP、账号、密码；删除不用的示例行。','程序只读取第一个工作表，首行为表头。','IP 和账号必填；IP 列也可填写本机 SSH 配置中的别名。账号必填并覆盖别名账号；端口留空时沿用别名端口，普通地址默认为 22；填写端口则覆盖别名端口。密码留空时使用已有免密。','密码列请使用文本格式，避免丢失前导零。提供的密码验证成功后自动保存到系统凭据管理器，可在机器的 SSH 密码设置中删除。',f'一次最多 {MAX_ROWS} 台；文件内重复行跳过。按 SSH 别名或实际地址、账号、端口匹配已有机器；只补存密码，不重复添加、不更改密钥或跳板。匹配多台时请改填唯一 SSH 别名。','勾选后台配置免密后，先完成导入，再单独排队追加并验证公钥；已有机器仅补存密码，不执行此操作。']:
         notes.append([text]);notes.cell(notes.max_row,1).font=Font(name='Arial',size=11)
     notes.column_dimensions['A'].width=105
     output=io.BytesIO();book.save(output);book.close();return output.getvalue()
