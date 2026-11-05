@@ -178,8 +178,15 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
             # Response counters are persisted by the next graph/tool checkpoint.
             if phase == 'request':
                 save()
+        def model_timing(kind):
+            def record(metric):
+                turn.setdefault('model_calls', []).append(dict(kind=kind, **metric))
+                # The next tool/graph checkpoint (or run-finally on failure)
+                # persists this with the response, without an extra DB write.
+            return record
         model = WorkbenchChatModel(provider, on_start=model_start, on_text=on_text, sanitize=sanitize,
-                                   context_window=capacity['tokens'], on_context=context_usage)
+                                   context_window=capacity['tokens'], on_context=context_usage,
+                                   on_timing=model_timing('response'))
         class SummaryModel(WorkbenchChatModel):
             async def _agenerate(self, *args, **kwargs):
                 turn['context_compaction'] = dict(status='running', started=time.time())
@@ -194,7 +201,8 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
                 save()
                 return result
 
-        summary_model = SummaryModel(provider, sanitize=sanitize, context_window=capacity['tokens'])
+        summary_model = SummaryModel(provider, sanitize=sanitize, context_window=capacity['tokens'],
+                                     on_timing=model_timing('compaction'))
         backend = StateBackend()
         saver = InMemorySaver()
         graph = create_deep_agent(

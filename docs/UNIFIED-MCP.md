@@ -1,5 +1,19 @@
 # 统一 MCP 与业务技能
 
+## 助手概况查询优化（2026-11-05）
+
+`search_fleet` 新增可选 `view="summary"`：资源按型号汇总，保留真实机器和设备 ID、采样时间、设备数、可确认的物理卡数及空闲显存最小/最大值。未知显存和物理卡数保持 null。默认 `view="detail"` 保留原逐设备结构；`get_resources` 详情接口不变。HTTP 查询和外部 MCP 继续复用原业务校验及机器范围限制。
+
+结果增加 `offset`、`limit`（默认 50，最多 200）、`next_offset`，`total` 和 `coverage` 始终对应完整查询。普通结果页还按约 10K 字符控制大小，实际游标按已返回行数推进，避免字符限制造成跳行；单行或 coverage 超大时仍受模型桥接层截断保护，应缩小查询范围。分页应保持条件和 view 一致并使用 `refresh=false`；这是实时采样视图，不是冻结快照，期间采样变化可能影响结果顺序。内置助手的展示参数不写入继承的业务筛选条件。
+
+资源和进程技能改为直接批量查询，新鲜完整结果无需逐机重复刷新；只在信息不足、用户需要详情或操作前补查。批量进程查询仍仅覆盖 GPU/NPU 占卡进程，不能宣称扫描了所有服务。
+
+指定 `host` 筛选条件时，刷新仅请求当前允许范围内名称匹配的机器，不再等待无关机器的采集；匹配规则与原查询一致。
+
+每轮聊天持久化 `model_calls`，分别记录 `response` 和 `compaction` 请求的开始、结束、耗时及成功/失败状态，不保存请求内容或凭据。该耗时包含模型接口内部等待，无法单独分解服务端推理、排队和网络时间。这里只改变后台与技能，已有界面仍显示整轮耗时。
+
+Fleet overview optimization: optional grouped resource summaries and explicit pagination reduce repeated device data. Fresh results are reused; unknowns and coverage remain visible. Per-model-call timing is persisted separately for responses and compaction, without prompt or credential data.
+
 模型连接和业务服务保持在本机后台。以下带日期的验证结果是历史记录，不代表当前发布或干净系统验收已完成。
 
 ## 调用关系

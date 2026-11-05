@@ -1,5 +1,6 @@
 """LangChain model adapter; the existing provider remains the wire transport."""
 import json
+import time
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -47,11 +48,13 @@ class WorkbenchChatModel(BaseChatModel):
     _on_text: Any = PrivateAttr(default=None)
     _sanitize: Any = PrivateAttr(default=None)
     _on_context: Any = PrivateAttr(default=None)
+    _on_timing: Any = PrivateAttr(default=None)
 
-    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None, context_window=32000, on_context=None):
+    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None, context_window=32000, on_context=None, on_timing=None):
         super().__init__(profile={'max_input_tokens': context_window})
         self._provider = provider
         self._on_context = on_context
+        self._on_timing = on_timing
         self._on_start, self._on_text = on_start, on_text
         if sanitize is not None:
             self._sanitize = sanitize
@@ -88,7 +91,14 @@ class WorkbenchChatModel(BaseChatModel):
         options = {}
         if display and self._on_text and getattr(self._provider, 'supports_streaming', False):
             options['on_text'] = self._on_text
-        response = await self._provider.turn(instructions, wire_messages(messages), self._tools or [], **options)
+        started, clock, status = time.time(), time.monotonic(), 'failed'
+        try:
+            response = await self._provider.turn(instructions, wire_messages(messages), self._tools or [], **options)
+            status = 'succeeded'
+        finally:
+            if self._on_timing:
+                self._on_timing(dict(started=started, finished=time.time(),
+                                     elapsed_ms=round((time.monotonic()-clock)*1000), status=status))
         raw = response['message']
         calls, invalid = [], []
         for call in raw.get('tool_calls', []):
