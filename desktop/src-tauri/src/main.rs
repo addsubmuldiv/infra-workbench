@@ -164,6 +164,70 @@ const READY_SCRIPT: &str = r#"
 })();
 "#;
 
+// Serialize window creation with updater installation, just like quick windows.
+fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
+    let _window_gate = updater::WINDOW_GATE.lock().unwrap();
+    if updater::installing(app) { return Ok(()); }
+    if let Some(window) = app.get_webview_window("main") {
+        if app.state::<DesktopSession>().request_show() {
+            restore_window(&window, focus);
+        }
+        return Ok(());
+    }
+    let navigation_app=app.clone();
+    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
+        .visible(false)
+        .background_color(tauri::window::Color(242,245,249,255))
+        .initialization_script(READY_SCRIPT)
+        .disable_drag_drop_handler() // Keep HTML file/folder upload handlers in the shared UI.
+        .on_navigation(move |url| {
+            if updater::installing(&navigation_app) { return false; }
+            if is_service_url(url) || bootstrap_url(url) { return true; }
+            if matches!(url.scheme(), "http" | "https") { let _ = open::that(url.as_str()); }
+            false
+        })
+        .on_new_window(|url, _| {
+            if matches!(url.scheme(), "http" | "https") { let _ = open::that(url.as_str()); }
+            tauri::webview::NewWindowResponse::Deny
+        })
+        .on_download(|webview, event| {
+            match event {
+                tauri::webview::DownloadEvent::Requested { url, destination } => {
+                    if !webview.url().map(|page| is_service_url(&page)).unwrap_or(false)
+                        || !is_download_url(&url) { return false; }
+                    let name = destination.file_name().and_then(|name| name.to_str()).unwrap_or("download");
+                    let mut dialog = rfd::FileDialog::new().set_title("保存下载文件").set_file_name(name);
+                    if let Some(directory) = dirs::download_dir() { dialog = dialog.set_directory(directory); }
+                    if let Some(path) = dialog.save_file() { *destination = path; } else { return false; }
+                }
+                tauri::webview::DownloadEvent::Finished { success: false, .. } => {
+                    rfd::MessageDialog::new().set_title("下载未完成")
+                        .set_description("文件未能保存，请检查保存位置或重新下载。")
+                        .set_level(rfd::MessageLevel::Error).show();
+                }
+                _ => (),
+            }
+            true
+        })
+        .on_page_load(|window, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished && bootstrap_url(payload.url()) {
+                connect(window);
+            }
+        })
+        .build()?;
+    let close_window = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            // Hiding does not unload the WebView, discard editors or close SSH tabs.
+            close_window.state::<DesktopSession>().hide();
+            let _ = close_window.hide();
+        }
+    });
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(updater::UpdaterState::default())
@@ -174,10 +238,8 @@ fn main() {
             if updater::installing(app) { return; }
             if args.iter().any(|arg|arg=="--quit-desktop") { app.exit(0);return; }
             if let Some((tool,host))=quick_window::request(&args) { let _=quick_window::open(app,&tool,&host);return; }
-            if let Some(window) = app.get_webview_window("main") {
-                if app.state::<DesktopSession>().request_show() {
-                    restore_window(&window,true);
-                }
+            if let Err(error) = show_main_window(app, true) {
+                eprintln!("无法打开工作台窗口：{error}");
             }
         }))
         .plugin(tauri_plugin_window_state::Builder::default()
@@ -187,60 +249,10 @@ fn main() {
         .setup(|app| {
             if std::env::args().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
             watch_service(app.handle().clone());
-            if let Some((tool,host))=quick_window::request(&std::env::args().collect::<Vec<_>>()) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
             #[cfg(target_os = "macos")]
             app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
-            let navigation_app=app.handle().clone();
-            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
-                .visible(false)
-                .background_color(tauri::window::Color(242,245,249,255))
-                .initialization_script(READY_SCRIPT)
-                .disable_drag_drop_handler() // Keep HTML file/folder upload handlers in the shared UI.
-                .on_navigation(move |url| {
-                    if updater::installing(&navigation_app) { return false; }
-                    if is_service_url(url) || bootstrap_url(url) { return true; }
-                    if matches!(url.scheme(), "http" | "https") { let _ = open::that(url.as_str()); }
-                    false
-                })
-                .on_new_window(|url, _| {
-                    if matches!(url.scheme(), "http" | "https") { let _ = open::that(url.as_str()); }
-                    tauri::webview::NewWindowResponse::Deny
-                })
-                .on_download(|webview, event| {
-                    match event {
-                        tauri::webview::DownloadEvent::Requested { url, destination } => {
-                            if !webview.url().map(|page| is_service_url(&page)).unwrap_or(false)
-                                || !is_download_url(&url) { return false; }
-                            let name = destination.file_name().and_then(|name| name.to_str()).unwrap_or("download");
-                            let mut dialog = rfd::FileDialog::new().set_title("保存下载文件").set_file_name(name);
-                            if let Some(directory) = dirs::download_dir() { dialog = dialog.set_directory(directory); }
-                            if let Some(path) = dialog.save_file() { *destination = path; } else { return false; }
-                        }
-                        tauri::webview::DownloadEvent::Finished { success: false, .. } => {
-                            rfd::MessageDialog::new().set_title("下载未完成")
-                                .set_description("文件未能保存，请检查保存位置或重新下载。")
-                                .set_level(rfd::MessageLevel::Error).show();
-                        }
-                        _ => (),
-                    }
-                    true
-                })
-                .on_page_load(|window, payload| {
-                    if payload.event() == tauri::webview::PageLoadEvent::Finished && bootstrap_url(payload.url()) {
-                        connect(window);
-                    }
-                })
-                .build()?;
-            let close_window = window.clone();
-            window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    // Hiding does not unload the WebView, discard editors or close SSH tabs.
-                    close_window.state::<DesktopSession>().hide();
-                    let _ = close_window.hide();
-                }
-            });
+            if let Some((tool,host))=quick_window::request(&std::env::args().collect::<Vec<_>>()) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
+            show_main_window(app.handle(), false)?;
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -248,10 +260,8 @@ fn main() {
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = &event {
-                if let Some(window) = app.get_webview_window("main") {
-                    if app.state::<DesktopSession>().request_show() {
-                        restore_window(&window, false);
-                    }
+                if let Err(error) = show_main_window(app, false) {
+                    eprintln!("无法打开工作台窗口：{error}");
                 }
             }
             if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {

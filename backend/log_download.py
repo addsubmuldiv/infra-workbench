@@ -55,6 +55,8 @@ async def receive_file(reader,target,disconnected=None,on_progress=None):
 
 @asynccontextmanager
 async def open_download(ssh,host,source):
+    if restore := getattr(ssh,'restore_session',None):
+        await restore(host)
     session=ssh.sessions.get(host['id'])
     cached=bool(session and not session.is_closed())
     process=None;error_task=None

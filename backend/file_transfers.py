@@ -87,6 +87,8 @@ class FileTransfers:
                 if job['cancelled']: raise asyncio.CancelledError()
                 source=Path(__file__).with_name('folder_upload_probe.py' if job.get('kind')=='folder' else 'file_upload_probe.py').read_text(encoding='utf-8')
                 command='python3 -u -c '+shlex.quote(source)
+                if restore := getattr(self.ssh,'restore_session',None):
+                    await restore(job['host'])
                 session=self.ssh.sessions.get(job['host']['id'])
                 cached=bool(session and not session.is_closed())
                 if cached:

@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from fastapi.testclient import TestClient
@@ -10,7 +11,8 @@ def test_health_identity_stays_stable_until_backend_is_replaced(tmp_path):
     with TestClient(create_app(tmp_path/'first',start_poll=False)) as client:
         first=client.get('/api/health').json()
         assert first['name']=='infra-workbench'
-        assert first['version']=='0.1.2'
+        version = json.loads((Path(__file__).resolve().parents[1]/'desktop'/'src-tauri'/'tauri.conf.json').read_text(encoding='utf-8'))['version']
+        assert first['version']==version
         assert len(first['instance'])==32
         assert client.get('/api/health').json()['instance']==first['instance']
     with TestClient(create_app(tmp_path/'second',start_poll=False)) as client:

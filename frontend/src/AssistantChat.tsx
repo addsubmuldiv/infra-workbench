@@ -91,7 +91,7 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
     const message=text.trim();void act('send',async signal=>{
       const target=chat||await chatRequest<Chat>('','POST',{},signal);if(!alive.current||signal.aborted)return;apply(target);
       const value=await chatRequest<Chat>('/'+target.id+'/messages','POST',{engine,profile_id:engine==='deepagents'?profileId:undefined,content:message,terminal_attachments:attachments,selected_host_ids:scopeHostIds,restrict_to_selected:scopeRestricted,selected_skill_names:selectedSkills},signal);
-      if(alive.current){apply(value);setText('');setSelectedSkills([]);setAttachments([])}
+      if(alive.current){apply(value);setText('');setSelectedSkills([]);setAttachments(current=>current.filter(item=>!attachments.includes(item)))}
     });
   };
   const newChat=()=>act('new',async signal=>{subscription.current?.abort();current.current=null;const value=await chatRequest<Chat>('','POST',{},signal);if(alive.current){apply(value);setText('');setSelectedSkills([]);setAttachments([]);setDraftScope(null)}});

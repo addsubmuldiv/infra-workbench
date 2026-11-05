@@ -121,3 +121,11 @@ for(const engine of ['claude','opencode'])test(`${engine} active runs explain un
   const text=h.find(n=>n.props.className==='chat-steer-unavailable').props.children.join('');
   assert.ok(text.includes(engine==='claude'?'Claude Code':'OpenCode'));assert.ok(!text.includes('Deep Agents'));
 });
+
+test('sending removes only submitted attachments and preserves later terminal handoffs',async t=>{
+ let finish;const h=harness(t,url=>url.endsWith('/messages')?new Promise(resolve=>finish=resolve):url.endsWith('/'+ 'a'.repeat(32))?Response.json(chat('a',null)):undefined);await h.loaded();
+ const attach=content=>terminalContext.handoffTerminalContext({host_id:'a',label:content,terminal_id:'tab',source:'screen',captured_at:'2026-11-03T00:00:00Z',content,truncated:false});
+ attach('submitted');h.render();h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props).props.onChange('send');h.render();h.find(n=>n.props.className==='chat-composer').props.onSubmit({preventDefault(){}});await tick();
+ attach('later');h.render();assert.deepEqual(JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body).terminal_attachments.map(a=>a.content),['submitted']);
+ finish(Response.json(chat('a',null)));await tick();h.render();assert.equal(h.find(n=>n.type==='pre').props.children[0],'later');
+});

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
+import * as modelCache from '../src/modelCache.ts';
 
 test('opening the model picker again fetches the current provider and binds its list request to that provider',async()=>{
   let slot=0,tree;const values=[],calls=[];
@@ -10,7 +11,7 @@ test('opening the model picker again fetches the current provider and binds its 
   let profile='a';const exports={};
   const request=async(path='',method,body)=>{calls.push({path,body});if(!path)return {active_id:profile,model:profile+'-model',base_url:'https://example.test',protocol:'auto',timeout_seconds:45};return {models:[profile+'-model'],truncated:false}};
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/ChatModelPicker.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='react-dom'?{createPortal:node=>node}:name==='./agentSettings'?{agentRequest:request}:{}),exports);
+  new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='react-dom'?{createPortal:node=>node}:name==='./agentSettings'?{agentRequest:request}:name==='./modelCache'?{...modelCache,readModelCache:()=>null,writeModelCache:(key,list)=>{assert.ok(key.includes(profile));assert.deepEqual(list.models,[profile+'-model'])}}:{}),exports);
   const old=globalThis.document;globalThis.document={body:{}};
   try{
     const render=()=>{slot=0;return tree=exports.ChatModelPicker({model:'a-model'})};

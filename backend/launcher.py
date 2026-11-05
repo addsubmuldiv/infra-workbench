@@ -51,6 +51,11 @@ def find_desktop(root=ROOT):
         candidates += [base/'Infra Workbench.app'/'Contents'/'MacOS'/'infra-workbench-desktop'
                        for base in (Path.home()/'Applications', Path('/Applications'))]
     else:
+        if sys.platform == 'win32' and getattr(sys, 'frozen', False):
+            # onefile ROOT is the temporary extraction tree; the installed
+            # desktop executable lives beside the frozen runtime instead.
+            installed = Path(sys.executable).resolve().with_name('infra-workbench-desktop.exe')
+            if installed.is_file():return installed
         installed=root/'infra-workbench-desktop.exe'
         if installed.is_file():return installed
         target=root/'desktop'/'src-tauri'/'target'

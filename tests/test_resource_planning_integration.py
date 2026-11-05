@@ -15,7 +15,7 @@ def test_app_collects_history_and_finishes_one_group_notification(tmp_path):
                processes=dict(code=0, out=''), users=dict(out=''), ports=dict(code=0, out=''))
 
     async def probe(host, command, source=None):
-        assert command == 'python3 -'
+        assert command.startswith('python3 ') and command.endswith('# IWB_MONITOR')
         return 0, 'IWB_JSON:'+json.dumps(raw), ''
 
     app.state.ssh.run = probe

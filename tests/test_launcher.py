@@ -125,3 +125,38 @@ def test_tray_exit_signals_the_resident_without_starting_another_executable(monk
     monkeypatch.setattr(launcher,'_signal_desktop_exit',lambda:True)
     monkeypatch.setattr(launcher,'find_desktop',lambda *_:pytest.fail('must not choose a different desktop binary'))
     launcher.shutdown_desktop()
+
+def test_frozen_windows_runtime_finds_installed_sibling_and_enables_desktop(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import backend.launcher as launcher
+    installed = tmp_path / 'installed'
+    installed.mkdir()
+    runtime = installed / 'iwb-runtime.exe'
+    runtime.touch()
+    desktop = installed / 'infra-workbench-desktop.exe'
+    desktop.touch()
+    extracted = tmp_path / '_MEI1234'
+    extracted.mkdir()
+    monkeypatch.setattr(launcher, 'sys', SimpleNamespace(platform='win32', frozen=True, executable=str(runtime)))
+    assert launcher.find_desktop(extracted) == desktop
+    app = FastAPI()
+    launcher.register_launch_routes(app, tmp_path / 'data', root=extracted, set_floating=lambda _: None)
+    with TestClient(app) as client:
+        assert client.get('/api/settings/launch').json()['desktop_available'] is True
+        assert client.put('/api/settings/launch', json={'mode': 'desktop', 'show_floating': False}).status_code == 200
+    desktop.unlink()
+    assert launcher.find_desktop(extracted) is None
+
+
+def test_normal_desktop_activation_creates_main_after_quick_tool_start():
+    # Guard the actual callback wiring: a resident quick-only process has no
+    # main window, so activation must share the cold-start creation path.
+    source = (Path(__file__).resolve().parents[1] / 'desktop/src-tauri/src/main.rs').read_text(encoding='utf-8')
+    single_instance = source.split('.plugin(tauri_plugin_single_instance::init(', 1)[1].split('.plugin(tauri_plugin_window_state', 1)[0]
+    setup = source.split('.setup(|app| {', 1)[1].split('.build(tauri::generate_context!())', 1)[0]
+    assert 'show_main_window(app, true)' in single_instance
+    assert 'show_main_window(app.handle(), false)' in setup
+    helper = source.split('fn show_main_window(', 1)[1].split('fn main()', 1)[0]
+    assert 'get_webview_window("main")' in helper
+    assert 'WebviewWindowBuilder::new(app, "main"' in helper
+    assert 'WINDOW_GATE.lock()' in helper and 'updater::installing(app)' in helper

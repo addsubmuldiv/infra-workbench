@@ -1,7 +1,7 @@
 import {t,useLocale,dateLocale} from './i18n';
 import {useWorkspaceRestore} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {Activity,ArrowUp,Check,Download,FileText,FolderOpen,LoaderCircle,RefreshCw,Save,Trash2,X} from 'lucide-react';
 import './precision.css';
 import {downloadOriginalLog} from './logDownload';
@@ -28,8 +28,8 @@ const groupOf=(s:Snapshot|null,key:string|null)=>s?.groups.find(g=>g.key===key)|
 
 export function PrecisionCompare({hosts}:{hosts:Host[]}){
   useLocale();
-  const [draft,setDraft]=useState<Draft>(restore),[configs,setConfigs]=useState<Config[]>([]);
-  useWorkspaceRestore(KEY,restore,setDraft);
+  const [draft,storeDraft]=useState<Draft>(restore),[configs,setConfigs]=useState<Config[]>([]);
+  const currentDraft=useRef(draft),revision=useRef(0),draftRevision=useRef(0);
   const [a,setA]=useState<Snapshot|null>(null),[b,setB]=useState<Snapshot|null>(null),[result,setResult]=useState<Result|null>(null);
   const [busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[readAt,setReadAt]=useState('');
   const [active,setActive]=useState('loss'),[sort,setSort]=useState('error'),[picked,setPicked]=useState<Point|null>(null);
@@ -38,19 +38,33 @@ export function PrecisionCompare({hosts}:{hosts:Host[]}){
   useEffect(()=>{api('/configs').then(setConfigs).catch(e=>setError(e.message))},[]);
   useEffect(()=>{try{workspaceStorage.setItem(KEY,JSON.stringify(draft))}catch{}},[draft]);
   const clearResult=()=>{setResult(null);setPicked(null);setSource(null)};
+  const setDraft:React.Dispatch<React.SetStateAction<Draft>>=next=>{
+    const previous=currentDraft.current,value=typeof next==='function'?next(previous):next;
+    const changed=(side:'baseline'|'candidate')=>previous[side].host_id!==value[side].host_id||previous[side].path!==value[side].path;
+    const left=changed('baseline'),right=changed('candidate');
+    const optionsChanged=JSON.stringify([previous.metrics,previous.baseline_group,previous.candidate_group,previous.duplicate_policy,previous.start,previous.end])!==JSON.stringify([value.metrics,value.baseline_group,value.candidate_group,value.duplicate_policy,value.start,value.end]);
+    if(JSON.stringify(previous)!==JSON.stringify(value))draftRevision.current++;
+    currentDraft.current=value;
+    if(left||right||optionsChanged){revision.current++;if(left)setA(null);if(right)setB(null);if(left||right){setBrowser(null);setDirectory(null)}clearResult();setError('');setNotice('');setBusy('');}
+    storeDraft(value);
+  };
+  useWorkspaceRestore(KEY,restore,setDraft);
   const update=(change:Partial<Draft>)=>{setDraft(d=>({...d,...change}));clearResult()};
   const setLocation=(side:'baseline'|'candidate',change:Partial<Location>)=>{update({[side]:{...draft[side],...change},[side+'_group']:null});if(side==='baseline')setA(null);else setB(null)};
-  const execute=async(label:string,fn:()=>Promise<void>)=>{setBusy(label);setError('');setNotice('');try{await fn()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy('')}};
+  const execute=async(label:string,fn:()=>Promise<void>)=>{const ticket=revision.current;setBusy(label);setError('');setNotice('');try{await fn()}catch(e){if(ticket===revision.current)setError(e instanceof Error?e.message:String(e))}finally{if(ticket===revision.current)setBusy('')}};
   const options=()=>({metrics:draft.metrics,duplicate_policy:draft.duplicate_policy,start:draft.start,end:draft.end});
   const compare=async(left:Snapshot,right:Snapshot)=>{
+    const ticket=revision.current;
     const ag=groupOf(left,draft.baseline_group),bg=groupOf(right,draft.candidate_group);
     if(!ag||!bg)throw new Error(t("存在多个 rank 或训练段，请在双方日志卡片中选择轨迹后点击“计算误差”。","Multiple ranks or training segments were found. Select a trajectory in each log card, then click Calculate error."));
     const value:Result=await api('/compare','POST',{baseline:left.id,candidate:right.id,baseline_group:ag.key,candidate_group:bg.key,...options()});
+    if(ticket!==revision.current)return;
     setResult(value);setActive(value.metrics.some(m=>m.name===active)?active:value.metrics[0].name);setPicked(null);setSource(null);
   };
   const readBoth=()=>execute('read',async()=>{
-    clearResult();setA(null);setB(null);
+    const ticket=revision.current;clearResult();setA(null);setB(null);
     const reads=await Promise.allSettled([api('/read','POST',draft.baseline),api('/read','POST',draft.candidate)]);
+    if(ticket!==revision.current)return;
     const left=reads[0].status==='fulfilled'?reads[0].value as Snapshot:null;
     const right=reads[1].status==='fulfilled'?reads[1].value as Snapshot:null;
     setA(left);setB(right);setReadAt(new Date().toLocaleTimeString(dateLocale(),{hour12:false}));
@@ -58,18 +72,20 @@ export function PrecisionCompare({hosts}:{hosts:Host[]}){
     if(errors.length)throw new Error(errors.join('；'));
     if(left&&right)await compare(left,right);
   });
-  const demo=()=>execute('demo',async()=>{clearResult();const value=await api('/demo','POST');setA(value.baseline);setB(value.candidate);setReadAt(new Date().toLocaleTimeString());await compare(value.baseline,value.candidate)});
+  const demo=()=>execute('demo',async()=>{const ticket=revision.current;clearResult();const value=await api('/demo','POST');if(ticket!==revision.current)return;setA(value.baseline);setB(value.candidate);setReadAt(new Date().toLocaleTimeString());await compare(value.baseline,value.candidate)});
   const browse=async(side:'baseline'|'candidate',path:string)=>{
-    const value:Directory=await api('/browse','POST',{host_id:draft[side].host_id,path});setDirectory(value);setFolder(value.path);setBrowser(side);
+    const ticket=revision.current;const value:Directory=await api('/browse','POST',{host_id:draft[side].host_id,path});if(ticket!==revision.current)return;setDirectory(value);setFolder(value.path);setBrowser(side);
   };
   const inspect=(point:Point)=>execute('source',async()=>{
-    setPicked(point);setSource(null);if(!a||!b)return;
+    const ticket=revision.current;setPicked(point);setSource(null);if(!a||!b)return;
     const values=await Promise.all([api('/'+a.id+'/record?'+new URLSearchParams({group:groupOf(a,draft.baseline_group)!.key,line:String(point.baseline_line)})),api('/'+b.id+'/record?'+new URLSearchParams({group:groupOf(b,draft.candidate_group)!.key,line:String(point.candidate_line)}))]);
+    if(ticket!==revision.current)return;
     setSource({baseline:values[0],candidate:values[1]});
   });
   const save=()=>execute('save',async()=>{
+    const ticket=draftRevision.current;
     if(!draft.name.trim())throw new Error(t("请给这个对比配置起一个名称","Enter a name for this comparison configuration"));
-    const value:Config=await api('/configs','POST',draft);setDraft(value);setConfigs(await api('/configs'));setNotice(t("对比配置已保存，下次选择后重新读取日志即可。","Comparison configuration saved. Select it and reread the logs next time."));
+    const value:Config=await api('/configs','POST',draft);if(ticket!==draftRevision.current)return;setDraft(value);const savedTicket=draftRevision.current;const saved=await api('/configs');if(savedTicket!==draftRevision.current)return;setConfigs(saved);setNotice(t("对比配置已保存，下次选择后重新读取日志即可。","Comparison configuration saved. Select it and reread the logs next time."));
   });
   const downloadLog=(side:'baseline'|'candidate')=>execute('download-'+side,async()=>{
     const file=await downloadOriginalLog(draft[side]);

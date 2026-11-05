@@ -328,7 +328,7 @@ def test_api_remember_remove_disable_and_privileged_failure_keep_monitoring(tmp_
 
     class MonitoringRemote(Remote):
         async def run(self, host, command, source=None):
-            if command=='python3 -':
+            if command.endswith('# IWB_MONITOR'):
                 raw=dict(kind='GPU',metrics=dict(code=0,out='0, GPU-test, GPU, 1000, 300, 5, 30',error=''),
                          processes=dict(code=0,out='GPU-test, 4308, python, 300'),
                          users=dict(code=0,out='4308 bob'),ports=dict(code=0,out=''),
