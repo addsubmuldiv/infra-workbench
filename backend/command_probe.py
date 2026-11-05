@@ -148,11 +148,11 @@ def job_folder(job_id, create=False):
     return base/job_id
 
 
-def job_status(folder, request):
+def job_status(folder, request, include_output=True):
     state = json.loads((folder/'state.json').read_text())
     state['job_id'] = request['job_id']
     state['offset'] = request.get('offset', 0)
-    for name in ('stdout', 'stderr'):
+    for name in ('stdout', 'stderr') if include_output else ():
         try:
             with open(folder/name, 'rb') as stream:
                 stream.seek(state['offset'])

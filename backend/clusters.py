@@ -390,9 +390,11 @@ class ClusterService:
             result['refresh_scope']='returned_page_only' if refresh else 'cached'
         return result
 
-    async def batches(self, allowed=None):
+    async def batches(self, allowed=None, *, all_history=False):
         self.prune_history()
-        rows = self.db.execute('SELECT payload FROM cluster_batches ORDER BY rowid DESC LIMIT 100').fetchall()
+        # Keep the existing GUI window; MCP has an explicit page interface and
+        # must be able to reach older retained batches beyond that window.
+        rows = self.db.execute('SELECT payload FROM cluster_batches ORDER BY rowid DESC'+('' if all_history else ' LIMIT 100')).fetchall()
         result = []
         for row in rows:
             b = json.loads(row[0])

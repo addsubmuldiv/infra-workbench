@@ -75,7 +75,7 @@ async def call(app,name,arguments,allowed=None):
     elif name=='execute_cluster_command':data=await service.submit(args,allowed)
     elif name=='list_cluster_command_batches':
         from .mcp_output import page
-        rows=(await service.batches(allowed))['items']
+        rows=(await service.batches(allowed,all_history=True))['items']
         data=page([{k:v for k,v in row.items() if k not in ('items','command')} for row in rows],args['offset'],args['limit'])
     elif name=='get_cluster_command_batch':
         data=await service.batch(args['batch_id'],allowed,refresh=args['refresh'],offset=args['offset'],limit=args['limit'])

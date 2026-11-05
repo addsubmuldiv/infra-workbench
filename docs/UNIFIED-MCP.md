@@ -4,6 +4,18 @@
 
 已移除自动化设置页面、流程 HTTP 接口、七个流程 MCP 工具、终端事件触发和 `manage-automation` 内置技能。AI 对话与其他 Skills 保留。旧流程和运行记录仍保留在本地数据库，但不再加载或执行。已运行的后台需要重启才能卸载旧服务。
 
+## 查询工具的概要与详情（2026-11-05）
+
+- `list_hosts(offset, limit)` 和不指定主机的 `get_resources` 返回 `total`、`next_offset`、`has_more`；默认 20 行，并按字符预算缩短页面。
+- 单机 `get_resources` 默认 `view="summary"`，保留采样时间、fresh/unknown、设备指标和逐卡 PID/显存，省略重复长命令。`process_count` 是去重 PID 数，逐卡最多预览 20 个进程，`processes_truncated` 标明省略。设备按 `next_device_offset` 续读。
+- `get_resources(view="processes")` 按 PID 去重返回进程与设备关联，并用 `device_memory_used` 保留逐卡显存（未知仍为 null）；列表按 `next_offset` 续读。指定 `pid` 后，用 `text_offset`/`text_limit` 和逐条 `text_next_offset` 读取命令、目录、可执行文件等完整文本。不能把第一张卡的占用冒充进程总占用。`view="detail"` 保留兼容的原始结构，超大详情应改用分页视图。
+- `get_workbench_state` 默认只给主机概要页和各类准确计数；`omitted_sections` 表示本轮未展开的集合，空数组不能据此解释为没有记录。用 `section="rules"/"reservations"/"events"/"group_reservations"/"hosts"` 加 `offset`/`limit` 查看对应页。`recent_event_count` 仅是原通知事件窗口的数量，不是全历史计数；受限会话不读取无法归属的通知事件。MCP 状态请求在 HTTP 层就省略完整端口/进程快照。
+- `read_changes` 使用 `before_id`/`next_before_id` 向更早的记录翻页，原有时间和机器范围限制继续生效。集群批次分页不再先丢弃第 100 条以前的有效历史。命令任务列表只检查状态与进程身份，不打开 stdout/stderr。
+
+分页是当前数据视图，不是持久冻结快照；翻页期间机器采样或运行状态可能变化。执行终止进程等操作前仍须使用原有身份核对工具。模型、HTTP 和外部 MCP 继续共享参数校验、范围约束及同一业务数据源。
+
+English: Query defaults are bounded summaries. Explicit row/character pages retain process/device membership, sample timestamps, unknown states, counts, and continuation cursors. History pages reach older retained records; job listings avoid reading output streams. Live pages are not immutable snapshots and never replace process identity validation before mutation.
+
 ## MCP 输出预算与原生按需加载（2026-11-05）
 
 框架接入详见 [DEEPAGENTS.md](DEEPAGENTS.md)。业务 skill 初始只展示名称和用途；读取后由 Deep Agents `SkillsMiddleware` 的 `metadata.include_tools` 披露相关 MCP schema。独立工具有 `/tool-skills/mcp-工具名/SKILL.md` 按需入口。原有 MCP 全目录仍供外部客户端发现，内置模型不会每轮发送全部参数定义；披露不是权限校验。

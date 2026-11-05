@@ -113,6 +113,21 @@ TOOLS={tool['name']:tool for tool in [
         [dict(when='SSH_PASSWORD_UNAVAILABLE/CREDENTIAL_IDENTITY_CHANGED',action='请用户在该机器的SSH密码设置中核对、验证保存，或使用agent自己的密钥。')]),
 ]}
 
+# All clients discover these same bounds and explicit detail views.
+for _name in ('list_hosts','get_resources'):
+    TOOLS[_name]['inputSchema']['properties'].update(
+        offset=field('integer','结果行偏移；按 next_offset 继续。',0,0),
+        limit=field('integer','最多返回行数，字符预算可能缩短页面。',20,1,50))
+TOOLS['get_resources']['inputSchema']['properties'].update(
+    view=field('string','summary 默认省略重复命令；processes 按 PID 去重并分页，detail 兼容原始完整设备数据。', 'summary',enum=['summary','processes','detail']),
+    pid=field('integer','processes 视图只读取此 PID；不能据此发送信号。',minimum=1),
+    device_offset=field('integer','设备页偏移，按 next_device_offset 继续。',0,0),
+    device_limit=field('integer','每页设备数。',10,1,50),
+    text_offset=field('integer','进程长文本字符偏移；对指定 PID 按 text_next_offset 继续。',0,0),
+    text_limit=field('integer','进程命令、目录等文本每字段的字符数上限。',500,1,2000))
+TOOLS['get_resources']['description']=TOOLS['get_resources']['description'].replace('\n示例参数：',' 默认 summary 保留设备与逐卡 PID/显存，省略重复长命令；用 view=processes、pid、text_offset/text_limit 读取完整进程文字。设备按 next_device_offset 翻页。\n示例参数：')
+TOOLS['list_hosts']['description']=TOOLS['list_hosts']['description'].replace('\n示例参数：',' 列表分页返回 total 和 next_offset；按实际游标继续。\n示例参数：')
+
 
 def validate_call(name,arguments):
     spec=TOOLS.get(name)

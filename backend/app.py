@@ -573,14 +573,19 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         return JSONResponse(await state_changes.wait(revision, instance), headers={'Cache-Control': 'no-store'})
 
     @app.get('/api/state')
-    async def state():
+    async def state(request: Request):
         now = time.time()
         items = []
         for host in hosts:
             snap = snapshots.get(host['id'], dict(status='connecting', devices=[], collected_at=None))
             fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= reservations.max_sample_gap and snap['status'] == 'online')
-            sections = section_views(snap, now, reservations.max_sample_gap)
-            items.append(dict(**host, collection=collection_metrics.get(host['id']), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
+            if request.headers.get('x-iwb-mcp')=='1':
+                # MCP needs a view, not a serialized copy of all ports/processes.
+                items.append(dict({k:host.get(k) for k in ('id','target','user','port','manual','auth')},
+                                  snapshot=dict(status=snap.get('status','connecting'),collected_at=snap.get('collected_at'),fresh=fresh)))
+            else:
+                sections = section_views(snap, now, reservations.max_sample_gap)
+                items.append(dict(**host, collection=collection_metrics.get(host['id']), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})

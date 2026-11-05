@@ -113,7 +113,8 @@ class ResourceHistory:
         with self.store.db:
             self.store.db.execute('DELETE FROM resource_baselines WHERE host_id=?', (host_id,))
 
-    def view(self, hours=1, now=None, host_ids=None):
+    def view(self, hours=1, now=None, host_ids=None, before_id=None, limit=100):
+        if not 1<=limit<=100 or (before_id is not None and before_id<1):raise ValueError('Invalid history cursor or page size')
         now = time.time() if now is None else now
         since = now - hours * 3600
         db = self.store.db
@@ -124,16 +125,25 @@ class ResourceHistory:
             scope=' AND host_id IN ('+','.join('?' for _ in scope_args)+')' if scope_args else ' AND 0'
         total = db.execute('SELECT count(*) FROM resource_changes WHERE created>=? AND created<=?'+scope, (since,now,*scope_args)).fetchone()[0]
         events = []
-        for row in db.execute('SELECT id,created,host_id,alias,kind,payload FROM resource_changes WHERE created>=? AND created<=?'+scope+' ORDER BY id DESC LIMIT 100', (since,now,*scope_args)):
+        cursor_sql=' AND id<?' if before_id is not None else ''
+        cursor_args=[before_id] if before_id is not None else []
+        candidates=db.execute('SELECT id,created,host_id,alias,kind,payload FROM resource_changes WHERE created>=? AND created<=?'+scope+cursor_sql+' ORDER BY id DESC LIMIT ?', (since,now,*scope_args,*cursor_args,limit+1)).fetchall()
+        size=0
+        for row in candidates[:limit]:
             item = dict(zip(('id','created','host_id','alias','kind','payload'), row))
             item['payload'] = json.loads(item['payload'])
             item['description'] = describe_event(item['kind'], item['payload'])
+            length=len(json.dumps(item,ensure_ascii=False))
+            if events and size+length>8000:break
+            size+=length
             events.append(item)
+        more=len(candidates)>len(events)
         last = db.execute('SELECT max(observed) FROM resource_baselines WHERE 1'+scope,scope_args).fetchone()[0]
         oldest = db.execute('SELECT min(created) FROM resource_changes WHERE 1'+scope,scope_args).fetchone()[0]
-        return dict(events=events, event_count=total, truncated=total > len(events),
+        return dict(events=events, event_count=total, truncated=total > len(events),has_more=more,
+                    next_before_id=events[-1]['id'] if more and events else None,
                     recording_started_at=self.started, last_observed_at=last, oldest_event_at=oldest,
                     requested_since=since, until=now, error=self.error,
                     limitations=['只记录采样间可确认的变化；进程消失不代表任务成功。',
                                  '重启前后的采样间断和未知进程状态不推断占用变化；首次采样只建立基线。',
-                                 f'最多保留最近 {HISTORY_CHANGES_RETENTION_DAYS} 天、{MAX_EVENTS} 条变化；本次最多显示 100 条。'])
+                                 f'最多保留最近 {HISTORY_CHANGES_RETENTION_DAYS} 天、{MAX_EVENTS} 条变化；本页最多 {limit} 条，可按 next_before_id 继续。'])

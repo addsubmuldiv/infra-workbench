@@ -27,7 +27,7 @@ def atomic_probe(name, args):
                 if not re.fullmatch(r'[a-f0-9]{32}',entry.name):continue
                 try:
                     folder=job_folder(entry.name)
-                    data=job_status(folder,dict(offset=0,job_id=entry.name))
+                    data=job_status(folder,dict(offset=0,job_id=entry.name),include_output=False)
                     row={k:data[k] for k in ('status','started_at','finished_at','exit_code','pid') if k in data}
                     row['job_id']=entry.name
                     if args.get('status') is None or row.get('status')==args['status']:rows.append(row)

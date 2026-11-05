@@ -7,6 +7,8 @@ from .agent_errors import AgentError, response, recovery
 
 from .host_alias import host_label, matches_name
 from .snapshot_sections import section_views
+from .mcp_output import page
+from .resource_views import resource_view
 
 GIB=1024**3
 
@@ -81,6 +83,7 @@ def query_hosts(hosts, tool, options=None, now=None):
     if tool=='get_host' or (tool=='get_resources' and options.get('host_id')):
         host=resolve_host(hosts,options['host_id'])
         result=compact_resource(host,now,max_age) if tool=='get_host' else resource(host,now,max_age)
+        if tool=='get_resources':result=resource_view(result,options)
         if tool=='get_host':
             result.update(manual=bool(host.get('manual')),user=host.get('user'),port=host.get('port'))
         error=None
@@ -88,11 +91,11 @@ def query_hosts(hosts, tool, options=None, now=None):
             error=AgentError('STALE_SNAPSHOT','未取得所需新鲜采样。',recovery('STALE_SNAPSHOT',host['id']))
         return response({'host' if tool=='get_host' else 'resource':result},error,bool(error))
     if tool=='list_hosts':
-        return response(dict(items=[summary(h,now,max_age) for h in ordered]))
+        return response(page([summary(h,now,max_age) for h in ordered],options.get('offset',0),options.get('limit',20),budget=8000))
     if tool=='get_resources':
         items=[compact_resource(h,now,max_age) for h in ordered]
         stale=options.get('refresh') and any(not h['fresh'] for h in items)
-        return response(dict(items=items),AgentError('STALE_SNAPSHOT','部分机器未取得新鲜采样。') if stale else None,bool(stale))
+        return response(page(items,options.get('offset',0),options.get('limit',20),budget=8000),AgentError('STALE_SNAPSHOT','部分机器未取得新鲜采样。') if stale else None,bool(stale))
     if tool!='search_hosts':
         raise AgentError('INVALID_ARGUMENT','不支持的查询工具。')
     count=options.get('count',1);minimum=options.get('min_free_gib',0)*GIB

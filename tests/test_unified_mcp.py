@@ -125,7 +125,7 @@ def test_reservation_create_update_scope_cancel_and_persistence(tmp_path):
             key = created.structured_content['data']['id']
             changed = await session.call_tool('update_reservation', dict(reservation_id=key, wait_seconds=300))
             assert not changed.is_error and changed.structured_content['data']['wait_seconds'] == 300
-            state = (await session.call_tool('get_workbench_state', {})).structured_content['data']
+            state = (await session.call_tool('get_workbench_state', {'section':'reservations'})).structured_content['data']
             assert state['reservations'][0]['id'] == key
             # SQLite, not an MCP-local shadow copy, is the source of truth.
             assert json.loads(app.state.agent_chat.store.db.execute(

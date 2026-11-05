@@ -26,7 +26,7 @@ OPERATIONS = {
     'delete_service': ('DELETE', '/api/hosts/{host_id}/services/{forward_id}', '停止并删除本地服务转发规则。', False, False),
 
     'connect_host': ('POST', '/api/connect', '通过已有 SSH 配置/密钥连接并添加机器。需要用户要求。密码输入和保存应在软件连接界面完成。provision=true 会配置免密，只在用户要求时使用。', False, False),
-    'get_workbench_state': ('GET', '/api/state', '查看机器概要、监控规则、预约及准确计数。只返回允许范围内的记录。详细设备和进程使用 get_resources，端口用 ssh_check；概要不包含全部采样。', True, False),
+    'get_workbench_state': ('GET', '/api/state', '默认查看主机概要页和规则/预约/事件计数。用 section 指定 hosts/rules/reservations/events/group_reservations，按 next_offset 查看各页；omitted_sections 未展开不代表零条。只返回允许范围内记录，设备进程用 get_resources，端口用 ssh_check。', True, False),
     'preflight': ('POST', '/api/preflight', '训练前检查指定设备、显存和端口，不预留设备，不启动训练。', True, False),
     'refresh_host': ('POST', '/api/hosts/{host_id}/refresh', '刷新一台机器的采样。', True, False),
     'create_reservation': ('POST', '/api/reservations', '创建资源预约，可按具体设备或同机设备数量等待空闲并提醒。不是锁卡，不会启动任务。需要用户明确要求预约。email_notify=true 会在就绪时发邮件。', False, False),
@@ -115,6 +115,10 @@ class ApplicationOperations:
                                   limit={'type':'integer','minimum':1,'maximum':20,'default':10})
             if name=='refresh_host':
                 properties['view']={'type':'string','enum':['summary','detail'],'default':'summary'}
+            if name=='get_workbench_state':
+                properties.update(section={'type':'string','enum':['overview','hosts','rules','reservations','events','group_reservations'],'default':'overview'},
+                                  offset={'type':'integer','minimum':0,'default':0},
+                                  limit={'type':'integer','minimum':1,'maximum':50,'default':20})
             catalog[name] = dict(name=name, title=description.split('。')[0], description=description,
                 inputSchema=dict(type='object', properties=properties, required=required, additionalProperties=False),
                 outputSchema=envelope({}), annotations=dict(readOnlyHint=readonly, destructiveHint=not readonly,
@@ -176,7 +180,7 @@ class ApplicationOperations:
         if name == 'load_demo_logs':
             raise AgentError('SCOPE_REQUIRED', '演示数据不属于所选真实机器。')
 
-    def scoped_result(self, name, value, allowed):
+    def scoped_result(self, name, value, allowed, arguments=None):
         if name == 'get_workbench_state':
             value = dict(value)
             if allowed is not None:
@@ -185,6 +189,7 @@ class ApplicationOperations:
                 # Legacy events have no reliable host_id. read_changes provides
                 # scoped history; never leak the global event stream here.
                 value['events'] = []
+                value['group_reservations']=[v for v in value.get('group_reservations',[]) if v.get('candidate_host_ids') and set(v['candidate_host_ids'])<=set(allowed)]
             # A full /api/state contains every port and process on every host.
             # Preserve actionable counts and records without exhausting model
             # context; dedicated tools remain the source for full host details.
@@ -194,6 +199,17 @@ class ApplicationOperations:
             ) for host in value['hosts']]
             value.update(host_count=len(value['hosts']), reservation_count=len(value['reservations']),
                          rule_count=len(value['rules']), recent_event_count=len(value['events']))
+            from .mcp_output import page
+            arguments=arguments or {};section=arguments.get('section','overview')
+            key='hosts' if section=='overview' else section
+            value['group_reservation_count']=len(value.get('group_reservations',[]))
+            rows=value.get(key,[])
+            result=page(rows,arguments.get('offset',0),arguments.get('limit',20),budget=8000)
+            for collection in ('hosts','rules','reservations','events','group_reservations'):
+                value[collection]=result['items'] if collection==key else []
+            value.update({k:v for k,v in result.items() if k!='items'},section=section,
+                         omitted_sections=[name for name in ('hosts','rules','reservations','events','group_reservations') if name!=key],
+                         available_sections=['hosts','rules','reservations','events','group_reservations'])
         if allowed is None:
             return value
         if name == 'list_log_comparisons':
@@ -208,6 +224,8 @@ class ApplicationOperations:
         method, template, _, _, handoff = OPERATIONS[name]
         path = template
         body, query = dict(args), {}
+        if name=='get_workbench_state':
+            for key in ('section','offset','limit'):body.pop(key,None)
         refresh_view=body.pop('view','summary') if name=='refresh_host' else None
         if name=='compare_training_logs':body.setdefault('view','summary')
         if name=='file_operation' and body.get('op')=='read':body.setdefault('read_limit',6000)
@@ -238,4 +256,4 @@ class ApplicationOperations:
         if name=='refresh_host' and refresh_view=='summary':
             value={k:v for k,v in value.items() if k in ('status','collected_at','error','error_stage','sections')}
             value.update(host_id=args['host_id'],detail_tool='get_resources')
-        return response(self.scoped_result(name, value, allowed))
+        return response(self.scoped_result(name, value, allowed,args))
