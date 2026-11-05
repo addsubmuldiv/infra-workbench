@@ -95,10 +95,31 @@ def parse_npu(raw):
     if len({d['id'] for d in devices}) != len(devices) or len({d['uuid'] for d in devices}) != len(devices):
         raise ValueError('NPU 设备编号重复，无法可靠区分芯片')
 
+    process_table, block_rows, block_valid = False, [], False
     for line in raw.splitlines():
+        if re.search(r'\|\s*NPU\s+Chip\s*\|\s*Process id\s*\|', line):
+            process_table, block_rows, block_valid = True, [], False
+            continue
+        if process_table and re.fullmatch(r'\s*\+(?:=+\+)+\s*', line):
+            # npu-smi groups all processes of a card between '=' borders.
+            # A busy card omits empty dies; only a complete, valid block
+            # proves those omitted dies have no reported compute processes.
+            cards = {card for card, chip in block_rows}
+            if block_valid and len(cards) == 1:
+                for d in devices:
+                    if d['card_id'] in cards:
+                        d['processes_known'] = True
+            block_rows, block_valid = [], True
+            continue
         empty = re.search(r'No running processes found in NPU\s+(\d+)', line)
         proc = re.search(r'^\|\s*(\d+)\s+(\d+)\s*\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(\d+)\s*\|', line)
         proc_new = re.search(r'^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(\d+)\s*\|\s*(?:\d+|NA)\s*\|', line)
+        if process_table:
+            complete = re.fullmatch(r'\s*\|\s*(\d+)\s+(\d+)\s*\|\s*\d+\s*\|[^|]+\|\s*\d+\s*\|\s*(?:\d+|NA)\s*\|\s*', line)
+            if complete and any(d['card_id'] == complete[1] and d['chip_id'] == complete[2] for d in devices):
+                block_rows.append((complete[1], complete[2]))
+            else:
+                block_valid = False
         for d in devices:
             if empty and empty[1] == d['card_id']:
                 d['processes_known'] = True

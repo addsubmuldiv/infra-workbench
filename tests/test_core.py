@@ -141,3 +141,44 @@ def test_single_chip_device_ids_stay_compatible():
     assert device['id'] == '3'
     assert device['display_id'] == '3'
     assert device['card_id'] == '3' and device['chip_id'] == '0'
+
+
+def dual_die_process_output(rows, closed=True):
+    metrics = []
+    for chip in range(2):
+        metrics += ['| 5 Ascend910 | OK | 180 44 0 / 0 |',
+                    f'| {chip} {10+chip} | 0000:04:00.0 | 0 0 / 0 3000 / 65536 |']
+    return '\n'.join(metrics + [
+        '| NPU Chip | Process id | Process name | Process memory(MB) | Process id in container |',
+        '+===========================+===============+',
+        *rows,
+        *(['+===========================+===============+'] if closed else []),
+    ])
+
+
+def test_complete_dual_die_process_block_confirms_unlisted_die_is_empty():
+    for chip in (0, 1):
+        devices = parse_npu(dual_die_process_output([f'| 5 {chip} | 1234 | python | 20153 | NA |']))
+        assert devices[chip]['processes'][0]['pid'] == 1234
+        idle = devices[1-chip]
+        assert idle['processes_known'] is True
+        assert idle['processes'] == []
+        assert eligible(idle, 0, True)
+
+
+def test_incomplete_or_invalid_process_block_keeps_unlisted_die_unknown():
+    cases = [
+        dual_die_process_output(['| 5 0 | 1234 | python | 20153 | NA |'], closed=False),
+        dual_die_process_output(['| 5 0 | 1234 | python | 20153 | NA |', '| 5 1 | unreadable |']),
+        dual_die_process_output(['| 5 0 | 1234 | python | 20153 | NA |', '| Permission denied |']),
+        dual_die_process_output(['| 5 0 | 1234 | python | 20153 | NA |', '| 5 9 | 5678 | python | 10 | NA |']),
+    ]
+    complete = dual_die_process_output(['| 5 0 | 1234 | python | 20153 | NA |'])
+    cases += [
+        complete.replace('+===========================+===============+\n', '', 1),
+        complete.replace('| NPU Chip | Process id | Process name | Process memory(MB) | Process id in container |', ''),
+    ]
+    for raw in cases:
+        idle = parse_npu(raw)[1]
+        assert idle['processes_known'] is False
+        assert not eligible(idle, 0, True)
