@@ -4,12 +4,29 @@ import time
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import PrivateAttr
 from .chat_tools import scrub
+from .internal_defaults import ASSISTANT_CONTEXT_FALLBACK_TOKENS
+
+
+def visible_tools(tools):
+    return [tool for tool in tools or []
+            if not (getattr(tool,'extras',None) or {}).get('defer_loading')]
+
+
+def count_visible_tokens(messages, *, tools=None, **kwargs):
+    """Do not count schemas withheld by this adapter's deferred-tool binding.
+
+    SkillsMiddleware activates schemas downstream of automatic summarization.
+    The final adapter request is checked again below, so dynamically disclosed
+    schemas cannot silently exceed the actual input budget.
+    """
+    return count_tokens_approximately(messages,tools=visible_tools(tools),**kwargs)
 
 
 def text_content(content):
@@ -50,7 +67,7 @@ class WorkbenchChatModel(BaseChatModel):
     _on_context: Any = PrivateAttr(default=None)
     _on_timing: Any = PrivateAttr(default=None)
 
-    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None, context_window=32000, on_context=None, on_timing=None):
+    def __init__(self, provider, *, on_start=None, on_text=None, sanitize=None, context_window=ASSISTANT_CONTEXT_FALLBACK_TOKENS, on_context=None, on_timing=None):
         super().__init__(profile={'max_input_tokens': context_window})
         self._provider = provider
         self._on_context = on_context
@@ -68,8 +85,7 @@ class WorkbenchChatModel(BaseChatModel):
         # SkillsMiddleware clears defer_loading when a skill discloses a tool.
         # This generic provider adapter cannot forward provider-native deferred
         # schemas, so withhold them until the framework activates them.
-        bound._tools = [convert_to_openai_tool(tool)['function'] for tool in tools
-                        if not (getattr(tool,'extras',None) or {}).get('defer_loading')]
+        bound._tools = [convert_to_openai_tool(tool)['function'] for tool in visible_tools(tools)]
         return bound
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -89,8 +105,14 @@ class WorkbenchChatModel(BaseChatModel):
         display = self._tools is not None
         if display and self._on_start:
             self._on_start()
+        actual_tokens=count_tokens_approximately(messages,tools=self._tools or [])
         if display and self._on_context:
-            self._on_context(count_tokens_approximately(messages, tools=self._tools), 'request')
+            self._on_context(actual_tokens, 'request')
+        if display and actual_tokens>int(self.profile['max_input_tokens']*.85):
+            # Native SummarizationMiddleware catches this and compacts/retries.
+            # Unlike its outer estimate this includes the final system prompt
+            # and all dynamically disclosed schemas actually sent to provider.
+            raise ContextOverflowError('实际请求超过上下文压缩阈值 / Actual bound input requires compaction')
         instructions = '\n\n'.join(text_content(m.content) for m in messages if isinstance(m, SystemMessage))
         options = {}
         if display and self._on_text and getattr(self._provider, 'supports_streaming', False):

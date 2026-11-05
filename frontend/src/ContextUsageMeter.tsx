@@ -33,6 +33,6 @@ export function ContextUsageMeter({chat,model}:{chat:Chat|null;model?:string}){
       <span className={'chat-context-meter-fill'+(percent>=85?' near-limit':'')} style={{width:`${Math.min(100,percent)}%`}}/>
       <i style={{left:`${total?trigger/total*100:85}%`}}/>
     </div>
-    <div className="chat-context-meter-caption"><span>{compacting?ui("正在压缩上下文…"):remaining===null?ui("发送消息后更新用量"):remaining===0?ui("已达到触发线，下次调用前由框架判断压缩"):t(`距压缩约 ${format(remaining)} token`,`About ${format(remaining)} tokens until compaction`)}</span><span>{source==='fallback'?ui("容量未识别 · 保守值"):t(`压缩线 ${total?Math.round(trigger/total*100):85}%`,`Compaction at ${total?Math.round(trigger/total*100):85}%`)}</span></div>
+    <div className="chat-context-meter-caption"><span>{compacting?ui("正在压缩上下文…"):remaining===null?ui("发送消息后更新用量"):remaining===0?ui("已达到触发线，下次调用前由框架判断压缩"):t(`距压缩约 ${format(remaining)} token`,`About ${format(remaining)} tokens until compaction`)}</span><span>{source==='fallback'?ui("容量未识别 · 默认值"):t(`压缩线 ${total?Math.round(trigger/total*100):85}%`,`Compaction at ${total?Math.round(trigger/total*100):85}%`)}</span></div>
   </div>;
 }

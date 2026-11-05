@@ -19,6 +19,9 @@ class Model:
     config={'model':'test-model'}
     def __init__(self):self.contexts=[];self.replies=[]
     def key_for(self,config):return 'synthetic-private-key'
+    async def context_capacity(self):
+        # A fixed known test window keeps real compaction regressions small.
+        return dict(tokens=32000,source='provider',trigger_tokens=27200)
     async def turn(self,instructions,messages,tools):
         self.contexts.append((instructions,messages.copy(),tools))
         return self.replies.pop(0)

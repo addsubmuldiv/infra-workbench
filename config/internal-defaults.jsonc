@@ -89,7 +89,7 @@
   },
   "assistant": {
     // 无法取得模型容量且用户未手填时的默认上下文，单位：token。
-    "context_fallback_tokens": 32000,
+    "context_fallback_tokens": 524288,
     // 成功获取模型容量的缓存时间，单位：秒；按模型和凭据身份隔离。
     "metadata_success_cache_seconds": 3600,
     // 模型容量查询失败后缓存默认值的时间，单位：秒。

@@ -1,5 +1,5 @@
 import {t} from './i18n.ts';
-export type ContextCapacity={tokens:number;source:'provider'|'manual'|'fallback';trigger_tokens:number};
+export type ContextCapacity={tokens:number;source:'provider'|'official'|'manual'|'fallback';trigger_tokens:number};
 export type AgentProtocol='auto'|'responses'|'chat_completions';
 export type AgentConfig={profile_id?:string;base_url:string;protocol:AgentProtocol;model:string;timeout_seconds:number;context_window?:number|null};
 export type AgentTest={ok:boolean;message:string;protocol?:AgentProtocol;model?:string;preview?:string;elapsed_ms?:number;updated:number};

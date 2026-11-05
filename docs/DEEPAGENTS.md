@@ -28,3 +28,15 @@ English: The integration reuses native middleware rather than introducing anothe
 ```
 
 这些测试验证技能披露、会话恢复、摘要恢复、计划持久化、取消和校验边界；构建或单元测试通过不表示真实模型的技能选择质量、缓存命中或远端执行已经验证。
+
+## 上下文预算与新对话
+
+原生摘要中间件使用适配器提供的 token 计数器：未披露的延迟工具 schema 不计入请求预算。模型实际发送前再计算最终消息和已激活工具；超过输入预算时抛出框架原生 `ContextOverflowError`，由原生摘要中间件压缩和重试，避免漏算动态披露的工具。此处没有额外的摘要循环。
+
+容量依次取手动配置、当前服务商的精确型号元数据、已核实的官方型号文档；均不可用时使用 512K（524,288 token）。元数据支持 `/models`、精确型号详情和 `/model/info`，多个部署使用最小明确容量，不把输出上限当作上下文长度。官方文档补充值只对明确记录的官方域名和精确型号生效。OpenAI 标准模型对象没有上下文容量字段，不能依靠 `/models` 保证获取该值。
+
+新对话创建独立会话状态，不继承旧对话消息、摘要和工具披露记录。技能简介、系统提示、当前机器范围，以及该配置和范围已有的长期记忆仍可能进入首轮上下文；因此新对话的输入并非零 token。功能实测应新开 Codex 内置浏览器标签页并创建空白对话，核对首轮是否发生压缩。
+
+English: Deferred schemas are excluded until disclosed. The adapter checks the final bound input and delegates genuine overflow to native summarization. Capacity resolution prefers manual configuration, exact provider metadata, then verified official specifications; unknown models default to 524,288 tokens. New chats have independent history and compaction state, while bounded scoped memory remains separate.
+
+2026-11-05 在 Codex 内置浏览器新标签页、空白对话中，用同一提示“检查可用资源和运行中的服务”实测：54.389 秒、6 次工具调用、5 次回复模型调用、0 次压缩、0 次完全相同的重复工具调用；首轮历史和终端附件均为 0。上一轮记录为 201.586 秒、12 次工具调用、6 次压缩。此次结果覆盖全部 16 台机器的资源采样与占卡进程，未扫描全部监听端口；实时采样和模型响应耗时会波动，单次结果不代表稳定性能保证。

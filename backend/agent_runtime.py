@@ -21,9 +21,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langsmith import tracing_context
 from pydantic import ValidationError
 
-from .agent_langchain import WorkbenchChatModel, wire_messages
+from .agent_langchain import WorkbenchChatModel, wire_messages, count_visible_tokens
 from .chat_tools import scrub
 from .mcp_client import gateway_for, discover_tools
+from .internal_defaults import ASSISTANT_CONTEXT_FALLBACK_TOKENS
 
 
 SKILLS_ROOT = Path(__file__).with_name('skills')
@@ -202,7 +203,9 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
         mcp_tools = await discover_tools(client, secret)
         files=skill_tool_files(files,mcp_tools)
         mcp_tools=[tool.model_copy(update={'extras':dict(tool.extras or {},defer_loading=True)}) for tool in mcp_tools]
-        capacity = await provider.context_capacity() if hasattr(provider, 'context_capacity') else dict(tokens=32000, source='fallback', trigger_tokens=27200)
+        capacity = await provider.context_capacity() if hasattr(provider, 'context_capacity') else dict(
+            tokens=ASSISTANT_CONTEXT_FALLBACK_TOKENS,source='fallback',
+            trigger_tokens=int(ASSISTANT_CONTEXT_FALLBACK_TOKENS*.85))
         turn['context_capacity'] = capacity
         def context_usage(tokens, phase):
             turn['context_usage'] = dict(used_tokens=tokens, total_tokens=capacity['tokens'],
@@ -256,7 +259,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
             middleware=[FilesystemMiddleware(backend=backend, tools=fs_tools,permissions=fs_permissions),
                         TodoListMiddleware(),
                         *([memory.middleware] if memory is not None else []),
-                        create_summarization_middleware(summary_model, backend),
+                        create_summarization_middleware(summary_model, backend,token_counter=count_visible_tokens),
                         SkillsMiddleware(backend=backend,sources=['/skills/','/tool-skills/']),
                         ToolTrace(turn, tools, allowed, secret, save, {t.name for t in mcp_tools}, receipts)],
         )

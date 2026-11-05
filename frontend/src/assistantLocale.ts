@@ -1,6 +1,8 @@
 import {t} from './i18n.ts';
 
 const messages:Record<string,string>={
+  "容量未识别 · 默认值": "Unknown capacity · default window",
+  "无法自动识别，使用默认容量": "Capacity unavailable; using the default window",
   "接口已在其他窗口切换。请重新加载设置后再编辑。": "The API profile changed in another window. Reload settings before editing.",
   "操作失败，请重试": "Operation failed. Please try again.",
   "Agent 设置已保存。填写模型名称后，可以测试连接。": "Agent settings saved. Enter a model name to test the connection.",

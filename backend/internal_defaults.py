@@ -1,6 +1,6 @@
 # Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
 # 无法取得模型容量且用户未手填时的默认上下文，单位：token。
-ASSISTANT_CONTEXT_FALLBACK_TOKENS = 32000
+ASSISTANT_CONTEXT_FALLBACK_TOKENS = 524288
 # 模型容量查询失败后缓存默认值的时间，单位：秒。
 ASSISTANT_METADATA_FAILURE_CACHE_SECONDS = 60
 # 成功获取模型容量的缓存时间，单位：秒；按模型和凭据身份隔离。
