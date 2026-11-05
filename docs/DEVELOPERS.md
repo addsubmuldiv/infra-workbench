@@ -1,5 +1,7 @@
 # 开发者导览：架构、Agent 与参与贡献
 
+[简体中文](DEVELOPERS.md) | [English](DEVELOPERS.en.md)
+
 Infra Workbench 是面向 AI 工程师的本地服务器工作台：通过 SSH 管理 Linux 服务器，把 GPU / Ascend NPU 资源、终端、文件、训练日志和空闲提醒放在同一个界面。内置助手和外部 Agent 可以调用这些业务能力，帮助用户完成多步操作。
 
 欢迎一起改进项目。你可以修复一个解析错误、完善一个 Skill、增加测试、改善界面，也可以参与 Agent 工具设计和跨平台适配。本文帮助你找到合适的代码入口；安装步骤见 [CONTRIBUTING.md](../CONTRIBUTING.md)，用户操作见[使用指南](GUIDE.md)。项目采用 [MIT 许可证](../LICENSE)，第三方依赖按各自许可证使用。
