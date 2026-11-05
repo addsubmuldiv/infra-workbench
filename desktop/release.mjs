@@ -1,3 +1,4 @@
+import {syncVersion} from '../scripts/sync-version.mjs';
 import {createHash,createPublicKey,verify} from 'node:crypto';
 import {readFileSync,readdirSync,writeFileSync,copyFileSync,mkdirSync,existsSync,statSync,mkdtempSync,renameSync,rmSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
@@ -5,6 +6,8 @@ import path from 'node:path';
 export function verifyVersion(tag, root = path.resolve(import.meta.dirname, '..')) {
   if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) throw new Error('Expected a version tag such as v0.1.0');
   const expected = tag.slice(1);
+  if (JSON.parse(readFileSync(path.join(root, 'version.json'), 'utf8')).version !== expected) throw new Error(`version.json version must equal ${expected}`);
+  syncVersion(root);
   for (const file of ['frontend/package.json', 'frontend/package-lock.json', 'desktop/package.json', 'desktop/package-lock.json', 'desktop/src-tauri/tauri.conf.json']) {
     if (JSON.parse(readFileSync(path.join(root, file), 'utf8')).version !== expected) throw new Error(`${file} version must equal ${expected}`);
   }

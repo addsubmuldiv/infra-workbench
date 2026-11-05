@@ -92,3 +92,19 @@ git push -u origin main
 ```
 
 目前没有选定开源许可证。公开发布前需要确认代码与图像资源的授权；内部试用不要据此推断获得任意再分发许可。
+
+## 版本号维护
+
+发版只需修改根目录 `version.json` 中的 `version`（不带 `v`）。前端开发/构建、演示构建、桌面开发/构建与桌面 CI 会自动同步各清单、锁文件和后台健康接口。发布校验会先确认标签与唯一版本来源一致，再同步。依赖版本与历史文档不会被替换。
+
+提交或创建版本标签前，可主动同步并检查：
+
+```sh
+node scripts/sync-version.mjs
+node scripts/sync-version.mjs --check
+node --test scripts/sync-version.test.mjs desktop/release.test.mjs
+```
+
+将派生文件与 `version.json` 一起提交。直接运行 Python 不会执行 Node 同步，因此源码分发前应执行上述命令。已运行后台需重启才能显示新版本。标签仍与版本一致，例如 `v0.2.1`。
+
+内部参数定位见 [内部参数盘点](docs/INTERNAL-PARAMETERS.md)。
