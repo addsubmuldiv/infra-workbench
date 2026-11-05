@@ -4,7 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 const version=JSON.parse(readFileSync(new URL('./package.json',import.meta.url),'utf8')).version;
 // writeBundle runs after Vite has emitted HTML and its final chunk/CSS/assets.
-// dist deliberately retains old lazy chunks; packaging consumes only this list.
+// Packaging consumes only this list, including when local chunk retention is enabled.
 export function currentBuildInventory(){
   let publicDir;
   function publicFiles(directory,prefix=''){
@@ -24,7 +24,7 @@ export default defineConfig(({mode,command})=>({
   define:{__IWB_VERSION__:JSON.stringify(version),__IWB_DEMO__:JSON.stringify(mode==='demo')},
   base:mode==='demo'?'./':'/',
   plugins:[...(mode!=='demo'&&command==='build'?[currentBuildInventory()]:[]),...(mode==='demo'&&command==='build'?[{name:'demo-network-policy',transformIndexHtml(){return [{tag:'meta',attrs:{'http-equiv':'Content-Security-Policy',content:"connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'self'"},injectTo:'head-prepend'}]}}]:[])],
-  // Open pages may still request older lazy chunks after an in-place update.
-  build:{target:['es2020','safari15'],emptyOutDir:mode==='demo',outDir:mode==='demo'?'demo-dist':'dist'},
+  // Retention is opt-in for local in-place updates with open pages; do not commit retained chunks.
+  build:{target:['es2020','safari15'],emptyOutDir:mode==='demo'||process.env.IWB_RETAIN_OLD_CHUNKS!=='1',outDir:mode==='demo'?'demo-dist':'dist'},
   server:{proxy:{'/api':{target:'http://127.0.0.1:8765',ws:true}}},
 }));

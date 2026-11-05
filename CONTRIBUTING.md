@@ -134,3 +134,5 @@ node --test scripts/generate-internal-defaults.test.mjs
 将生成的 Python、TypeScript 和独立探针源码一起提交。前端和桌面构建自动生成，前端测试、CI 和发布检查先拒绝过期产物；源码归档从同一 Git 快照验证，不使用工作区参数。维护者归档需 Node.js，普通源码运行和安装版不需要。修改涉及前端时重建 `frontend/dist`，安装分发需重建桌面安装包。现有进程不热加载这些值。
 
 字段说明、单位、范围和维护规则见 [内部策略维护](docs/INTERNAL-DEFAULTS.md)。容量上限放大需审查 schema 和资源消耗；资源新鲜度、预约判断及更新退出等规则不在普通配置中调整。
+
+前端构建默认清空旧产物，提交时使用 `git add -A frontend/dist`，将旧哈希文件的删除一起提交，避免 GitHub 源码 ZIP 累积历史资源。若本地原地更新时需要兼容已打开页面，可临时设置 `IWB_RETAIN_OLD_CHUNKS=1` 保留旧文件；这种保留构建不要提交，提交前移除该环境变量并重新构建。

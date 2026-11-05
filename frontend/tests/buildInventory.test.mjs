@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-import {currentBuildInventory} from '../vite.config.js';
+import config,{currentBuildInventory} from '../vite.config.js';
 
 test('inventory includes final HTML, chunks, CSS, fonts and public assets but excludes retained files',()=>{
   const root=mkdtempSync(path.join(os.tmpdir(),'iwb-inventory-'));
@@ -26,4 +26,18 @@ test('inventory includes final HTML, chunks, CSS, fonts and public assets but ex
     assert.deepEqual(Object.keys(inventory.files),names);
     for(const name of names){const bytes=readFileSync(path.join(dist,name));assert.deepEqual(inventory.files[name],{size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});}
   }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('build clears old assets by default and retention requires explicit local opt-in',()=>{
+  const previous=process.env.IWB_RETAIN_OLD_CHUNKS;
+  try{
+    delete process.env.IWB_RETAIN_OLD_CHUNKS;
+    assert.equal(config({mode:'production',command:'build'}).build.emptyOutDir,true);
+    process.env.IWB_RETAIN_OLD_CHUNKS='1';
+    assert.equal(config({mode:'production',command:'build'}).build.emptyOutDir,false);
+    assert.equal(config({mode:'demo',command:'build'}).build.emptyOutDir,true);
+  }finally{
+    if(previous===undefined)delete process.env.IWB_RETAIN_OLD_CHUNKS;
+    else process.env.IWB_RETAIN_OLD_CHUNKS=previous;
+  }
 });
