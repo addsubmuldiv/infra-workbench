@@ -192,7 +192,7 @@ class CodexConnection:
         async def drain():
             while await self.process.stderr.read(8192):pass
         self.stderr=asyncio.create_task(drain())
-        await self.request('initialize',{'clientInfo':{'name':'infra_workbench','version':'0.1.8'},'capabilities':{'experimentalApi':True}})
+        await self.request('initialize',{'clientInfo':{'name':'infra_workbench','version':'0.2.0'},'capabilities':{'experimentalApi':True}})
         await self.send({'method':'initialized'})
 
     async def send(self,value):
