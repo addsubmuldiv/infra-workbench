@@ -143,28 +143,13 @@ npm.cmd run demo
 Pop-Location
 ```
 
-后端测试使用项目虚拟环境：
+测试使用项目虚拟环境，按改动选择功能组，见 [测试说明](TESTING.md)。例如助手后端修改：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe scripts/run_tests.py assistant --scope backend
 ```
 
-修改 Agent 时，可先定位相关回归，再运行项目要求的完整检查：
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_deepagents.py -q
-rg -n "create_deep_agent|SkillsMiddleware|defer_loading" backend/agent_runtime.py backend/agent_langchain.py
-```
-
-前端修改后执行：
-
-```powershell
-Push-Location frontend
-npm.cmd test
-npm.cmd run build
-Pop-Location
-git diff --check
-```
+前端修改选择对应组并使用 `--scope frontend`，然后在 `frontend` 执行 `npm.cmd run build`。完成后运行 `git diff --check`。只有共享基础代码、广泛影响行为的改动或发布前才运行 `scripts/run_tests.py --all`。
 
 `frontend/dist` 随仓库分发，修改前端后需一并提交重新构建的产物。Rust 修改在 `desktop/src-tauri` 运行相应 Cargo 检查或测试；桌面打包沿用 [DESKTOP.md](DESKTOP.md) 的入口，更新包另见 [UPDATES.md](UPDATES.md)。
 

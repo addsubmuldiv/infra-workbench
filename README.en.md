@@ -15,16 +15,6 @@ Built for engineers training, fine-tuning, deploying, and debugging models acros
 
 *Screenshots use fictional machines and sample data. See the [illustrated user guide](docs/GUIDE.en.md). The interface supports Simplified Chinese and English. Switch under Settings → General → Interface language. The screenshots below show the English interface.*
 
-Resource planning now includes multi-machine availability alerts (all specified machines or any N candidates in a cluster) and daily resource history with device counts, machine-state stacks, heatmaps, coverage and explicit unknown intervals. Alerts do not lock resources. History starts with new observations and retains 30 days by default. See [resource history](docs/RESOURCE-HISTORY.md) and [reservations](docs/RESERVATIONS.md).
-
-## What makes it AI-native
-
-The assistant works with the workbench's actual machine, resource, process, file, and reservation tools. It can carry out multi-step tasks and expose tool results for review: find free devices, inspect processes, read a specified log, or create an availability alert using the conditions you confirmed. External agents can also access workbench capabilities through MCP.
-
-Turn repeatable workflows into **Skills**. Create a skill in Settings, import Markdown or ZIP, or ask the assistant: “Turn the inspection workflow we just confirmed into a skill and install it.” Select skills with `@` in the composer, or let the assistant discover them as needed. Skills support persistent drafts, enable/disable controls, copying, export, and version rollback. Changes take effect on the next turn; scripts stored in skills do not run automatically.
-
-The model interprets goals, selects tools, and explains results. The backend validates machine scope, arguments, and permissions. Execution records show target machines, parameters, results, and failures; uncertain resource states remain unknown. Resource searches and availability alerts do not lock devices or schedule training jobs.
-
 ## Desktop installation on Windows
 
 Download the Windows x64 installer from the [latest Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`. This document describes the current repository; consult the relevant Release notes for features included in a published installer.
@@ -39,66 +29,32 @@ Desktop windows, the tray, and the floating monitor share the local backend. Use
 
 Windows installers support startup update checks and user-initiated download/installation from v0.1.1. Existing v0.1.0 users must manually install this bootstrap version once; save work and exit the old tray/backend first. See [updater operation and limits](docs/UPDATES.md).
 
+## First use
+
+Choose **Add machine**, connect with your local SSH alias or address and account, then check sample time and devices before opening a terminal or files. Follow [Connect your first server](docs/GUIDE.en.md#connect-your-first-server) for expected results and recovery steps. Manual resource views, terminals and files require no model key; configure AI later using the [selection guide](docs/GUIDE.en.md#choose-how-to-use-ai).
+
 ## Browser demo
 
 After starting the frontend or workbench locally, append `?demo=1` to its address, for example `http://127.0.0.1:8765/?demo=1`. Explore sample resources, terminals, files, and a highlighted walkthrough. The demo uses browser-only simulated data and isolates requests to the real backend. It does not connect to servers or model providers, and does not validate SSH, credentials, notifications, or installation. Simulated actions do not change the real workbench.
 
 For a frontend-only demo, run `npm ci` and `npm run demo` in `frontend`; `npm run build:demo` creates a static artifact. See [demo isolation and limitations](docs/DEMO.md).
 
-## Features
+## Find documentation by task
 
-Version 0.1.2 adds local Codex, Claude Code and OpenCode engines alongside existing API profiles, explicit terminal attachments, chat branches and Codex run steering. It also adds loopback SSH service forwarding, inspectable automation workflows, keyword highlights, opt-in SIXEL/iTerm images and archive command fill without automatic execution. External CLIs must be installed and authenticated separately. Codex and Claude Code have real synthetic-tool validation; OpenCode's authenticated model path remains unverified after a timeout. See [Codex](docs/CODEX.md), [other agents](docs/EXTERNAL-AGENTS.md), [services](docs/PORT-FORWARDING.md), [automation](docs/AUTOMATION.md) and [terminal images](docs/TERMINAL-IMAGES-ARCHIVES.md).
-
-| Feature | What you can do |
+| Task | Guide |
 | --- | --- |
-| Resource overview | Inspect GPU / NPU utilization, memory, temperature, CPU, and system RAM; find machines by device count and free accelerator memory. |
-| Process inspection | View users, PIDs, working directories, executables, and commands where permissions allow. Configure optional sudo collection per machine. |
-| Monitoring and readiness checks | Follow resource changes and check selected devices and training ports before launching a job. |
-| Availability alerts | Wait for a device count or specific device IDs, with a default two-minute idle period; edit, repeat, and inspect notification status. These alerts do not reserve hardware exclusively. |
-| Notifications | Receive Windows notifications; optionally configure SMTP and enable email separately for each availability alert. |
-| SSH terminals | Use multiple sessions, command history suggestions, output search, command templates, task completion alerts, and recoverable tmux sessions. Move, resize, minimize, or maximize the terminal. |
-| SSH tunnels | Use the chain icon on a machine card for dedicated local or remote forwards, connect/disconnect, network reconnect and optional startup connection. Tunnels run independently of VS Code. See [SSH tunnels](docs/SSH-TUNNELS.md). |
-| VS Code connection | Open the machine in local VS Code. Optionally select tunnels to connect first, wait for readiness, and retry or explicitly skip on failure. |
-| Server files | Browse and search directories, edit text, create, copy, cut, move, rename, upload, and download files or folders. Use alongside a terminal. |
-| Training comparison | Align supported training JSON logs by actual step and compare metrics, curves, and errors with links to source lines. |
-| Desktop resource monitor | Keep resource status visible on Windows; filter machines, inspect devices, collapse, resize, pin, or adjust opacity. Right-click a machine to open a standalone terminal or file window. |
-| AI assistant and Skills | Query resources, processes, tmux, and logs; manage reservations, monitoring, and files as requested. Review tool traces, create or import skills, and reuse confirmed workflows with `@`. |
-| Model profiles | Save multiple API URLs, keys, and models; switch compatible providers, fetch model lists, and test text connections. Supports OpenAI Responses and Chat Completions. |
-| MCP access | Let external agents discover machines, filter resources, and use workbench tools with backend host-scope and argument validation. The ordinary tool-discovery catalog does not expose SSH password-export tools. |
-| Interface language | Switch between Simplified Chinese and English in Settings → General → Interface language. The choice is saved and synced across workbench windows, the Windows monitor, and tray menus. |
-| Appearance | Choose light and dark themes, resize the sidebar, and restore machine selections. |
+| Connect your first server and check results | [First connection](docs/GUIDE.en.md#connect-your-first-server) |
+| Import hosts or organize clusters | [Import](docs/IMPORT.md) · [Clusters](docs/CLUSTERS.md) |
+| Wait for devices or inspect usage history | [Alerts](docs/RESERVATIONS.md) · [History](docs/RESOURCE-HISTORY.md) |
+| Use terminals and server files | [Terminals](docs/TERMINAL.md) · [Files](docs/FILES.md) |
+| Open TensorBoard / Jupyter or VS Code | [Services](docs/PORT-FORWARDING.md#english) · [SSH tunnels](docs/SSH-TUNNELS.md#english) |
+| Configure AI or reuse workflows | [Choose AI](docs/GUIDE.en.md#choose-how-to-use-ai) · [Skills](docs/USER-SKILLS.md) |
+| Connect another AI client | [MCP](docs/MCP.md) |
+| Receive notifications or use the monitor | [Email](docs/MAIL.md) · [Monitor](docs/FLOATING-MONITOR.en.md) |
+| Compare training metrics | [Precision](docs/PRECISION.md) |
+| Diagnose problems | [Troubleshooting](docs/TROUBLESHOOTING.md) |
 
-## Desktop resource monitor
-
-![Desktop resource monitor with sample machines](docs/images/floating-overview-en.jpg)
-
-Toggle it from startup settings or the tray menu. Click a machine for details, hover over a device for process information, or right-click to open a standalone terminal or file window. Monitoring continues after the main workbench is closed.
-
-*The OS title bar belongs to the screenshot preview host; the production monitor is borderless. See the [monitor guide](docs/FLOATING-MONITOR.en.md) for filtering, layout, appearance, and status rules.*
-
-## Connect machines
-
-Click **添加机器** to select an entry from your local SSH config or enter an address and account manually. Existing SSH keys, agents, and jump-host configuration can be reused. Password authentication and optional automatic key setup are also supported.
-
-For multiple machines, use **Excel bulk import (Excel 批量导入)** and review progress and failures. The IP column can contain an SSH alias; the account column overrides the alias user, while an empty port inherits the alias port. A numeric port overrides it. Supplied passwords are saved after successful verification. See the [import guide in Chinese](docs/IMPORT.md).
-
-Select machines in the sidebar, click devices for process details, and select devices to add monitoring, request availability alerts, or run readiness checks.
-
-## AI assistant and custom skills
-
-Configure a compatible model service under **Settings → Agent model API (设置 → Agent 模型接口)**. A successful text connection test does not prove tool-call support; the provider must support function tools for multi-step assistant tasks.
-
-Ask questions or request actions such as:
-
-- “Find four free GPUs with at least 40 GiB of memory available on each.”
-- “Who is using the accelerators on this machine, and what are the process working directories?”
-- “Read this training log and separate confirmed findings from unknowns.”
-- “Create an availability alert using the conditions we just confirmed.”
-- “Create and install a skill from this inspection workflow.”
-
-The assistant docks on the right and can be dragged into a floating window. Resize or collapse it while preserving the conversation and input draft. Expand execution records to inspect targets, parameters, and raw results. Use **Cancel turn (取消本轮)** to stop further work; hiding the assistant does not cancel a running turn or undo completed actions.
-
-Under **Settings → Skills (设置 → 技能)**, create a draft or import Markdown / ZIP, review and validate it, then install it. Manage versions, disable skills, copy or export them, and roll back updates. Type `@` in the composer to select a skill explicitly. See the [English user guide](docs/GUIDE.en.md#ai-assistant-and-skills) for the workflow and the [Chinese skill reference](docs/USER-SKILLS.md) for package details.
+The [full index](docs/README.md) and some detailed guides are currently in Chinese.
 
 ## Requirements, updates, and data
 
@@ -110,14 +66,19 @@ Before updating, save edited files, handle terminal tasks, and exit through the 
 
 The backend runs locally. **Do not share the `data` directory or SSH private keys.** Optional saved sudo passwords use Windows Credential Manager and can be removed. The assistant can write server files, execute authorized remote Shell commands, manage processes, and explicitly request sudo subject to server policy. It has no independent per-operation approval layer. Assistant conversations and server content actually read by its tools are sent to the configured model provider; do not ask it to read confidential files. Machine scope and credential protections remain enforced by the backend. See [data and credentials](SECURITY.md) in Chinese.
 
-## Documentation
+## What makes it AI-native
 
-- [User guide — English](docs/GUIDE.en.md) / [简体中文](docs/GUIDE.md)
-- [Desktop monitor — English](docs/FLOATING-MONITOR.en.md) / [简体中文](docs/FLOATING-MONITOR.md)
-- Detailed references in Chinese: [model configuration](docs/AGENT.md), [skills](docs/USER-SKILLS.md), [MCP](docs/MCP.md), [terminals](docs/TERMINAL.md), [files](docs/FILES.md), [availability alerts](docs/RESERVATIONS.md), [email](docs/MAIL.md), and [training comparison](docs/PRECISION.md).
-- [Development](CONTRIBUTING.md) · [Desktop build](docs/DESKTOP.md) · [macOS verification scope](docs/MACOS.md) (Chinese).
+The assistant works with the workbench's actual machine, resource, process, file, and reservation tools. It can carry out multi-step tasks and expose tool results for review: find free devices, inspect processes, read a specified log, or create an availability alert using the conditions you confirmed. External agents can also access workbench capabilities through MCP.
 
-The MCP endpoint is `http://127.0.0.1:8765/mcp`.
+Turn repeatable workflows into **Skills**. Create a skill in Settings, import Markdown or ZIP, or ask the assistant: “Turn the inspection workflow we just confirmed into a skill and install it.” Select skills with `@` in the composer, or let the assistant discover them as needed. Skills support persistent drafts, enable/disable controls, copying, export, and version rollback. Changes take effect on the next turn; scripts stored in skills do not run automatically.
+
+The model interprets goals, selects tools, and explains results. The backend validates machine scope, arguments, and permissions. Execution records show target machines, parameters, results, and failures; uncertain resource states remain unknown. Resource searches and availability alerts do not lock devices or schedule training jobs.
+
+Model APIs must support Responses and tool calls; local CLI engines require separate installation and authentication. The assistant can access all added hosts by default. Enable **Only allow operations on selected machines** in the composer context settings to restrict scope; sidebar selection alone does not restrict it. Cancellation does not undo completed changes.
+
+## Development
+
+See [CONTRIBUTING](CONTRIBUTING.md) and the [developer guide](docs/DEVELOPERS.en.md).
 
 ## License
 

@@ -16,6 +16,24 @@ Closing the browser leaves the tray backend running, so monitoring, availability
 
 ## First use and getting-started guide
 
+Follow the first connection below before optional alerts, AI or appearance settings. The [documentation index](README.md) and [troubleshooting guide](TROUBLESHOOTING.md) are currently in Chinese.
+
+### Connect your first server
+
+Prepare an authorized Linux host, an SSH account and a key or password. The target needs Python 3 and `nvidia-smi` / `npu-smi`; the local computer needs OpenSSH. Verify the host fingerprint before first connection; see [Windows connection instructions](WINDOWS.md#安装与日常启动). Batch import handles first-seen keys as described in [Import](IMPORT.md).
+
+| Action | Expected result | If it fails |
+| --- | --- | --- |
+| Choose Add machine and connect using an alias or address, port and account | The intended host appears in the sidebar | Check native SSH, authentication and jump configuration |
+| Select it in the overview and wait for collection | Online status, sample time and device metrics appear | SSH success alone does not prove collection works; check the remote Python and driver commands |
+| Open a device | Known metrics and visible occupying processes appear; missing fields remain unknown | Process details may require additional read permissions |
+| Open its terminal and run `whoami` and `pwd` | The expected account and working directory | Verify the target; see [terminals](TERMINAL.md) |
+| Open files and browse an accessible directory | The intended path and entries appear | File management uses the SSH account, without sudo; see [files](FILES.md) |
+
+You can now use the workbench without a model key. Configure AI later if needed. Without a server, use **Settings → About and help → Try the demo and guided tour (no server required)**.
+
+### Guide display and replay
+
 A new workspace with no hosts shows the guide after the backend state has loaded successfully. Completing it, skipping it, or pressing Escape saves the decision in the local workspace and synchronizes it across windows connected to that backend. Existing workspaces with hosts are not interrupted on upgrade.
 
 Replay it under **Settings → About and help → Replay getting-started guide**. The guide does not connect to servers, run commands, or install CLIs. **Add machine** only opens the connection form. For a hands-on simulation, choose **Try the demo and guided tour (no server required)** separately; demo state and real-workspace guide completion remain independent.
@@ -30,24 +48,6 @@ Replay it under **Settings → About and help → Replay getting-started guide**
 | Optional settings | Find language, Skills, MCP, email, and help | [Skills](USER-SKILLS.md), [MCP](MCP.md) |
 
 Availability alerts do not lock hardware or start training, and history gaps remain unknown. Broadcast commands, terminals, and AI tools may modify remote machines; verify the target scope first. Some linked technical guides are currently in Chinese.
-
-## Interface language
-
-Open **Settings → General → Interface language (设置 → 通用 → 界面语言)** and choose **English** or **简体中文**. The change applies immediately without reconnecting machines, resetting editor drafts, or recreating terminal sessions. The local backend saves the choice for future launches and synchronizes it across workbench windows, the Windows desktop monitor, and tray menus. Machine names, files and logs, terminal output, model responses, and some original backend diagnostics retain their source language.
-
-![English interface and language settings](images/interface-language-en.png)
-
-## Desktop resource monitor
-
-![Resource monitor overview](images/floating-overview-en.jpg)
-
-Toggle **显示浮窗** in the Windows tray menu or use startup settings. The monitor works with either main interface. The OS title bar in these screenshots belongs to a preview host; the production monitor is borderless.
-
-Click a machine or **详情 ›** for device details. Hover over a device to see memory, utilization, and collected process information. Use **选择机器** to search and select machines, **−** to collapse, and **展开** to expand. Drag the header to move, drag an edge to resize, use the pin for always-on-top, and open the gear for opacity settings. Layout and selections are saved, and the monitor follows the workbench theme.
-
-Right-click a machine card, name, or device to open a standalone terminal (**打开终端**) or file window (**打开文件**). A file window can open a terminal in its current directory; terminal directory links can open a separate file window. Closing a normal SSH terminal may end foreground jobs, so use tmux for long tasks.
-
-Unknown or stale data must not be treated as free resources. Availability alerts apply additional utilization, memory, and continuous-idle checks. See the [illustrated monitor guide](FLOATING-MONITOR.en.md).
 
 ## Connect and select machines
 
@@ -140,6 +140,21 @@ File tools use the SSH account without sudo. Text editing is limited to 1 MiB; o
 
 ## AI assistant and Skills
 
+### Choose how to use AI
+
+| Your situation | Start here |
+| --- | --- |
+| You have a Responses API with tool-call support | Settings → AI assistant → Model configuration; [setup](AGENT.md) |
+| You installed and authenticated a local CLI | Choose its engine in the assistant; [Codex](CODEX.md), [Claude Code / OpenCode](EXTERNAL-AGENTS.md) |
+| You want another AI client to access the workbench | Settings → Integrations → MCP; [MCP setup](MCP.md) |
+| You want to reuse a workflow | Settings → AI assistant → Skills; [Skills](USER-SKILLS.md) |
+
+API and CLI credentials are independent; you do not need both. Skills describe workflows; MCP supplies tools. Neither replaces a model connection.
+
+### Verify your first assistant query
+
+Create a new conversation, enable **Only allow operations on selected machines** in the composer context settings, verify the scope, and ask “Inspect these machines and report device status, sample times and unknown information.” Expand the tool records to check target hosts and returned facts. A text reply or successful text connection test alone does not prove server tools were called. See [AI troubleshooting](TROUBLESHOOTING.md#ai-助手) for model versus tool failures.
+
 Configure a service URL, API key, and model under **Settings → AI assistant → Model configuration**, then save and test. Multiple profiles are supported. A text test alone does not validate function-tool support. Alternatively, select local Codex, Claude Code, or OpenCode in the assistant; install and sign in to the chosen CLI separately. See [local engines and validation limits](EXTERNAL-AGENTS.md).
 
 Open **AI 助手** and describe a goal: find four free GPUs with 40 GiB each, identify accelerator users and working directories, read a specified training log, or create an alert with confirmed conditions. The assistant can query resources, processes, tmux, and files, and manage reservations, monitoring, and files as requested. Expand execution steps to inspect target machines, arguments, raw results, and errors.
@@ -173,10 +188,40 @@ Supported training JSON logs are aligned by actual step. Results include curves,
 
 Save configurations, export all results as CSV, or download raw logs without metric parsing. Built-in examples help you explore the flow. See the [Chinese comparison reference](PRECISION.md).
 
+## Interface language
+
+Open **Settings → General → Interface language (设置 → 通用 → 界面语言)** and choose **English** or **简体中文**. The change applies immediately without reconnecting machines, resetting editor drafts, or recreating terminal sessions. The local backend saves the choice for future launches and synchronizes it across workbench windows, the Windows desktop monitor, and tray menus. Machine names, files and logs, terminal output, model responses, and some original backend diagnostics retain their source language.
+
+![English interface and language settings](images/interface-language-en.png)
+
+## Desktop resource monitor
+
+![Resource monitor overview](images/floating-overview-en.jpg)
+
+Toggle **显示浮窗** in the Windows tray menu or use startup settings. The monitor works with either main interface. The OS title bar in these screenshots belongs to a preview host; the production monitor is borderless.
+
+Click a machine or **详情 ›** for device details. Hover over a device to see memory, utilization, and collected process information. Use **选择机器** to search and select machines, **−** to collapse, and **展开** to expand. Drag the header to move, drag an edge to resize, use the pin for always-on-top, and open the gear for opacity settings. Layout and selections are saved, and the monitor follows the workbench theme.
+
+Right-click a machine card, name, or device to open a standalone terminal (**打开终端**) or file window (**打开文件**). A file window can open a terminal in its current directory; terminal directory links can open a separate file window. Closing a normal SSH terminal may end foreground jobs, so use tmux for long tasks.
+
+Unknown or stale data must not be treated as free resources. Availability alerts apply additional utilization, memory, and continuous-idle checks. See the [illustrated monitor guide](FLOATING-MONITOR.en.md).
+
 ## Themes, local data, and refresh
+
+### What closing a window does
+
+| Action | Effect |
+| --- | --- |
+| Close the main window or browser | The backend keeps monitoring and handling alerts; exit through the tray to stop it |
+| Collapse the assistant | Hides the conversation; use Cancel turn to stop the current turn |
+| Hide the desktop monitor | Hides the resource display; monitoring continues |
+| Close a regular SSH terminal | May affect foreground tasks; use tmux for long tasks |
+| Exit the tray backend | Stops local collection and connections; saved alerts recheck conditions after restart |
+
+### Appearance and refresh settings
 
 Choose a theme from **主题**. Keep passwords, private keys, and the local `data/` directory private. The app does not provide team accounts or a resource scheduler; do not expose its local service directly to a LAN or the internet. See [data and credentials in Chinese](../SECURITY.md).
 
-Refresh intervals are 5, 10, 15, 20, or 30 seconds, defaulting to 15. The backend saves the choice for all windows and uses it for collection and display refresh. Legacy 60-second settings are reduced to 30 seconds.
+Refresh intervals are 5, 10, 15, 20, or 30 seconds, defaulting to 30. The backend saves the choice for all windows and uses it for collection and display refresh. Legacy 60-second settings are reduced to 30 seconds.
 
 Each host waits the configured interval after a collection finishes before starting its next round; rounds on the same host do not overlap. Failures use retry backoff. Single-host availability alerts and the overview allow at least 30 seconds of freshness, or the refresh interval plus a 15-second collection margin up to 45 seconds. Stale, failed, or unknown samples interrupt continuous-idle confirmation. Resource-change gaps longer than 45 seconds remain gaps rather than inferred activity. UI preferences are shared through the local backend; see [workspace state](WORKSPACE-STATE.md).

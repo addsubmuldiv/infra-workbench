@@ -1,10 +1,12 @@
 # Agent 模型接口
 
-在「设置 → Agent 模型接口」配置工作台内置 AI 功能要调用的模型服务。模型接口负责调用模型；MCP 统一提供工作台能力，内置 Deep Agents 和外部客户端共用。
+在「设置 → AI 助手 → 模型配置」配置工作台内置 AI 功能要调用的模型服务。模型接口负责调用模型；MCP 统一提供工作台能力，内置 Deep Agents 和外部客户端共用。
 
-模块提供配置、模型列表获取和真实文本连接测试。左侧「AI 助手」已接入跨机器查找和资源变化摘要，复用现有采集，不需要配置项目路径。模型只在主动查找或生成摘要时调用。
+模块提供配置、模型列表获取和真实文本连接测试。左侧「AI 助手」已接入跨机器查找和资源变化摘要，复用现有采集，不需要配置项目路径。模型请求发生在用户发起的 AI 操作中，包括连接测试、查询、聊天、生成摘要及聊天所需的上下文压缩；这些请求可能产生费用。
 
 ## 配置与测试
+
+先确认你的服务支持 Responses 及工具调用；如果使用本机 CLI，无需填写本页配置，见 [使用方式选择](GUIDE.md#选择-ai-使用方式)。
 
 1. 填写服务商提供的 API URL，例如 `https://api.example.com/v1`。OpenAI 官方地址为 `https://api.openai.com/v1`。
 2. 内置模型接口统一使用 Responses；旧配置的 auto / chat_completions 会迁移，接口地址和密钥保持不变。服务商或网关需要提供 Responses 端点。
@@ -16,12 +18,14 @@
 
 仅有 HTTP 200 不算测试成功，必须解析到模型返回的非空文本。认证失败、权限不足、限流、服务端错误、无文本及未完成的 Responses 响应都会明确失败，不自动切换协议或请求旧端点。
 
+保存并测试通过后，新建助手对话并做一次 [受限机器范围内的查询](GUIDE.md#完成第一次助手查询)，核对实际工具记录。文本测试只证明模型能返回文字，不能证明工具调用可用。失败处理见 [AI 排查](TROUBLESHOOTING.md#ai-助手)。
+
 ## API key
 
 - 默认勾选「记住 API key」：Windows 使用系统凭据管理器，macOS 使用钥匙串，独立于 SSH、sudo 和邮件凭据。
 - 取消勾选时仅保留到本次后台退出；不支持系统安全存储的环境仅提供这种模式。
 - 读取设置不返回 key；key 不写入 SQLite、浏览器存储或项目文件。保存成功后清空输入框，之后留空表示沿用原 key。
-- 更换模型或协议可以沿用 key；更换 URL 必须重新填写。若新服务无需认证，先点击「删除 API key」再保存新地址。
+- 更换模型可以沿用 key；更换 URL 必须重新填写。若新服务无需认证，先点击「删除 API key」再保存新地址。
 - 不自动跟随 HTTP 重定向，避免把 key 转发到其他地址。请直接填写最终 API URL。
 
 ## 兼容范围
@@ -55,7 +59,7 @@ URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；�
 
 内置技能包括（目录以实时 list_skills 为准）：寻找资源、进程与服务、服务器文件读取、训练日志检查、资源变化、预约与监控、训练精度对比、训练前检查、服务器文件操作。助手先看到技能名称和适用说明，需要时读取完整技能内容；工具记录会显示技能读取过程。技能保存在 `backend/skills/<名称>/SKILL.md`，增加同格式的内置技能后，下一轮对话即可发现。技能只描述流程，实际操作仍须通过软件已有工具；添加 Markdown 不会自动获得新的操作权限。
 
-技能与上下文文件位于内存中的虚拟文件系统，`read_file` 等框架工具不能读取电脑真实文件。服务器文件使用独立的 `read_server_file` / `read_server_directory`，继续执行原有机器范围、路径、分页和凭据检查。业务工具统一通过 MCP 发现和调用，支持按用户要求创建/修改/取消预约、增删监控、文件操作和精确日志对比。不提供任意 Shell、安装或提权；结束持久终端会话必须有明确要求。凭据仍在软件设置中管理。
+技能与上下文文件位于内存中的虚拟文件系统，`read_file` 等框架工具不能读取电脑真实文件。服务器文件使用独立的 `read_server_file` / `read_server_directory`，继续执行原有机器范围、路径、分页和凭据检查。业务工具统一通过 MCP 发现和调用，支持按用户要求创建/修改/取消预约、增删监控、文件操作和精确日志对比。授权的远端 Shell、安装与服务管理通过服务器命令工具执行，sudo 受已启用凭据及远端 sudoers 限制；结束持久终端会话必须有明确要求。凭据仍在软件设置中管理。
 
 旧对话可继续使用。长对话由框架生成摘要并保留虚拟历史文件；摘要调用也使用当前模型，因此可能产生额外 API 费用。后台异常退出的本轮会标记中断，下一轮不自动继续执行未完成工具。
 
@@ -81,7 +85,7 @@ URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；�
 
 内置助手复用后台 SSH，不获得 `get_ssh_info` / `get_ssh_password`；外部 MCP 客户端另有显式读取已保存 SSH 密码的工具。文件、命令和进程工具的结果会进入模型上下文。Python 固定检查只代表当前 SSH 的 `python3` 环境。取消对话不会终止已启动的远端命令任务；必须用任务取消工具显式停止，已发生的写入不会回滚。完整行为见 [统一 MCP](UNIFIED-MCP.md)。
 
-默认可访问全部已添加机器。勾选左侧机器范围限制后，查询和写入均由后台强制限制；切换左侧选择不会自动限制对话。上下文包括当前时间、可用机器 ID/别名、用户本轮范围、近期对话、成功解析的查询条件及上次目标。数量、显存等条件可沿用；原始状态过期时仍需重查。
+默认可访问全部已添加机器。在输入区上下文设置勾选「仅允许操作所选的机器」后，查询和写入均由后台强制限制；切换左侧选择不会自动限制对话。上下文包括当前时间、可用机器 ID/别名、用户本轮范围、近期对话、成功解析的查询条件及上次目标。数量、显存等条件可沿用；原始状态过期时仍需重查。
 
 会话及工具片段保存在本机 SQLite，浏览器仅保存当前会话 ID。默认保留最近 7 天、约 30 段会话，单段对话不设固定轮数上限；Deep Agents harness 在上下文较长时自动生成摘要，后续请求使用摘要和近期消息。摘要状态随会话保存，本地可见聊天记录保留。可以新建、切换、删除对话，刷新后可恢复；后台退出后的未完成步骤标记为中断。取消本轮会停止继续调度，不撤销已完成的读取或模型费用，共享采集可能继续完成。
 
@@ -111,44 +115,16 @@ URL 不接受内嵌账号密码、查询参数或片段。支持 HTTP/HTTPS；�
 
 对官方 GLM 接口，两个功能会关闭模型思考以减少延迟：Responses 使用 `reasoning.effort=none`。其他兼容服务不附加这些 GLM 参数。连接测试仍只检查文本通信。
 
-## 开发接口
-
-- `GET /api/settings/agent`：配置和安全存储状态，不包含 key。
-- `PUT /api/settings/agent`：保存配置和可选 key；不调用外部模型。
-- `DELETE /api/settings/agent/api-key`：删除持久和内存中的 key。
-- `POST /api/settings/agent/models`：可传当前表单，也可省略以使用保存的配置；不修改保存的配置。
-- `POST /api/settings/agent/test`：测试已保存的配置。
-- `GET/POST /api/assistant/chats`：列出或新建会话。
-- `GET/DELETE /api/assistant/chats/{id}`：读取或删除本机会话及工具记录。
-- `POST /api/assistant/chats/{id}/messages`：开始一轮处理，随后读取会话获取进度。
-- `POST /api/assistant/chats/{id}/cancel`：取消本轮后续处理。
-
-修改和外部请求操作沿用本机页面的 `X-IWB` 与 Origin 校验，响应设置 `Cache-Control: no-store`。`backend/agent_api.py` 的文本适配器供后续内置功能复用；工具目录以实时 MCP tools/list 为准。
-
-协议参考：[OpenAI Responses](https://developers.openai.com/api/reference/resources/responses/methods/create)。
-
-统一 MCP 架构、能力目录和验证见 [UNIFIED-MCP.md](UNIFIED-MCP.md)。取消不会撤销已完成的写入，结果未知时先查询状态，避免重复预约。
-
-上下文容量优先使用模型设置中的手动值；留空时读取当前接口的模型列表或指定模型元数据，按精确模型 ID 匹配。识别成功缓存一小时，切换接口、模型或密钥后重新识别。框架按容量的 85% 触发摘要。接口没有提供容量时，设置页明确显示“无法自动识别”，暂按 32,000 token 保守处理，可手动填写实际部署容量；不会根据模型名称猜测容量。
-
-
 ## 多套模型接口配置
 
 设置页支持新增、重命名、删除接口配置和设为默认。同一厂商或地址可以保存多套配置，每套的 API key 独立存入系统安全存储。原有单接口配置会自动作为第一套配置使用，原密钥无需重新填写。
 
-新增配置后填写服务商地址、模型 ID、协议和 API key，保存并测试连接。助手顶部的“模型 / 接口”菜单可切换已保存的配置；后台重新启动时会恢复上次选中的 API 配置及该配置最后使用的模型，不会切回默认配置。协议、上下文容量和超时分别保存。不自动在请求失败时切换厂商。
+新增配置后填写服务商地址、模型 ID 和 API key，保存并测试连接。助手顶部的“模型 / 接口”菜单可切换已保存的配置；后台重新启动时会恢复上次选中的 API 配置及该配置最后使用的模型，不会切回默认配置。协议固定为 Responses，上下文容量和超时分别保存。不自动在请求失败时切换厂商。
 
 切换后下一条消息使用新配置。正在运行的回复（包括工具调用和上下文压缩）仍沿用发起时的接口和密钥。每条新回复记录实际模型名称。已有对话可以继续，下一轮按新模型容量处理上下文。
 
 配置是工作台全局设置。多个窗口切换时会在窗口重新获得焦点后刷新；陈旧表单的保存、连接测试、密钥删除和聊天发送会检查配置 ID，避免误操作另一套配置。编辑内容尚未保存时先保存，或点击重新加载放弃修改。
 
+## 开发参考
 
-## DeepSeek Responses
-
-DeepSeek profile: `https://api.deepseek.com`, protocol `responses`, model `deepseek-flash` (or `deepseek-v4-pro`), timeout 120 seconds. Each API profile keeps its own credential.
-
-DeepSeek Responses is stateless. The workbench resends history and paired function calls/results; it does not rely on `previous_response_id`. The adapter preserves returned plain-text reasoning across tool follow-ups, including framework checkpoints. For the official DeepSeek endpoint, Responses uses `reasoning.effort=high` and a 16,384-token per-call output budget (including reasoning), rather than the generic 2,400-token budget. This is a workbench limit, not the provider maximum.
-
-Context capacity remains metadata-driven: current `/models` returns `context_window=1048576` for both models, separately from `max_output_tokens=393216`. Manual overrides take priority. At 85%, the compression trigger is 891,289 tokens. Unknown models without capacity metadata retain the conservative fallback.
-
-Sources checked 2026-11-01: https://api-docs.deepseek.com/zh-cn/guides/responses_api/ and https://api-docs.deepseek.com/zh-cn/quick_start/pricing/ . Live Responses streaming/function-call follow-up and `/models` capacity were verified with the configured DeepSeek credential.
+HTTP 接口、上下文容量和带日期的供应商验证记录见 [模型接口开发参考](AGENT-REFERENCE.md)。其他引擎见 [AI 使用方式选择](GUIDE.md#选择-ai-使用方式)，连接问题见 [故障排查](TROUBLESHOOTING.md#ai-助手)。

@@ -143,28 +143,13 @@ npm.cmd run demo
 Pop-Location
 ```
 
-Run backend tests with the project's virtual environment:
+Use the project virtual environment and select affected groups; see [test selection](TESTING.md). For assistant backend changes:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe scripts/run_tests.py assistant --scope backend
 ```
 
-For agent changes, start with the relevant regressions, then run the full checks required by the project:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_deepagents.py -q
-rg -n "create_deep_agent|SkillsMiddleware|defer_loading" backend/agent_runtime.py backend/agent_langchain.py
-```
-
-After frontend changes, run:
-
-```powershell
-Push-Location frontend
-npm.cmd test
-npm.cmd run build
-Pop-Location
-git diff --check
-```
+For frontend changes, select the relevant group with `--scope frontend`, then run `npm.cmd run build` in `frontend`. Finish with `git diff --check`. Use `scripts/run_tests.py --all` for shared foundational changes, broad behavior changes, or release preparation.
 
 `frontend/dist` ships with the repository; commit rebuilt assets when changing frontend source. For Rust changes, run the appropriate Cargo checks or tests in `desktop/src-tauri`. Use the desktop packaging entry points documented in [DESKTOP.md](DESKTOP.md), and see [UPDATES.md](UPDATES.md) for update packages.
 

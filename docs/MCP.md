@@ -6,7 +6,7 @@ Infra Workbench 提供 **Streamable HTTP MCP**，和网页共用后台：
 http://127.0.0.1:8765/mcp
 ```
 
-先启动桌面应用；源码方式可双击 `安装.cmd`。在网页「设置 → AI agent 接入」可以复制当前地址；若使用其他端口，以页面地址为准。将它添加到支持 Streamable HTTP 的 MCP 客户端。客户端连接后会自动发现完整工具目录、参数 schema 和服务器使用说明，无须安装 infra-cli。
+先启动桌面应用；源码方式可双击 `安装.cmd`。在网页「设置 → 集成服务 → MCP」可以复制当前地址；若使用其他端口，以页面地址为准。将它添加到支持 Streamable HTTP 的 MCP 客户端。客户端连接后会自动发现完整工具目录、参数 schema 和服务器使用说明，无须安装 infra-cli。
 
 ## 本机 agent
 
