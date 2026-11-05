@@ -37,6 +37,10 @@ jobs:
             requirements-dev.txt
       - name: Install test dependencies
         run: python -m pip install -r requirements-dev.txt
+      - name: Check functional test inventory and runner
+        run: |
+          python scripts/run_tests.py --check
+          python -m pytest scripts/test_test_groups.py -q
       - name: Test backend (including native POSIX PTY on Linux and macOS)
         env:
           IWB_DATA: ${{ runner.temp }}/iwb-tests-${{ matrix.os }}-${{ matrix.python }}

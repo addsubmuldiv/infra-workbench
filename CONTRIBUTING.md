@@ -9,13 +9,19 @@
 ```powershell
 .\install.cmd -NoLaunch
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest tests -q
 Push-Location frontend
 npm.cmd ci
-npm.cmd test
+Pop-Location
+.\.venv\Scripts\python.exe scripts/run_tests.py --list
+# 按改动选择功能，例如文件与 MCP；全量回归使用 --all
+.\.venv\Scripts\python.exe scripts/run_tests.py files mcp
+# 修改前端产品源码后重新构建
+Push-Location frontend
 npm.cmd run build
 Pop-Location
 ```
+
+功能分组、跨模块选测和全量回归的适用范围见[测试说明](docs/TESTING.md)。原有 `python -m pytest tests -q` 仍运行完整后端测试。
 
 `frontend/dist` 随仓库分发，目的是让普通使用者无须安装 Node.js。修改前端后必须重新构建并提交构建结果；不要只提交源码而保留旧页面。开发时可运行 `npm.cmd run dev`。普通使用者双击根目录的 `运行.cmd` 完成安装和托盘启动；`start.cmd` 保留为控制台排障入口。
 

@@ -16,7 +16,8 @@
 - 原生窗口、托盘或系统对话框等无法在内置浏览器中验证的功能，应说明未验证的部分；只有用户明确要求操作这些原生界面时，才进行相应验证。后台重启等已获授权的进程管理优先通过命令行完成。
 - 开发环境、目录职责和部署验证步骤见 `CONTRIBUTING.md`；涉及安装、后台启动或分发时，先阅读对应的 `docs/WINDOWS.md` 或 `docs/MACOS.md`（如存在）。
 - `frontend/dist` 随仓库分发。修改前端源码后，运行 `frontend/package.json` 中的构建命令，并将更新后的构建产物一并提交。
-- 按修改范围执行验证：后端使用 `python -m pytest tests -q`，前端在 `frontend` 目录运行 `npm test` 和 `npm run build`；桌面 Rust 修改在 `desktop/src-tauri` 目录执行相应的 Cargo 检查或测试。优先使用项目虚拟环境；Windows 下可使用 `npm.cmd`。
+- 每次修改后，只运行所改功能对应的测试组，使用 `python scripts/run_tests.py <分组...>`，不要默认运行全量测试。跨功能修改只运行所有受影响的组；仅修改前端或后端时，使用 `--scope frontend` 或 `--scope backend` 进一步缩小范围。分组与选测规则见 `docs/TESTING.md`。
+- 只有共享基础代码、广泛影响行为的改动或发布前，才执行 `python scripts/run_tests.py --all`。原有完整后端命令 `python -m pytest tests -q` 和前端 `npm test` 保留。修改前端产品源码仍需在 `frontend` 运行 `npm run build`；桌面 Rust 修改在 `desktop/src-tauri` 执行相应 Cargo 检查或测试。优先使用项目虚拟环境；Windows 下可使用 `npm.cmd`。
 - 完成后运行 `git diff --check`，说明实际执行的验证及未验证的部分。
 - 后端或托盘生命周期的修改需要重启相应进程才能验证运行效果；重启前确认当前运行实例，避免中断用户正在使用的终端或任务。
 - 测试与验证脚本使用独立的临时数据目录；需要启动后端时，通过 `IWB_DATA` 指向隔离目录，避免写入正在使用的 `data/`。真实 SSH、模型接口和通知验证应明确说明外部依赖与实际操作范围。
