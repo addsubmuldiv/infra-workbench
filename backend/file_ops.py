@@ -112,7 +112,11 @@ def perform(request):
     op, path = request['op'], path_value(request['path'])
     if op == 'read':
         content, raw, _, revision = text_file(path)
-        return dict(path=path,content=content.replace('\r\n','\n'),revision=revision,
+        content=content.replace('\r\n','\n');start=request.get('read_offset',0);limit=request.get('read_limit')
+        end=start+limit if limit is not None else len(content)
+        return dict(path=path,content=content[start:end],revision=revision,offset=start,total_chars=len(content),
+                    next_offset=end if end<len(content) else None,truncated=start>0 or end<len(content),
+                    content_scope='complete_file' if start==0 and end>=len(content) else 'file_fragment',
                     bytes=len(raw),newline='CRLF' if b'\r\n' in raw and b'\n' not in raw.replace(b'\r\n',b'') else 'LF')
     if op == 'save':
         _, original, info, revision = text_file(path)

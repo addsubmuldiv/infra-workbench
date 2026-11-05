@@ -52,8 +52,12 @@ def agent_read(request):
         lines=content.splitlines();start=request.get('start_line',1);limit=request.get('max_lines',100)
         selected=lines[start-1:start-1+limit]
         text='\n'.join(selected)
+        offset=request.get('char_offset',0);end=offset+request.get('char_limit',4000)
         return dict(ok=True,result=dict(path=path,start_line=start,end_line=start+len(selected)-1,total_lines=len(lines),
-                    content=text[:16000],truncated=start-1+len(selected)<len(lines) or len(text)>16000,revision=revision,bytes=len(raw)),
+                    content=text[offset:end],char_offset=offset,total_chars=len(text),
+                    next_char_offset=end if end<len(text) else None,
+                    next_line=start+len(selected) if start-1+len(selected)<len(lines) else None,
+                    truncated=start-1+len(selected)<len(lines) or offset>0 or end<len(text),revision=revision,bytes=len(raw)),
                     command='读取文本文件',cwd=os.getcwd())
     if action=='system':
         argv=['uname','-a']
@@ -85,6 +89,10 @@ def agent_read(request):
     if action=='ports' and request.get('port'):
         result['stdout']='\n'.join(line for line in result['stdout'].splitlines()
             if any(re.search(r':'+str(request['port'])+r'$',field) for field in line.split()[3:5]))
+    text=result['stdout'];start=request.get('output_offset',0);end=start+request.get('output_limit',4000)
+    result.update(stdout=text[start:end],output_offset=start,output_total_chars=len(text),
+                  output_next_offset=end if end<len(text) else None,
+                  output_truncated=start>0 or end<len(text))
     return dict(ok=result['exit_code']==0 and not result['timed_out'],command=' '.join(argv),cwd=os.getcwd(),**result)
 
 

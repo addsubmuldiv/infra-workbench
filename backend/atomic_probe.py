@@ -55,8 +55,11 @@ def atomic_probe(name, args):
         if re.search(r'-----+(?:BEGIN|END) [^-]*PRIVATE KEY-----+',text):
             text='[Private key block omitted from file tail]'
         lines = text.splitlines()
-        return dict(path=path, content='\n'.join(lines[-args['lines']:]), bytes=size,
-                    modified=os.stat(path).st_mtime, truncated=start>0 or len(lines)>args['lines'])
+        content='\n'.join(lines[-args['lines']:]);offset=args.get('offset',0);end=offset+args.get('limit',4000)
+        return dict(path=path, content=content[offset:end], bytes=size,offset=offset,total_chars=len(content),
+                    next_offset=end if end<len(content) else None,
+                    modified=os.stat(path).st_mtime, truncated=start>0 or len(lines)>args['lines'] or offset>0 or end<len(content),
+                    pagination_note='Character offsets refer to the current tail window; if the file changes, restart at offset 0.')
     if name == 'hash_server_file':
         path = regular_file(args['path']); digest = hashlib.new(args['algorithm'])
         before = os.stat(path)
@@ -66,7 +69,7 @@ def atomic_probe(name, args):
         return dict(path=path, algorithm=args['algorithm'], digest=digest.hexdigest(), bytes=after.st_size,
                     changed_during_read=(before.st_mtime_ns,before.st_size)!=(after.st_mtime_ns,after.st_size))
     if name == 'search_file_contents':
-        root = checked_path(args['path']); matches=[]; skipped=0; index=0; more=False
+        root = checked_path(args['path']); matches=[]; skipped=0; index=0; more=False;output_size=0
         if not os.path.isdir(root):raise ValueError('Directory does not exist')
         pattern = re.compile(args['query']) if args['regex'] else None
         for folder, directories, files in os.walk(root, followlinks=False):
@@ -84,8 +87,10 @@ def atomic_probe(name, args):
                                 continue
                             if (pattern.search(line) if pattern else args['query'] in line):
                                 if index >= args['offset']:
-                                    if len(matches) == args['page_size']: more=True;break
-                                    matches.append(dict(path=path,line=line_no,text=line.rstrip()[:2000]))
+                                    item=dict(path=path,line=line_no,text=line.rstrip()[:2000],text_truncated=len(line.rstrip())>2000)
+                                    length=len(json.dumps(item,ensure_ascii=False))
+                                    if len(matches) == args['page_size'] or (matches and output_size+length>9000):more=True;break
+                                    matches.append(item);output_size+=length
                                 index+=1
                 except (OSError,ValueError,UnicodeError): skipped+=1
                 if more: break
@@ -164,6 +169,9 @@ def atomic_probe(name, args):
                 record={k:item[k] for k in ('__CURSOR','__REALTIME_TIMESTAMP','MESSAGE','PRIORITY') if k in item}
                 if isinstance(record.get('MESSAGE'),str) and len(record['MESSAGE'])>2000:
                     record['MESSAGE']=record['MESSAGE'][:2000];record['message_truncated']=True
+                # Journal cursors must refer to the last record actually shown.
+                if records and sum(len(json.dumps(r)) for r in records)+len(json.dumps(record))>9000:
+                    truncated=True;break
                 records.append(record)
             except ValueError: pass
             if len(records)==args['lines']:break

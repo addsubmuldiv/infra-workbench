@@ -33,6 +33,9 @@ class CompareRequest(BaseModel):
     duplicate_policy:str='error'
     start:int|None=Field(default=None,ge=0,le=2**53-1)
     end:int|None=Field(default=None,ge=0,le=2**53-1)
+    view:str='detail'
+    offset:int=Field(default=0,ge=0)
+    limit:int=Field(default=10,ge=1,le=20)
 
 
 class ComparisonConfig(BaseModel):

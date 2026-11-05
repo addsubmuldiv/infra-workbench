@@ -85,9 +85,7 @@ class WorkbenchMCPService:
             item = self.skill_snapshot.get(arguments['name'])
             if item is None or arguments.get('version', item['version']) != item['version']:
                 raise AgentError('SKILL_NOT_FOUND', '本轮技能快照中没有此技能或版本；安装和更新下一轮生效。')
-            data = copy.deepcopy(item)
-            data['content'] = data['files'].get('SKILL.md', '')
-            return response(data)
+            return response(mcp_skills.skill_read_view(item,arguments))
         if self.skills is not None and name in mcp_skills.skill_catalog():
             return mcp_skills.registry_call(self.skills, name, arguments, catalog)
         if name in mcp_skills.CATALOG:

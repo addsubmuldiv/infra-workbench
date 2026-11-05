@@ -65,7 +65,11 @@ class WorkbenchChatModel(BaseChatModel):
 
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):
         bound = self.model_copy()
-        bound._tools = [convert_to_openai_tool(tool)['function'] for tool in tools]
+        # SkillsMiddleware clears defer_loading when a skill discloses a tool.
+        # This generic provider adapter cannot forward provider-native deferred
+        # schemas, so withhold them until the framework activates them.
+        bound._tools = [convert_to_openai_tool(tool)['function'] for tool in tools
+                        if not (getattr(tool,'extras',None) or {}).get('defer_loading')]
         return bound
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):

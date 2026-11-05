@@ -14,27 +14,23 @@ from .chat_tools import scrub
 from .mcp_service import WorkbenchMCPService
 
 
-def bounded_result(value, secret):
+def bounded_result(value, secret, arguments=None):
     output = scrub(value, secret)
     if len(output) <= 16000:
         return output
-    def compact(item, count):
-        if isinstance(item, dict):
-            return {key: compact(v, count) for key, v in item.items()}
-        if isinstance(item, list):
-            return [compact(v, count) for v in item[:count]]
-        if isinstance(item, str):
-            return item[:2000]
-        return item
-    for count in (20, 5, 1):
-        result = compact(value, count)
-        if isinstance(result, dict):
-            result['_mcp_truncated'] = True
-            result['_mcp_note'] = '模型收到的列表/文本已截断；统计值和 ID 保留，按需缩小范围或读取原始记录。'
-        output = scrub(result, secret)
-        if len(output) <= 16000:
-            return output
-    return json.dumps(dict(ok=False, truncated=True, error='结果过大，请缩小查询范围。'), ensure_ascii=False)
+    from .mcp_output import shorten_page
+    from .agent_errors import AgentError, response
+    try:result=shorten_page(json.loads(output),arguments)
+    except ValueError:result=None
+    if result is not None:return json.dumps(result,ensure_ascii=False)
+    # Never silently clip text, nested arrays, byte offsets or opaque cursors.
+    # Preserve small operation identifiers so a large write receipt is not a
+    # reason to repeat a potentially successful side effect.
+    data=value.get('data') if isinstance(value,dict) else None
+    receipt={k:v for k,v in (data or {}).items() if k in ('id','job_id','batch_id','status','revision','path','host_id') and isinstance(v,(str,int,bool,type(None))) and len(str(v))<4096} if isinstance(data,dict) else {}
+    return scrub(response(dict(receipt,original_ok=value.get('ok') if isinstance(value,dict) else None),
+        error=AgentError('RESULT_TOO_LARGE','结果超过模型预算；请使用摘要、缩小范围或减小分页大小。原操作可能已完成，不要重复写入。',
+                         {'message':'Use summary or smaller pages; inspect operation IDs before retrying writes.'}),partial=True),secret)
 
 
 class MCPGateway:
@@ -90,7 +86,7 @@ async def discover_tools(client, secret):
         async def call(**kwargs):
             result = await client.call_tool(name, kwargs)
             value = result.structured_content
-            return bounded_result(value if value is not None else [v.model_dump() for v in result.content], secret)
+            return bounded_result(value if value is not None else [v.model_dump() for v in result.content], secret, kwargs)
         return call
 
     # Only the MCP discovery result defines callable tool names and schemas.

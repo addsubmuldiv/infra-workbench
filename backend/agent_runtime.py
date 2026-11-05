@@ -3,15 +3,18 @@ import asyncio
 import json
 import sys
 import time
+import re
+import yaml
 from pathlib import Path
 
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.backends.utils import create_file_data
-from deepagents.middleware.filesystem import FilesystemMiddleware
+from deepagents.middleware.filesystem import FilesystemMiddleware, FilesystemPermission
+from deepagents.middleware.skills import SkillsMiddleware
 from deepagents.profiles import HarnessProfile, GeneralPurposeSubagentProfile, register_harness_profile
 from deepagents.middleware.summarization import create_summarization_middleware
-from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.middleware import AgentMiddleware, TodoListMiddleware
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, message_to_dict, messages_from_dict
 from langchain_core.messages.utils import convert_to_messages
 from langgraph.checkpoint.memory import InMemorySaver
@@ -60,6 +63,35 @@ def bundled_files():
         files[virtual] = create_file_data(path.read_text(encoding='utf-8'), created_at='2026-11-01T00:00:00+00:00')
     if not files:
         raise ValueError('内置技能文件缺失，请修复软件安装')
+    return files
+
+
+def skill_tool_files(files, tools):
+    """Wire MCP tools to the framework's native skill progressive disclosure."""
+    from deepagents.backends.utils import file_data_to_string
+    names={tool.name for tool in tools}
+    for path,value in list(files.items()):
+        if not path.endswith('/SKILL.md'):continue
+        text=file_data_to_string(value)
+        if not text.startswith('---'):continue
+        parts=text.split('---',2)
+        if len(parts)!=3:continue
+        meta=yaml.safe_load(parts[1]) or {}
+        metadata=dict(meta.get('metadata') or {})
+        mentioned={name for name in names if re.search(r'(?<![\w])'+re.escape(name)+r'(?![\w])',text)}
+        mentioned.update(set(str(metadata.get('include_tools','')).split()) & names)
+        metadata['include_tools']=' '.join(sorted(mentioned));meta['metadata']=metadata
+        files[path]=create_file_data('---\n'+yaml.safe_dump(meta,allow_unicode=True,sort_keys=False)+'---\n'+parts[2].lstrip())
+    # A short tool skill is a discoverable fallback for tools not covered by a
+    # business skill. No private tool or schema outside MCP discovery is added.
+    for tool in tools:
+        key='mcp-'+tool.name.replace('_','-')
+        meta=dict(name=key,description=tool.description.split('。')[0][:100],
+                  metadata=dict(include_tools=tool.name))
+        files[f'/tool-skills/{key}/SKILL.md']=create_file_data(
+            '---\n'+yaml.safe_dump(meta,allow_unicode=True,sort_keys=False)+'---\n'
+            f'Reading this skill activates `{tool.name}`. Use its loaded schema for exact parameters. '
+            'Existing authorization, host scope and cancellation checks still apply.\n'+tool.description)
     return files
 
 
@@ -168,6 +200,8 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
         instructions += '\n用户明确选择本轮技能，请先读取对应 SKILL.md，再结合任务使用：' + json.dumps(selected, ensure_ascii=False)
     async with gateway.session(chat['state'], allowed, skill_details) as client:
         mcp_tools = await discover_tools(client, secret)
+        files=skill_tool_files(files,mcp_tools)
+        mcp_tools=[tool.model_copy(update={'extras':dict(tool.extras or {},defer_loading=True)}) for tool in mcp_tools]
         capacity = await provider.context_capacity() if hasattr(provider, 'context_capacity') else dict(tokens=32000, source='fallback', trigger_tokens=27200)
         turn['context_capacity'] = capacity
         def context_usage(tokens, phase):
@@ -204,15 +238,30 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
         summary_model = SummaryModel(provider, sanitize=sanitize, context_window=capacity['tokens'],
                                      on_timing=model_timing('compaction'))
         backend = StateBackend()
+        memory=None
+        if skills is not None:
+            from .agent_memory import create_agent_memory
+            memory=create_agent_memory(skills.store,getattr(provider,'active_id','legacy'),allowed,default_backend=backend)
+            backend=memory.backend
+        fs_tools=['ls','read_file','glob','grep']
+        fs_permissions=[]
+        if memory is not None:
+            fs_tools+=['write_file','edit_file','delete']
+            fs_permissions=[FilesystemPermission(operations=['write'],paths=['/memories/AGENTS.md'],mode='allow'),
+                            FilesystemPermission(operations=['write'],paths=['/**'],mode='deny')]
         saver = InMemorySaver()
         graph = create_deep_agent(
             model=model, system_prompt=instructions, tools=mcp_tools,
             backend=backend, skills=['/skills/'], checkpointer=saver,
-            middleware=[FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'glob', 'grep']),
+            middleware=[FilesystemMiddleware(backend=backend, tools=fs_tools,permissions=fs_permissions),
+                        TodoListMiddleware(),
+                        *([memory.middleware] if memory is not None else []),
                         create_summarization_middleware(summary_model, backend),
+                        SkillsMiddleware(backend=backend,sources=['/skills/','/tool-skills/']),
                         ToolTrace(turn, tools, allowed, secret, save, {t.name for t in mcp_tools}, receipts)],
         )
         state = unpack_state(chat.get('deep_state', {}))
+        state.pop('memory_contents',None)  # Always reload the exact profile/scope.
         previous = state.get('messages')
         if previous is None:
             previous = convert_to_messages(chat['messages'][:-1])
@@ -223,7 +272,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
         state['messages'] = repair_messages(previous)
         # Skill paths are replaced, not merged: disabled/deleted attachments must disappear.
         state['files'] = {path: value for path, value in state.get('files', {}).items()
-                          if path != '/skills' and not path.startswith('/skills/')}
+                          if path != '/skills' and not path.startswith(('/skills/','/tool-skills/'))}
         state['files'].update(files)
         state['skills_metadata'] = None  # Re-read the packaged library on each user turn.
         config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': sys.maxsize}

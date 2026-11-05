@@ -19,9 +19,12 @@ def selected_rows(data,key,policy,start,end):
     return result
 
 
-def compare_logs(baseline,candidate,metrics,baseline_group=None,candidate_group=None,duplicate_policy='error',start=None,end=None):
+def compare_logs(baseline,candidate,metrics,baseline_group=None,candidate_group=None,duplicate_policy='error',start=None,end=None,view='detail',offset=0,limit=10):
+    if view not in ('detail','summary','page') or offset<0 or not 1<=limit<=20:
+        raise ValueError('无效的输出视图或分页参数')
     if duplicate_policy not in ('error','first','last'): raise ValueError('无效的重复 step 策略')
     if not metrics or len(metrics)>8: raise ValueError('请选择 1 至 8 个对比指标')
+    if view=='page':limit=min(limit,max(1,24//len(metrics)))
     if start is not None and end is not None and start>end: raise ValueError('起始 step 不能大于结束 step')
     a=selected_rows(baseline,baseline_group,duplicate_policy,start,end)
     b=selected_rows(candidate,candidate_group,duplicate_policy,start,end)
@@ -41,14 +44,28 @@ def compare_logs(baseline,candidate,metrics,baseline_group=None,candidate_group=
         worst=max(points,key=lambda p:p['absolute_error']) if points else None
         # Divide before summing to avoid overflowing a finite mean.
         mae=math.fsum(p['absolute_error']/count for p in points) if count else None
-        output.append(dict(name=name,count=count,missing_metric_steps=len(common)-count,mae=mae,
+        item=dict(name=name,count=count,missing_metric_steps=len(common)-count,mae=mae,
                            max_abs_error=worst['absolute_error'] if worst else None,
-                           max_error_step=worst['step'] if worst else None,points=points,
-                           baseline_series=[dict(step=s,value=a[s]['metrics'][name]) for s in sorted(a) if name in a[s]['metrics']],
-                           candidate_series=[dict(step=s,value=b[s]['metrics'][name]) for s in sorted(b) if name in b[s]['metrics']]))
+                           max_error_step=worst['step'] if worst else None)
+        if view=='summary':
+            evidence=([points[0],worst,points[-1]] if points else [])
+            item['points']=list({p['step']:p for p in evidence}.values())
+        else:
+            item['points']=points if view=='detail' else points[offset:offset+limit]
+            for key,rows in (('baseline_series',a),('candidate_series',b)):
+                steps=[s for s in sorted(rows) if name in rows[s]['metrics']]
+                if view=='page':steps=steps[offset:offset+limit]
+                item[key]=[dict(step=s,value=rows[s]['metrics'][name]) for s in steps]
+        output.append(item)
     if not any(m['count'] for m in output): raise ValueError('共同 step 中没有双方均可用的所选指标')
     mismatches=[s for s in common if 'learning_rate' in a[s]['metrics'] and 'learning_rate' in b[s]['metrics']
                 and not math.isclose(a[s]['metrics']['learning_rate'],b[s]['metrics']['learning_rate'],rel_tol=1e-9,abs_tol=0)]
-    return dict(metrics=output,alignment=dict(common_steps=len(common),baseline_only=len(a.keys()-b.keys()),candidate_only=len(b.keys()-a.keys())),
+    result=dict(metrics=output,alignment=dict(common_steps=len(common),baseline_only=len(a.keys()-b.keys()),candidate_only=len(b.keys()-a.keys())),
                 learning_rate_mismatch_count=len(mismatches),learning_rate_first_mismatch=mismatches[0] if mismatches else None,
                 range=dict(start=common[0],end=common[-1]),duplicate_policy=duplicate_policy)
+    if view!='detail':
+        total=max(len(a),len(b),len(common))
+        result.update(view=view,offset=offset if view=='page' else None,
+                      next_offset=offset+limit if view=='page' and offset+limit<total else None,
+                      has_more=view=='page' and offset+limit<total,detail_available=True)
+    return result

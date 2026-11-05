@@ -24,6 +24,8 @@ class Page(HostArgs):
     status:str|None=None
 class Tail(PathArgs):
     lines:int=Field(default=100,ge=1,le=10000)
+    offset:int=Field(default=0,ge=0)
+    limit:int=Field(default=4000,ge=1,le=6000)
 class Hash(PathArgs):
     algorithm:Literal['sha256','sha512','md5']='sha256'
 class Search(PathArgs):

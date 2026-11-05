@@ -35,7 +35,7 @@ OPERATIONS = {
     'create_rule': ('POST', '/api/rules', '创建指定设备和端口的监控规则。需要用户明确要求。', False, False),
     'delete_rule': ('DELETE', '/api/rules/{rule_id}', '删除指定监控规则，不会修改服务器进程。', False, False),
     'search_server_files': ('POST', '/api/files/search', '在指定服务器目录搜索文件名。recursive 可递归，realtime 控制是否重新搜索。', True, False),
-    'file_operation': ('POST', '/api/files/operation', '服务器文本读取/保存、复制、移动、创建文件或目录。save 需先 read 获取 revision 防止覆盖他人修改。写入仅用于用户明确要求的路径和操作。', False, False),
+    'file_operation': ('POST', '/api/files/operation', '服务器文本读取/保存、复制、移动、创建文件或目录。read 按 read_offset/read_limit 分页；save 需先 read 获取 revision，并提供完整新文件内容，禁止把 file_fragment 片段直接当完整文件保存。写入仅用于用户明确要求的路径和操作。', False, False),
     'get_file_capabilities': ('GET', '/api/files/capabilities', '查询文件操作种类及大小上限。', True, False),
     'create_upload': ('POST', '/api/files/uploads', '准备服务器文件/目录上传。返回上传任务，尚未传输；字节流通过 PUT /api/files/uploads/{id}，请求头 X-IWB: 1。', False, False),
     'get_upload': ('GET', '/api/files/uploads/{upload_id}', '查询上传进度和最终状态。', True, False),
@@ -109,6 +109,12 @@ class ApplicationOperations:
             # This legacy endpoint validates Request.json() instead of a model.
             if name == 'create_terminal_session':
                 properties['cwd'] = {'type': 'string', 'maxLength': 4096, 'pattern': '^/'}
+            if name=='compare_training_logs':
+                properties.update(view={'type':'string','enum':['summary','page'],'default':'summary'},
+                                  offset={'type':'integer','minimum':0,'default':0},
+                                  limit={'type':'integer','minimum':1,'maximum':20,'default':10})
+            if name=='refresh_host':
+                properties['view']={'type':'string','enum':['summary','detail'],'default':'summary'}
             catalog[name] = dict(name=name, title=description.split('。')[0], description=description,
                 inputSchema=dict(type='object', properties=properties, required=required, additionalProperties=False),
                 outputSchema=envelope({}), annotations=dict(readOnlyHint=readonly, destructiveHint=not readonly,
@@ -202,6 +208,9 @@ class ApplicationOperations:
         method, template, _, _, handoff = OPERATIONS[name]
         path = template
         body, query = dict(args), {}
+        refresh_view=body.pop('view','summary') if name=='refresh_host' else None
+        if name=='compare_training_logs':body.setdefault('view','summary')
+        if name=='file_operation' and body.get('op')=='read':body.setdefault('read_limit',6000)
         for key, value in args.items():
             if '{' + key + '}' in template:
                 if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', str(value)):
@@ -225,4 +234,8 @@ class ApplicationOperations:
             # the short public string only, never Pydantic's input-bearing list.
             detail = result.json().get('detail', '')
             raise AgentError('OPERATION_FAILED', detail if isinstance(detail, str) else '参数或状态校验失败，请检查目标和工具参数。')
-        return response(self.scoped_result(name, result.json(), allowed))
+        value=result.json()
+        if name=='refresh_host' and refresh_view=='summary':
+            value={k:v for k,v in value.items() if k in ('status','collected_at','error','error_stage','sections')}
+            value.update(host_id=args['host_id'],detail_tool='get_resources')
+        return response(self.scoped_result(name, value, allowed))

@@ -1,5 +1,19 @@
 # 统一 MCP 与业务技能
 
+## MCP 输出预算与原生按需加载（2026-11-05）
+
+框架接入详见 [DEEPAGENTS.md](DEEPAGENTS.md)。业务 skill 初始只展示名称和用途；读取后由 Deep Agents `SkillsMiddleware` 的 `metadata.include_tools` 披露相关 MCP schema。独立工具有 `/tool-skills/mcp-工具名/SKILL.md` 按需入口。原有 MCP 全目录仍供外部客户端发现，内置模型不会每轮发送全部参数定义；披露不是权限校验。
+
+- 模型桥接层不再递归裁剪文本和嵌套数组。可识别的数字行分页只缩短整条记录，游标推进到实际返回的行；无法安全分页的超大结果明确返回 `RESULT_TOO_LARGE`，保留小型操作凭据并提醒先核对写入结果，不盲目重试。
+- `compare_training_logs` 在 MCP 中默认 `view="summary"`，返回全量统计和首条、最大误差、末条证据；`view="page"` 按字符预算限制后的实际 `next_offset` 读取差值与双方曲线。GUI 默认完整曲线保持不变，原始行仍可 `get_log_record` 核对。
+- `file_operation(op="read")` 默认每次最多 6000 字符，使用 `read_offset`/`read_limit`；每页保留 revision、总字符数和 `next_offset`。GUI 未指定上限时仍可读取原有完整文本。
+- `read_server_file` 按行选择后再做字符分页，默认 4000、最多 6000 字符。长行按 `next_char_offset` 继续当前行段，完成后才使用 `next_line`，避免长单行内容被截断后无法续读。
+- `ssh_check` 的命令输出默认 4000、最多 6000 字符，通过 `output_offset` 继续；`tail_server_file` 使用 `offset`/`limit`。这些是当前读取视图，远端文件或进程发生变化后应重新开始，不能视为冻结快照。
+- 集群批次列表只返回概要与状态计数；逐机页只刷新本页成员，`refresh=false` 可读缓存。`refresh_host` 默认只返回状态和采样时间，`view="detail"` 或 `get_resources` 可查看详情。
+- `read_skill` 默认只返回一份正文；`path` 选择已存在的文本附件，`offset`/`limit` 分页。不会把所有附件和版本对象重复交给模型；管理读取可用 `inspect_skill`，草稿读取可用 `get_skill_draft`。
+
+English: Native skill-driven tool disclosure replaces eager schema binding. MCP results use semantic row/character pages and explicit oversized-result errors; summary statistics retain full-data coverage, and detailed records remain available on demand. Live views are not immutable snapshots.
+
 ## 助手概况查询优化（2026-11-05）
 
 `search_fleet` 新增可选 `view="summary"`：资源按型号汇总，保留真实机器和设备 ID、采样时间、设备数、可确认的物理卡数及空闲显存最小/最大值。未知显存和物理卡数保持 null。默认 `view="detail"` 保留原逐设备结构；`get_resources` 详情接口不变。HTTP 查询和外部 MCP 继续复用原业务校验及机器范围限制。

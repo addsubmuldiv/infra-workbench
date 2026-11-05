@@ -50,6 +50,8 @@ class FileOperation(LogLocation):
     destination:str|None=Field(default=None,min_length=1,max_length=4096)
     content:str|None=Field(default=None,max_length=FILES_TEXT_EDIT_MAX_BYTES)
     revision:str|None=Field(default=None,min_length=64,max_length=64,pattern=r'^[a-f0-9]{64}$')
+    read_offset:int=Field(default=0,ge=0)
+    read_limit:int|None=Field(default=None,ge=1,le=6000)
 
 
 def register_file_routes(app,ssh,find):

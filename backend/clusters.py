@@ -375,11 +375,20 @@ class ClusterService:
         except Exception as exc:
             self._patch(batch['id'], item['id'], status='unknown', error=str(exc)[:1000])
 
-    async def batch(self, id, allowed=None, refresh=True):
+    async def batch(self, id, allowed=None, refresh=True, offset=None, limit=20):
         value = self._load(id)
+        visible=self._visible(value,allowed)  # Check scope before any remote calls.
+        ids=None
+        if offset is not None:
+            from .mcp_output import page
+            ids={i['id'] for i in page(visible['items'],offset,limit)['items']}
         if refresh:
-            await asyncio.gather(*(self._refresh_item(value, i) for i in value['items'] if i['status'] not in TERMINAL | {'queued'} and (allowed is None or i['host_id'] in allowed)))
-        return self._visible(self._load(id), allowed)
+            await asyncio.gather(*(self._refresh_item(value, i) for i in value['items'] if i['status'] not in TERMINAL | {'queued'} and (allowed is None or i['host_id'] in allowed) and (ids is None or i['id'] in ids)))
+        result=self._visible(self._load(id), allowed)
+        if offset is not None:
+            result.update(page(result['items'],offset,limit))
+            result['refresh_scope']='returned_page_only' if refresh else 'cached'
+        return result
 
     async def batches(self, allowed=None):
         self.prune_history()

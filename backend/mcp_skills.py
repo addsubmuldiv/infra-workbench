@@ -85,9 +85,25 @@ MANAGEMENT = {
 def skill_catalog():
     catalog = dict(CATALOG, **MANAGEMENT)
     catalog['list_skills'] = spec('list_skills', '内置 Agent 列出本轮启用的技能快照；外部客户端列出当前技能库。管理含停用技能请用 list_managed_skills。', {}, [])
-    catalog['read_skill'] = spec('read_skill', '读取指定技能和版本，包括文本附件及版本元数据。读取不表示执行。',
-        {'name': NAME, 'version': REV}, ['name'])
+    catalog['read_skill'] = spec('read_skill', '按需读取一个技能正文或指定文本附件；默认只返回正文一份，字符分页。读取不表示执行。',
+        {'name': NAME, 'version': REV,'path':{'type':'string','default':'SKILL.md'},
+         'offset':{'type':'integer','minimum':0,'default':0},'limit':{'type':'integer','minimum':1,'maximum':6000,'default':4000}}, ['name'])
+    for name in ('inspect_skill','get_skill_draft'):
+        catalog[name]=dict(catalog[name],inputSchema=dict(catalog[name]['inputSchema'],properties=dict(
+            catalog[name]['inputSchema']['properties'],path={'type':'string','default':'SKILL.md'},
+            offset={'type':'integer','minimum':0,'default':0},limit={'type':'integer','minimum':1,'maximum':6000,'default':4000})))
     return catalog
+
+
+def skill_read_view(data, args):
+    path=args.get('path','SKILL.md')
+    if path not in data.get('files',{}):raise AgentError('SKILL_FILE_NOT_FOUND','技能文本附件不存在。')
+    text=data['files'][path];start=args.get('offset',0);end=start+args.get('limit',4000)
+    value={k:v for k,v in data.items() if k not in ('files','versions','raw','content')}
+    value.update(path=path,content=text[start:end],offset=start,total_chars=len(text),
+                 next_offset=end if end<len(text) else None,truncated=start>0 or end<len(text))
+    value['available_versions']=[v['version'] for v in data.get('versions',[])][:100]
+    return value
 
 def registry_call(service, name, args, tools):
     from .skill_service import SkillError
@@ -99,10 +115,11 @@ def registry_call(service, name, args, tools):
         elif name in ('list_skills', 'list_managed_skills'):
             data = {'items': service.catalog()}
         elif name in ('read_skill', 'inspect_skill'):
-            data = service.read(**args)
-            data['content'] = data['files'].get('SKILL.md', '')
+            data = service.read(args['name'],args.get('version'))
+            data = skill_read_view(data,args)
         elif name == 'get_skill_draft':
             data = service.read_draft(args['draft_id'])
+            data = skill_read_view(data,args)
         elif name in ('validate_skill_draft', 'install_skill_draft'):
             data = getattr(service, name.replace('_skill', ''))(args['draft_id'], args['revision'], list(tools))
         elif name == 'update_skill_draft':
@@ -113,6 +130,8 @@ def registry_call(service, name, args, tools):
             data = service.rollback(**args)
         else:
             data = service.create_draft(**args)
+        if name in ('create_skill_draft','update_skill_draft'):
+            data={k:v for k,v in data.items() if k not in ('files','raw')}
         return response(data)
     except SkillError as exc:
         raise AgentError(exc.code, str(exc), {'user_action':'检查草稿、版本或工具依赖；冲突时重新读取最新版本，不盲目覆盖。'}) from None

@@ -30,13 +30,17 @@ def test_remote_file_tool_and_virtual_file_tool_have_distinct_schemas(tmp_path):
     async def run():
         chat, model, tools = service(tmp_path)
         view = chat.create()
-        model.replies = [dict(message=dict(role='assistant', content='收到'))]
+        model.replies = [tool_message('read_file',{'file_path':'/tool-skills/mcp-read-server-file/SKILL.md'}),
+                         dict(message=dict(role='assistant', content='收到'))]
         result = chat.begin(view['id'], ChatMessageRequest(content='查看工具'))
         await chat.runs[result['active_run']]
         exposed = {t['name']: t for t in model.contexts[0][2]}
         assert 'file_path' in exposed['read_file']['parameters']['properties']
+        assert 'read_server_file' not in exposed
+        exposed = {t['name']: t for t in model.contexts[1][2]}
         assert 'host_id' in exposed['read_server_file']['parameters']['properties']
-        assert not {'execute', 'write_file', 'edit_file', 'delete', 'task'} & exposed.keys()
+        assert {'write_file', 'edit_file', 'delete'} <= exposed.keys()
+        assert not {'execute', 'task'} & exposed.keys()
         assert tools.calls == []
         chat.store.db.close()
     asyncio.run(run())
@@ -56,8 +60,68 @@ def test_saved_framework_state_continues_after_recreating_service(tmp_path):
         result = restarted.begin(view['id'], ChatMessageRequest(content='继续'))
         await restarted.runs[result['active_run']]
         assert any('ssh_check' in m.get('content', '') and m['role'] == 'tool' for m in model.contexts[-1][1])
+        disclosed = {tool['name'] for tool in model.contexts[-1][2]}
+        assert 'ssh_check' in disclosed
+        assert 'read_server_file' not in disclosed
         assert restarted.get(view['id'])['turns'][-1]['status'] == 'completed'
         chat.store.db.close()
+    asyncio.run(run())
+
+
+def test_native_todos_survive_service_restart_without_server_actions(tmp_path):
+    from backend.agent_chat import AgentChat
+
+    async def run():
+        chat, model, tools = service(tmp_path)
+        view = chat.create()
+        todos = [dict(content='Compare resource samples', status='in_progress')]
+        model.replies = [tool_message('write_todos', {'todos': todos}),
+                         dict(message=dict(role='assistant', content='已记录检查步骤'))]
+        result = chat.begin(view['id'], ChatMessageRequest(content='分步骤检查资源'))
+        await chat.runs[result['active_run']]
+        assert chat.get(view['id'])['turns'][-1]['status'] == 'completed'
+        assert chat.get(view['id'])['deep_state']['todos'] == todos
+        exposed = {tool['name'] for tool in model.contexts[0][2]}
+        assert 'write_todos' in exposed
+        assert 'ssh_check' not in exposed
+        assert tools.calls == []
+        restarted = AgentChat(chat.store, model, tools)
+        model.replies = [dict(message=dict(role='assistant', content='继续检查'))]
+        result = restarted.begin(view['id'], ChatMessageRequest(content='继续'))
+        await restarted.runs[result['active_run']]
+        assert restarted.get(view['id'])['deep_state']['todos'] == todos
+        assert any('Compare resource samples' in message.get('content', '')
+                   for message in model.contexts[-1][1])
+        assert tools.calls == []
+        chat.store.db.close()
+
+    asyncio.run(run())
+
+
+def test_native_memory_write_tools_cannot_modify_bundled_skills(tmp_path):
+    from deepagents.backends.utils import file_data_to_string
+    from backend.agent_runtime import bundled_files
+
+    async def run():
+        chat, model, tools = service(tmp_path)
+        path = '/skills/find-resources/SKILL.md'
+        original = file_data_to_string(bundled_files()[path])
+        view = chat.create()
+        model.replies = [tool_message('edit_file', {'file_path': path, 'old_string': 'name: find-resources',
+                                                  'new_string': 'name: UNAUTHORIZED-SKILL-CHANGE'}),
+                         dict(message=dict(role='assistant', content='Skill unchanged'))]
+        result = chat.begin(view['id'], ChatMessageRequest(content='Try modifying skill'))
+        await chat.runs[result['active_run']]
+        saved = chat.get(view['id'])
+        assert saved['turns'][-1]['status'] == 'completed'
+        actual = file_data_to_string(saved['deep_state']['files'][path])
+        assert 'UNAUTHORIZED-SKILL-CHANGE' not in actual
+        # Tool metadata may be added to frontmatter, but the authored body stays intact.
+        assert original.split('---', 2)[-1].strip() in actual.replace('\r\n','\n')
+        assert model.contexts[-1][1][-1]['content'].startswith('Error:')
+        assert tools.calls == []
+        chat.store.db.close()
+
     asyncio.run(run())
 
 
