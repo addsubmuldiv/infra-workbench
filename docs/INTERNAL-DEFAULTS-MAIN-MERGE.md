@@ -9,5 +9,7 @@
 - Windows x64 开发安装包构建通过，冻结自检 ok=true、policy_checks=14；没有运行安装器或重启正式后台，没有真实 SSH/模型调用。
 - 新包：`Infra-Workbench-0.2.1-main-02742fa-x64-setup.exe`，50253590 字节；SHA-256：`d40eec0c0b1b6ee92a694ef2056060b308ac7af2430d5c862fb77136dbaebfa3`。
 - 安装包及 `main-build-receipt.json`、`MAIN-SHA256SUMS.txt`、`main-runtime-self-test.json` 放在 `release/internal-defaults/`；无正式更新签名，未发布。
-- 原目录其他任务的未提交修改不纳入本次合并，通过快进前后的文件哈希逐项核对；不 stash、不重置、不提交这些改动。
+- 原目录在验证期间新增了与本整改重叠的 file_ops.py、file_routes.py、mcp_skills.py 改动。仅对这 3 个文件临时 stash，保留独立备份和补丁，快进 main 后恢复，逐文件核对与预计算三方合并结果一致；已移除本次临时 stash。其他未提交文件原位保留，均未纳入本次提交。
 - 仅合入本地 main，不执行推送。新电脑安装及 macOS 实机验收仍未执行。
+
+本地 main 已快进到已验证的合并结果；原目录保留其他任务全部未提交修改。合并后的安装包仅对应已提交代码，不包含这些正在进行的修改。
