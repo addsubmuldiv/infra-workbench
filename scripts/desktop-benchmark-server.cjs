@@ -51,6 +51,9 @@ module.exports=async function createFixture(snapshot,WebSocketServer,options={})
         return json(res,{ok:true});
       }
       if(url.pathname==='/api/state')return json(res,{hosts,rules:[],reservations:[],events:[],server_time:Date.now()/1000});
+      // This static fixture has no state-change publisher. Explicitly select
+      // the supported polling fallback instead of returning an invalid cursor.
+      if(url.pathname==='/api/state/changes')return json(res,{detail:'State notifications unavailable in static fixture'},404);
       if(url.pathname==='/api/files/uploads/desktop-upload'&&req.method==='PUT'){
         for await(const part of req)uploadBytes+=part.length;
         return json(res,{id:'desktop-upload',status:'done',path:'/demo/upload-check.txt'});
