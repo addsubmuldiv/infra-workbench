@@ -68,6 +68,31 @@ SSH 密码、sudo 密码和邮件授权码分别保存在当前用户的 **macOS
 
 ## 验证范围
 
+### Apple Silicon 构建与本地服务验证（2026-11-06）
+
+v0.2.2 已在 Apple Silicon、macOS 27.0.1、Python 3.12.15 和 Rust 1.99.1 环境完成无签名开发构建，生成 `.app` 和 `.dmg`。前端生产构建、打包后台独立自检、`pip check` 和 DMG 校验通过。后台自检使用临时数据与本机随机端口，覆盖 API、静态资源、原生 PTY，以及 SSH/SFTP 和助手依赖的本地检查，不代表真实远端服务器或模型服务已验证。
+
+在项目根目录准备环境并构建（`python3.12` 可替换为已安装的 Python 3.11+）：
+
+```sh
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -r desktop/requirements-build.txt
+npm --prefix frontend ci
+npm --prefix desktop ci
+IWB_UNSIGNED_BUILD=1 npm --prefix desktop run build
+hdiutil verify "desktop/src-tauri/target/release/bundle/dmg/Infra Workbench_0.2.2_aarch64.dmg"
+```
+
+Node.js 和 Rust 的要求见[桌面构建说明](DESKTOP.md#开发与构建)。`IWB_UNSIGNED_BUILD=1` 仅用于开发安装包，不生成签名更新产物，也不完成 Apple Developer ID 签名或公证。版本变化后应使用实际输出的 DMG 文件名。
+
+若默认端口已有工作台运行，可使用隔离数据目录和另一端口验证新副本，避免中断原服务：
+
+```sh
+IWB_DATA="$PWD/work/macos-smoke-data" .venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port 8876
+```
+
+保持该命令运行，在浏览器打开 `http://127.0.0.1:8876/`，结束后用 Ctrl+C 停止。这是网页服务验证入口，不启动菜单栏或桌面外壳。本次在 Codex 内置浏览器确认首次引导、算力总览、新建空白助手对话和设置页面可加载，健康接口返回 v0.2.2。没有配置真实主机或模型；菜单栏、钥匙串、通知、原生桌面窗口和干净系统安装仍未验收。
+
 已增加凭据、安装器、菜单栏和终端测试，以及 macOS CI 配置。Windows 上运行模拟边界测试，WSL Linux 可执行真实 POSIX PTY 测试。**Linux 结果不能证明 macOS 系统行为；新增 CI 配置也不等于已在远端执行成功。**
 
 拿到 Mac 后仍需确认 Finder 双击启动、钥匙串授权及重启后读取、菜单栏退出与登录启动、真实通知显示和点击，以及 SSH 输入、缩放和清理。先用自己的测试机器和临时凭据验证。
