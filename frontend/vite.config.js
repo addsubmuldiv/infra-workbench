@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import {readFileSync,writeFileSync,readdirSync} from 'node:fs';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 const version=JSON.parse(readFileSync(new URL('./package.json',import.meta.url),'utf8')).version;
 // writeBundle runs after Vite has emitted HTML and its final chunk/CSS/assets.
 // dist deliberately retains old lazy chunks; packaging consumes only this list.
@@ -16,7 +17,7 @@ export function currentBuildInventory(){
   }
   return {name:'current-build-inventory',enforce:'post',configResolved(config){publicDir=config.publicDir;},writeBundle(options,bundle){
     const files=[...new Set([...Object.keys(bundle),...(publicDir?publicFiles(publicDir):[])])].sort();
-    writeFileSync(path.join(options.dir,'.iwb-build.json'),JSON.stringify({version:1,files},null,2)+'\n');
+    writeFileSync(path.join(options.dir,'.iwb-build.json'),JSON.stringify({version:2,appVersion:version,files:Object.fromEntries(files.map(name=>{const bytes=readFileSync(path.join(options.dir,name));return [name,{size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}];}))},null,2)+'\n');
   }};
 }
 export default defineConfig(({mode,command})=>({

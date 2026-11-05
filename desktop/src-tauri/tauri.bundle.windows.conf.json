@@ -2,6 +2,11 @@
   "bundle": {
     "resources": {
       "binaries/_internal/": "_internal/"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "../windows/installer-hooks.nsh"
+      }
     }
   }
 }

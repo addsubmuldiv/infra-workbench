@@ -20,10 +20,7 @@ if(!existsSync(python))throw new Error('Run the existing project installer first
 const npmCli=process.env.npm_execpath;
 if(!npmCli||!existsSync(npmCli))throw new Error('Start this script with npm run dev or npm run build');
 if(mode==='build'&&!process.env.TAURI_SIGNING_PRIVATE_KEY&&process.env.IWB_UNSIGNED_BUILD!=='1')throw new Error('Signed updater builds require TAURI_SIGNING_PRIVATE_KEY. For an unsigned development installer only, explicitly set IWB_UNSIGNED_BUILD=1.');
-if(mode==='build'){
-  const check=spawnSync(python,['-c','import PyInstaller'],{cwd:root,stdio:'ignore'});
-  if(check.status!==0)throw new Error(`Desktop build dependencies are missing. Run: "${python}" -m pip install -r desktop/requirements-build.txt`);
-}
+// build_runtime prepares a separate runtime/build-only venv; never freeze test dependencies.
 run(process.execPath,[npmCli,'run','build'],path.join(root,'frontend'));
 if(mode==='build')run(python,[path.join(directory,'build_runtime.py')]);
 const args=[path.join(directory,'node_modules/@tauri-apps/cli/tauri.js'),mode];
