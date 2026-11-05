@@ -19,16 +19,6 @@ on:
         required: false
         type: boolean
         default: false
-  pull_request:
-    paths:
-      - 'desktop/**'
-      - 'backend/**'
-      - 'frontend/**'
-      - 'requirements*.txt'
-      - 'scripts/check-webkit-performance-compat.cjs'
-      - 'scripts/check-desktop-flows.cjs'
-      - 'scripts/desktop-benchmark-server.cjs'
-      - '.github/workflows/desktop.yml'
 
 permissions:
   contents: read
