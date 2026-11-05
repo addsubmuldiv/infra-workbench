@@ -10,3 +10,9 @@
 :is(.cluster-panel,.cluster-dialog,.cluster-terminal-workspace,.cluster-picker) :is(select,textarea):focus{outline:2px solid var(--accent);outline-offset:1px}
 .cluster-panel textarea::placeholder{color:var(--muted)}
 .cluster-picker .cluster-menu button{justify-content:flex-start}
+
+/* Match the specificity of the generic cluster button rule, including hover. */
+.cluster-picker .host-category-filter button.selected:not(.primary):not(.icon-button):not(.cluster-name):not(.host-remove-button){background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.cluster-empty{margin:4px 8px 12px 28px;color:var(--muted);font-size:11px;line-height:1.6}
+
+.cluster-filter-note{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:4px 8px 8px 28px;color:var(--muted);font-size:11px}

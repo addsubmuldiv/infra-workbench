@@ -2,6 +2,12 @@
 
 机器卡片的链条图标用于管理独立 SSH 隧道，不会打开终端，也不依赖 VS Code。
 
+## 统一管理
+
+页面顶部的“隧道管理”显示所有机器的隧道，不受机器选择、搜索或设备类型筛选影响。入口数字统计正在连接、已连接和正在重连的隧道。窗口默认列出这些运行中的隧道；勾选“显示全部已保存隧道”可查看未连接和失败的配置。
+
+列表每两秒刷新状态，显示机器、隧道名称、转发方向、端口和连接时长。可单条断开，或断开全部已读取到的运行中隧道；“管理”打开原有配置面板。读取或断开失败会显示对应机器的错误。关闭管理窗口不会停止隧道；从托盘退出后台才会断开全部隧道并取消重连。
+
 ## 远端 Codex 使用本机代理
 
 1. 点击机器上的链条图标，填写名称，选择“远端访问本机（代理）”。
@@ -38,6 +44,8 @@ SSH 别名继续由 VS Code 解析，手动机器的账号和端口会带入连�
 客户端只请求 `127.0.0.1` 监听并只转发到 `127.0.0.1`。远端 SSH 服务端最终决定监听行为；例如 OpenSSH 的 `GatewayPorts yes` 可以覆盖请求地址。需要远端严格回环监听时，服务端应采用 `GatewayPorts no` 或 `clientspecified`，并核对实际监听地址。工作台不会修改服务端 SSH 配置。
 
 ## English
+
+The page header's **Tunnel manager** covers all machines regardless of sidebar selection or filters. It defaults to active tunnels (connecting, connected, or reconnecting); enable **Show all saved tunnels** for stopped and failed rules. Status refreshes every two seconds. Inspect routes and connection duration, disconnect individual or all loaded active tunnels, or open the existing configuration panel. Read and stop failures identify the affected machine. Closing the manager keeps tunnels running; quitting the backend disconnects them and cancels reconnects.
 
 The machine's **VS Code** button launches local VS Code with Remote - SSH. Enable **Connect before opening VS Code** on each required tunnel and save it. All selected tunnels must connect before launch, with a 60-second wait limit. Failure offers retry or an explicit skip; cancelling leaves backend tunnels alone. The launch target is rechecked even when skipping. Install VS Code and Remote - SSH first. Authentication remains in VS Code; saved Workbench passwords, custom private keys and editor settings are not transferred automatically. A successful launch acknowledges CLI dispatch, not remote authentication.
 

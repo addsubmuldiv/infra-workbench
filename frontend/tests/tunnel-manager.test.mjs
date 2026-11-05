@@ -1,0 +1,21 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children??[]).flat(Infinity).flatMap(nodes)];
+test('fleet tunnel manager includes all hosts, hides stopped rules by default and stops each active tunnel',async()=>{
+ const active={id:'r',name:'Proxy',status:'connected',direction:'remote',local_port:7890,remote_port:18899,connected_at:1};
+ const hosts=[{id:'a',target:'A'},{id:'b',target:'B'}];
+ const stored={a:[active],b:[{...active,id:'reconnect',status:'reconnecting'},{...active,id:'s',name:'Stopped',status:'stopped'}]};
+ const states=[stored,[],false,false,true,null,10000];let cursor=0;const calls=[];
+ const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect(){},useId:()=> 'title',useCallback:fn=>fn,useRef:value=>({current:value}),useState:initial=>{const i=cursor++;if(!(i in states))states[i]=initial;return [states[i],value=>{states[i]=typeof value==='function'?value(states[i]):value}]}};
+ const source=fs.readFileSync(new URL('../src/TunnelManager.tsx',import.meta.url),'utf8');
+ const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
+ const exports={};new Function('require','exports','document',js)(name=>({'react':react,'react-dom':{createPortal:n=>n},'./i18n':{t:zh=>zh,useLocale(){}},'./SSHTunnelPanel':{tunnelRequest:async(host,path='',method='GET')=>{calls.push({host,path,method});return path?{}:stored[host]}}}[name]??{}),exports,{body:{}});
+ const render=()=>{cursor=0;return exports.TunnelManager({hosts,close(){}})};
+ let tree=render();assert.equal(nodes(tree).filter(n=>n.type==='article').length,2);
+ nodes(tree).find(n=>n.type==='input').props.onChange({target:{checked:true}});tree=render();assert.equal(nodes(tree).filter(n=>n.type==='article').length,3);
+ await nodes(tree).find(n=>n.type==='button'&&n.props.children.includes('断开全部运行中隧道')).props.onClick();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(calls.filter(c=>c.method==='POST'),[{host:'a',path:'/r/stop',method:'POST'},{host:'b',path:'/reconnect/stop',method:'POST'}]);
+});

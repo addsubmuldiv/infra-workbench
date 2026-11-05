@@ -10,7 +10,7 @@ type Draft=Pick<TunnelRule,'name'|'direction'|'local_port'|'remote_port'|'auto_r
 const defaults=():Draft=>({name:t('Codex 代理','Codex proxy'),direction:'remote',local_port:7890,remote_port:18899,auto_reconnect:true,auto_start:false,before_vscode:false});
 const running=(status:string)=>['connecting','connected','reconnecting'].includes(status);
 function statusText(status:string){return status==='connected'?t('已连接','Connected'):status==='connecting'?t('正在连接','Connecting'):status==='reconnecting'?t('正在重连','Reconnecting'):status==='error'?t('连接失败','Connection failed'):t('未连接','Disconnected')}
-async function request(host:string,path='',method='GET',body?:unknown){
+export async function tunnelRequest(host:string,path='',method='GET',body?:unknown){
   const response=await fetch(`/api/hosts/${encodeURIComponent(host)}/tunnels${path}`,{method,headers:{'Content-Type':'application/json','X-IWB':'1'},body:body===undefined?undefined:JSON.stringify(body)});
   const data=await response.json();
   if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:t('隧道操作失败，请检查输入','Tunnel operation failed; check the inputs'));
@@ -26,7 +26,7 @@ export function SSHTunnelButton({host,disabled=false}:{host:Host;disabled?:boole
   return <><button className={'ssh-open ssh-tunnel-button tunnel-'+status} disabled={disabled} title={disabled?t('演示模式不建立真实隧道','Tunnels are unavailable in demo mode'):title} aria-label={host.target+' '+title} aria-haspopup="dialog" onClick={()=>setOpen(true)}><Link2 size={16}/><i className={'tunnel-dot '+status}/></button>{open&&<SSHTunnelPanel host={host} close={()=>setOpen(false)} onRules={setLive}/>}</>;
 }
 
-function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;onRules:(rules:TunnelRule[])=>void}){
+export function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;onRules:(rules:TunnelRule[])=>void}){
   useLocale();
   const dialog=useRef<HTMLDialogElement>(null),title=useId(),description=useId();
   const [rules,setRules]=useState<TunnelRule[]>(host.ssh_tunnels??[]),[selected,setSelected]=useState<string|null>(null);
@@ -39,7 +39,7 @@ function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;onRules:(
     mounted.current=true;let active=true;let timer:ReturnType<typeof setTimeout>;
     async function load(){
       try{
-        const data:TunnelRule[]=await request(host.id);
+        const data:TunnelRule[]=await tunnelRequest(host.id);
         if(active&&!acting.current){setRules(data);onRules(data);setLoaded(true);if(!initialized.current){initialized.current=true;if(data[0])choose(data[0])}}
       }catch(e){if(active)setError(e instanceof Error?e.message:String(e))}
       if(active)timer=setTimeout(load,2000);
@@ -52,10 +52,10 @@ function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;onRules:(
   const update=<K extends keyof Draft>(key:K,value:Draft[K])=>{setDraft(old=>({...old,[key]:value}));setProbe(null)};
   async function act(action:()=>Promise<void>){
     if(acting.current)return;acting.current=true;setBusy(true);setError('');
-    try{await action();const data=await request(host.id);if(mounted.current){setRules(data);onRules(data)}}catch(e){if(mounted.current)setError(e instanceof Error?e.message:String(e))}finally{acting.current=false;if(mounted.current)setBusy(false)}
+    try{await action();const data=await tunnelRequest(host.id);if(mounted.current){setRules(data);onRules(data)}}catch(e){if(mounted.current)setError(e instanceof Error?e.message:String(e))}finally{acting.current=false;if(mounted.current)setBusy(false)}
   }
   async function save(connect:boolean){
-    await act(async()=>{const saved:TunnelRule=await request(host.id,selected?`/${selected}`:'',selected?'PUT':'POST',draft);if(mounted.current)choose(saved);if(connect)await request(host.id,`/${saved.id}/start`,'POST')});
+    await act(async()=>{const saved:TunnelRule=await tunnelRequest(host.id,selected?`/${selected}`:'',selected?'PUT':'POST',draft);if(mounted.current)choose(saved);if(connect)await tunnelRequest(host.id,`/${saved.id}/start`,'POST')});
   }
   const route=draft.direction==='remote'?[t('远端','Remote'),draft.remote_port,t('本机','Local'),draft.local_port]:[t('本机','Local'),draft.local_port,t('远端','Remote'),draft.remote_port];
   const elapsed=rule?.connected_at?Math.max(0,Math.floor((now/1000-rule.connected_at)/60)):0;
@@ -77,9 +77,9 @@ function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;onRules:(
         <fieldset className="tunnel-options" disabled={busy||active||!loaded}><label><input type="checkbox" checked={draft.auto_reconnect} onChange={e=>update('auto_reconnect',e.target.checked)}/>{t('断线自动重连','Reconnect after network failure')}</label><label><input type="checkbox" checked={draft.auto_start} onChange={e=>update('auto_start',e.target.checked)}/>{t('软件启动时连接','Connect on app startup')}</label><label><input type="checkbox" checked={draft.before_vscode} onChange={e=>update('before_vscode',e.target.checked)}/>{t('打开 VS Code 前连接此隧道','Connect before opening VS Code')}</label></fieldset>
         {active&&<p className="tunnel-note">{t('断开后可修改配置。','Disconnect to edit this configuration.')}</p>}
         {error&&<p className="tunnel-error" role="alert">{error}</p>}
-        <div className="tunnel-actions">{active?<><button type="button" className="secondary" disabled={busy||rule?.status!=='connected'} onClick={()=>void act(async()=>{const result=await request(host.id,`/${selected}/probe`,'POST');if(mounted.current)setProbe(result)})}>{t('检测目标端口','Check target port')}</button><button type="button" className="tunnel-disconnect" disabled={busy} onClick={()=>void act(async()=>{await request(host.id,`/${selected}/stop`,'POST');setProbe(null)})}><Unplug size={15}/>{rule?.status==='connected'?t('断开隧道','Disconnect'):t('取消连接','Cancel connection')}</button></>:<><button type="button" className="secondary" disabled={busy||!loaded} onClick={()=>{const form=dialog.current?.querySelector('form');if(form?.reportValidity())void save(false)}}>{t('保存','Save')}</button><button className="primary" disabled={busy||!loaded}>{busy?<LoaderCircle size={15} className="spin"/>:<Link2 size={15}/>} {!selected||dirty?t('保存并连接','Save and connect'):t('连接隧道','Connect')}</button></>}</div>
+        <div className="tunnel-actions">{active?<><button type="button" className="secondary" disabled={busy||rule?.status!=='connected'} onClick={()=>void act(async()=>{const result=await tunnelRequest(host.id,`/${selected}/probe`,'POST');if(mounted.current)setProbe(result)})}>{t('检测目标端口','Check target port')}</button><button type="button" className="tunnel-disconnect" disabled={busy} onClick={()=>void act(async()=>{await tunnelRequest(host.id,`/${selected}/stop`,'POST');setProbe(null)})}><Unplug size={15}/>{rule?.status==='connected'?t('断开隧道','Disconnect'):t('取消连接','Cancel connection')}</button></>:<><button type="button" className="secondary" disabled={busy||!loaded} onClick={()=>{const form=dialog.current?.querySelector('form');if(form?.reportValidity())void save(false)}}>{t('保存','Save')}</button><button className="primary" disabled={busy||!loaded}>{busy?<LoaderCircle size={15} className="spin"/>:<Link2 size={15}/>} {!selected||dirty?t('保存并连接','Save and connect'):t('连接隧道','Connect')}</button></>}</div>
       </form>
-      {selected&&!active&&<button className="text-button tunnel-delete" disabled={busy} onClick={()=>void act(async()=>{await request(host.id,`/${selected}`,'DELETE');if(mounted.current)choose(null)})}>{t('删除此配置','Delete configuration')}</button>}
+      {selected&&!active&&<button className="text-button tunnel-delete" disabled={busy} onClick={()=>void act(async()=>{await tunnelRequest(host.id,`/${selected}`,'DELETE');if(mounted.current)choose(null)})}>{t('删除此配置','Delete configuration')}</button>}
       <p id={description} className="tunnel-footnote">{t('监听与目标地址均设为 127.0.0.1。关闭窗口后隧道继续在托盘后台运行，退出后台时断开。','Listening and target addresses are set to 127.0.0.1. Tunnels keep running in the tray after closing the window and disconnect when the backend exits.')}</p>
     </div>
   </dialog>,document.body);
