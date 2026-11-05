@@ -1,3 +1,4 @@
+from .internal_defaults import TRANSFERS_CONCURRENCY, TRANSFERS_IDLE_EXPIRY_SECONDS, TRANSFERS_MAX_JOBS, TRANSFERS_SEND_TIMEOUT_SECONDS
 from .internal_defaults import FILES_UPLOAD_MAX_BYTES, FILES_FOLDER_UPLOAD_MAX_BYTES
 """Ephemeral transfers with bounded spooling, cancellation and real SSH progress."""
 import asyncio
@@ -19,23 +20,23 @@ MAX_UPLOAD=FILES_UPLOAD_MAX_BYTES
 
 class FileTransfers:
     def __init__(self,ssh):
-        self.ssh=ssh;self.uploads={};self.downloads={};self.slots=asyncio.Semaphore(2)
+        self.ssh=ssh;self.uploads={};self.downloads={};self.slots=asyncio.Semaphore(TRANSFERS_CONCURRENCY)
 
     def prune(self):
         now=time.monotonic()
         for mapping in (self.uploads,self.downloads):
             for key,job in list(mapping.items()):
-                if now-job['touched']>600 and job['status'] not in ('receiving','sending','verifying'):
+                if now-job['touched']>TRANSFERS_IDLE_EXPIRY_SECONDS and job['status'] not in ('receiving','sending','verifying'):
                     mapping.pop(key)
 
     def create(self,host,directory,name,size,kind='file'):
         self.prune()
         limit = FILES_FOLDER_UPLOAD_MAX_BYTES if kind == 'folder' else MAX_UPLOAD
         if type(size) is not int or not 0 <= size <= limit: raise HTTPException(400,f'上传内容不能超过 {limit} 字节')
-        if len(self.uploads)>=32:
+        if len(self.uploads)>=TRANSFERS_MAX_JOBS:
             finished=[(key,job) for key,job in self.uploads.items() if job['status'] in ('done','error','cancelled') and job.get('task') is None]
             if finished: self.uploads.pop(min(finished,key=lambda pair:pair[1]['touched'])[0])
-        if len(self.uploads)>=32: raise HTTPException(429,'上传请求过多，请等待现有传输完成')
+        if len(self.uploads)>=TRANSFERS_MAX_JOBS: raise HTTPException(429,'上传请求过多，请等待现有传输完成')
         key=secrets.token_hex(24)
         self.uploads[key]=dict(id=key,host=dict(host),directory=directory,name=name,kind=kind,total=size,received=0,sent=0,
                                status='waiting',error=None,touched=time.monotonic(),task=None,cancelled=False)
@@ -86,7 +87,7 @@ class FileTransfers:
         async def discard(reader):
             while await reader.read(8192): pass
         try:
-            async with self.slots,asyncio.timeout(600):
+            async with self.slots,asyncio.timeout(TRANSFERS_SEND_TIMEOUT_SECONDS):
                 if job['cancelled']: raise asyncio.CancelledError()
                 source=Path(__file__).with_name('folder_upload_probe.py' if job.get('kind')=='folder' else 'file_upload_probe.py').read_text(encoding='utf-8')
                 command='python3 -u -c '+shlex.quote(source)

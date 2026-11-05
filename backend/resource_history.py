@@ -1,10 +1,11 @@
+from .internal_defaults import HISTORY_CHANGES_RETENTION_DAYS, HISTORY_CHANGES_MAX_EVENTS
 """Deterministic, bounded resource observations; never infer job success from exit."""
 import json
 import sqlite3
 import time
 
-RETENTION = 7 * 86400
-MAX_EVENTS = 10000
+RETENTION = HISTORY_CHANGES_RETENTION_DAYS * 86400
+MAX_EVENTS = HISTORY_CHANGES_MAX_EVENTS
 
 
 def compact(snapshot):

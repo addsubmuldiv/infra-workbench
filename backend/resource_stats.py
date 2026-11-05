@@ -1,3 +1,4 @@
+from .internal_defaults import HISTORY_RESOURCES_RETENTION_DAYS
 """Durable raw resource samples and conservative, time-integrated history."""
 import json
 import math
@@ -8,7 +9,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-RETENTION_SECONDS = 30 * 86400
+RETENTION_SECONDS = HISTORY_RESOURCES_RETENTION_DAYS * 86400
 RULE_VERSION = 1
 
 

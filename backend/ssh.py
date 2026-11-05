@@ -1,3 +1,4 @@
+from .internal_defaults import SSH_CONNECT_TIMEOUT_SECONDS, SSH_JUMP_EXTRA_TIMEOUT_SECONDS, SSH_KEEPALIVE_INTERVAL_SECONDS, SSH_KEEPALIVE_COUNT_MAX, SSH_COLLECTION_TIMEOUT_SECONDS
 import asyncio
 import logging
 import os
@@ -173,10 +174,10 @@ class SSHService:
         # AsyncSSH connect_timeout covers proxy startup, handshake AND auth.
         # A separate short login timer would cut off that larger budget early.
         configured = cfg.get('connecttimeout', 'none')
-        timeout = float(configured) if configured not in (None, 'none', '0') else 20
+        timeout = float(configured) if configured not in (None, 'none', '0') else SSH_CONNECT_TIMEOUT_SECONDS
         routed = any(cfg.get(key) not in (None, 'none') for key in ('proxyjump', 'proxycommand'))
         if routed:
-            timeout += 20
+            timeout += SSH_JUMP_EXTRA_TIMEOUT_SECONDS
         # Import previews can verify a connection before assigning a host ID.
         importing = bool(host.get('_import_identity'))
         host_keys = ImportHostKeys(self.known_hosts) if importing else None
@@ -231,8 +232,8 @@ class SSHService:
                 options['agent_path'] = None
             elif cfg.get('identityagent') not in (None, 'none', 'SSH_AUTH_SOCK'):
                 options['agent_path'] = cfg['identityagent']
-            options['keepalive_interval'] = 60
-            options['keepalive_count_max'] = 3
+            options['keepalive_interval'] = SSH_KEEPALIVE_INTERVAL_SECONDS
+            options['keepalive_count_max'] = SSH_KEEPALIVE_COUNT_MAX
         elif key_only:
             options['client_keys'] = [host['key_path']]
             options['agent_path'] = None
@@ -309,7 +310,7 @@ class SSHService:
                 raise ValueError('SSH 配置已变化，请重新连接这台机器后再配置 sudo')
             started = time.monotonic()
             try:
-                done = await session.run(command, input=source, timeout=35)
+                done = await session.run(command, input=source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
                 logging.warning('SSH command timeout host_id=%s elapsed=%.3fs session_closed=%s',
                                 host['id'], time.monotonic() - started, session.is_closed())
@@ -317,7 +318,7 @@ class SSHService:
             return done.exit_status, done.stdout, done.stderr
         # Native SSH includes target/jump authentication in this wall-clock
         # budget, unlike an already authenticated AsyncSSH session above.
-        return await self.command(self.arguments(host)+[command], source, timeout=35)
+        return await self.command(self.arguments(host)+[command], source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
 
     async def run_bound(self, host, command, source, config, *, native=False):
         """Pin secret-bearing commands to the endpoint resolved before validation."""
