@@ -92,6 +92,13 @@ def self_test(destination):
             importlib.import_module('backend.desktop_macos')
             from backend.agent_runtime import bundled_files
             result['builtin_skills'] = len(bundled_files())
+            if sys.platform == 'win32':
+                # Exercise the native SSPI call, not just imports: pywin32 loads
+                # win32timezone lazily here. No token exchange or remote login.
+                from sspi import ClientAuth
+                auth = ClientAuth('Kerberos')
+                del auth
+                result['windows_ssh_auth'] = True
             async def check_native_pty():
                 if sys.platform == 'win32':
                     from backend.terminal import NativeTerminal as Terminal

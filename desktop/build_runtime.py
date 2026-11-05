@@ -106,6 +106,9 @@ def main():
         if source.stem != '__init__':
             args += ['--hidden-import', 'backend.'+source.stem]
     if sys.platform == 'win32':
+        # SSPI's native AcquireCredentialsHandle imports this dynamically when
+        # AsyncSSH initializes GSS authentication, even for password connections.
+        args += ['--hidden-import', 'win32timezone']
         args += ['--windowed', '--hidden-import', 'tkinter', '--hidden-import', 'winpty', '--collect-binaries', 'winpty',
                  '--collect-data', 'winpty', '--exclude-module', 'winpty.tests',
                  '--icon', str(ROOT/'backend'/'assets'/'workbench.ico')]

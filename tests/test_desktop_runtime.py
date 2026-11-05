@@ -92,3 +92,12 @@ def test_self_test_serves_real_frontend_without_using_the_configured_user_data(t
     assert result['frontend_assets'] >= 2
     assert result['native_pty'] is True
     assert not user_data.exists()
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows SSPI packaging regression')
+def test_self_test_checks_windows_ssh_authentication(tmp_path):
+    destination = tmp_path/'receipt.json'
+    done = subprocess.run([sys.executable, '-m', 'backend.desktop_runtime', '--self-test', str(destination)],
+                          env={**os.environ, 'IWB_DATA': str(tmp_path/'unused')}, timeout=30)
+    assert done.returncode == 0
+    assert json.loads(destination.read_text(encoding='utf-8'))['windows_ssh_auth'] is True

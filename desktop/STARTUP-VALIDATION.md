@@ -2,6 +2,9 @@
 
 The frozen Python `--self-test` verifies imports, HTTP, frontend bytes and native
 PTY support. It does not verify the native bootstrap's CSP or rendered layout.
+On Windows it also acquires a local SSPI credential handle (without a token
+exchange or server connection), exercising AsyncSSH's lazy pywin32 timezone
+dependency. Missing `win32timezone` must fail the frozen runtime self-test.
 Before publishing a desktop UI change, run both checks.
 
 From `desktop/src-tauri`, run:
