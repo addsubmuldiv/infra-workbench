@@ -91,6 +91,12 @@ def test_self_test_serves_real_frontend_without_using_the_configured_user_data(t
     assert result['ok'] is True and result['hosts'] == 0
     assert result['frontend_assets'] >= 2
     assert result['native_pty'] is True
+    assert set(result['feature_checks']) >= {
+        'ssh_password', 'ssh_key', 'sftp', 'excel', 'agent_graph',
+        'tls_certificates', 'timezones', 'remote_sources', 'desktop_assets',
+    }
+    if sys.platform == 'win32':
+        assert 'tk_images' in result['feature_checks']
     assert not user_data.exists()
 
 

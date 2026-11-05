@@ -4,6 +4,8 @@
 
 从[最新 Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest) 下载 Windows x64 向导安装包。安装包包含 Python 后台及前端资源；普通用户无需安装开发环境。附件中的 `SHA256SUMS.txt` 用于检查下载完整性，具体包含的功能以该版本的 Release 说明为准。
 
+桌面版仍需要 Windows 的 OpenSSH 客户端（`ssh.exe`、`ssh-keygen.exe`），用于交互终端、SSH 配置解析和免密验证；它不随 Python 后台打包。可在 PowerShell 运行 `ssh -V` 检查，缺失时在 Windows「设置 → 可选功能」中安装 OpenSSH 客户端。
+
 安装程序尚无 Authenticode 代码签名，更新文件另有更新签名。构建与冻结后台自测不能替代无 Python / Node.js 的干净 Windows 系统安装、升级和卸载验收。
 
 以下 `安装.cmd`、Python、WinGet 和保留项目目录等要求适用于源码安装。不要把源码启动器生成的 EXE 当成可独立分发的桌面安装包。

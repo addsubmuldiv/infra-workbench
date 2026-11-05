@@ -5,6 +5,18 @@ PTY support. It does not verify the native bootstrap's CSP or rendered layout.
 On Windows it also acquires a local SSPI credential handle (without a token
 exchange or server connection), exercising AsyncSSH's lazy pywin32 timezone
 dependency. Missing `win32timezone` must fail the frozen runtime self-test.
+Feature checks also cover password/key SSH and SFTP round trips against a
+temporary loopback server, encrypted OpenSSH key import/export (bcrypt), Excel
+template parsing, an assistant graph turn with an in-memory provider, CA data,
+timezones, remote probe source files, theme/icon assets and Windows Tk/Pillow.
+They use synthetic data and do not contact real SSH/model services or user agents.
+
+The build copies the frozen runtime to a temporary path containing spaces and
+Chinese characters, runs it outside the checkout with a system-only PATH, and
+removes Python/Tcl development environment overrides. This catches dependencies
+accidentally supplied by the build machine. The receipt is written to
+`work/desktop-build/runtime-self-test.json`. These checks do not replace clean
+Windows installation/upgrade/uninstall testing or real server/network checks.
 Before publishing a desktop UI change, run both checks.
 
 From `desktop/src-tauri`, run:

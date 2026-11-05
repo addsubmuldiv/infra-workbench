@@ -92,6 +92,10 @@ def self_test(destination):
             importlib.import_module('backend.desktop_macos')
             from backend.agent_runtime import bundled_files
             result['builtin_skills'] = len(bundled_files())
+            from backend.desktop_checks import check_resources, check_ssh, check_agent
+            result['feature_checks'] = check_resources()
+            result['feature_checks'] += asyncio.run(asyncio.wait_for(check_ssh(Path(directory)), timeout=15))
+            result['feature_checks'] += asyncio.run(asyncio.wait_for(check_agent(), timeout=15))
             if sys.platform == 'win32':
                 # Exercise the native SSPI call, not just imports: pywin32 loads
                 # win32timezone lazily here. No token exchange or remote login.

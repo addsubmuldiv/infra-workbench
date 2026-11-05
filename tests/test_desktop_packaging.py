@@ -1,6 +1,8 @@
 import importlib.util
 import json
 import hashlib
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,44 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('build_runtime', ROOT / 'desktop/build_runtime.py')
 runtime = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runtime)
+
+
+def test_verify_runtime_uses_relocated_files_without_development_environment(tmp_path, monkeypatch):
+    executable = tmp_path/'iwb-runtime.exe'
+    executable.write_bytes(b'executable')
+    (tmp_path/'_internal').mkdir()
+    (tmp_path/'_internal'/'dependency').write_bytes(b'present')
+    receipt = tmp_path/'receipt.json'
+    monkeypatch.setenv('PYTHONPATH', 'development-checkout')
+    monkeypatch.setenv('TCL_LIBRARY', 'development-tcl')
+    calls = []
+    def run(args, **options):
+        moved = Path(args[0])
+        assert moved.parent != tmp_path
+        assert moved.read_bytes() == b'executable'
+        assert options['cwd'] == moved.parent
+        assert 'PYTHONPATH' not in options['env']
+        assert 'TCL_LIBRARY' not in options['env']
+        if sys.platform == 'win32':
+            assert (moved.parent/'_internal'/'dependency').read_bytes() == b'present'
+        calls.append(args[1])
+        if args[1] == '--self-test':
+            Path(args[2]).write_text(json.dumps({'ok': True, 'frozen': True}))
+        return subprocess.CompletedProcess(args, 0)
+    monkeypatch.setattr(runtime.subprocess, 'run', run)
+    assert runtime.verify_runtime(executable, receipt)['ok'] is True
+    assert calls == ['--self-test', '--help']
+
+
+def test_verify_runtime_rejects_stale_receipt(tmp_path, monkeypatch):
+    executable = tmp_path/'iwb-runtime.exe'
+    executable.write_bytes(b'executable')
+    (tmp_path/'_internal').mkdir()
+    receipt = tmp_path/'receipt.json'
+    receipt.write_text(json.dumps({'ok': True, 'frozen': True}))
+    monkeypatch.setattr(runtime.subprocess, 'run', lambda args, **kwargs: subprocess.CompletedProcess(args, 0))
+    with pytest.raises(RuntimeError, match='No fresh self-test receipt'):
+        runtime.verify_runtime(executable, receipt)
 
 
 def make_dist(tmp_path, files):

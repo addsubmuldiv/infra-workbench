@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -68,6 +69,35 @@ def copy_runtime(dist, output, target, platform):
     return destination
 
 
+def verify_runtime(destination, receipt):
+    """Run shipped bytes away from the checkout and development PATH."""
+    receipt = Path(receipt).resolve()
+    receipt.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory(prefix='iwb-安装包 runtime-') as temporary:
+        directory = Path(temporary)
+        executable = directory/destination.name
+        shutil.copy2(destination, executable)
+        if sys.platform == 'win32':
+            shutil.copytree(destination.parent/'_internal', directory/'_internal')
+        environment = dict(os.environ)
+        for name in ('PYTHONHOME', 'PYTHONPATH', 'VIRTUAL_ENV', 'TCL_LIBRARY', 'TK_LIBRARY'):
+            environment.pop(name, None)
+        environment['IWB_DATA'] = str(directory/'unused-user-data')
+        if sys.platform == 'win32':
+            windows = Path(environment.get('SystemRoot', r'C:\Windows'))
+            environment['PATH'] = os.pathsep.join(map(str, (windows/'System32', windows)))
+        else:
+            environment['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin'
+        checked = subprocess.run([str(executable), '--self-test', str(receipt)],
+                                 cwd=directory, env=environment, check=False, timeout=90)
+        result = json.loads(receipt.read_text(encoding='utf-8')) if receipt.exists() else {
+            'ok': False, 'error': 'No fresh self-test receipt', 'returncode': checked.returncode}
+        if checked.returncode or result.get('ok') is not True or result.get('frozen') is not True:
+            raise RuntimeError('Bundled runtime self-test failed: '+str(result))
+        subprocess.run([str(executable), '--help'], cwd=directory, env=environment, check=True, timeout=30)
+    return result
+
+
 def main():
     if sys.platform not in ('win32', 'darwin'):
         raise SystemExit('Build the Windows/macOS package on its target platform')
@@ -127,15 +157,7 @@ print(json.dumps({'runtime_module_count':len(pyz.toc),'build_only_modules':found
 '''
     subprocess.run([str(build_python), '-I', '-c', audit, str(destination)], check=True)
     receipt = work/'runtime-self-test.json'
-    receipt.unlink(missing_ok=True)
-    checked = subprocess.run([str(destination), '--self-test', str(receipt)], cwd=ROOT, check=False, timeout=90)
-    result = json.loads(receipt.read_text(encoding='utf-8')) if receipt.exists() else {'ok':False,'error':'No fresh self-test receipt','returncode':checked.returncode}
-    if checked.returncode:
-        raise RuntimeError('Bundled runtime self-test failed: '+str(result))
-    if result.get('ok') is not True or result.get('frozen') is not True:
-        raise RuntimeError('Bundled runtime self-test failed: '+str(result))
-    # Exercise the real tray/menu-bar entry's argument parser too.
-    subprocess.run([str(destination), '--help'], cwd=ROOT, check=True, timeout=30)
+    verify_runtime(destination, receipt)
     print('Bundled Python runtime:', destination)
 
 
