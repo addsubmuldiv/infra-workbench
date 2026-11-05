@@ -16,9 +16,9 @@ except ImportError:
     pwd = None
 
 
-def run(args):
+def run(args, timeout=6):
     try:
-        done = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=6)
+        done = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=timeout)
         return {'code': done.returncode, 'out': done.stdout, 'error': done.stderr[-500:]}
     except Exception as exc:
         return {'code': -1, 'out': '', 'error': str(exc)}
@@ -230,7 +230,9 @@ def main():
         result['processes'] = run(['nvidia-smi', '--query-compute-apps=gpu_uuid,pid,process_name,used_memory', '--format=csv,noheader,nounits'])
     elif shutil.which('npu-smi'):
         result['kind'] = 'NPU'
-        result['metrics'] = run(['npu-smi', 'info'])
+        # Driver queries can occasionally exceed the generic utility budget.
+        # Keep headroom inside SSHService.run's 35-second outer timeout.
+        result['metrics'] = run(['npu-smi', 'info'], timeout=15)
     else:
         result['kind'] = None
         result['metrics'] = {'code': -1, 'out': '', 'error': '找不到 nvidia-smi 或 npu-smi'}

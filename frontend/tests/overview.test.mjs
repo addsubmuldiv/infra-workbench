@@ -263,3 +263,34 @@ test('machine selection rerenders only its own card and unrelated notice does no
   assert.equal(h.cardRenders.get('alpha').count,2);assert.equal(h.cardRenders.get('beta').count,1);
   h.render();assert.equal(h.cardRenders.get('alpha').count,2);assert.equal(h.cardRenders.get('beta').count,1);
 });
+
+test('manual completion expires and an old timer cannot clear a new refresh',async t=>{
+  const originalFetch=globalThis.fetch,originalTimer=globalThis.setTimeout,originalClear=globalThis.clearTimeout;
+  let timerId=0,finish;const timers=new Map();
+  globalThis.setTimeout=(callback,delay)=>{const id=++timerId;timers.set(id,{callback,delay});return id};
+  globalThis.clearTimeout=id=>timers.delete(id);
+  globalThis.fetch=async url=>url.includes('/hosts/')?new Promise(resolve=>{finish=()=>resolve({ok:true,json:async()=>({status:'online'})})}):({ok:true,json:async()=>({hosts,rules:[],reservations:[],events:[],server_time:100})});
+  t.after(()=>{globalThis.fetch=originalFetch;globalThis.setTimeout=originalTimer;globalThis.clearTimeout=originalClear});
+  const h=harness(t);h.render();
+  let request=h.button('刷新 alpha').props.onClick();finish();await request;h.render();
+  const summary=()=>h.text(h.find(n=>n.props?.className==='collection-summary'));
+  assert.ok(summary().includes('手动刷新已完成'));
+  let timer=[...timers.values()].find(timer=>timer.delay===3000);assert.ok(timer);
+  timer.callback();h.render();assert.ok(!summary().includes('手动刷新已完成'));
+  request=h.button('刷新 alpha').props.onClick();finish();await request;h.render();
+  const oldId=timerId;
+  request=h.button('刷新 alpha').props.onClick();h.render();
+  assert.ok(!timers.has(oldId));assert.ok(summary().includes('正在刷新'));
+  finish();await request;
+});
+
+test('automatic collection timings stay inside a closed statistics disclosure',t=>{
+  const items=[{...hosts[0],collection:{status:'collecting',duration_seconds:5.23,queue_seconds:0,response_bytes:5120,samples:2}}];
+  const h=harness(t,'#overview',[],items);h.render();
+  const panel=h.find(n=>n.props?.className==='collection-summary');
+  const children=panel.props.children.flat(Infinity).filter(Boolean);
+  assert.equal(children.length,1);
+  assert.equal(children[0].type,'details');
+  assert.ok(!children[0].props.open);
+  assert.ok(h.text(children[0]).includes('上次耗时'));
+});
