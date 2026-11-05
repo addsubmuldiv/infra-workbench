@@ -33,7 +33,7 @@ def test_full_catalog_short_history_does_not_trigger_phantom_compaction(tmp_path
         view=chat.create();saved=chat.get(view['id'])
         saved['messages']=[dict(role='user',content='prior evidence '*1800),dict(role='assistant',content='noted')]
         chat.save(saved)
-        model.replies=[tool_message('read_file',{'file_path':'/tool-skills/mcp-list-hosts/SKILL.md'}),
+        model.replies=[tool_message('read_file',{'file_path':'/skills/find-resources/SKILL.md'}),
                        tool_message('list_hosts',{}),dict(message=dict(role='assistant',content='done'))]
         started=chat.begin(view['id'],ChatMessageRequest(content='list hosts'))
         await chat.runs[started['active_run']]

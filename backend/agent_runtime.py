@@ -71,6 +71,7 @@ def skill_tool_files(files, tools):
     """Wire MCP tools to the framework's native skill progressive disclosure."""
     from deepagents.backends.utils import file_data_to_string
     names={tool.name for tool in tools}
+    covered=set()
     for path,value in list(files.items()):
         if not path.endswith('/SKILL.md'):continue
         text=file_data_to_string(value)
@@ -81,11 +82,13 @@ def skill_tool_files(files, tools):
         metadata=dict(meta.get('metadata') or {})
         mentioned={name for name in names if re.search(r'(?<![\w])'+re.escape(name)+r'(?![\w])',text)}
         mentioned.update(set(str(metadata.get('include_tools','')).split()) & names)
+        covered.update(mentioned)
         metadata['include_tools']=' '.join(sorted(mentioned));meta['metadata']=metadata
         files[path]=create_file_data('---\n'+yaml.safe_dump(meta,allow_unicode=True,sort_keys=False)+'---\n'+parts[2].lstrip())
     # A short tool skill is a discoverable fallback for tools not covered by a
     # business skill. No private tool or schema outside MCP discovery is added.
     for tool in tools:
+        if tool.name in covered:continue
         key='mcp-'+tool.name.replace('_','-')
         meta=dict(name=key,description=tool.description.split('。')[0][:100],
                   metadata=dict(include_tools=tool.name))

@@ -126,8 +126,11 @@ def test_cluster_page_refreshes_only_visible_page(monkeypatch):
     assert result['items']==[rows[1]] and result['next_offset']==2
 
 
-def test_content_search_budget_pages_all_long_matches(tmp_path):
-    from backend.atomic_probe import atomic_probe
+def test_content_search_budget_pages_all_long_matches(tmp_path,monkeypatch):
+    from backend import atomic_probe as module
+    from backend.model_paths import checked_path
+    monkeypatch.setattr(module,"checked_path",checked_path,raising=False)
+    atomic_probe=module.atomic_probe
     (tmp_path/'sample.txt').write_text(('needle '+'x'*1800+'\n')*12,encoding='utf-8')
     args=dict(path=str(tmp_path),query='needle',regex=False,recursive=False,file_pattern='*',offset=0,page_size=100)
     lines=[]

@@ -74,7 +74,7 @@ class CheckArgs(HostArgs):
 class FleetArgs(SearchPlan):
     scope:Literal['processes','resources','sessions','hosts']='resources'
     refresh:bool=False
-    view:Literal['detail','summary']=Field(default='detail',description='概况优先 summary：资源按型号汇总，保留设备 ID、显存范围和采样时间；detail 返回逐设备明细。')
+    view:Literal['detail','summary']=Field(default='detail',description='概况用 summary：资源按型号汇总，进程按机器、用户、详情状态分组，commands 含名称和命令前缀，processes 保留每个 PID、设备及 command_index；命令带截断标记，total/offset 按组计。完整命令和 cwd 用 detail 或 inspect_server_process。')
     offset:int=Field(default=0,ge=0,description='结果行偏移；分页时保持筛选条件一致，refresh=false 复用采样。')
     limit:int=Field(default=50,ge=1,le=200,description='每页结果行数；用 next_offset 继续，不把截断当作全部结果。')
 
@@ -129,6 +129,12 @@ def remote_source():
 
 def fleet_summary(row):
     """Lossless device membership with compact memory ranges; never infer unknowns."""
+    if row.get('type') == 'process':
+        result={key:value for key,value in row.items() if key!='cwd'}
+        command=row.get('command') or ''
+        result.update(command=command[:96] if row.get('command') is not None else None,
+                      command_truncated=len(command)>96,detail_available=True)
+        return result
     if row.get('type') != 'resource':
         return dict(row)
     result = {key: value for key, value in row.items() if key != 'devices'}
@@ -145,6 +151,39 @@ def fleet_summary(row):
             physical_card_count=len(set(cards)) if all(c is not None for c in cards) else None,
             memory_free_min_bytes=min(memory) if known else None,
             memory_free_max_bytes=max(memory) if known else None))
+    return result
+
+
+def fleet_summaries(rows):
+    groups={}
+    result=[]
+    def empty_group(row):
+        return dict({k:row.get(k) for k in ('host_id','alias','collected_at','user','detail_status')},
+                    type='process_group',processes=[],process_count=0,device_ids=[],commands=[],
+                    command_is_prefix=True,detail_available=True)
+    def append_process(group,row,descriptor):
+        commands=list(group['commands'])
+        if descriptor not in commands:commands.append(descriptor)
+        member=dict(pid=row['pid'],device_ids=row['device_ids'],command_index=commands.index(descriptor))
+        return dict(group,commands=commands,processes=group['processes']+[member],
+                    process_count=group['process_count']+1,
+                    device_ids=list(dict.fromkeys(group['device_ids']+row['device_ids'])))
+    for row in rows:
+        if row.get('type')!='process':
+            result.append(fleet_summary(row));continue
+        key=tuple(row.get(k) for k in ('host_id','collected_at','user','detail_status'))
+        if key not in groups:
+            groups[key]=empty_group(row);result.append(groups[key])
+        group=groups[key]
+        command=row.get('command')
+        descriptor=dict(name=row.get('name'),command=command[:96] if command is not None else None,
+                        command_truncated=command is not None and len(command)>96)
+        # Prefix equality is display compression, never process identity.
+        candidate=append_process(group,row,descriptor)
+        if group['processes'] and len(json.dumps(candidate,ensure_ascii=False))>9000:
+            group=empty_group(row);groups[key]=group;result.append(group)
+            candidate=append_process(group,row,descriptor)
+        group.update(candidate)
     return result
 
 
@@ -183,9 +222,9 @@ class ChatTools:
             rows,coverage=search_inventory(inventory,plan)
             state['search_plan']=plan.model_dump()
             state['last_host_ids']=list(dict.fromkeys(row['host_id'] for row in rows))
-            candidates=rows[args.offset:args.offset+args.limit]
             if args.view=='summary':
-                candidates=[fleet_summary(row) for row in candidates]
+                rows=fleet_summaries(rows)
+            candidates=rows[args.offset:args.offset+args.limit]
             # Keep ordinary fleet pages below the model bridge's 16K result
             # budget. Adjust the cursor before returning, never silently skip
             # rows when a character limit shortens a page.
@@ -198,7 +237,8 @@ class ChatTools:
             more=args.offset+len(page)<len(rows)
             return dict(plan=plan.model_dump(),items=page,
                         total=len(rows),truncated=more or args.offset>0,offset=args.offset,
-                        next_offset=args.offset+len(page) if more else None,view=args.view,coverage=coverage)
+                        next_offset=args.offset+len(page) if more else None,view=args.view,coverage=coverage,
+                        total_unit='process_groups' if args.view=='summary' and plan.scope=='processes' else 'rows')
         if name=='read_changes':
             return self.assistant.history.view(args.hours,host_ids=allowed,before_id=args.before_id,limit=args.limit)
         host=self.host(args.host_id,allowed)

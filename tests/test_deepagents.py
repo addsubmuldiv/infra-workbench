@@ -30,7 +30,7 @@ def test_remote_file_tool_and_virtual_file_tool_have_distinct_schemas(tmp_path):
     async def run():
         chat, model, tools = service(tmp_path)
         view = chat.create()
-        model.replies = [tool_message('read_file',{'file_path':'/tool-skills/mcp-read-server-file/SKILL.md'}),
+        model.replies = [tool_message('read_file',{'file_path':'/skills/read-server-files/SKILL.md'}),
                          dict(message=dict(role='assistant', content='收到'))]
         result = chat.begin(view['id'], ChatMessageRequest(content='查看工具'))
         await chat.runs[result['active_run']]

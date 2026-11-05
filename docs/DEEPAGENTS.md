@@ -40,3 +40,17 @@ English: The integration reuses native middleware rather than introducing anothe
 English: Deferred schemas are excluded until disclosed. The adapter checks the final bound input and delegates genuine overflow to native summarization. Capacity resolution prefers manual configuration, exact provider metadata, then verified official specifications; unknown models default to 524,288 tokens. New chats have independent history and compaction state, while bounded scoped memory remains separate.
 
 2026-11-05 在 Codex 内置浏览器新标签页、空白对话中，用同一提示“检查可用资源和运行中的服务”实测：54.389 秒、6 次工具调用、5 次回复模型调用、0 次压缩、0 次完全相同的重复工具调用；首轮历史和终端附件均为 0。上一轮记录为 201.586 秒、12 次工具调用、6 次压缩。此次结果覆盖全部 16 台机器的资源采样与占卡进程，未扫描全部监听端口；实时采样和模型响应耗时会波动，单次结果不代表稳定性能保证。
+
+## 并行查询与进程概况
+
+独立只读调用交给框架原生工具节点并行执行。资源和占卡进程查询可以在一个模型轮次发出，各自显式传 scope、view="summary" 和 refresh=true；现有 AgentService.refresh 按机器共享进行中的采集。翻页仍传 refresh=false，不新增缓存有效期，也不把旧采样当作当前空闲证据。
+
+业务技能通过原生 metadata.include_tools 披露 MCP schema。独立工具技能只为没有被已启用业务技能覆盖的工具生成，避免重复目录和说明读取；禁用业务技能后，相应工具仍可通过自动生成的独立入口发现。
+
+进程 summary 按机器、采样时间、用户及详情状态分组。commands 保存不同的进程名称及命令前缀；每组 processes 保留每个 PID 对应的设备 ID 和 command_index，指向 commands 的对应条目，process_count 表示该组进程数；total、offset 和 next_offset 按摘要组计数，total_unit="process_groups"。命令前缀最多 96 字符，command_truncated 表示是否截断，command_is_prefix 明确其显示用途。相同前缀不证明完整命令相同，也不能用于停止进程的身份校验。view="detail" 保留完整命令及 cwd，操作前仍须 inspect_server_process 核对身份。
+
+English: Independent read-only calls use the native parallel tool node; concurrent refreshes share the existing per-host in-flight collection. Process summaries retain every PID/device mapping in display groups with explicit prefix and pagination semantics. Full commands and working directories remain available through detail queries; process actions still require identity verification.
+
+2026-11-05 后续实测在新的 Codex 标签页和空白对话中完成：同一句提示耗时 36.503 秒，3 次模型调用、4 次工具调用（两次技能读取、两次并行 search_fleet），0 次分页续查、压缩和完全重复调用；历史消息和终端附件均为 0。此前 54.389 秒中，模型调用合计 34.381 秒、工具执行墙钟约 13.598 秒；本轮细分记录保存在本地测试报告。结果仍覆盖 16 台机器的资源和占卡进程，不包含完整端口或 CPU 服务扫描，采样及模型延迟会波动。
+
+合并同期 main 查询优化后再次重启，并在另一个新标签页和空白对话复测：44.133 秒，仍为 3 次模型调用、4 次工具调用，0 次分页、压缩和重复调用。前两次模型请求各约 8.4 秒，上次约 4.1 和 5.7 秒；两次最终验证耗时为 36.5–44.1 秒，不能把单次较快结果当作固定延迟保证。

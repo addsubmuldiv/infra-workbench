@@ -19,4 +19,6 @@ description: 查找满足卡数、显存、设备类型要求的空闲 GPU/NPU �
 
 查询不会锁定或预留设备。用户明确要求约机器时读取 manage-reservations 技能，通过 MCP 创建预约；没有成功结果不能声称已预约。训练前检查读取 check-training-readiness。
 
+同时查看资源与运行进程时，在同一轮并行调用 search_fleet(scope="resources",view="summary") 和 search_fleet(scope="processes",view="summary")；需要刷新时两次均传 refresh=true，后端会共享正在进行的同机采集。无需等资源结果再发进程查询。进程 summary 按机器、用户和详情状态分组，commands 列出名称及命令前缀，processes 的每个 PID 与设备列表通过 command_index 对应 commands 条目，组内保留用户和采样时间；total/offset 按组计，process_count 是组内进程数。命令仅为带截断标记的前缀，相同前缀不证明完整命令相同；需确认完整启动参数、模型路径或工作目录时，再对相关机器用 view="detail" 或 inspect_server_process 补查，不从前缀推断缺失参数。
+
 Efficiency: query the fleet directly with view="summary", reuse fresh complete results, paginate with refresh=false, and fetch per-device details only when needed. Never treat missing or stale data as idle.
