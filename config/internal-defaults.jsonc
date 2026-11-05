@@ -58,7 +58,7 @@
     "max_files": 128
   },
   "ssh": {
-    // SSH 默认连接预算，单位：秒；保留现有 SSH 配置覆盖优先级。
+    // AsyncSSH 未配置 ConnectTimeout 时的回退预算，单位：秒；OpenSSH 监控与跳板子进程保留各自原有预算。
     "connect_timeout_seconds": 20,
     // 跳板连接追加预算，单位：秒；不表示每一跳都重复追加。
     "jump_extra_timeout_seconds": 20,

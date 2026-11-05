@@ -455,6 +455,9 @@ const english:Record<string,string>={
 };
 const chinese=Object.fromEntries(Object.entries(english).map(([zh,en])=>[en,zh]));
 const limitTemplates:[string,string][]=[
+  ['Excel 文件不能超过 {size}', 'Excel file must not exceed {size}'],
+  ['日志单行过长（超过 {size}），请先拆分日志', 'Log line exceeds {size}. Split the log first.'],
+  ['训练记录超过 {count} 条，请拆分日志后对比；未返回截断结果', 'Training records exceed {count}. Split the log before comparing; no truncated result was returned.'],
   ["技能必须包含文件，最多 {count} 个", "Skills must contain files, up to {count} files"],
   [
     "文本编辑上限为 {size}，请下载后编辑",
@@ -546,7 +549,7 @@ export function toolText(text:string):string {
  const zh=chinese[text]??text;
  if(english[zh])return t(zh,english[zh]);
  for(const [pattern,en] of limitTemplates){
-  const regex=new RegExp('^'+pattern.split(/(\{(?:size|count)\})/).map(token=>token==='{size}'?'([0-9]+ (?:B|KiB|MiB|GiB))':token==='{count}'?'([0-9]+)':escapePattern(token)).join('')+'$');
+  const regex=new RegExp('^'+pattern.split(/(\{(?:size|count)\})/).map(token=>token==='{size}'?'([0-9]+ (?:B|KiB|MiB|GiB))':token==='{count}'?'([0-9][0-9,]*)':escapePattern(token)).join('')+'$');
   const match=zh.match(regex);
   if(match){let i=0;return t(zh,en.replace(/\{(?:size|count)\}/g,()=>match[++i]));}
  }

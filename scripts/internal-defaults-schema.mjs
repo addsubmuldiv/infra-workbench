@@ -1,4 +1,4 @@
-// Allowed keys and reviewed bounds; application values live only in config/internal-defaults.json.
+// Allowed keys and reviewed bounds; application values live only in config/internal-defaults.jsonc.
 export const SCHEMA = {
   "files": {
     "upload_max_bytes": {
@@ -157,7 +157,7 @@ export const SCHEMA = {
       "min": 1,
       "max": 604800,
       "frontend": false,
-      "description": "SSH 默认连接预算，单位：秒；保留现有 SSH 配置覆盖优先级。"
+      "description": "AsyncSSH 未配置 ConnectTimeout 时的回退预算，单位：秒；OpenSSH 监控与跳板子进程保留各自原有预算。"
     },
     "jump_extra_timeout_seconds": {
       "min": 1,

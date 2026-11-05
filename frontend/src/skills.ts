@@ -1,3 +1,4 @@
+import {toolText as tt} from './toolI18n.ts';
 import {SKILLS_UPLOAD_MAX_BYTES} from './internalDefaults.ts';
 import {formatBytes} from './internalPolicy.ts';
 import {t} from './i18n.ts';
@@ -9,7 +10,7 @@ export type SkillDetail=SkillMeta&{files:Record<string,string>;versions:SkillVer
 export type SkillDraft={id:string;revision:number;files:Record<string,string>;skill_name?:string|null;base_version?:number|null;file_manifest?:SkillFile[]};
 export type SkillValidation={valid:boolean;errors:string[];warnings:string[];missing_tools?:string[]};
 async function checked(response:Response){
-  if(!response.ok){let value;try{value=await response.json()}catch{}throw new Error(typeof value?.detail==='string'?value.detail:t('技能操作失败，请检查后台版本和输入。','Skill operation failed. Check the backend version and input.'))}
+  if(!response.ok){let value;try{value=await response.json()}catch{}throw new Error(typeof value?.detail==='string'?tt(value.detail):t('技能操作失败，请检查后台版本和输入。','Skill operation failed. Check the backend version and input.'))}
   return response;
 }
 export async function skillRequest<T>(path='',method='GET',body?:unknown,signal?:AbortSignal,request:typeof fetch=fetch):Promise<T>{

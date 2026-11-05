@@ -50,7 +50,7 @@ def parse_lines(lines,max_records=MAX_RECORDS):
     for number,line in enumerate(lines,1):
         total=number
         if len(line.encode('utf-8'))>MAX_LINE:
-            raise ValueError('日志单行过长（超过 64 KiB），请先拆分日志')
+            raise ValueError(f'日志单行过长（超过 {format_bytes(MAX_LINE)}），请先拆分日志')
         opening=line.find('{')
         if opening<0:
             skipped+=1; continue
@@ -89,7 +89,7 @@ def parse_lines(lines,max_records=MAX_RECORDS):
         record=dict(step=step,rank=rank,group=key,metrics=metrics,line=number,source=line.strip()[:800])
         records.append(record)
         if len(group['preview'])<3: group['preview'].append(record)
-        if len(records)>max_records: raise ValueError('训练记录超过 10,000 条，请拆分日志后对比；未返回截断结果')
+        if len(records)>max_records: raise ValueError(f'训练记录超过 {max_records:,} 条，请拆分日志后对比；未返回截断结果')
     for group in groups.values():
         group.update(start=min(group['steps']),end=max(group['steps']),unique_steps=len(group['steps']),metrics=sorted(group['metrics']))
         del group['steps']

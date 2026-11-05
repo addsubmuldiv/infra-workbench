@@ -1,3 +1,4 @@
+import {toolText as tt} from './toolI18n';
 import {LOGS_READ_MAX_BYTES,LOGS_READ_MAX_RECORDS} from './internalDefaults';
 import {formatBytes} from './internalPolicy';
 import {t,useLocale,dateLocale} from './i18n';
@@ -23,7 +24,7 @@ type Directory={path:string;parent:string;entries:{name:string;path:string;direc
 const KEY='iwb.precision.draft.v1';
 const empty:Draft={name:'',baseline:{host_id:'',path:''},candidate:{host_id:'',path:''},metrics:['loss','grad_norm'],baseline_group:null,candidate_group:null,duplicate_policy:'error',start:null,end:null};
 function restore():Draft{try{const d=JSON.parse(workspaceStorage.getItem(KEY)||'null');if(d&&typeof d.baseline?.path==='string'&&typeof d.candidate?.path==='string'&&Array.isArray(d.metrics))return {...empty,...d}}catch{}return {...empty}}
-async function api(path:string,method='GET',body?:unknown){const r=await fetch('/api/logs'+path,{method,headers:{'Content-Type':'application/json','X-IWB':'1'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==='string'?data.detail:t("操作失败","Operation failed"));return data}
+async function api(path:string,method='GET',body?:unknown){const r=await fetch('/api/logs'+path,{method,headers:{'Content-Type':'application/json','X-IWB':'1'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==='string'?tt(data.detail):t("操作失败","Operation failed"));return data}
 const num=(n:number|null|undefined)=>n==null?'—':n===0?'0':Math.abs(n)<0.0001||Math.abs(n)>=1000000?n.toExponential(8):Number(n.toPrecision(12)).toString();
 const axisNum=(n:number)=>n===0?'0':Math.abs(n)<.001||Math.abs(n)>=10000?n.toExponential(2):Number(n.toPrecision(4)).toString();
 const groupOf=(s:Snapshot|null,key:string|null)=>s?.groups.find(g=>g.key===key)||(s?.groups.length===1?s.groups[0]:undefined);

@@ -11,7 +11,7 @@ export async function importRequest(path:string,options:RequestInit={}):Promise<
   if(options.method&&options.method!=='GET')headers.set('X-IWB','1');
   const response=await fetch('/api/imports'+path,{...options,headers,cache:'no-store'});
   let data;try{data=await response.json()}catch{throw new Error(tt("后台返回了无法识别的响应，请检查本地服务"))}
-  if(!response.ok)throw Object.assign(new Error(response.status===404?tt("批量导入接口尚未就绪或记录已过期，请重启软件后重新选择表格"):typeof data.detail==='string'?data.detail:tt("操作失败，请重试")),{status:response.status});
+  if(!response.ok)throw Object.assign(new Error(response.status===404?tt("批量导入接口尚未就绪或记录已过期，请重启软件后重新选择表格"):typeof data.detail==='string'?tt(data.detail):tt("操作失败，请重试")),{status:response.status});
   return data;
 }
 

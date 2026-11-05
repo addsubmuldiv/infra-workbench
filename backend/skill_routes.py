@@ -1,3 +1,4 @@
+from .internal_defaults import format_bytes
 """Local UI skill management API; uses the same service as MCP tools."""
 from typing import Callable
 from fastapi import HTTPException, Query, Request
@@ -74,7 +75,7 @@ def register_skill_routes(app, service, tools_callback: Callable):
     async def import_package(request:Request,filename:str=Query(max_length=255)):
         content=bytearray()
         async for chunk in request.stream():
-            if len(content)+len(chunk)>UPLOAD_LIMIT:raise HTTPException(413,'导入文件不能超过 2 MiB')
+            if len(content)+len(chunk)>UPLOAD_LIMIT:raise HTTPException(413,f'导入文件不能超过 {format_bytes(UPLOAD_LIMIT)}')
             content.extend(chunk)
         return invoke(service.import_package,filename,bytes(content))
 

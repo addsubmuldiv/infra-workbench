@@ -1,3 +1,4 @@
+from .internal_defaults import format_bytes
 import asyncio
 import csv
 import io
@@ -36,7 +37,7 @@ def register_import_routes(app,hosts,connect,provision,prepare=None):
         async with parsing:
             data=bytearray()
             async for chunk in request.stream():
-                if len(data)+len(chunk)>MAX_FILE:raise HTTPException(413,'Excel 文件不能超过 2 MiB')
+                if len(data)+len(chunk)>MAX_FILE:raise HTTPException(413,f'Excel 文件不能超过 {format_bytes(MAX_FILE)}')
                 data.extend(chunk)
             try:
                 rows=await asyncio.to_thread(parse_workbook,bytes(data))

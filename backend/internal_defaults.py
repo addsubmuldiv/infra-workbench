@@ -65,7 +65,7 @@ SKILLS_TOTAL_MAX_BYTES = 8388608
 SKILLS_UPLOAD_MAX_BYTES = 2097152
 # 远端资源采集命令超时，单位：秒；不用于任意用户长任务。
 SSH_COLLECTION_TIMEOUT_SECONDS = 35
-# SSH 默认连接预算，单位：秒；保留现有 SSH 配置覆盖优先级。
+# AsyncSSH 未配置 ConnectTimeout 时的回退预算，单位：秒；OpenSSH 监控与跳板子进程保留各自原有预算。
 SSH_CONNECT_TIMEOUT_SECONDS = 20
 # 跳板连接追加预算，单位：秒；不表示每一跳都重复追加。
 SSH_JUMP_EXTRA_TIMEOUT_SECONDS = 20
