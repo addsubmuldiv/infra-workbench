@@ -17,7 +17,7 @@ export function currentBuildInventory(){
   }
   return {name:'current-build-inventory',enforce:'post',configResolved(config){publicDir=config.publicDir;},writeBundle(options,bundle){
     const files=[...new Set([...Object.keys(bundle),...(publicDir?publicFiles(publicDir):[])])].sort();
-    writeFileSync(path.join(options.dir,'.iwb-build.json'),JSON.stringify({version:2,appVersion:version,files:Object.fromEntries(files.map(name=>{const bytes=readFileSync(path.join(options.dir,name));return [name,{size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}];}))},null,2)+'\n');
+    writeFileSync(path.join(options.dir,'.iwb-build.json'),JSON.stringify({version:2,appVersion:version,internalPolicySha256:createHash('sha256').update(readFileSync(new URL('./src/internalDefaults.ts',import.meta.url),'utf8').replace(/\r\n/g,'\n')).digest('hex'),files:Object.fromEntries(files.map(name=>{const bytes=readFileSync(path.join(options.dir,name));return [name,{size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}];}))},null,2)+'\n');
   }};
 }
 export default defineConfig(({mode,command})=>({

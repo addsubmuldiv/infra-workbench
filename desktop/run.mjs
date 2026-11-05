@@ -1,3 +1,4 @@
+import {generateInternalDefaults} from '../scripts/generate-internal-defaults.mjs';
 import {syncVersion} from '../scripts/sync-version.mjs';
 import {spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
@@ -9,6 +10,7 @@ const directory=path.dirname(fileURLToPath(import.meta.url));
 const root=path.dirname(directory);
 const mode=process.argv[2];
 syncVersion();
+generateInternalDefaults(root);
 if(!['dev','build'].includes(mode))throw new Error('Use npm run dev or npm run build');
 if(!['win32','darwin'].includes(process.platform))throw new Error('Desktop builds currently support Windows and macOS');
 process.env.PATH=path.join(os.homedir(),'.cargo','bin')+path.delimiter+process.env.PATH;

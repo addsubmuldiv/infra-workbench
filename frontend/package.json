@@ -9,10 +9,11 @@
     "test": "node --test tests/*.test.mjs",
     "build:demo": "tsc --noEmit && vite build --mode demo",
     "demo": "vite --host 127.0.0.1 --mode demo",
-    "prebuild": "node ../scripts/sync-version.mjs",
-    "predev": "node ../scripts/sync-version.mjs",
-    "prebuild:demo": "node ../scripts/sync-version.mjs",
-    "predemo": "node ../scripts/sync-version.mjs"
+    "prebuild": "node ../scripts/sync-version.mjs && node ../scripts/generate-internal-defaults.mjs",
+    "predev": "node ../scripts/sync-version.mjs && node ../scripts/generate-internal-defaults.mjs",
+    "prebuild:demo": "node ../scripts/sync-version.mjs && node ../scripts/generate-internal-defaults.mjs",
+    "predemo": "node ../scripts/sync-version.mjs && node ../scripts/generate-internal-defaults.mjs",
+    "pretest": "node ../scripts/generate-internal-defaults.mjs --check"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

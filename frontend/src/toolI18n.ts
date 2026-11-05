@@ -455,6 +455,7 @@ const english:Record<string,string>={
 };
 const chinese=Object.fromEntries(Object.entries(english).map(([zh,en])=>[en,zh]));
 const limitTemplates:[string,string][]=[
+  ["技能必须包含文件，最多 {count} 个", "Skills must contain files, up to {count} files"],
   [
     "文本编辑上限为 {size}，请下载后编辑",
     "Text editing limit is {size}. Download the file to edit it."

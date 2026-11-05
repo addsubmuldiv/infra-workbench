@@ -38,6 +38,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
+          node scripts/generate-internal-defaults.mjs --check
           node desktop/release.mjs version "$RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"

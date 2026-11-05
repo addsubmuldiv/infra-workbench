@@ -55,3 +55,21 @@ def test_archive_rejects_private_tracked_paths(tmp_path, private):
     with pytest.raises(ValueError,match='Sensitive'):
         archive.create_archive(repo,tree,tmp_path/'source.zip',build_launcher=False,required=())
     assert not (tmp_path/'source.zip').exists()
+
+def test_archive_policy_check_uses_snapshot_and_rejects_stale_constants(tmp_path):
+    import io
+    root=Path(__file__).resolve().parents[1]
+    names=['config/internal-defaults.jsonc','scripts/generate-internal-defaults.mjs','scripts/internal-defaults-schema.mjs','frontend/src/internalDefaults.ts']
+    names += ['backend/'+p.name for p in (root/'backend').glob('*.py')]
+    def snapshot(stale=False):
+        raw=io.BytesIO()
+        with zipfile.ZipFile(raw,'w') as z:
+            for name in names:
+                value=(root/name).read_bytes()
+                if stale and name=='backend/internal_defaults.py':value+=b'\n# stale\n'
+                z.writestr(name,value)
+        raw.seek(0)
+        return zipfile.ZipFile(raw)
+    with snapshot() as source:archive.validate_internal_defaults(source)
+    with snapshot(True) as source:
+        with pytest.raises(ValueError,match='Internal defaults'):archive.validate_internal_defaults(source)

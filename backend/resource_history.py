@@ -136,4 +136,4 @@ class ResourceHistory:
                     requested_since=since, until=now, error=self.error,
                     limitations=['只记录采样间可确认的变化；进程消失不代表任务成功。',
                                  '重启前后的采样间断和未知进程状态不推断占用变化；首次采样只建立基线。',
-                                 '最多保留最近 7 天、10000 条变化；本次最多显示 100 条。'])
+                                 f'最多保留最近 {HISTORY_CHANGES_RETENTION_DAYS} 天、{MAX_EVENTS} 条变化；本次最多显示 100 条。'])

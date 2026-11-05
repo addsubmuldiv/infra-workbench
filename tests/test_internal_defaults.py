@@ -61,3 +61,17 @@ assert file_transfers.FileTransfers(None).slots._value==3
 assert agent_context.FALLBACK_CONTEXT==12345
 '''
     subprocess.run([sys.executable,'-c',code,str(tmp_path/'backend/internal_defaults.py')],check=True,cwd=ROOT)
+
+def test_frozen_policy_check_detects_mixed_probe_sources(tmp_path):
+    from backend.desktop_runtime import check_internal_defaults
+    for name in PROBES:shutil.copyfile(ROOT/'backend'/name,tmp_path/name)
+    assert check_internal_defaults(tmp_path)>=10
+    p=tmp_path/'file_upload_probe.py'
+    p.write_text(p.read_text(encoding='utf-8').replace('MAX_UPLOAD = 536870912','MAX_UPLOAD = 1'),encoding='utf-8')
+    with pytest.raises(RuntimeError,match='file_upload_probe'):check_internal_defaults(tmp_path)
+
+def test_skill_limit_error_reports_configured_count(monkeypatch):
+    from backend import skill_service
+    monkeypatch.setattr(skill_service,'COUNT_LIMIT',2)
+    with pytest.raises(skill_service.SkillError,match='最多 2 个'):
+        skill_service.encode_files({'a':'','b':'','c':''})

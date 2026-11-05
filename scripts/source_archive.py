@@ -1,6 +1,7 @@
 """Create a filtered source ZIP from one immutable Git tree, never working files."""
 import argparse
 import io
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -16,8 +17,31 @@ from desktop.frontend_inventory import validate_inventory
 
 REQUIRED = ('scripts/WorkbenchLauncher.cs', 'scripts/build-launcher.ps1', 'backend/launcher.py',
             'backend/assets/workbench.ico', 'install.cmd', 'install.ps1', 'scripts/windows-common.ps1',
-            'frontend/dist/index.html', 'README.md', 'docs/WINDOWS.md')
+            'frontend/dist/index.html', 'README.md', 'docs/WINDOWS.md',
+            'config/internal-defaults.jsonc', 'backend/internal_defaults.py', 'frontend/src/internalDefaults.ts',
+            'scripts/generate-internal-defaults.mjs', 'scripts/internal-defaults-schema.mjs')
 PRIVATE = re.compile(r'(^|/)(data|\.venv|node_modules|__pycache__|\.git)(/|$)|(^|/)\.env($|\.)|\.(pem|key|db|sqlite)$|(^|/)id_(rsa|ed25519)')
+
+
+def validate_internal_defaults(source):
+    """Validate only immutable archive bytes, never the maintainer's dirty worktree."""
+    if 'config/internal-defaults.jsonc' not in source.namelist():
+        return  # Small historical test fixtures; real distribution requires it above.
+    selected = {'config/internal-defaults.jsonc', 'scripts/generate-internal-defaults.mjs',
+                'scripts/internal-defaults-schema.mjs', 'frontend/src/internalDefaults.ts'}
+    selected.update(name for name in source.namelist() if name.startswith('backend/') and name.endswith('.py'))
+    with tempfile.TemporaryDirectory(prefix='iwb-defaults-snapshot-') as directory:
+        snapshot = Path(directory)
+        for name in selected:
+            if '\\' in name or ':' in name or name.startswith('/') or any(part in ('', '.', '..') for part in name.split('/')):
+                raise ValueError('Unsafe internal defaults snapshot path')
+            target = snapshot/name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read(name))
+        result = subprocess.run(['node', str(snapshot/'scripts/generate-internal-defaults.mjs'), '--check'],
+                                cwd=snapshot, capture_output=True, text=True)
+        if result.returncode:
+            raise ValueError('Internal defaults snapshot is stale or invalid: '+result.stderr)
 
 
 def create_archive(repo, ref, output, *, build_launcher=True, required=REQUIRED):
@@ -36,9 +60,11 @@ def create_archive(repo, ref, output, *, build_launcher=True, required=REQUIRED)
         if name not in names:
             raise ValueError('Required release file is not committed: '+name)
     with zipfile.ZipFile(io.BytesIO(git('archive', '--format=zip', tree))) as source:
+        validate_internal_defaults(source)
         inventory = json.loads(source.read('frontend/dist/.iwb-build.json'))
         version = json.loads(source.read('frontend/package.json'))['version']
-        assets = validate_inventory(inventory, lambda name: source.read('frontend/dist/'+name), version)
+        policy_hash = hashlib.sha256(source.read('frontend/src/internalDefaults.ts').replace(b'\r\n',b'\n')).hexdigest() if 'config/internal-defaults.jsonc' in names else None
+        assets = validate_inventory(inventory, lambda name: source.read('frontend/dist/'+name), version, expected_policy_sha256=policy_hash)
         allowed_dist = {'frontend/dist/'+name for name in (*assets, '.iwb-build.json')}
         selected = [name for name in names if '.zcode' not in name.split('/')
                     and (not name.startswith('frontend/dist/') or name in allowed_dist)]

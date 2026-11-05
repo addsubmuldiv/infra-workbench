@@ -108,3 +108,17 @@ node --test scripts/sync-version.test.mjs desktop/release.test.mjs
 将派生文件与 `version.json` 一起提交。直接运行 Python 不会执行 Node 同步，因此源码分发前应执行上述命令。已运行后台需重启才能显示新版本。标签仍与版本一致，例如 `v0.2.1`。
 
 内部参数定位见 [内部参数盘点](docs/INTERNAL-PARAMETERS.md)。
+
+## 内部策略维护
+
+内部数字策略的唯一维护入口是带中文注释的 `config/internal-defaults.jsonc`，不是用户配置。修改后运行：
+
+```sh
+node scripts/generate-internal-defaults.mjs
+node scripts/generate-internal-defaults.mjs --check
+node --test scripts/generate-internal-defaults.test.mjs
+```
+
+将生成的 Python、TypeScript 和独立探针源码一起提交。前端和桌面构建自动生成，前端测试、CI 和发布检查先拒绝过期产物；源码归档从同一 Git 快照验证，不使用工作区参数。维护者归档需 Node.js，普通源码运行和安装版不需要。修改涉及前端时重建 `frontend/dist`，安装分发需重建桌面安装包。现有进程不热加载这些值。
+
+字段说明、单位、范围和维护规则见 [内部策略维护](docs/INTERNAL-DEFAULTS.md)。容量上限放大需审查 schema 和资源消耗；资源新鲜度、预约判断及更新退出等规则不在普通配置中调整。

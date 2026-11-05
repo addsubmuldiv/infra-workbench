@@ -1,13 +1,13 @@
 # 内部策略维护
 
-`config/internal-defaults.jsonc` 是内部策略的唯一数值来源；应用版本继续使用 `version.json`。配置不是用户设置，不从数据目录或环境变量加载，也没有热更新。
+`config/internal-defaults.jsonc` 是内部策略的唯一数值来源，支持逐项中文注释；应用版本继续使用 `version.json`。配置不是用户设置，不从数据目录或环境变量加载，也没有热更新。
 
 ```sh
 node scripts/generate-internal-defaults.mjs
 node scripts/generate-internal-defaults.mjs --check
 ```
 
-修改 JSON 后生成并提交 Python、TypeScript 和独立探针中的生成区；前端修改后重新构建 dist，桌面分发需重建安装包。源码 Python 和安装版无需 Node。CI 先检查已提交产物，再自动生成，避免漏提交被掩盖。生成缺失会使启动失败，不退回另一份默认数字。
+修改 JSONC 后生成并提交 Python、TypeScript 和独立探针中的生成区；前端修改后重新构建 dist，桌面分发需重建安装包。源码 Python 和安装版无需 Node。CI 先检查已提交产物，再自动生成，避免漏提交被掩盖。生成缺失会使启动失败，不退回另一份默认数字。
 
 容量和数量上限的 schema 最大值设为迁移前的现有保护上限；仅修改 JSON 可以降低上限，扩大上限需要同时审查 schema、内存/磁盘/解压成本与边界测试。普通时间预算和保留策略允许在 schema 的明确范围内调整。单位/协议/业务规则不属于此配置。
 
@@ -69,3 +69,7 @@ HTTP、内置助手、外部 MCP 复用原服务校验；前端只是提前提�
 | `ui.render_coalesce_ms` | 100 |
 
 资源新鲜度、预约判断、更新器退出/恢复、跨平台启动链、布局与协议常量保留在原模块。整改设计见 [实施方案](superpowers/plans/2026-11-05-internal-defaults.md)。
+
+Excel 原始工作表限制：`imports.sheet_max_rows` 不含表头，`imports.sheet_max_columns` 包含未识别的列；与逻辑导入台数分开。
+
+前端构建清单包含 `internalPolicySha256`，记录生成 TS 的规范 LF 指纹。源码归档及桌面 staging 核对该指纹，拒绝配置生成后遗漏重建 dist 的混合产物。

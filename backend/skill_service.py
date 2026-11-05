@@ -69,7 +69,7 @@ def package_view(raw):
 
 def encode_files(files):
     if not isinstance(files, dict) or not files or len(files)>COUNT_LIMIT:
-        raise SkillError('技能必须包含文件，最多 128 个')
+        raise SkillError(f'技能必须包含文件，最多 {COUNT_LIMIT} 个')
     raw, seen, size, spellings, directories = {}, set(), 0, {}, set()
     for path, content in files.items():
         safe_path(path)

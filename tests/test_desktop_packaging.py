@@ -56,7 +56,7 @@ def make_dist(tmp_path, files):
     dist.mkdir()
     (dist / 'index.html').write_text('current', encoding='utf-8')
     (dist / 'old.js').write_text('obsolete', encoding='utf-8')
-    (dist / '.iwb-build.json').write_text(json.dumps({'version': 2, 'appVersion': json.loads((ROOT/'frontend/package.json').read_text())['version'], 'files': {name: {'size': len((dist/name).read_bytes()), 'sha256': hashlib.sha256((dist/name).read_bytes()).hexdigest()} for name in files if (dist/name).is_file()} | {name: {'size': 0, 'sha256': '0'*64} for name in files if not (dist/name).is_file()}}), encoding='utf-8')
+    (dist / '.iwb-build.json').write_text(json.dumps({'version': 2, 'internalPolicySha256': hashlib.sha256((ROOT/'frontend/src/internalDefaults.ts').read_text(encoding='utf-8').encode('utf-8')).hexdigest(), 'appVersion': json.loads((ROOT/'frontend/package.json').read_text())['version'], 'files': {name: {'size': len((dist/name).read_bytes()), 'sha256': hashlib.sha256((dist/name).read_bytes()).hexdigest()} for name in files if (dist/name).is_file()} | {name: {'size': 0, 'sha256': '0'*64} for name in files if not (dist/name).is_file()}}), encoding='utf-8')
     return dist
 
 
@@ -135,3 +135,12 @@ def test_stage_rejects_different_app_version(tmp_path):
     (dist/'.iwb-build.json').write_text(json.dumps(inventory))
     with pytest.raises(ValueError, match='version mismatch'):
         runtime.stage_frontend(dist, tmp_path/'stage')
+
+def test_inventory_rejects_old_frontend_policy_even_when_asset_hashes_match():
+    import hashlib
+    from desktop.frontend_inventory import validate_inventory
+    data=b'html'
+    value={'version':2,'appVersion':'1','internalPolicySha256':'a'*64,'files':{'index.html':{'size':4,'sha256':hashlib.sha256(data).hexdigest()}}}
+    with pytest.raises(ValueError,match='policy'):
+        validate_inventory(value,lambda _:data,expected_policy_sha256='b'*64)
+    assert validate_inventory(value,lambda _:data,expected_policy_sha256='a'*64)==('index.html',)

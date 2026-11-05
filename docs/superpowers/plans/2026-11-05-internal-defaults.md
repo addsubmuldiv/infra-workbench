@@ -4,9 +4,9 @@
 
 **Goal:** 将需要维护的软件默认策略和重复限制集中到一个源码配置文件，保留协议、算法、安全流程和布局常量的所属位置；迁移期间保持当前行为。
 
-**Architecture:** 以 `config/internal-defaults.json` 为唯一手工维护来源，由确定性生成器产生 Python 和 TypeScript 常量。后台与前端通过各自生成文件消费同一参数；远端探针使用随源码生成的独立常量，不能依赖本机模块或运行目录。首轮不迁移 Rust 更新流程、不增加运行时配置加载与热更新。
+**Architecture:** 以 `config/internal-defaults.jsonc` 为唯一手工维护来源，由确定性生成器产生 Python 和 TypeScript 常量。后台与前端通过各自生成文件消费同一参数；远端探针使用随源码生成的独立常量，不能依赖本机模块或运行目录。首轮不迁移 Rust 更新流程、不增加运行时配置加载与热更新。
 
-**Tech Stack:** JSON、Node.js、Python、TypeScript；复用现有 npm、pytest、Tauri 构建流程，不引入配置框架。
+**Tech Stack:** JSONC、Node.js、Python、TypeScript；复用现有 npm、pytest、Tauri 构建流程，不引入配置框架。
 
 **Spec:** 本文第 1–6 节为设计约定；依据 `docs/INTERNAL-PARAMETERS.md` 的候选清单与当前业务源码。清单不是所有数字的穷举，迁移前需补查实际调用链。
 
@@ -108,7 +108,7 @@
 
 规则：
 
-- 每个键有明确类型、单位、用途、消费者和迁移前数值；文档记录含义，不在 JSON 中夹注释。
+- 每个键有明确类型、单位、用途、消费者和迁移前数值；配置源使用 JSONC，逐项写中文注释，注明单位、用途和调整边界。
 - 容量用整数 bytes，预算用带单位后缀的 seconds/milliseconds，保留策略用 days，比例用 ratio，禁止含糊的 `timeout` 或 `limit`。
 - 生成器拒绝重复键、未知键、缺失键、布尔值代替数字、非有限数、非整数容量及越界值。
 - 合法范围由生成器的 schema/校验代码维护；JSON 不能修改自己的校验规则。范围需结合每项用途确定，不能临时编造统一上限。
@@ -122,7 +122,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `config/internal-defaults.json` | 唯一手工维护的内部策略数值 |
+| `config/internal-defaults.jsonc` | 唯一手工维护的内部策略数值 |
 | `scripts/generate-internal-defaults.mjs` | 验证配置，生成产物，提供 `--check`；无网络、无用户数据访问 |
 | `scripts/internal-defaults-schema.mjs` | 键、类型、允许范围及目标常量映射；保持简单，不引入通用配置框架 |
 | `backend/internal_defaults.py` | 自动生成 Python 常量，提交仓库，供后台与托盘使用 |

@@ -44,6 +44,10 @@ jobs:
           cache-dependency-path: |
             frontend/package-lock.json
             desktop/package-lock.json
+      - name: Check committed internal defaults
+        run: node scripts/generate-internal-defaults.mjs --check
+      - name: Generate internal defaults
+        run: node scripts/generate-internal-defaults.mjs
       - name: Synchronize application version
         run: node scripts/sync-version.mjs
       - uses: actions/setup-python@v7
@@ -72,7 +76,7 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: desktop
-      - run: node --test release.test.mjs ../scripts/sync-version.test.mjs
+      - run: node --test release.test.mjs ../scripts/sync-version.test.mjs ../scripts/generate-internal-defaults.test.mjs
         working-directory: desktop
       - run: cargo test --locked
         working-directory: desktop/src-tauri

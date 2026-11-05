@@ -1,6 +1,7 @@
 """Build only code/assets; never bundle the project's data, keys or virtualenv."""
 from pathlib import Path
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -25,7 +26,8 @@ def stage_frontend(dist, destination):
         if not source.resolve().is_relative_to(dist):
             raise ValueError('Frontend asset escapes dist: '+name)
         return source.read_bytes()
-    files = validate_inventory(inventory, read_source, version)
+    policy_hash = hashlib.sha256((ROOT/'frontend/src/internalDefaults.ts').read_text(encoding='utf-8').encode('utf-8')).hexdigest()
+    files = validate_inventory(inventory, read_source, version, expected_policy_sha256=policy_hash)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=destination.name+'-', dir=destination.parent))
     backup = temporary.with_name(temporary.name+'-previous')
@@ -101,6 +103,7 @@ def verify_runtime(destination, receipt):
 def main():
     if sys.platform not in ('win32', 'darwin'):
         raise SystemExit('Build the Windows/macOS package on its target platform')
+    subprocess.run(['node', str(ROOT/'scripts/generate-internal-defaults.mjs'), '--check'], check=True)
     from desktop.build_environment import ensure_build_python
     build_python = ensure_build_python(ROOT)
     cargo_bin = Path.home()/'.cargo'/'bin'

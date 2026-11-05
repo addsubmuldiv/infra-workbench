@@ -44,6 +44,29 @@ def main(argv=None, *, platform=None, loader=importlib.import_module):
     return entry.main(['--no-browser'] if argv is None else argv)
 
 
+def check_internal_defaults(directory):
+    """Check bundled standalone probes against the compiled application policy, offline."""
+    from backend import internal_defaults as defaults
+    probes = {
+        'file_ops.py': {'TEXT_LIMIT':'FILES_TEXT_EDIT_MAX_BYTES','COPY_LIMIT':'FILES_COPY_MAX_BYTES','ENTRY_LIMIT':'FILES_COPY_MAX_ENTRIES'},
+        'file_upload_probe.py': {'MAX_UPLOAD':'FILES_UPLOAD_MAX_BYTES'},
+        'folder_upload_probe.py': {'MAX_UPLOAD':'FILES_FOLDER_UPLOAD_MAX_BYTES','MAX_MANIFEST':'FILES_FOLDER_MANIFEST_MAX_BYTES','MAX_ENTRIES':'FILES_FOLDER_UPLOAD_MAX_ENTRIES'},
+        'folder_download_probe.py': {'MAX_SIZE':'FILES_FOLDER_DOWNLOAD_MAX_BYTES','MAX_ENTRIES':'FILES_FOLDER_DOWNLOAD_MAX_ENTRIES'},
+        'log_reader.py': {'MAX_BYTES':'LOGS_READ_MAX_BYTES','MAX_RECORDS':'LOGS_READ_MAX_RECORDS','MAX_LINE':'LOGS_LINE_MAX_BYTES'},
+        'log_download_probe.py': {'MAX_DOWNLOAD':'LOGS_DOWNLOAD_MAX_BYTES','MAX_FILE_DOWNLOAD':'FILES_DOWNLOAD_MAX_BYTES'},
+    }
+    checks = 0
+    for file, aliases in probes.items():
+        source = Path(directory)/file
+        namespace = {'__name__':'iwb_policy_check','__file__':str(source)}
+        exec(compile(source.read_text(encoding='utf-8'),str(source),'exec'),namespace)
+        for alias, key in aliases.items():
+            if namespace[alias] != getattr(defaults,key):
+                raise RuntimeError('Bundled internal defaults mismatch: '+file+':'+alias)
+            checks += 1
+    return checks
+
+
 def self_test(destination):
     """Exercise bundled imports, HTTP and static assets without touching user data."""
     import asyncio
@@ -59,6 +82,7 @@ def self_test(destination):
     try:
         with tempfile.TemporaryDirectory(prefix='iwb-desktop-check-', ignore_cleanup_errors=True) as directory:
             os.environ['IWB_DATA'] = directory
+            result['policy_checks'] = check_internal_defaults(Path(__file__).parent)
             from backend.app import app
             import uvicorn
             listener = socket.socket()

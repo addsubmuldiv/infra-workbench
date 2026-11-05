@@ -3,7 +3,7 @@ import hashlib
 import re
 
 
-def validate_inventory(inventory, read_bytes, expected_version=None):
+def validate_inventory(inventory, read_bytes, expected_version=None, *, expected_policy_sha256=None):
     files = inventory.get('files')
     if (inventory.get('version') != 2 or not isinstance(files, dict)
             or 'index.html' not in files or not isinstance(inventory.get('appVersion'), str)
@@ -11,6 +11,8 @@ def validate_inventory(inventory, read_bytes, expected_version=None):
         raise ValueError('Invalid frontend build inventory; rebuild frontend first')
     if expected_version is not None and inventory['appVersion'] != expected_version:
         raise ValueError('Frontend app version mismatch; rebuild frontend first')
+    if expected_policy_sha256 is not None and inventory.get('internalPolicySha256') != expected_policy_sha256:
+        raise ValueError('Frontend internal policy mismatch; rebuild frontend first')
     for name, metadata in files.items():
         if (not isinstance(name, str) or not name or '\\' in name or ':' in name
                 or name.startswith('/') or any(part in ('', '.', '..') for part in name.split('/'))
