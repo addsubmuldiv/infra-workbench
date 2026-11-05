@@ -20,8 +20,11 @@ class LaunchSettings:
         self.path=self.data/'launch-settings.json'
         try:value=json.loads(self.path.read_text(encoding='utf-8'))
         except (OSError,ValueError):value={}
-        self.mode=value.get('mode','browser') if isinstance(value,dict) else 'browser'
-        if self.mode not in ('browser','desktop'):self.mode='browser'
+        # Bundled shortcuts open the desktop app directly. Settings, tray and
+        # floating-window actions must use the same default on fresh installs.
+        default='desktop' if getattr(sys,'frozen',False) else 'browser'
+        self.mode=value.get('mode',default) if isinstance(value,dict) else default
+        if self.mode not in ('browser','desktop'):self.mode=default
 
     @property
     def show_floating(self):

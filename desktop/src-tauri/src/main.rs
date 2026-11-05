@@ -45,6 +45,18 @@ fn probe_instance(client: &reqwest::blocking::Client) -> Result<Option<String>, 
 
 fn probe(client:&reqwest::blocking::Client)->Result<bool,String>{probe_instance(client).map(|value|value.is_some())}
 
+fn prefers_browser(client: &reqwest::blocking::Client) -> Result<bool, String> {
+    let value = client.get(format!("{SERVICE_URL}api/settings/launch")).send()
+        .and_then(|response| response.error_for_status())
+        .and_then(|response| response.json::<serde_json::Value>())
+        .map_err(|error| format!("无法读取启动方式：{error}"))?;
+    match value.get("mode").and_then(|mode| mode.as_str()) {
+        Some("browser") => Ok(true),
+        Some("desktop") => Ok(false),
+        _ => Err("后台返回了无效的启动方式".into()),
+    }
+}
+
 fn watch_service(app:tauri::AppHandle){
     std::thread::spawn(move || {
         let Ok(client)=reqwest::blocking::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(2)).build() else {return;};
@@ -123,6 +135,15 @@ fn connect(window: WebviewWindow) {
                 std::thread::sleep(Duration::from_millis(300));
             }
             status(&window,"health",70,None);
+            if prefers_browser(&client)? {
+                open::that(SERVICE_URL).map_err(|error| error.to_string())?;
+                window.state::<DesktopSession>().hide();
+                window.hide().map_err(|error| error.to_string())?;
+                // The tray owns the backend. A browser-only launch needs no
+                // resident WebView, but existing quick windows must survive.
+                if handle.webview_windows().len() == 1 { handle.exit(0); }
+                return Ok(());
+            }
             window.navigate(SERVICE_URL.parse().unwrap()).map_err(|e| e.to_string())?;
             Ok(())
         })();
@@ -238,6 +259,30 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
     Ok(())
 }
 
+// Re-read the shared backend setting even when a desktop window is resident.
+// Keep that window and its SSH sessions intact when opening the browser.
+fn activate_main(app: &tauri::AppHandle, focus: bool) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let browser = reqwest::blocking::Client::builder().no_proxy()
+            .redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(2))
+            .build().map_err(|error| error.to_string())
+            .and_then(|client| prefers_browser(&client));
+        if matches!(browser, Ok(true)) {
+            if let Err(error) = open::that(SERVICE_URL) {
+                startup_trace(&format!("browser launch failed: {error}"));
+            } else { return; }
+        }
+        // A failed read returns to the startup UI, which can retry the backend.
+        let main_handle = handle.clone();
+        let _ = main_handle.run_on_main_thread(move || {
+            if let Err(error) = show_main_window(&handle, focus) {
+                startup_trace(&format!("window activation failed: {error}"));
+            }
+        });
+    });
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(updater::UpdaterState::default())
@@ -248,9 +293,7 @@ fn main() {
             if updater::installing(app) { return; }
             if args.iter().any(|arg|arg=="--quit-desktop") { app.exit(0);return; }
             if let Some((tool,host))=quick_window::request(&args) { let _=quick_window::open(app,&tool,&host);return; }
-            if let Err(error) = show_main_window(app, true) {
-                eprintln!("无法打开工作台窗口：{error}");
-            }
+            activate_main(app, true);
         }))
         .plugin(tauri_plugin_window_state::Builder::default()
             .with_filter(|label|label=="main")
@@ -270,9 +313,7 @@ fn main() {
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = &event {
-                if let Err(error) = show_main_window(app, false) {
-                    eprintln!("无法打开工作台窗口：{error}");
-                }
+                activate_main(app, false);
             }
             if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
                 api.prevent_exit();

@@ -35,6 +35,26 @@ def test_defaults_and_independent_mode_persistence(tmp_path):
     assert not restored.show_floating
 
 
+@pytest.mark.parametrize('platform', ['win32', 'darwin'])
+def test_installed_default_is_shared_by_settings_and_tray(tmp_path, monkeypatch, platform):
+    from types import SimpleNamespace
+    import backend.launcher as launcher
+    monkeypatch.setattr(launcher, 'sys', SimpleNamespace(platform=platform, frozen=True))
+    monkeypatch.setattr(launcher, 'find_desktop', lambda root: tmp_path/'desktop')
+    calls = []
+    monkeypatch.setattr(launcher, 'dispatch_interface', lambda mode, desktop, **kwargs: calls.append(mode))
+    app = FastAPI()
+    register_launch_routes(app, tmp_path, root=tmp_path, set_floating=lambda _: None)
+    with TestClient(app) as client:
+        assert client.get('/api/settings/launch').json()['mode'] == 'desktop'
+        launcher.open_preferred_interface(tmp_path, tmp_path)
+        assert calls == ['desktop']
+        LaunchSettings(tmp_path).save_mode('browser')
+        assert client.get('/api/settings/launch').json()['mode'] == 'browser'
+        launcher.open_preferred_interface(tmp_path, tmp_path)
+        assert calls == ['desktop', 'browser']
+
+
 def test_dispatch_opens_exactly_one_selected_interface(tmp_path):
     exe=tmp_path/'desktop.exe';exe.touch()
     calls=[]
@@ -218,9 +238,20 @@ def test_normal_desktop_activation_creates_main_after_quick_tool_start():
     source = (Path(__file__).resolve().parents[1] / 'desktop/src-tauri/src/main.rs').read_text(encoding='utf-8')
     single_instance = source.split('.plugin(tauri_plugin_single_instance::init(', 1)[1].split('.plugin(tauri_plugin_window_state', 1)[0]
     setup = source.split('.setup(|app| {', 1)[1].split('.build(tauri::generate_context!())', 1)[0]
-    assert 'show_main_window(app, true)' in single_instance
+    assert 'activate_main(app, true)' in single_instance
     assert 'show_main_window(app.handle(), false)' in setup
     helper = source.split('fn show_main_window(', 1)[1].split('fn main()', 1)[0]
     assert 'get_webview_window("main")' in helper
     assert 'WebviewWindowBuilder::new(app, "main"' in helper
     assert 'WINDOW_GATE.lock()' in helper and 'updater::installing(app)' in helper
+
+
+def test_shortcut_reads_shared_launch_preference_on_cold_and_resident_start():
+    source = (Path(__file__).resolve().parents[1] / 'desktop/src-tauri/src/main.rs').read_text(encoding='utf-8')
+    connect = source.split('fn connect(', 1)[1].split('#[tauri::command]', 1)[0]
+    assert 'prefers_browser(&client)?' in connect
+    assert 'open::that(SERVICE_URL)' in connect
+    activation = source.split('fn activate_main(', 1)[1].split('fn main()', 1)[0]
+    assert 'prefers_browser(&client)' in activation
+    assert 'open::that(SERVICE_URL)' in activation
+    assert 'show_main_window(&handle, focus)' in activation

@@ -2,6 +2,23 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {activateFloatingWindow,registerFloatingWindow} from '../src/windowLayers.ts';
 import {resizeFileWindow} from '../src/fileWindow.ts';
+import {scheduleDrawerEntrance} from '../src/drawerMotion.ts';
+
+test('drawer entrance waits for an initial paint and cancels pending frames on close',()=>{
+  const pending=new Map();let next=0,started=0;
+  const request=callback=>{pending.set(++next,callback);return next};
+  const cancel=id=>pending.delete(id);
+  const frame=()=>{const callbacks=[...pending.values()];pending.clear();callbacks.forEach(fn=>fn())};
+  const cleanup=scheduleDrawerEntrance(()=>started++,request,cancel);
+  assert.equal(started,0);
+  frame();assert.equal(started,0);
+  frame();assert.equal(started,1);
+  cleanup();assert.equal(pending.size,0);
+  const closeImmediately=scheduleDrawerEntrance(()=>started++,request,cancel);
+  closeImmediately();frame();assert.equal(started,1);
+  const closeAfterPaint=scheduleDrawerEntrance(()=>started++,request,cancel);
+  frame();closeAfterPaint();frame();assert.equal(started,1);
+});
 
 function workspace(){
   const windows=[];

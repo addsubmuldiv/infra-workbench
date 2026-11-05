@@ -1,0 +1,1 @@
+import{t as o}from"./index-Dr2UcXyg.js";function f(r){for(const[t,i]of[["GiB",1024**3],["MiB",1024**2],["KiB",1024]])if(r>=i&&r%i===0)return`${r/i} ${t}`;return`${r} B`}function c(r,t){return o(r,t)}export{c,f};
