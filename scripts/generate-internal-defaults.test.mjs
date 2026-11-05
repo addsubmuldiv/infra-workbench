@@ -38,3 +38,10 @@ test('malformed probe marker aborts before any generated file changes',()=>tempo
  const probe=path.join(root,'backend/file_upload_probe.py');writeFileSync(probe,readFileSync(probe,'utf8').replace('# END GENERATED INTERNAL DEFAULTS',''));
  assert.throws(()=>generateInternalDefaults(root),/markers/);assert.equal(readFileSync(py,'utf8'),before);
 }));
+
+ test('refresh defaults accept only supported intervals',()=>{
+ const config=parseConfig(source());
+ assert.equal(config.monitoring.refresh_interval_seconds,30);
+ for(const seconds of [5,10,15,20,30]){config.monitoring.refresh_interval_seconds=seconds;parseConfig(JSON.stringify(config));}
+ for(const seconds of [6,25,60]){config.monitoring.refresh_interval_seconds=seconds;assert.throws(()=>parseConfig(JSON.stringify(config)));}
+ });

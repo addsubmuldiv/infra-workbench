@@ -1,3 +1,4 @@
+import {MONITORING_REFRESH_INTERVAL_SECONDS} from './internalDefaults.ts';
 /** Browser-only demo. No request is ever forwarded to the application service. */
 const GiB=1024**3;
 const now=()=>Date.now()/1000;
@@ -13,7 +14,7 @@ function initialHosts(){return [
 type Reservation={id:string;host_id:string;target:string;devices:string[];labels:string[];mode:string;required_count:number;kind:string;minimum_gib:number;wait_seconds:number;status:string;idle_seconds:number;remaining_seconds:number;notified_at:number|null;email_notify:boolean;matched_devices:string[];available_count:number;url:string;desktop:{status:string}|null};
 const sampleLog=Array.from({length:20},(_,i)=>`step=${i+1} loss=${(2.2/(1+i*.2)).toFixed(4)} tokens_per_second=${1200+i*12}`).join('\n')+'\n';
 export function createDemoRuntime(){
- let hosts=initialHosts(),values:Record<string,string>={},revision=0,serial=0,interval=15;
+ let hosts=initialHosts(),values:Record<string,string>={},revision=0,serial=0,interval=MONITORING_REFRESH_INTERVAL_SECONDS;
  let reservations:Reservation[]=[],rules:{id:string;host_id:string;devices:string[];minimum_gib:number;port:number}[]=[],events:{id:number;created:number;host:string;message:string;notify:boolean;url:string}[]=[];
  const initialFiles:Record<string,string>={'/demo/train.log':sampleLog,'/demo/README.md':'# Demo workspace\n\nThese files exist only in browser memory.\n','/demo/demo.yaml':'model: demo-model\nbatch_size: 8\n'};
  const files={...initialFiles};
@@ -45,7 +46,7 @@ export function createDemoRuntime(){
    else if(method!=='GET')return blocked();return json({revision,values});
   }
   if(path==='/state'&&method==='GET'){update();return json({hosts,rules,reservations,events,server_time:now(),refresh_interval_seconds:interval,reservation_modes:['fixed','count']})}
-  if(path==='/settings/refresh'&&method==='PUT'){interval=Number(body.interval_seconds)||15;return json({interval_seconds:interval})}
+  if(path==='/settings/refresh'&&method==='PUT'){interval=Number(body.interval_seconds)||MONITORING_REFRESH_INTERVAL_SECONDS;return json({interval_seconds:interval})}
   if(path==='/settings/mail'&&method==='GET')return json({enabled:false,host:'',port:465,security:'ssl',username:'',sender:'',recipients:[],can_remember:false,has_password:false,password_saved:false,credential_error:'',last_test:null,last_delivery:null,reservation_available:false});
   if(path==='/settings/agent'&&method==='GET')return json({active_id:'demo',default_id:'demo',profiles:[{id:'demo',name:'Demo (preset)',model:'Demo'}],base_url:'',protocol:'responses',model:'Demo',timeout_seconds:45,can_remember:false,has_api_key:false,api_key_saved:false,credential_error:'',last_test:null});
   if(path==='/settings/launch'&&method==='GET')return json({mode:'browser',desktop_available:false,show_floating:false,floating_available:false});

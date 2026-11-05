@@ -1,6 +1,10 @@
 // 软件内部策略，不是用户配置。容量上限放大需同时审查 schema 和资源消耗。
 // 改完运行 node scripts/generate-internal-defaults.mjs；重新构建并提交生成产物。
 {
+  "monitoring": {
+    // 后台采集、页面、浮窗及演示模式的默认刷新间隔，单位：秒；已保存的用户设置优先。
+    "refresh_interval_seconds": 30
+  },
   "files": {
     // 单个文件上传上限，单位：字节；后台、客户端和远端接收探针共用。
     "upload_max_bytes": 536870912,

@@ -1,5 +1,11 @@
 // Allowed keys and reviewed bounds; application values live only in config/internal-defaults.jsonc.
 export const SCHEMA = {
+  "monitoring": {
+    "refresh_interval_seconds": {
+      "min": 5, "max": 30, "enum": [5, 10, 15, 20, 30], "frontend": true,
+      "description": "默认资源刷新间隔，单位：秒；已保存的用户设置优先。"
+    }
+  },
   "files": {
     "upload_max_bytes": {
       "min": 1,

@@ -35,3 +35,33 @@ test('expanded filtered group explains empty results and category exposes presse
  assert.equal(filters().find(n=>n.props['aria-pressed']).props.children[0],'全部');
  assert.ok(nodes(tree).some(n=>n.props?.className?.startsWith('host-picker-row')));
 });
+
+test('cluster menu uses the top layer and stays inside a short viewport',()=>{
+ let opened=false;
+ const panel={style:{},matches:()=>opened,showPopover(){opened=true},hidePopover(){opened=false},getBoundingClientRect:()=>({width:180,height:260})};
+ const handlers={},effects=[];let refIndex=0;const triggerNode={contains:target=>target==='trigger',focus(){}};panel.contains=target=>target==='menu';
+ const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useRef:()=>({current:refIndex++===0?panel:triggerNode}),useEffect:fn=>effects.push(fn)};
+ const source=fs.readFileSync(new URL('../src/ClusterSidebar.tsx',import.meta.url),'utf8');
+ const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
+ const exports={};
+ new Function('require','exports',js+';exports.Menu=ClusterMenu;')(name=>({'react':react,'./i18n':{t:zh=>zh}}[name]??{}),exports);
+ const previous=globalThis.window,previousDocument=globalThis.document;globalThis.window={innerWidth:375,innerHeight:320,addEventListener(){},removeEventListener(){}};globalThis.document={addEventListener:(name,fn)=>{handlers[name]=fn},removeEventListener(){}};
+ try{
+  const tree=exports.Menu({children:[]}),items=nodes(tree);
+  assert.equal(items.find(n=>n.props.popover).props.popover,'manual');
+  effects.forEach(fn=>fn());
+  const trigger=items.find(n=>n.type==='button');
+  trigger.props.onClick({currentTarget:{getBoundingClientRect:()=>({right:360,bottom:290})}});
+  assert.equal(opened,true);assert.equal(panel.style.left,'180px');assert.equal(panel.style.top,'52px');assert.equal(panel.style.maxHeight,'304px');
+  handlers.pointerdown({target:'trigger'});assert.equal(opened,true);
+  trigger.props.onClick({});assert.equal(opened,false);
+  const reopen=()=>trigger.props.onClick({currentTarget:{getBoundingClientRect:()=>({right:360,bottom:290})}});
+  reopen();handlers.pointerdown({target:'menu'});assert.equal(opened,true);
+  handlers.pointerdown({target:'outside'});assert.equal(opened,false);
+  reopen();handlers.click({target:'outside'});assert.equal(opened,false);
+  reopen();handlers.keydown({key:'Escape'});assert.equal(opened,false);
+  reopen();
+  items.find(n=>n.props.popover).props.onClick({target:{closest:()=>({})}});
+  assert.equal(opened,false);
+ }finally{globalThis.window=previous;globalThis.document=previousDocument}
+});

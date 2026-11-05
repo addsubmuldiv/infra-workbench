@@ -53,6 +53,8 @@ LOGS_LINE_MAX_BYTES = 65536
 LOGS_READ_MAX_BYTES = 67108864
 # 每份日志最多解析的训练记录数。
 LOGS_READ_MAX_RECORDS = 10000
+# 默认资源刷新间隔，单位：秒；已保存的用户设置优先。
+MONITORING_REFRESH_INTERVAL_SECONDS = 30
 # 通知最大有效期，单位：秒；超过后不补发陈旧通知。
 NOTIFICATIONS_MAX_AGE_SECONDS = 120
 # 每个技能文件大小上限，单位：UTF-8 字节；工具文本字段同时使用此容量值。

@@ -1,4 +1,4 @@
-import {UI_NOTICE_DURATION_MS} from './internalDefaults.ts';
+import {MONITORING_REFRESH_INTERVAL_SECONDS,UI_NOTICE_DURATION_MS} from './internalDefaults.ts';
 import {RefreshIntervalPicker} from './RefreshIntervalPicker';
 import {TunnelManagerButton} from './TunnelManager';
 import {HostAliasDialog} from './HostAliasDialog';
@@ -26,7 +26,7 @@ import {useWorkspaceRestore,useWorkspaceValue} from './workspaceHooks';
 import {browserId} from './browserId';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Activity, KeyRound, ArrowDownLeft, ArrowUpRight, CalendarClock, Check, ChevronRight, CircleHelp, Copy, Cpu, Database, LayoutGrid, LoaderCircle, Monitor, Plus, Palette, Radio, RefreshCw, Search, Server, Settings, ShieldCheck, Terminal, Trash2, X, Zap} from 'lucide-react';
+import {History, ChartLine, KeyRound, ArrowDownLeft, ArrowUpRight, CalendarClock, Check, ChevronRight, CircleHelp, Copy, Cpu, Database, LayoutGrid, LoaderCircle, Monitor, Plus, Palette, Radio, RefreshCw, Search, Server, Settings, ShieldCheck, Terminal, Trash2, X, Zap} from 'lucide-react';
 import './style.css';
 import './themes.css';
 import './journey.css';
@@ -197,7 +197,8 @@ function App(){
       while(queue.length){const host=queue.shift();if(host)await refreshHost(host)}
     }));
   };
-  const refreshInterval=state.refresh_interval_seconds??15;
+  const refreshInterval=state.refresh_interval_seconds??MONITORING_REFRESH_INTERVAL_SECONDS;
+  const saveRefreshInterval=async(interval:number|null)=>{setBusy('refresh-interval');try{const result=await api('/settings/refresh','PUT',{interval_seconds:interval});setState(old=>({...old,refresh_interval_seconds:result.interval_seconds}));setNotice(ui("刷新间隔已保存"))}catch(error){setNotice(error instanceof Error?error.message:ui("刷新间隔保存失败"))}finally{setBusy('')}};
   useEffect(()=>{load();const timer=setInterval(load,refreshInterval*1000);return()=>clearInterval(timer)},[refreshInterval]);
   useEffect(()=>{
     if(isDemo)return;
@@ -307,12 +308,12 @@ function App(){
     if(deviceOverview&&event.target instanceof Element&&!event.target.closest('#device-overview,[aria-controls="device-overview"]'))setDeviceOverview(false);
   }}>
     <aside className="sidebar"><div className="brand"><span className="brand-icon"><Cpu size={23}/></span><div>Infra<span>WORKBENCH</span></div></div>
-      <div className="nav-label">{ui("工作台")}</div><nav>{[["overview",ui("算力总览"),LayoutGrid],["reservations",tr("资源预约","Resource alerts"),CalendarClock],["history",tr("资源历史","Resource history"),Activity],["precision",ui("精度对比"),Activity],["settings",ui("设置"),Settings]].map(([key,label,Icon])=><button data-tour={key==='settings'?'settings':undefined} key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&pendingReservations>0&&<span className="nav-count">{pendingReservations}</span>}</button>)}</nav>
+      <div className="nav-label">{ui("工作台")}</div><nav>{[["overview",ui("算力总览"),LayoutGrid],["reservations",tr("资源预约","Resource alerts"),CalendarClock],["history",tr("资源历史","Resource history"),History],["precision",ui("精度对比"),ChartLine],["settings",ui("设置"),Settings]].map(([key,label,Icon])=><button data-tour={key==='settings'?'settings':undefined} key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&pendingReservations>0&&<span className="nav-count">{pendingReservations}</span>}</button>)}</nav>
       <div className="sidebar-hosts" data-tour="hosts">{hostList}</div>
       <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title={ui("机器选择保存在本机后台，其他窗口会同步更新。通过 SSH 连接远端机器，无需远端常驻 Agent。")}><i aria-hidden="true"/>{isDemo?tr("演示数据","Demo data"):ui("本地服务")}{error?ui("未连接"):ui("已连接")}</div></div>
     </aside>
     <main onClick={clearDeviceSelection}><DesktopUpdateNotification openSettings={()=>navigate('settings')}/>{workspaceError&&<div role="alert" className="assistant-error">{ui("工作空间状态同步失败，正在重试；未保存时请勿关闭页面。")}</div>}<header><div className="breadcrumb">{ui("工作空间 ")}<ChevronRight size={13}/>{pageTitle}</div>
-      <div className="header-tools"><RefreshIntervalPicker label={ui("刷新间隔")} title={ui("同时调整后台采集与页面刷新频率，设置对本工作台的所有窗口生效")} value={refreshInterval} disabled={busy==='refresh-interval'||!state.server_time} format={seconds=>`${ui("每 ")}${seconds} ${ui(" 秒刷新")}`} onChange={async interval=>{setBusy('refresh-interval');try{const result=await api('/settings/refresh','PUT',{interval_seconds:interval});setState(old=>({...old,refresh_interval_seconds:result.interval_seconds}));setNotice(ui("刷新间隔已保存"))}catch(error){setNotice(error instanceof Error?error.message:ui("刷新间隔保存失败"))}finally{setBusy('')}}}/>
+      <div className="header-tools"><RefreshIntervalPicker label={ui("刷新间隔")} title={ui("同时调整后台采集与页面刷新频率，设置对本工作台的所有窗口生效")} value={refreshInterval} disabled={busy==='refresh-interval'||!state.server_time} format={seconds=>`${ui("每 ")}${seconds} ${ui(" 秒刷新")}`} onChange={saveRefreshInterval} resetLabel={tr(`恢复默认（${MONITORING_REFRESH_INTERVAL_SECONDS} 秒）`,`Restore default (${MONITORING_REFRESH_INTERVAL_SECONDS}s)`)} onReset={()=>saveRefreshInterval(null)}/>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>{ui("主题")}</span></summary><div className="theme-options"><h3>{ui("选择界面主题")}</h3><p>{ui("主题偏好由本机后台统一保存")}</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{themeText(t.name)}</strong><small>{t.mode==='light'?ui("亮色"):ui("暗色")} · {themeText(t.description)}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
         <div className="header-panel-tools"><NotificationCenter events={state.events} rules={state.rules} hosts={state.hosts} tab={notificationTab} setTab={setNotificationTab} notify={notify} busy={!!busy} enableNotifications={enableNotifications} removeRule={id=>act('rule',()=>api('/rules/'+encodeURIComponent(id),'DELETE'))} locate={locateEvent}/><button data-tour="assistant" className={'assistant-toggle'+(assistantOpen?' active':'')} aria-label={ui("AI 助手")} title={assistantOpen?ui("收起 AI 助手"):ui("展开 AI 助手")} aria-expanded={assistantOpen} aria-controls="infra-assistant-panel" onClick={()=>setAssistantOpen(value=>!value)}><Sparkles size={17}/><span>{ui("AI 助手")}</span></button></div>

@@ -53,3 +53,12 @@ test('demo host reads work without newer structuredClone API and do not expose m
  try{const demo=createDemoRuntime();const hosts=demo.getHosts();hosts[0].target='mutated';assert.equal((await (await demo.fetch('/api/state')).json()).hosts[0].target,'gpu-idle-demo')}
  finally{globalThis.structuredClone=previous}
 });
+
+test('demo refresh starts at default and can restore it after a manual choice',async()=>{
+ const demo=createDemoRuntime();
+ assert.equal((await (await demo.fetch('/api/state')).json()).refresh_interval_seconds,30);
+ await demo.fetch('/api/settings/refresh',{method:'PUT',body:JSON.stringify({interval_seconds:5})});
+ assert.equal((await (await demo.fetch('/api/state')).json()).refresh_interval_seconds,5);
+ await demo.fetch('/api/settings/refresh',{method:'PUT',body:JSON.stringify({interval_seconds:null})});
+ assert.equal((await (await demo.fetch('/api/state')).json()).refresh_interval_seconds,30);
+});

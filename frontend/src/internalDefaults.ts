@@ -35,6 +35,8 @@ export const LOGS_LINE_MAX_BYTES = 65536;
 export const LOGS_READ_MAX_BYTES = 67108864;
 // 每份日志最多解析的训练记录数。
 export const LOGS_READ_MAX_RECORDS = 10000;
+// 默认资源刷新间隔，单位：秒；已保存的用户设置优先。
+export const MONITORING_REFRESH_INTERVAL_SECONDS = 30;
 // 每个技能文件大小上限，单位：UTF-8 字节；工具文本字段同时使用此容量值。
 export const SKILLS_FILE_MAX_BYTES = 1048576;
 // 技能包最多允许的文件数；解压校验和 MCP schema 同步。

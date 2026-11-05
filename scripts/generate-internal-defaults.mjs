@@ -35,7 +35,7 @@ export function parseConfig(text){
   for(const [key,rule] of Object.entries(schema)){
    if(!Object.hasOwn(value,key))throw new Error(`Missing key: ${prefix}${key}`);
    if(!Object.hasOwn(rule,'min'))validate(value[key],rule,`${prefix}${key}.`);
-   else if(!Number.isSafeInteger(value[key])||value[key]<rule.min||value[key]>rule.max)throw new Error(`Invalid ${prefix}${key}: expected integer ${rule.min}..${rule.max}`);
+   else if(!Number.isSafeInteger(value[key])||value[key]<rule.min||value[key]>rule.max||(rule.enum&&!rule.enum.includes(value[key])))throw new Error(`Invalid ${prefix}${key}: expected integer ${rule.min}..${rule.max}`);
   }
  }
  validate(config,SCHEMA);

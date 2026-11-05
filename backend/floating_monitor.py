@@ -1,4 +1,5 @@
 """Small native monitor. No browser or extra SSH collection; cached antialiased native-window drawing."""
+from backend.internal_defaults import MONITORING_REFRESH_INTERVAL_SECONDS
 from backend.host_alias import host_label
 from backend.interface_language import tr, current_locale, translated_text
 import json
@@ -283,7 +284,7 @@ class FloatingMonitor:
         self.hovered = False
         self.force_preview = False
         self.time_label = None
-        self.interval = 15
+        self.interval = MONITORING_REFRESH_INTERVAL_SECONDS
         self.scroll_offset = 0
         self.canvas = None
         self._canvas_commands = []
@@ -475,8 +476,8 @@ class FloatingMonitor:
                 state = self.fetch()
                 failures = 0
                 result = (state, '')
-                interval = state.get('refresh_interval_seconds', 15)
-                delay = interval if interval in (5, 10, 15, 20, 30) else 15
+                interval = state.get('refresh_interval_seconds', MONITORING_REFRESH_INTERVAL_SECONDS)
+                delay = interval if interval in (5, 10, 15, 20, 30) else MONITORING_REFRESH_INTERVAL_SECONDS
             except Exception:
                 failures += 1
                 result = (None, tr('后台暂不可用 · 状态未知', 'Backend unavailable · Status unknown'))
@@ -498,7 +499,7 @@ class FloatingMonitor:
             self.error = error
             if state is not None:
                 self.hosts = state.get('hosts', [])
-                self.interval = state.get('refresh_interval_seconds', 15)
+                self.interval = state.get('refresh_interval_seconds', MONITORING_REFRESH_INTERVAL_SECONDS)
             else:
                 for host in self.hosts:
                     host['snapshot']['fresh'] = False

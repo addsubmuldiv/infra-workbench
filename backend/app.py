@@ -1,3 +1,4 @@
+from .internal_defaults import MONITORING_REFRESH_INTERVAL_SECONDS
 import asyncio
 import contextlib
 import json
@@ -57,12 +58,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RefreshSettings(BaseModel):
-    interval_seconds: int = Field(strict=True)
+    interval_seconds: int | None = Field(strict=True)
 
     @field_validator('interval_seconds')
     @classmethod
     def valid_interval(cls, value):
-        if value not in (5, 10, 15, 20, 30):
+        if value is not None and value not in (5, 10, 15, 20, 30):
             raise ValueError('刷新间隔必须为 5、10、15、20 或 30 秒')
         return value
 
@@ -173,12 +174,12 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     ssh = SSHService(data)
     ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else create_credential_store('InfraWorkbench/ssh/'))
     sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store())
-    refresh_interval = store.load('refresh_interval_seconds', 15)
+    refresh_interval = store.load('refresh_interval_seconds', MONITORING_REFRESH_INTERVAL_SECONDS)
     if type(refresh_interval) is int and refresh_interval == 60:
         refresh_interval = 30
         store.save('refresh_interval_seconds', refresh_interval)
     if type(refresh_interval) is not int or refresh_interval not in (5, 10, 15, 20, 30):
-        refresh_interval = 15
+        refresh_interval = MONITORING_REFRESH_INTERVAL_SECONDS
     refresh_changed = asyncio.Event()
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
@@ -560,7 +561,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def set_refresh(settings: RefreshSettings):
         nonlocal refresh_interval, refresh_changed
         store.save('refresh_interval_seconds', settings.interval_seconds)
-        refresh_interval = settings.interval_seconds
+        refresh_interval = settings.interval_seconds if settings.interval_seconds is not None else MONITORING_REFRESH_INTERVAL_SECONDS
         reservations.max_sample_gap = max(30, refresh_interval + 15)
         previous_changed = refresh_changed
         refresh_changed = asyncio.Event()
