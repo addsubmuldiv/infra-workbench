@@ -13,7 +13,7 @@ Built for engineers training, fine-tuning, deploying, and debugging models acros
 
 ![Resource overview with demonstration data](docs/images/overview-en.png)
 
-*Screenshots use fictional machines and sample data. See the [illustrated user guide](docs/GUIDE.en.md). The interface supports Simplified Chinese and English. Switch under Settings → Interface language. The screenshots below show the English interface.*
+*Screenshots use fictional machines and sample data. See the [illustrated user guide](docs/GUIDE.en.md). The interface supports Simplified Chinese and English. Switch under Settings → General → Interface language. The screenshots below show the English interface.*
 
 Resource planning now includes multi-machine availability alerts (all specified machines or any N candidates in a cluster) and daily resource history with device counts, machine-state stacks, heatmaps, coverage and explicit unknown intervals. Alerts do not lock resources. History starts with new observations and retains 30 days by default. See [resource history](docs/RESOURCE-HISTORY.md) and [reservations](docs/RESERVATIONS.md).
 
@@ -27,13 +27,15 @@ The model interprets goals, selects tools, and explains results. The backend val
 
 ## Desktop installation on Windows
 
-Current version: **v0.1.2**. Download the Windows x64 installer from the [v0.1.2 Release](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.2), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`.
+Download the Windows x64 installer from the [latest Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`. This document describes the current repository; consult the relevant Release notes for features included in a published installer.
 
-The Windows installer has no Authenticode code signature; updater packages carry a separate update signature. Clean Windows install, upgrade and uninstall acceptance is still pending. GitHub macOS runners build experimental Apple Silicon packages for the same Release. See [macOS installation and limitations](docs/MACOS.md), currently in Chinese; native Mac acceptance is still pending.
+The Windows installer has no Authenticode code signature; updater packages carry a separate update signature. Clean Windows install, upgrade and uninstall acceptance is still pending. macOS packages must be built on a Mac; experimental Apple Silicon packages are included only when explicitly listed on the relevant Release. See [macOS installation and limitations](docs/MACOS.md), currently in Chinese; native Mac acceptance is still pending.
 
 Developers can also extract the complete repository and run **`安装.cmd`** from source. This prepares Python and dependencies over the internet and requires keeping the whole project directory. See [Windows instructions](docs/WINDOWS.md).
 
-Add your own SSH machines after launch. Desktop windows, the tray, and the floating monitor share the local backend. Use the tray menu to exit the backend.
+A new empty workspace shows a six-step getting-started guide after its first successful load: connect hosts, inspect resources, use terminals and files, configure AI, plan availability, and find settings. Completing or skipping it is remembered. Upgrading a workspace with existing hosts does not force the guide open; replay it under **Settings → About and help → Replay getting-started guide**. See [first use](docs/GUIDE.en.md#first-use-and-getting-started-guide).
+
+Desktop windows, the tray, and the floating monitor share the local backend. Use the tray menu to exit the backend.
 
 Windows installers support startup update checks and user-initiated download/installation from v0.1.1. Existing v0.1.0 users must manually install this bootstrap version once; save work and exit the old tray/backend first. See [updater operation and limits](docs/UPDATES.md).
 
@@ -62,8 +64,8 @@ Version 0.1.2 adds local Codex, Claude Code and OpenCode engines alongside exist
 | Desktop resource monitor | Keep resource status visible on Windows; filter machines, inspect devices, collapse, resize, pin, or adjust opacity. Right-click a machine to open a standalone terminal or file window. |
 | AI assistant and Skills | Query resources, processes, tmux, and logs; manage reservations, monitoring, and files as requested. Review tool traces, create or import skills, and reuse confirmed workflows with `@`. |
 | Model profiles | Save multiple API URLs, keys, and models; switch compatible providers, fetch model lists, and test text connections. Supports OpenAI Responses and Chat Completions. |
-| MCP access | Let external agents discover machines, filter resources, and access workbench tools. Authorized external clients can retrieve SSH configuration or saved credentials to connect independently. |
-| Interface language | Switch between Simplified Chinese and English in Settings → Interface language. The choice is saved and synced across workbench windows, the Windows monitor, and tray menus. |
+| MCP access | Let external agents discover machines, filter resources, and use workbench tools with backend host-scope and argument validation. The ordinary tool-discovery catalog does not expose SSH password-export tools. |
+| Interface language | Switch between Simplified Chinese and English in Settings → General → Interface language. The choice is saved and synced across workbench windows, the Windows monitor, and tray menus. |
 | Appearance | Choose light and dark themes, resize the sidebar, and restore machine selections. |
 
 ## Desktop resource monitor

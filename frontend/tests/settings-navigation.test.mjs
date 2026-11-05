@@ -46,3 +46,11 @@ test('saved integration tab is restored on opening settings',t=>{
   assert.equal(h.panels().length,1);
 });
 
+test('about and help can replay the real guide without navigating into demo',t=>{
+  const previous=globalThis.window;globalThis.window=new EventTarget();
+  t.after(()=>{if(previous===undefined)delete globalThis.window;else globalThis.window=previous});
+  let replayed=0;window.addEventListener('iwb:replay-getting-started',()=>replayed++);
+  const h=harness(t,null);h.click('关于与帮助');h.click('重播新手引导');assert.equal(replayed,1);
+  assert.ok(h.all().some(n=>n.type==='a'&&n.props.href==='?demo=1'));
+});
+

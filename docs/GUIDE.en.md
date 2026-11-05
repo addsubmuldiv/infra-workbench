@@ -8,15 +8,32 @@ The UI supports Simplified Chinese and English. Screenshots below show the Engli
 
 ## Start and exit
 
-Run **`安装.cmd`** for the first installation, then use the **Infra Workbench** desktop shortcut or the launcher in the repository root. Normal use does not require Node.js.
+Installer users download the Windows package from the [latest Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest), then use the **Infra Workbench** desktop shortcut; Neither Python nor Node.js needs to be installed separately for normal use. Source users run **`安装.cmd`** to prepare Python and dependencies and must retain the complete project directory.
 
-Under **Settings → Startup and desktop monitor (设置 → 启动与桌面浮窗)**, choose a browser or standalone desktop interface and toggle the floating monitor. Save the settings: monitor visibility changes immediately, while the interface choice applies the next time you open the app.
+Under **Settings → General → Startup and desktop monitor (设置 → 通用 → 启动与桌面浮窗)**, choose a browser or standalone desktop interface and toggle the floating monitor. Save the settings: monitor visibility changes immediately, while the interface choice applies the next time you open the app.
 
 Closing the browser leaves the tray backend running, so monitoring, availability alerts, and notifications continue. Exit the entire app through the tray menu. Monitoring cannot observe remote resources while the computer is asleep, powered off, or disconnected.
 
+## First use and getting-started guide
+
+A new workspace with no hosts shows the guide after the backend state has loaded successfully. Completing it, skipping it, or pressing Escape saves the decision in the local workspace and synchronizes it across windows connected to that backend. Existing workspaces with hosts are not interrupted on upgrade.
+
+Replay it under **Settings → About and help → Replay getting-started guide**. The guide does not connect to servers, run commands, or install CLIs. **Add machine** only opens the connection form. For a hands-on simulation, choose **Try the demo and guided tour (no server required)** separately; demo state and real-workspace guide completion remain independent.
+
+| Step | What to do next | Details |
+| --- | --- | --- |
+| Connect hosts | Choose SSH configuration, manual entry, or Excel import; verify the target identity | [Import](IMPORT.md) |
+| Inspect and organize resources | Search aliases, organize clusters, and filter by device count and memory | [Clusters](CLUSTERS.md) |
+| Terminals, files, and remote development | Use tmux for long tasks; configure tunnels and VS Code when needed | [Terminals](TERMINAL.md), [Files](FILES.md), [SSH tunnels](SSH-TUNNELS.md) |
+| AI assistant | Configure a model connection or install and authenticate a local engine; check host scope and tool records | [Model connections](AGENT.md), [Codex](CODEX.md), [Other engines](EXTERNAL-AGENTS.md) |
+| Alerts, history, and comparison | Set availability alerts, collect history samples, and compare training logs | [Alerts](RESERVATIONS.md), [History](RESOURCE-HISTORY.md), [Precision](PRECISION.md) |
+| Optional settings | Find language, Skills, automation, MCP, email, and help | [Automation](AUTOMATION.md), [Skills](USER-SKILLS.md), [MCP](MCP.md) |
+
+Availability alerts do not lock hardware or start training, and history gaps remain unknown. Broadcast commands, terminals, and AI tools may modify remote machines; verify the target scope first. Some linked technical guides are currently in Chinese.
+
 ## Interface language
 
-Open **Settings → Interface language (设置 → 界面语言)** and choose **English** or **简体中文**. The change applies immediately without reconnecting machines, resetting editor drafts, or recreating terminal sessions. The local backend saves the choice for future launches and synchronizes it across workbench windows, the Windows desktop monitor, and tray menus. Machine names, files and logs, terminal output, model responses, and some original backend diagnostics retain their source language.
+Open **Settings → General → Interface language (设置 → 通用 → 界面语言)** and choose **English** or **简体中文**. The change applies immediately without reconnecting machines, resetting editor drafts, or recreating terminal sessions. The local backend saves the choice for future launches and synchronizes it across workbench windows, the Windows desktop monitor, and tray menus. Machine names, files and logs, terminal output, model responses, and some original backend diagnostics retain their source language.
 
 ![English interface and language settings](images/interface-language-en.png)
 
@@ -101,7 +118,7 @@ The bell opens **通知中心**, showing seven days of events and monitoring rul
 
 Windows tray notifications work while the backend runs, even with the page closed. The tray menu controls notifications, test messages, and Windows login startup. Browser notifications are a separate option; enabling both can produce two notifications. Old events are not replayed as a backlog.
 
-For email, open **设置 → 邮件通知**, enter SMTP host, port, encryption, sender, credentials, and recipient, then enable, save, send a test, and confirm receipt. Enable **使用邮箱通知** separately for each availability alert. New blank alerts default to email off; editing or repeating preserves their choice. Existing alerts are not automatically opted in when SMTP is configured.
+For email, open **设置 → 集成服务 → 邮件**, enter SMTP host, port, encryption, sender, credentials, and recipient, then enable, save, send a test, and confirm receipt. Enable **使用邮箱通知** separately for each availability alert. New blank alerts default to email off; editing or repeating preserves their choice. Existing alerts are not automatically opted in when SMTP is configured.
 
 SMTP acceptance is not confirmed inbox delivery. Failed or uncertain sends are not repeatedly retried automatically. See [email](MAIL.md) and [background behavior](BACKGROUND.md) in Chinese.
 
@@ -123,7 +140,7 @@ File tools use the SSH account without sudo. Text editing is limited to 1 MiB; o
 
 ## AI assistant and Skills
 
-Configure a service URL, API key, and model under **设置 → Agent 模型接口**, then save and test. Multiple profiles are supported. A text test alone does not validate function-tool support.
+Configure a service URL, API key, and model under **Settings → AI assistant → Model configuration**, then save and test. Multiple profiles are supported. A text test alone does not validate function-tool support. Alternatively, select local Codex, Claude Code, or OpenCode in the assistant; install and sign in to the chosen CLI separately. See [local engines and validation limits](EXTERNAL-AGENTS.md).
 
 Open **AI 助手** and describe a goal: find four free GPUs with 40 GiB each, identify accelerator users and working directories, read a specified training log, or create an alert with confirmed conditions. The assistant can query resources, processes, tmux, and files, and manage reservations, monitoring, and files as requested. Expand execution steps to inspect target machines, arguments, raw results, and errors.
 
@@ -137,7 +154,7 @@ The assistant docks on the right. Drag its header to float it; drag back to the 
 
 Use skills to capture repeatable inspection steps, log-analysis instructions, or report requirements:
 
-1. Open **Settings → Skills (设置 → 技能)** and create a draft, paste `SKILL.md`, or import UTF-8 Markdown / ZIP. Imported content first becomes a draft for review.
+1. Open **Settings → AI assistant → Skills (设置 → AI 助手 → Skills)** and create a draft, paste `SKILL.md`, or import UTF-8 Markdown / ZIP. Imported content first becomes a draft for review.
 2. Edit the instructions, validate the package, and install it. Drafts persist, so you can return later.
 3. Type `@` in the chat composer to search and select a skill. Arrow keys and Enter / Tab select; Esc closes the picker. Without an explicit selection, the assistant can discover skills as needed.
 4. Manage installed skills with enable/disable, copy, export, and version rollback. Changes apply on the next turn; a running turn retains its original skill snapshot.
@@ -160,6 +177,6 @@ Save configurations, export all results as CSV, or download raw logs without met
 
 Choose a theme from **主题**. Keep passwords, private keys, and the local `data/` directory private. The app does not provide team accounts or a resource scheduler; do not expose its local service directly to a LAN or the internet. See [data and credentials in Chinese](../SECURITY.md).
 
-Refresh intervals are 5, 10, 20, or 30 seconds, defaulting to 10. The backend saves the choice for all windows and uses it for collection and display refresh. Legacy 60-second settings are reduced to 30 seconds.
+Refresh intervals are 5, 10, 15, 20, or 30 seconds, defaulting to 15. The backend saves the choice for all windows and uses it for collection and display refresh. Legacy 60-second settings are reduced to 30 seconds.
 
-Collection is scheduled from the start of each round; a machine never runs overlapping rounds. Freshness allows at least 30 seconds, or the refresh interval plus a 15-second collection margin up to 45 seconds. Stale, failed, or unknown samples interrupt continuous-idle confirmation. Resource-history gaps longer than 45 seconds remain gaps rather than inferred activity.
+Each host waits the configured interval after a collection finishes before starting its next round; rounds on the same host do not overlap. Failures use retry backoff. Single-host availability alerts and the overview allow at least 30 seconds of freshness, or the refresh interval plus a 15-second collection margin up to 45 seconds. Stale, failed, or unknown samples interrupt continuous-idle confirmation. Resource-change gaps longer than 45 seconds remain gaps rather than inferred activity. UI preferences are shared through the local backend; see [workspace state](WORKSPACE-STATE.md).

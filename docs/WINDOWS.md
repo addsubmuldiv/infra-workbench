@@ -2,11 +2,13 @@
 
 ## 桌面安装包
 
-当前版本为 [v0.1.1](https://github.com/addsubmuldiv/infra-workbench/releases/tag/v0.1.1)，提供 Windows x64 向导安装包。安装包包含 Python 后台及前端资源；普通用户无需安装开发环境。附件中的 `SHA256SUMS.txt` 用于检查下载完整性。
+从[最新 Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest) 下载 Windows x64 向导安装包。安装包包含 Python 后台及前端资源；普通用户无需安装开发环境。附件中的 `SHA256SUMS.txt` 用于检查下载完整性，具体包含的功能以该版本的 Release 说明为准。
 
-安装包未签名。本机冻结后台自测与 NSIS 构建已通过，但无 Python / Node.js 的干净 Windows 系统安装、升级和卸载验收仍待完成。
+安装程序尚无 Authenticode 代码签名，更新文件另有更新签名。构建与冻结后台自测不能替代无 Python / Node.js 的干净 Windows 系统安装、升级和卸载验收。
 
 以下 `安装.cmd`、Python、WinGet 和保留项目目录等要求适用于源码安装。不要把源码启动器生成的 EXE 当成可独立分发的桌面安装包。
+
+当前代码为全新的空工作空间提供首次使用引导，完成或跳过后记住状态；已有机器的工作空间不会在升级时被强制打断。可在「设置 → 关于与帮助 → 重播新手引导」手动打开，完整流程见[首次使用](GUIDE.md#首次使用与新手引导)。
 
 ## 源码安装适用环境
 

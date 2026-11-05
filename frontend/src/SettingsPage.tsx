@@ -55,7 +55,7 @@ export default function SettingsPage(){
     general:()=> <><LanguageSettings/><LaunchSettingsPage/></>,
     models:()=> <AgentSettingsPage/>,skills:()=> <SkillsSettings/>,automation:()=> <AutomationSettings/>,
     mcp:()=> <MCPSettings/>,mail:()=> <MailSettingsPage/>,
-    about:()=> <><DesktopUpdates/><section className="settings-card settings-help-card"><h2>{t('帮助与演示','Help and demo')}</h2><p className="settings-help"><a href="?demo=1">{t('体验演示与新手引导（无需服务器）','Try the demo and guided tour (no server required)')}</a></p></section></>,
+    about:()=> <><DesktopUpdates/><section className="settings-card settings-help-card"><h2>{t('帮助与演示','Help and demo')}</h2><p className="settings-help"><button type="button" className="secondary" onClick={()=>window.dispatchEvent(new Event('iwb:replay-getting-started'))}>{t('重播新手引导','Replay getting-started guide')}</button></p><p className="settings-help"><a href="?demo=1">{t('体验演示与新手引导（无需服务器）','Try the demo and guided tour (no server required)')}</a></p></section></>,
   };
   const tabs=navigation.category==='ai'?
     [{id:'models',label:t('模型配置','Model configuration')},{id:'skills',label:'Skills'}]:
