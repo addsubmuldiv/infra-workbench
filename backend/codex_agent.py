@@ -305,7 +305,7 @@ async def run_codex_agent(chat,tools,allowed,instructions,save,start_text,on_tex
                 model=next((m['id'] for m in models if m.get('isDefault')),None)
                 if not model:raise ValueError('Codex 未返回可用的默认模型，请检查 CLI 登录和配置。')
                 chat['turns'][-1]['model']=model;save()
-                config={**{f'features.{name}':False for name in ISOLATED_FEATURES},'features.code_mode_host':True,'mcp_servers.infra_workbench':{'enabled':True,'url':bridge.url,'http_headers':{'Authorization':'Bearer '+bridge.token},'startup_timeout_sec':20,'tool_timeout_sec':180,'default_tools_approval_mode':'approve'}}
+                config={**{f'features.{name}':False for name in ISOLATED_FEATURES},'features.code_mode_host':True,'mcp_servers.infra_workbench':{'enabled':True,'url':bridge.url,'http_headers':{'Authorization':'Bearer '+bridge.token},'startup_timeout_sec':20,'tool_timeout_sec':3900,'default_tools_approval_mode':'approve'}}
                 # Disable unrelated inherited MCP servers without ever exposing
                 # or modifying their credentials/configuration.
                 for name in inherited_mcp_names():
@@ -334,7 +334,7 @@ async def run_codex_agent(chat,tools,allowed,instructions,save,start_text,on_tex
                 if controls is not None:
                     controls[chat['id']]=dict(connection=connection,thread_id=thread_id,turn_id=turn['turn']['id'],run_id=chat['active_run'])
                 content='';start_text()
-                async with asyncio.timeout(1800):
+                async with asyncio.timeout(7200):
                     while True:
                         event=await asyncio.wait_for(connection.events.get(),120);method=event.get('method');p=event.get('params',{})
                         if method=='item/agentMessage/delta':content+=p.get('delta','');on_text(content)

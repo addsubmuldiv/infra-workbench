@@ -122,8 +122,8 @@ async def stream_cli(command,args,env,cwd,prompt,engine,on_text):
     stderr=asyncio.create_task(drain());content='';done=False;total=0;seen_parts=set()
     try:
         process.stdin.write(prompt.encode());await process.stdin.drain();process.stdin.close()
-        async with asyncio.timeout(1800):
-            while line:=await asyncio.wait_for(process.stdout.readline(),180):
+        async with asyncio.timeout(7200):
+            while line:=await asyncio.wait_for(process.stdout.readline(),3900):
                 total+=len(line)
                 if total>8*1024*1024:raise ValueError('CLI 输出超出限制。')
                 try:event=json.loads(line)

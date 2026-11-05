@@ -40,7 +40,8 @@ def test_remote_file_tool_and_virtual_file_tool_have_distinct_schemas(tmp_path):
         exposed = {t['name']: t for t in model.contexts[1][2]}
         assert 'host_id' in exposed['read_server_file']['parameters']['properties']
         assert {'write_file', 'edit_file', 'delete'} <= exposed.keys()
-        assert not {'execute', 'task'} & exposed.keys()
+        assert 'task' in exposed
+        assert 'execute' not in exposed  # Real execution uses shared, authorized MCP.
         assert tools.calls == []
         chat.store.db.close()
     asyncio.run(run())

@@ -92,7 +92,7 @@ def test_real_graph_can_create_validate_install_then_use_next_turn(tmp_path):
         model.replies=[tool_message('create_skill_draft', {'files':{'SKILL.md':'---\nname: chat-authored\ndescription: Chat authored skill\n---\nUse list_hosts to check machines.'}},'draft'),
                        dict(message=dict(role='assistant',content='Installed for next turn.'))]
         view=chat.create()
-        started=chat.begin(view['id'],ChatMessageRequest(content='Create and install a skill'))
+        started=chat.begin(view['id'],ChatMessageRequest(content='Create and install a skill',permission_mode='full'))
         await chat.runs[started['active_run']]
         saved=chat.get(view['id'])
         assert saved['turns'][-1]['status']=='completed'

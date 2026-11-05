@@ -16,7 +16,7 @@ PRIVATE = {'get_ssh_password', 'get_ssh_info'}
 
 
 class WorkbenchMCPService:
-    def __init__(self, probes, legacy=None, operations=None, *, state=None, allowed=None, embedded=False, skills=None, skill_snapshot=None):
+    def __init__(self, probes, legacy=None, operations=None, *, state=None, allowed=None, embedded=False, skills=None, skill_snapshot=None, permissions=None):
         self.probes, self.legacy, self.operations = probes, legacy, operations
         self.state = state if state is not None else {}
         self.allowed, self.embedded = allowed, embedded
@@ -24,10 +24,13 @@ class WorkbenchMCPService:
         self.skill_snapshot = skill_snapshot
         self._embedded_catalog = None
         self._input_validators = {}
+        self.permissions = permissions
 
     def scoped(self, state, allowed, skill_snapshot=None):
+        from .agent_permissions import CURRENT_PERMISSIONS
         return WorkbenchMCPService(self.probes, self.legacy, self.operations,
-                                   state=state, allowed=allowed, embedded=True, skills=self.skills, skill_snapshot=skill_snapshot)
+                                   state=state, allowed=allowed, embedded=True, skills=self.skills, skill_snapshot=skill_snapshot,
+                                   permissions=self.permissions or CURRENT_PERMISSIONS.get())
 
     def catalog(self):
         if self.embedded and self._embedded_catalog is not None:
@@ -50,6 +53,11 @@ class WorkbenchMCPService:
             catalog.update(atomic_catalog())
         if self.skills is not None:
             catalog.update(mcp_skills.skill_catalog())
+        if self.permissions is not None:
+            from .agent_capabilities import catalog as capability_catalog
+            catalog.update(capability_catalog())
+            external=getattr(self.permissions,'external',None)
+            if external is not None:catalog.update(external.catalog())
         if self.operations is not None and getattr(self.operations.app.state, "clusters", None) is not None:
             from .cluster_mcp import catalog as cluster_catalog
             catalog.update(cluster_catalog())
@@ -70,6 +78,26 @@ class WorkbenchMCPService:
             self._input_validators[name]=cached
         if next(cached[1].iter_errors(arguments), None):
             raise AgentError('INVALID_ARGUMENT', '参数不符合工具 inputSchema。')
+        if self.permissions is not None:
+            external=getattr(self.permissions,'external',None)
+            if external is not None and name in external.catalog():
+                return await external.call(name,copy.deepcopy(arguments))
+            # Freeze the approved arguments before yielding; callers cannot mutate them.
+            arguments = copy.deepcopy(arguments)
+            if name.startswith('local_'):
+                from .agent_capabilities import canonical_path
+                for key in ('path','cwd'):
+                    if key in arguments:arguments[key]=str(canonical_path(arguments[key]))
+            host_ids = ([arguments['host_id']] if arguments.get('host_id') else []) + (arguments.get('host_ids') or [])
+            if self.allowed is not None and any(host not in self.allowed for host in host_ids):
+                raise AgentError('HOST_NOT_FOUND', '目标机器不在本次允许范围内。')
+            await self.permissions.authorize(name, arguments, catalog[name])
+            if name.startswith('local_'):
+                for key in ('path','cwd'):
+                    if key in arguments and str(canonical_path(arguments[key]))!=arguments[key]:
+                        raise AgentError('PERMISSION_DENIED','批准后路径目标发生变化；请重新核对。')
+            from .agent_capabilities import catalog as capability_catalog, call as capability_call
+            if name in capability_catalog():return await capability_call(name, arguments)
         if self.operations is not None:
             from .atomic_mcp import catalog as atomic_catalog, call as atomic_call
             if name in atomic_catalog():

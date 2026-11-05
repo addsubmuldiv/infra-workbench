@@ -56,7 +56,7 @@ GROUPS = {
         'files file-browser file-editor file-transfers file-window folder-upload text-editor-actions '
         'logDownload precision-sync'),
     'assistant': group(
-        'test_agent_api test_agent_profiles test_agent_context test_agent_memory test_agent_chat '
+        'test_agent_permission_integration test_agent_permissions test_agent_capabilities test_agent_external_mcp test_agent_api test_agent_profiles test_agent_context test_agent_memory test_agent_chat '
         'test_assistant_efficiency test_assistant_performance test_chat_stream test_compaction_accounting test_deepagents '
         'test_model_stream test_model_turn test_codex_agent test_external_agents test_user_skills '
         'test_skill_integration test_unified_mcp test_mcp_output_budget test_mcp_query_economy',
@@ -64,7 +64,7 @@ GROUPS = {
         'chat-model-picker chat-reply-time chatMarkdown context-usage-meter modelCache skillMention '
         'skills skills-settings toolPresentation terminal-assistant-bridge'),
     'mcp': group(
-        'test_agent_tools test_atomic_mcp test_mcp test_mcp_e2e test_unified_mcp '
+        'test_agent_permission_integration test_agent_permissions test_agent_capabilities test_agent_external_mcp test_agent_tools test_atomic_mcp test_mcp test_mcp_e2e test_unified_mcp '
         'test_mcp_output_budget test_mcp_query_economy test_skill_integration',
         'toolPresentation'),
     'workspace': group(

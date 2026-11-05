@@ -73,7 +73,7 @@ class MCPGateway:
         async with create_client_server_memory_streams() as (client_streams, server_streams):
             task = asyncio.create_task(server.run(*server_streams, server.create_initialization_options()))
             try:
-                async with ClientSession(*client_streams, read_timeout_seconds=170) as client:
+                async with ClientSession(*client_streams, read_timeout_seconds=3900) as client:
                     await client.initialize()
                     try:
                         yield client

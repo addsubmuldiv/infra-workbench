@@ -248,8 +248,8 @@ header{background:var(--panel);border-color:var(--line);position:sticky;top:0;z-
 .drawer{width:560px;max-width:100vw}
 /* Fade a separate layer: animating the full-screen background repaints each frame. */
 .drawer-shade{overflow:hidden;background:transparent;isolation:isolate}
-.drawer-shade::before{content:"";position:absolute;inset:0;z-index:-1;background:#050a10b8;pointer-events:none;opacity:0;will-change:opacity;transition:opacity 480ms cubic-bezier(.25,.1,.25,1)}
-.drawer-shade>.drawer{will-change:transform;transform:translate3d(100%,0,0);transition:transform 520ms cubic-bezier(.25,.1,.25,1)}
+.drawer-shade::before{content:"";position:absolute;inset:0;z-index:-1;background:#050a10b8;pointer-events:none;opacity:0;will-change:opacity;transition:opacity 320ms cubic-bezier(.25,.1,.25,1)}
+.drawer-shade>.drawer{will-change:transform;transform:translate3d(100%,0,0);transition:transform 360ms cubic-bezier(.25,.1,.25,1)}
 .drawer-shade[data-entered=true]::before{opacity:1}
 .drawer-shade[data-entered=true]>.drawer{transform:translate3d(0,0,0)}
 @media(prefers-reduced-motion:reduce){.drawer-shade::before{opacity:1;transition:none;will-change:auto}.drawer-shade>.drawer{transform:none;transition:none;will-change:auto}}

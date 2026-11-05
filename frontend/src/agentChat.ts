@@ -7,7 +7,26 @@ import {workspaceStorage} from './workspaceState.ts';
 import {assistantRequest} from './infraAssistant.ts';
 export type ChatTool={id:string;name:string;target?:string;status:string;arguments:string;output:string;started:number;finished?:number};
 export type ContextUsage={used_tokens:number;total_tokens:number;trigger_tokens:number;source:'provider'|'official'|'manual'|'fallback';model:string;estimated:boolean;phase:'request'|'response';updated:number};
-export type ChatTurn={supplemental_instructions?:{content:string;created:number}[];terminal_attachments?:TerminalAttachment[];provider_status?:string;model?:string;profile_name?:string;context_usage?:ContextUsage;context_compaction?:{status:'running'|'completed'|'failed';started:number;finished?:number};id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
+export type PermissionMode='ask'|'full'|'read_only';
+export type ExternalMcpServer={name:string;url:string};
+export type PermissionScope={external_mcp_servers:ExternalMcpServer[];permission_mode:PermissionMode;local_roots:string[];remote_roots:Record<string,string[]>};
+export type ChatApproval={grant_path?:string;grant_kind?:'read'|'write'|'shell'|'action';id:string;run_id:string;tool:string;arguments:Record<string,unknown>;target?:string;reason:string;status:'pending'|'approved'|'rejected'|'cancelled'|'interrupted';created:number;decision?:string};
+export function permissionRoots(value:string):string[]{return [...new Set(value.split(/\r?\n/).map(item=>item.trim()).filter(Boolean))]}
+export function parseExternalMcpServers(value:string):ExternalMcpServer[]{
+ const lines=value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+ if(lines.length>3)throw new Error(t('最多配置 3 个外部 MCP 服务。','Configure at most 3 external MCP services.'));
+ const names=new Set<string>();
+ return lines.map(line=>{
+  const match=/^([A-Za-z][A-Za-z0-9_-]{0,31})\s+(\S+)$/.exec(line);
+  if(!match)throw new Error(t('外部 MCP 每行格式为：名称 http(s)://地址/mcp。名称以字母开头，最多 32 个字母、数字、下划线或连字符。','Each external MCP line must be: name http(s)://host/mcp. Names start with a letter and contain at most 32 letters, digits, underscores or hyphens.'));
+  let url:URL;try{url=new URL(match[2])}catch{throw new Error(t('外部 MCP 地址无效。','Invalid external MCP URL.'))}
+  if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.hash)throw new Error(t('外部 MCP 只支持不含用户名、密码或片段的 HTTP(S) 地址。','External MCP requires an HTTP(S) URL without username, password or fragment.'));
+  if(names.has(match[1]))throw new Error(t('外部 MCP 服务名称不能重复。','External MCP service names must be unique.'));
+  names.add(match[1]);return {name:match[1],url:match[2]};
+ });
+}
+export function permissionScope(mode:PermissionMode,local:string,remote:string,hosts:string[],external=''):PermissionScope{return {permission_mode:mode,local_roots:permissionRoots(local),remote_roots:Object.fromEntries(hosts.map(id=>[id,permissionRoots(remote)])),external_mcp_servers:parseExternalMcpServers(external)}}
+export type ChatTurn={external_mcp_servers?:ExternalMcpServer[];approvals?:ChatApproval[];permission_mode?:PermissionMode;local_roots?:string[];remote_roots?:Record<string,string[]>;supplemental_instructions?:{content:string;created:number}[];terminal_attachments?:TerminalAttachment[];provider_status?:string;model?:string;profile_name?:string;context_usage?:ContextUsage;context_compaction?:{status:'running'|'completed'|'failed';started:number;finished?:number};id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
 export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:AssistantEngine};
 export type ChatItem=Pick<Chat,'id'|'title'|'created'|'updated'|'active_run'>;
 export function chatReplyTime(created:number,now=new Date()):{label:string;full:string;iso:string}|null{

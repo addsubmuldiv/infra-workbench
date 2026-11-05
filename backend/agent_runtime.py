@@ -30,7 +30,8 @@ from .internal_defaults import ASSISTANT_CONTEXT_FALLBACK_TOKENS
 SKILLS_ROOT = Path(__file__).with_name('skills')
 REMOTE_NAMES = {'read_file': 'read_server_file', 'read_directory': 'read_server_directory'}
 register_harness_profile('infra_workbench:configured', HarnessProfile(
-    general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)))
+    general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=True),
+    tool_description_overrides={'task':'Delegate a self-contained task to general-purpose. It inherits the current tools and authorization. Do not delegate the same work twice; use at most three concurrent tasks.'}))
 
 
 
@@ -120,7 +121,16 @@ class ToolTrace(AgentMiddleware):
         self.turn['tools'].append(trace)
         self.save()
         try:
-            result = await handler(request)
+            from .agent_permissions import CURRENT_PERMISSIONS
+            permissions=CURRENT_PERMISSIONS.get()
+            if name in ('write_file','edit_file','delete'):
+                if permissions is not None and permissions.mode=='read_only':
+                    raise ValueError('当前为只读模式，不能修改助手文件或记忆。')
+            if name=='task' and permissions is not None:
+                if permissions.subagent_count>=12:raise ValueError('本轮子 Agent 调用已达到 12 次，请汇总已有结果。')
+                permissions.subagent_count+=1
+                async with permissions.subagent_slots:result=await handler(request)
+            else:result = await handler(request)
             output = result.content if isinstance(result, ToolMessage) else str(result)
             trace['status'] = 'failed' if isinstance(result, ToolMessage) and result.status == 'error' else 'succeeded'
         except asyncio.CancelledError:
@@ -258,10 +268,19 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
             fs_tools+=['write_file','edit_file','delete']
             fs_permissions=[FilesystemPermission(operations=['write'],paths=['/memories/AGENTS.md'],mode='allow'),
                             FilesystemPermission(operations=['write'],paths=['/**'],mode='deny')]
+        from .agent_permissions import CURRENT_PERMISSIONS
+        run_permissions=CURRENT_PERMISSIONS.get()
+        if run_permissions is not None and run_permissions.mode=='read_only':
+            fs_permissions=[FilesystemPermission(operations=['write'],paths=['/**'],mode='deny')]
         saver = InMemorySaver()
         graph = create_deep_agent(
             model=model, system_prompt=instructions, tools=mcp_tools,
             backend=backend, skills=['/skills/'], checkpointer=saver,
+            permissions=fs_permissions,
+            subagents=[dict(name='general-purpose',description='Complete a self-contained delegated task using the same tools and permissions.',
+                            system_prompt=instructions,tools=mcp_tools,skills=['/skills/','/tool-skills/'],
+                            middleware=[FilesystemMiddleware(backend=backend,tools=fs_tools,permissions=fs_permissions),
+                                        ToolTrace(turn,tools,allowed,secret,save,{t.name for t in mcp_tools},receipts)])],
             middleware=[FilesystemMiddleware(backend=backend, tools=fs_tools,permissions=fs_permissions,tool_token_limit_before_evict=4000),
                         TodoListMiddleware(),
                         *([memory.middleware] if memory is not None else []),
@@ -284,7 +303,7 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
                           if path != '/skills' and not path.startswith(('/skills/','/tool-skills/'))}
         state['files'].update(files)
         state['skills_metadata'] = None  # Re-read the packaged library on each user turn.
-        config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': sys.maxsize}
+        config = {'configurable': {'thread_id': chat['id']}, 'recursion_limit': 1000, 'max_concurrency': 3}
         # This application has private server data: never enable hosted tracing even
         # if LANGSMITH_TRACING was set in the parent process environment.
         with tracing_context(enabled=False):

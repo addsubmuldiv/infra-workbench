@@ -58,7 +58,7 @@ Fleet overview optimization: optional grouped resource summaries and explicit pa
 
 进程内消息流执行真实 MCP initialize、tools/list、tools/call；没有另写一个假 MCP 调用函数。它避免后台向自己监听的端口发网络请求。内置连接在服务端绑定本轮机器范围和会话状态，模型不能通过参数扩大范围。外部客户端保留原有本机服务信任边界。
 
-`mcp_operations.py` 登记原有业务操作，并从 FastAPI 模型生成参数 schema。调用原有应用接口，继续执行其参数校验、并发控制、版本冲突、持久化和通知逻辑。`command_tools.py` 另提供用户授权的服务器 Shell 与进程管理，使用相同的 MCP 目录、机器范围检查和现有 SSH；不开放任意 HTTP 转发或本机 Shell。
+`mcp_operations.py` 登记原有业务操作，并从 FastAPI 模型生成参数 schema。调用原有应用接口，继续执行其参数校验、并发控制、版本冲突、持久化和通知逻辑。`command_tools.py` 另提供用户授权的服务器 Shell 与进程管理，使用相同的 MCP 目录、机器范围检查和现有 SSH；不开放任意 HTTP 转发。默认外部目录不开放本机 Shell；内置助手显式绑定运行权限后，可使用下文所述本机能力。
 
 ## 2026-11-03：按机器特征定位
 
@@ -187,3 +187,7 @@ open_cluster_terminals 创建专用持久会话并返回交接入口，不等于
 - 每个工具保存开始与完整结束记录，取消仍落盘。模型请求保留服务商实际返回的 input/output/cached/reasoning token 数（缺失保持缺失），另记逻辑请求 JSON 字节数和首次可见文本耗时；两者不是网络线速统计，也不能单独分解服务端排队/推理时间。上下文估算与服务商计费用量分开。
 
 English: Responses-only calls use a per-run frozen client, stable prompt prefixes, scope-specific follow-up filters, native full-result offloading and paged virtual reads. Native skill disclosure stays lazy. Actual provider counters are optional and distinct from local estimates. Host authorization, redaction and cancellation remain enforced.
+
+## 2026-11-06：助手能力与批准
+
+内置助手新增本机文件和 Shell、公开网页搜索/读取、general-purpose 子 Agent，以及用户配置的外部 HTTP MCP。真实操作统一经过运行绑定的权限控制器，支持 ask/full/read_only；批准记录随聊天持久化，待批准操作不在重启后自动执行。详情和使用边界见 [AGENT-PERMISSIONS.md](AGENT-PERMISSIONS.md)。已有外部 MCP 客户端不会自动获得本机 Shell，只有显式绑定权限的助手会话发现这些工具。
