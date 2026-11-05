@@ -44,6 +44,12 @@ def main(argv=None, *, platform=None, loader=importlib.import_module):
     return entry.main(['--no-browser'] if argv is None else argv)
 
 
+def probe_directory():
+    # PyInstaller's executable entry has a different __file__ parent from package modules.
+    import backend
+    return Path(backend.__file__).parent
+
+
 def check_internal_defaults(directory):
     """Check bundled standalone probes against the compiled application policy, offline."""
     from backend import internal_defaults as defaults
@@ -82,7 +88,7 @@ def self_test(destination):
     try:
         with tempfile.TemporaryDirectory(prefix='iwb-desktop-check-', ignore_cleanup_errors=True) as directory:
             os.environ['IWB_DATA'] = directory
-            result['policy_checks'] = check_internal_defaults(Path(__file__).parent)
+            result['policy_checks'] = check_internal_defaults(probe_directory())
             from backend.app import app
             import uvicorn
             listener = socket.socket()

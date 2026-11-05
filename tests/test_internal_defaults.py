@@ -75,3 +75,10 @@ def test_skill_limit_error_reports_configured_count(monkeypatch):
     monkeypatch.setattr(skill_service,'COUNT_LIMIT',2)
     with pytest.raises(skill_service.SkillError,match='最多 2 个'):
         skill_service.encode_files({'a':'','b':'','c':''})
+
+def test_probe_directory_uses_package_not_frozen_entry_path(tmp_path,monkeypatch):
+    import backend
+    from backend import desktop_runtime
+    monkeypatch.setattr(desktop_runtime,'__file__',str(tmp_path/'_internal/desktop_runtime.py'))
+    monkeypatch.setattr(backend,'__file__',str(tmp_path/'_internal/backend/__init__.py'))
+    assert desktop_runtime.probe_directory()==tmp_path/'_internal/backend'
