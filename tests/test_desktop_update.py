@@ -92,9 +92,15 @@ async def check_drain(tmp_path, monkeypatch):
     app = FastAPI()
     update.register_routes(app)
     started, release = asyncio.Event(), asyncio.Event()
+    poll_started, poll_release = asyncio.Event(), asyncio.Event()
     @app.get('/api/health')
     async def health():
         return {'name': 'infra-workbench'}
+    @app.get('/api/state/changes')
+    async def state_changes():
+        poll_started.set()
+        await poll_release.wait()
+        return {'revision': 1}
     @app.post('/api/files/operation')
     async def operation():
         started.set()
@@ -104,6 +110,7 @@ async def check_drain(tmp_path, monkeypatch):
     body = {key: control.value[key] for key in ('instance', 'executable')}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
         model = asyncio.create_task(release.wait())
+        poll = asyncio.create_task(client.get('/api/state/changes'))
         app.state.agent_chat = SimpleNamespace(runs={'model': model})
         try:
             response = await client.post('/api/desktop/update-shutdown', headers=headers, json=body)
@@ -116,8 +123,10 @@ async def check_drain(tmp_path, monkeypatch):
             assert response.status_code == 409
             release.set()
             await pending
+            await poll_started.wait()
             response = await client.post('/api/desktop/update-shutdown', headers=headers, json=body)
             assert response.status_code == 200
+            assert (await client.get('/api/state/changes')).status_code == 503
             for path in ('/api/files/operation', '/api/assistant/chats/x/messages', '/mcp', '/api/terminal/tickets'):
                 assert (await client.post(path)).status_code == 503
             # The authenticated acknowledgement remains retryable while draining.
@@ -125,4 +134,6 @@ async def check_drain(tmp_path, monkeypatch):
             assert (await client.get('/api/health')).status_code == 200
         finally:
             release.set()
+            poll_release.set()
+            await poll
             update.deactivate(control)

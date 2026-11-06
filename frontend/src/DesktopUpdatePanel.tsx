@@ -20,8 +20,14 @@ if(!isDemo&&nativeUpdateBridge(window)){
 function useUpdates(){useLocale();return useSyncExternalStore(updater.subscribe,updater.getSnapshot)}
 function errorText(error:string){
   if(error==='restart_blocked')return t('请先保存未完成的修改并关闭活动终端，再安装更新。','Save pending changes and close active terminals before installing.');
+  if(error==='update_shutdown_busy')return t('后台仍有操作正在进行。请等助手任务、远程命令或导入结束后，再点击安装。','The background service is still busy. Wait for assistant tasks, remote commands, or imports to finish, then install again.');
+  if(error==='update_shutdown_terminals')return t('请关闭所有工作台窗口中的活动终端，再点击安装。','Close active terminals in all workbench windows, then install again.');
+  if(error==='update_shutdown_transfers')return t('请等待文件传输结束，再点击安装。','Wait for file transfers to finish, then install again.');
+  if(error==='update_shutdown_identity')return t('当前后台实例与更新请求不匹配。请保存工作，从托盘退出后重新打开应用，再安装更新。','The running background service does not match the update request. Save your work, quit from the tray, and reopen the app before installing.');
+  if(error==='update_force_timeout')return t('强制退出后，后台进程或服务端口仍未释放，安装尚未启动。','The background process or service port is still active after force quit. Installation has not started.');
+  if(error.startsWith('update_shutdown_failed')||error.includes('后台拒绝更新退出'))return t('本机后台拒绝退出，安装程序尚未启动。请保存工作，确认后台操作结束后重试。','The local background service refused to exit. The installer has not started. Save your work and retry when background operations have finished.');
   if(/404|not found|private|public.*feed/i.test(error))return t('暂时无法读取公开更新源。仓库可能尚未公开或尚未发布更新，请稍后重试。','The public update feed is unavailable. The repository or release may not be public yet. Please retry later.');
-  return t('更新操作未完成，请检查网络后重试。详情：','Update could not complete. Check your connection and retry. Details: ')+error;
+  return t('更新操作未完成。详情：','Update could not complete. Details: ')+error;
 }
 export function DesktopUpdateNotification({openSettings}:{openSettings:()=>void}){
   const status=useUpdates();

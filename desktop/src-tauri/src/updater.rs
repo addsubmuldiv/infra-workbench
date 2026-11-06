@@ -109,7 +109,7 @@ fn safe_views(app: &tauri::AppHandle) -> Result<(),String> {
         std::thread::sleep(Duration::from_millis(50));
     }
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 struct Receipt { token: String, instance: String, pid: u32, executable: PathBuf }
 fn data_dir() -> Result<PathBuf,String> {
     std::env::var_os("IWB_DATA").map(PathBuf::from).or_else(||dirs::data_local_dir().map(|p|p.join("InfraWorkbench"))).ok_or("找不到用户数据目录".into())
@@ -122,7 +122,8 @@ struct OwnedProcess(*mut std::ffi::c_void);
 impl OwnedProcess {
     fn open(pid: u32, expected: &std::path::Path) -> Result<Self,String> {
         #[link(name="kernel32")] extern "system" { fn OpenProcess(access:u32,inherit:i32,pid:u32)->*mut std::ffi::c_void; fn QueryFullProcessImageNameW(process:*mut std::ffi::c_void,flags:u32,name:*mut u16,size:*mut u32)->i32; }
-        let handle=unsafe{OpenProcess(0x00100000|0x1000,0,pid)};
+        const PROCESS_TERMINATE: u32 = 0x0001;
+        let handle=unsafe{OpenProcess(0x00100000|0x1000|PROCESS_TERMINATE,0,pid)};
         if handle.is_null() { return Err("无法核实后台进程身份，未停止任何进程".into()); }
         let process=Self(handle); let mut name=vec![0u16;32768]; let mut size=name.len() as u32;
         if unsafe{QueryFullProcessImageNameW(handle,0,name.as_mut_ptr(),&mut size)}==0 { return Err("无法核实后台程序路径".into()); }
@@ -131,6 +132,16 @@ impl OwnedProcess {
         Ok(process)
     }
     fn exited(&self)->bool { #[link(name="kernel32")] extern "system" { fn WaitForSingleObject(handle:*mut std::ffi::c_void,time:u32)->u32; } unsafe{WaitForSingleObject(self.0,0)==0} }
+    fn terminate(&self) -> Result<(), String> {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn TerminateProcess(process: *mut std::ffi::c_void, code: u32) -> i32;
+        }
+        if self.exited() || unsafe { TerminateProcess(self.0, 1) } != 0 || self.exited() {
+            return Ok(());
+        }
+        Err(format!("无法强制退出后台：{}", std::io::Error::last_os_error()))
+    }
 }
 #[cfg(windows)] impl Drop for OwnedProcess { fn drop(&mut self) { #[link(name="kernel32")] extern "system" { fn CloseHandle(handle:*mut std::ffi::c_void)->i32; } unsafe{CloseHandle(self.0);}; } }
 fn port_closed() -> bool {
@@ -147,7 +158,41 @@ fn recover_runtime() -> Result<(),String> {
         std::thread::sleep(Duration::from_millis(300));
     }
 }
-fn stop_owned_runtime() -> Result<(),String> {
+#[cfg(windows)]
+fn confirm_force_stop(reason: &str, english: bool) -> bool {
+    let (title, warning) = if english {
+        ("Force quit and install?", "Forcing the local service to quit may interrupt terminal sessions, transfers, and writes in progress. Select Yes to force quit and continue installing.")
+    } else {
+        ("强制退出并安装？", "强制退出本机后台可能中断终端、文件传输和正在写入的数据。选择「是」将强制退出并继续安装。")
+    };
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Warning)
+        .set_title(title)
+        .set_description(format!("{reason}\n\n{warning}"))
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show() == rfd::MessageDialogResult::Yes
+}
+
+#[cfg(windows)]
+fn force_stop_runtime(process: &OwnedProcess, path: &std::path::Path, receipt: &Receipt) -> Result<(), String> {
+    if !process.exited() {
+        let current = std::fs::read(path).ok().and_then(|bytes| serde_json::from_slice::<Receipt>(&bytes).ok());
+        if current.as_ref() != Some(receipt) && !process.exited() {
+            return Err("update_shutdown_identity".into());
+        }
+        process.terminate()?;
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if process.exited() && port_closed() {
+            // A killed runtime cannot remove its receipt. The next runtime replaces it.
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Err("update_force_timeout".into())
+}
+fn stop_owned_runtime(english: bool) -> Result<(),String> {
     let path=data_dir()?.join("desktop-update-control.json");
     let receipt:Receipt=serde_json::from_slice(&std::fs::read(&path).map_err(|_|"后台不是本安装版管理的服务，请手动停止并使用安装包更新")?).map_err(|_|"后台更新凭据无效".to_string())?;
     let expected=std::env::current_exe().map_err(|e|e.to_string())?.parent().ok_or("无法确定安装目录")?.join(if cfg!(windows){"iwb-runtime.exe"}else{"iwb-runtime"});
@@ -156,7 +201,47 @@ fn stop_owned_runtime() -> Result<(),String> {
     #[cfg(not(windows))] return Err("当前平台暂不支持安全停止后台，请使用安装包更新".into());
     #[cfg(windows)] {
         let client=reqwest::blocking::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(5)).build().map_err(|e|e.to_string())?;
-        client.post(format!("{}api/desktop/update-shutdown",infra_workbench_desktop::SERVICE_URL)).bearer_auth(&receipt.token).header("X-IWB","1").json(&serde_json::json!({"instance":receipt.instance,"executable":receipt.executable})).send().map_err(|e|e.to_string())?.error_for_status().map_err(|e|format!("后台拒绝更新退出：{e}"))?;
+        let shutdown = client
+            .post(format!("{}api/desktop/update-shutdown", infra_workbench_desktop::SERVICE_URL))
+            .bearer_auth(&receipt.token)
+            .header("X-IWB", "1")
+            .json(&serde_json::json!({"instance": receipt.instance, "executable": receipt.executable}));
+        let retry_deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let response = shutdown.try_clone().ok_or("无法重试后台退出请求")?
+                .send().map_err(|e| e.to_string())?;
+            let status = response.status();
+            if status.is_success() {
+                break;
+            }
+            if status != reqwest::StatusCode::CONFLICT {
+                return Err(format!("update_shutdown_failed (HTTP {status})"));
+            }
+            let detail = response.json::<serde_json::Value>().unwrap_or_default();
+            let reason = match detail.get("detail").and_then(|value| value.as_str()) {
+                Some("Wait for active operations before updating") => "update_shutdown_busy",
+                Some("Close active terminals before updating") => "update_shutdown_terminals",
+                Some("Wait for file transfers before updating") => "update_shutdown_transfers",
+                Some("Desktop runtime identity mismatch") => "update_shutdown_identity",
+                _ => "update_shutdown_failed",
+            };
+            if reason != "update_shutdown_busy" || Instant::now() >= retry_deadline {
+                let explanation = match (reason, english) {
+                    ("update_shutdown_busy", true) => "The background service still has operations in progress.",
+                    ("update_shutdown_busy", false) => "后台仍有操作正在进行。",
+                    ("update_shutdown_terminals", true) => "The background service still has active terminals.",
+                    ("update_shutdown_terminals", false) => "后台仍有活动终端。",
+                    ("update_shutdown_transfers", true) => "The background service still has file transfers in progress.",
+                    ("update_shutdown_transfers", false) => "后台仍有文件正在传输。",
+                    _ => return Err(reason.into()),
+                };
+                if confirm_force_stop(explanation, english) {
+                    return force_stop_runtime(&process, &path, &receipt);
+                }
+                return Err(reason.into());
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
         let deadline=Instant::now()+Duration::from_secs(60);
         loop {
             let closed=port_closed();
@@ -167,6 +252,18 @@ fn stop_owned_runtime() -> Result<(),String> {
                         Ok(())=>Err("后台已退出，但更新凭据未正常清理；已取消安装并恢复后台".into()),
                         Err(error)=>Err(format!("已取消安装；后台恢复失败：{error}")),
                     };
+                }
+                let explanation = if english {
+                    "The background service did not exit within 60 seconds."
+                } else {
+                    "后台在 60 秒内未退出。"
+                };
+                let mut force_error = None;
+                if !process.exited() && confirm_force_stop(explanation, english) {
+                    match force_stop_runtime(&process, &path, &receipt) {
+                        Ok(()) => return Ok(()),
+                        Err(error) => force_error = Some(error),
+                    }
                 }
                 // A successful shutdown request cannot be cancelled after the tray has
                 // started draining. Keep its exact process handle, never look up/kill a PID.
@@ -182,14 +279,14 @@ fn stop_owned_runtime() -> Result<(),String> {
                         std::thread::sleep(Duration::from_millis(500));
                     }
                 });
-                return Err("后台在 60 秒内未完全退出，已取消安装；未强制终止或重复启动后台。若原后台随后退出，会在三分钟内尝试恢复，请稍后重新打开应用".into());
+                return Err(force_error.unwrap_or_else(|| "后台在 60 秒内未完全退出，已取消安装。若原后台随后退出，会在三分钟内尝试恢复，请稍后重新打开应用".into()));
             }
             std::thread::sleep(Duration::from_millis(100));
         }
     }
 }
 #[tauri::command]
-pub async fn desktop_update_install(window: WebviewWindow) -> Result<Status,String> {
+pub async fn desktop_update_install(window: WebviewWindow, english: Option<bool>) -> Result<Status,String> {
     guard(&window)?; let app=window.app_handle().clone();
     let (update,bytes)={ let _window_gate=WINDOW_GATE.lock().unwrap();
         let state=app.state::<UpdaterState>(); let mut inner=state.0.lock().unwrap();
@@ -199,7 +296,7 @@ pub async fn desktop_update_install(window: WebviewWindow) -> Result<Status,Stri
         let confirmed=rfd::MessageDialog::new().set_title("安装桌面更新").set_description(format!("即将安装桌面版本 {}。更新将关闭所有工作台窗口并重启应用。请先保存文件、关闭终端并等待写入完成。是否继续？",update.version)).set_buttons(rfd::MessageButtons::YesNo).show();
         if confirmed!=rfd::MessageDialogResult::Yes {return Err("已取消安装".into());}
         safe_views(&worker)?;
-        stop_owned_runtime()?;
+        stop_owned_runtime(english.unwrap_or(false))?;
         if let Err(error)=update.install(bytes) {
             return match recover_runtime() {
                 Ok(())=>Err(format!("安装失败，后台已恢复：{error}")),

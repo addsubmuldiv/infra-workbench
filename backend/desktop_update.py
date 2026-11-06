@@ -138,6 +138,9 @@ class UpdateDrainMiddleware:
             else:
                 await JSONResponse({'detail': 'Desktop update shutdown in progress'}, status_code=503)(scope, receive, send)
             return
+        # The status cursor only waits for changes and never mutates workbench data.
+        if kind == 'http' and path == '/api/state/changes' and scope.get('method') == 'GET':
+            return await self.app(scope, receive, send)
         self.owner.state.desktop_update_active += 1
         try:
             await self.app(scope, receive, send)

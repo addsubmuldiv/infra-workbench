@@ -3,8 +3,11 @@ export type UpdateStatus={supported:boolean;current_version:string;phase:'idle'|
 export type UpdateBridge=(command:string)=>Promise<UpdateStatus>;
 export function nativeUpdateBridge(target:unknown,demo=false):UpdateBridge|null{
   if(demo)return null;
-  const internals=(target as {__TAURI_INTERNALS__?:{invoke?:UpdateBridge}}|null)?.__TAURI_INTERNALS__;
-  return typeof internals?.invoke==='function'?command=>internals.invoke!(command):null;
+  const internals=(target as {__TAURI_INTERNALS__?:{invoke?:(command:string,args?:{english:boolean})=>Promise<UpdateStatus>};document?:Document}|null);
+  const bridge=internals?.__TAURI_INTERNALS__;
+  return typeof bridge?.invoke==='function'?command=>command==='desktop_update_install'
+    ?bridge.invoke!(command,{english:internals?.document?.documentElement.lang==='en'})
+    :bridge.invoke!(command):null;
 }
 export function canRestartForUpdate(target:Window,hasUnsaved:()=>boolean){
   const event=new Event('beforeunload',{cancelable:true});
