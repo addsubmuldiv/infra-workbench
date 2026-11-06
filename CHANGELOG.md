@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 — 2026-11-06
+
+- 扩展助手能力，增加可配置的工具审批和外部 MCP 接入。
+- 清理源码包中的过期前端构建产物。
+- 提供 Windows x64、macOS Apple Silicon 和 macOS Intel 安装包。macOS 安装包为实验性构建，未经 Apple 公证。
+
 ## 0.2.2 — 2026-11-05
 
 ### 更新内容
