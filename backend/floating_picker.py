@@ -1,4 +1,5 @@
 """Native, rounded picker rows and slim scrollbar, matching the floating monitor."""
+from backend.host_alias import host_label, matches_name
 from backend.interface_language import tr, current_locale
 import tkinter as tk
 from tkinter import font as tkfont
@@ -72,8 +73,8 @@ class MachinePickerList(tk.Frame):
         commands_before=set(c._tclCommands or [])
         self._images=[]
         width=max(60,c.winfo_width())
-        term=self.search_var.get().strip().lower()
-        hosts=[h for h in self.monitor.hosts if term in h['target'].lower()]
+        term=self.search_var.get().strip()
+        hosts=[h for h in self.monitor.hosts if matches_name(h,term)]
         self.filtered_ids=[h['id'] for h in hosts]
         stride=round(48*s)
         height=round(42*s)
@@ -87,7 +88,7 @@ class MachinePickerList(tk.Frame):
             size=round(16*s);cx=round(12*s);cy=y+(height-size)//2
             c.create_image(cx,cy,image=self.photo(size,size,4*s,p['accent'] if checked else p['panel2'],p['accent'] if checked else p['line']),anchor='nw',tags=tag)
             if checked:c.create_text(cx+size/2,cy+size/2,text='✓',font=self.small_font,fill=p['panel'],tags=tag)
-            name=host['target'];max_width=width-round(62*s)
+            name=host_label(host);max_width=width-round(62*s)
             while len(name)>1 and self.font.measure(name)>max_width:name=name[:-2]+'…'
             c.create_text(round(40*s),y+round(13*s),text=name,anchor='w',font=self.font,fill=p['text'],tags=tag)
             devices=host.get('snapshot',{}).get('devices',[])
