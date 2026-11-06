@@ -25,10 +25,12 @@ new Function('require','exports',diagramJs)(name=>{
 
 const source=fs.readFileSync(new URL('../src/ChatMarkdown.tsx',import.meta.url),'utf8');
 const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
+const icons=await import('lucide-react');
 const exports={};
 new Function('require','exports',js)(name=>{
   const localized=i18nMock(name);if(localized)return localized;
   if(name==='react')return React;
+  if(name==='lucide-react')return icons;
   if(name==='react-markdown')return ReactMarkdown;
   if(name==='./latestUpdate')return latestUpdate;
   if(name==='./terminalInput')return terminalInput;
