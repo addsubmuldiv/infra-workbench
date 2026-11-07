@@ -17,6 +17,7 @@
 # 只改前端或后端时缩小范围
 .\.venv\Scripts\python.exe scripts/run_tests.py workspace --scope frontend
 .\.venv\Scripts\python.exe scripts/run_tests.py reservations --scope backend
+.\.venv\Scripts\python.exe scripts/run_tests.py headless --scope backend
 
 # 先预览实际命令，不执行测试
 .\.venv\Scripts\python.exe scripts/run_tests.py assistant mcp --dry-run
@@ -37,6 +38,7 @@ macOS/Linux 将 Python 路径替换为 `.venv/bin/python`。入口调用当前 P
 | `terminal` | 终端生命周期、工作区、补全、命令模板和填入 |
 | `files` | 文件读写、搜索、传输、文件夹上传下载、日志和精度对比 |
 | `assistant` | 模型配置、上下文、聊天、流式输出、Skills 和 Agent 引擎 |
+| `headless` | DSH 托管启动、数据隔离、Host/MCP 凭据分离和路由授权 |
 | `mcp` | 工具 schema、参数与范围校验、传输协议及跨入口集成 |
 | `workspace` | 多窗口偏好、界面布局、语言、新手引导和演示模式 |
 | `desktop` | 托盘、浮窗、启动器、桌面运行时和更新 |

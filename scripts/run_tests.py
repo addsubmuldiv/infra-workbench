@@ -63,6 +63,7 @@ GROUPS = {
         'agentChat agentChatStreaming agentSettings assistant-chat-streaming assistant-engine-picker '
         'chat-model-picker chat-reply-time chatMarkdown context-usage-meter modelCache skillMention '
         'skills skills-settings toolPresentation terminal-assistant-bridge'),
+    'headless': group('test_headless'),
     'mcp': group(
         'test_agent_permission_integration test_agent_permissions test_agent_capabilities test_agent_external_mcp test_agent_tools test_atomic_mcp test_mcp test_mcp_e2e test_unified_mcp '
         'test_mcp_output_budget test_mcp_query_economy test_skill_integration',

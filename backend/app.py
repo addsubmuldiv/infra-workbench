@@ -166,7 +166,7 @@ def parse_ports(result):
     return ports
 
 
-def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None, agent_credential_store=None):
+def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None, agent_credential_store=None, *, enable_agent=True, mcp_policy=None, allow_remote_provision=True):
     service_instance=uuid.uuid4().hex
     state_changes = StateChanges(service_instance)
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
@@ -184,7 +184,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     hosts = store.load('hosts', [])
     rules = store.load('rules', [])
     mail = MailService(store, email_credential_store if email_credential_store is not None else create_credential_store('InfraWorkbench/mail/'))
-    agent_api = AgentAPIService(store, agent_credential_store if agent_credential_store is not None else create_credential_store('InfraWorkbench/agent/'))
+    agent_api = (AgentAPIService(store, agent_credential_store if agent_credential_store is not None else create_credential_store('InfraWorkbench/agent/')) if enable_agent else None)
     resource_history = ResourceHistory(store)
     resource_stats = ResourceStats(store)
     reservations = ReservationBook(store, mail, max_sample_gap=max(30, refresh_interval + 15))
@@ -394,7 +394,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @asynccontextmanager
     async def lifespan(app):
-        app.state.agent_chat.recover()
+        if enable_agent:
+            app.state.agent_chat.recover()
         async with app.state.mcp_server.session_manager.run():
             if start_poll:
                 await app.state.ssh_tunnels.startup()
@@ -438,7 +439,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             with contextlib.suppress(asyncio.CancelledError):await import_cleanup
             await app.state.server_imports.close()
             await app.state.clusters.close()
-            await app.state.agent_chat.close()
+            if enable_agent:
+                await app.state.agent_chat.close()
             if terminal_task:
                 terminal_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):await terminal_task
@@ -463,12 +465,14 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             store.db.close()
 
     app = FastAPI(title='Infra Workbench', lifespan=lifespan)
+    app.state.service_instance = service_instance
     app.state.hosts, app.state.ssh = hosts, ssh
     app.state.sudo = sudo
     app.state.ssh_passwords = ssh_passwords
     app.state.mail = mail
     app.state.agent_api = agent_api
-    register_agent_api_routes(app, agent_api)
+    if enable_agent:
+        register_agent_api_routes(app, agent_api)
     register_mail_routes(app, mail)
     register_desktop_notification_routes(app, store)
     register_terminal_routes(app,hosts,ssh,store,sudo)
@@ -480,7 +484,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def refresh_assistant():
         return await app.state.agent_service.refresh(list(hosts), 25)
     app.state.infra_assistant = InfraAssistant(agent_api, app.state.agent_service.inventory, resource_history, refresh_assistant)
-    register_assistant_routes(app, app.state.infra_assistant)
+    if enable_agent:
+        register_assistant_routes(app, app.state.infra_assistant)
     probes = ChatTools(app.state.infra_assistant,app.state.agent_service,ssh)
     from .clusters import ClusterService
     from .cluster_routes import register_cluster_routes
@@ -496,11 +501,12 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     from .skill_service import SkillService
     from .skill_routes import register_skill_routes
     app.state.skills = SkillService(store)
-    register_mcp(app, app.state.agent_service, probes)
+    register_mcp(app, app.state.agent_service, probes, policy=mcp_policy)
     app.state.mcp_service.skills = app.state.skills
     register_skill_routes(app, app.state.skills, lambda: list(app.state.mcp_service.scoped({}, None).catalog()))
-    app.state.agent_chat = AgentChat(store,agent_api,MCPGateway(app.state.mcp_service))
-    register_chat_routes(app,app.state.agent_chat)
+    if enable_agent:
+        app.state.agent_chat = AgentChat(store,agent_api,MCPGateway(app.state.mcp_service))
+        register_chat_routes(app,app.state.agent_chat)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 
     @app.middleware('http')
@@ -597,6 +603,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         return dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, group_reservations=app.state.group_reservations.list()['items'], reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
     async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None):
+        if body.provision and not allow_remote_provision:
+            raise HTTPException(403, 'SSH key provisioning is disabled in managed mode')
         if body.remember_password and not body.password:
             raise HTTPException(422,'勾选记住 SSH 密码时，请提供本次登录密码')
         if body.manual and not body.user:
@@ -956,4 +964,5 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     return app
 
 
-app = create_app()
+# Factory consumers must opt out before importing: never touch desktop/user data.
+app = None if os.environ.get('IWB_FACTORY_ONLY') == '1' else create_app()

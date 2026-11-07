@@ -20,6 +20,11 @@ def test_inventory_is_complete_and_every_group_selects_existing_tests():
     assert set(runner.select(list(runner.GROUPS))) == runner.inventory()
 
 
+def test_headless_group_is_separately_selectable_from_mcp():
+    assert runner.select(['headless']) == ['tests/test_headless.py']
+    assert 'tests/test_headless.py' not in runner.select(['mcp'])
+
+
 def test_multiple_groups_deduplicate_and_unknown_groups_fail():
     chosen = runner.select(['assistant', 'mcp', 'assistant'])
     assert len(chosen) == len(set(chosen))

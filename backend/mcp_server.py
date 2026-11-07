@@ -57,12 +57,13 @@ def create_mcp(service):
     return server,http_app
 
 
-def register_mcp(app,service,probes=None):
+def register_mcp(app,service,probes=None,*,policy=None):
     from .mcp_service import WorkbenchMCPService
     from .mcp_operations import ApplicationOperations
     shared=WorkbenchMCPService(probes,service,ApplicationOperations(app))
     app.state.mcp_service=shared
-    server,http_app=create_mcp(shared)
+    exposed=policy.bind(shared) if policy is not None else shared
+    server,http_app=create_mcp(exposed)
     app.state.agent_service=service
     app.state.mcp_server=server
     # Reuse the SDK's exact route at /mcp; no /mcp/ redirect or second listener.
@@ -72,4 +73,4 @@ def register_mcp(app,service,probes=None):
     async def mcp_info():
         return dict(name='infra-workbench',transport='Streamable HTTP',path='/mcp',
                     tools=[dict(name=spec['name'],title=spec['title'],description=spec['description'])
-                           for spec in shared.catalog().values()])
+                           for spec in exposed.catalog().values()])
