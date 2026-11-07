@@ -10,7 +10,7 @@ export type ContextUsage={used_tokens:number;total_tokens:number;trigger_tokens:
 export type PermissionMode='ask'|'full'|'read_only';
 export type ExternalMcpServer={name:string;url:string};
 export type PermissionScope={external_mcp_servers:ExternalMcpServer[];permission_mode:PermissionMode;local_roots:string[];remote_roots:Record<string,string[]>};
-export type ChatApproval={grant_path?:string;grant_kind?:'read'|'write'|'shell'|'action';id:string;run_id:string;tool:string;arguments:Record<string,unknown>;target?:string;reason:string;status:'pending'|'approved'|'rejected'|'cancelled'|'interrupted';created:number;decision?:string};
+export type ChatApproval={can_session?:boolean;grant_path?:string;grant_kind?:'read'|'write'|'shell'|'action';id:string;run_id:string;tool:string;arguments:Record<string,unknown>;target?:string;reason:string;status:'pending'|'approved'|'rejected'|'cancelled'|'interrupted';created:number;decision?:string};
 export function permissionRoots(value:string):string[]{return [...new Set(value.split(/\r?\n/).map(item=>item.trim()).filter(Boolean))]}
 export function parseExternalMcpServers(value:string):ExternalMcpServer[]{
  const lines=value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
@@ -26,7 +26,7 @@ export function parseExternalMcpServers(value:string):ExternalMcpServer[]{
  });
 }
 export function permissionScope(mode:PermissionMode,local:string,remote:string,hosts:string[],external=''):PermissionScope{return {permission_mode:mode,local_roots:permissionRoots(local),remote_roots:Object.fromEntries(hosts.map(id=>[id,permissionRoots(remote)])),external_mcp_servers:parseExternalMcpServers(external)}}
-export type ChatTurn={external_mcp_servers?:ExternalMcpServer[];approvals?:ChatApproval[];permission_mode?:PermissionMode;local_roots?:string[];remote_roots?:Record<string,string[]>;supplemental_instructions?:{content:string;created:number}[];terminal_attachments?:TerminalAttachment[];provider_status?:string;model?:string;profile_name?:string;context_usage?:ContextUsage;context_compaction?:{status:'running'|'completed'|'failed';started:number;finished?:number};id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
+export type ChatTurn={codex_options?:CodexOptions;codex_items?:CodexItem[];codex_questions?:CodexQuestionRequest[];external_mcp_servers?:ExternalMcpServer[];approvals?:ChatApproval[];permission_mode?:PermissionMode;local_roots?:string[];remote_roots?:Record<string,string[]>;supplemental_instructions?:{content:string;created:number}[];terminal_attachments?:TerminalAttachment[];provider_status?:string;model?:string;profile_name?:string;context_usage?:ContextUsage;context_compaction?:{status:'running'|'completed'|'failed';started:number;finished?:number};id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
 export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:AssistantEngine};
 export type ChatItem=Pick<Chat,'id'|'title'|'created'|'updated'|'active_run'>;
 export function chatReplyTime(created:number,now=new Date()):{label:string;full:string;iso:string}|null{
@@ -163,4 +163,20 @@ export function toolPresentation(tool:ChatTool){
     }catch{}
   }
   return {status:tool.status,label:tool.status==='failed'?ui("调用失败"):toolStatus[tool.status]||tool.status};
+}
+
+export type CodexOptions={collaboration_mode?:'default'|'plan';cwd:string;model:string;effort:string;multi_agent:boolean;enabled_mcp_servers:string[];enabled_plugins:string[]};
+export type CodexModel={id:string;displayName?:string;isDefault?:boolean;defaultReasoningEffort:string;supportedReasoningEfforts:{reasoningEffort:string;description?:string}[]};
+export type CodexItem={output_total?:number;output_next_offset?:number|null;id:string;type:string;status?:string;thread_id?:string;data:Record<string,unknown>;output?:string;output_truncated?:boolean};
+export type CodexQuestion={id:string;header?:string;question:string;options?:{label:string;description?:string}[];isOther?:boolean;isSecret?:boolean};
+export type CodexQuestionRequest={id:string;run_id:string;status:string;questions:CodexQuestion[]};
+export function codexVisibleItems(items:CodexItem[]):CodexItem[]{return items.filter(item=>!/reasoning|analysis/i.test(item.type)).map(item=>({...item,output:item.output===undefined?undefined:Array.from(item.output).slice(0,32000).join(''),output_truncated:item.output_truncated||!!item.output&&Array.from(item.output).length>32000}))}
+export function codexQuestionAnswers(questions:CodexQuestion[],values:Record<string,string>):Record<string,{answers:string[]}>{return Object.fromEntries(questions.map(question=>{const answer=(values[question.id]||'').trim();if(!answer)throw new Error(t('请回答所有问题。','Answer every question.'));return [question.id,{answers:[answer]}]}))}
+export function codexModelOptions(models:CodexModel[],id:string,effort:string):{model:string;effort:string}{const model=models.find(item=>item.id===id)??models.find(item=>item.isDefault)??models[0];return {model:model?.id??'',effort:model?.supportedReasoningEfforts.some(item=>item.reasoningEffort===effort)?effort:model?.defaultReasoningEffort??''}}
+
+export type CodexOutputPage={text:string;total:number;next_offset:number|null;truncated:boolean};
+export function appendCodexOutputPage(current:CodexOutputPage,offset:number,page:CodexOutputPage):CodexOutputPage{
+ if(current.next_offset!==offset||page.next_offset!==null&&page.next_offset<=offset)throw new Error(t('输出页已变化，请重新读取。','The output page changed; reload it.'));
+ const text=(current.text+page.text).slice(0,1048576),bounded=current.text.length+page.text.length>1048576;
+ return {text,total:page.total,next_offset:bounded?null:page.next_offset,truncated:current.truncated||page.truncated||bounded};
 }
