@@ -492,6 +492,7 @@ class FloatingMonitor:
     def consume(self):
         if self.stop.is_set():
             return
+        self.recover_offscreen()
         self.sync_language()
         self.sync_theme()
         try:
@@ -511,6 +512,17 @@ class FloatingMonitor:
         except queue.Empty:
             pass
         self.root.after(500, self.consume)
+
+    def recover_offscreen(self):
+        if self.drag or self.resize_drag or not self.root.winfo_ismapped():
+            return
+        from backend.floating_position import monitor_work_area, recover_position
+        x, y = self.root.winfo_x(), self.root.winfo_y()
+        frame = (x, y, x + self.root.winfo_width(), y + self.root.winfo_height())
+        position = recover_position(frame, monitor_work_area(self.root))
+        if position is not None:
+            self.root.geometry(f'+{position[0]}+{position[1]}')
+            self.save(x=position[0], y=position[1])
 
     def save(self, **values):
         try:

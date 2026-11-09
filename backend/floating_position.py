@@ -1,5 +1,14 @@
 """Position floating dialogs beside their owner, within its monitor work area."""
 
+def recover_position(frame, work_area):
+    """Move a completely invisible window into the nearest monitor's work area."""
+    x0, y0, x1, y1 = frame
+    left, top, right, bottom = work_area
+    if x0 < right and x1 > left and y0 < bottom and y1 > top:
+        return None
+    return (max(left, min(x0, right - (x1 - x0))),
+            max(top, min(y0, bottom - (y1 - y0))))
+
 def dialog_position(anchor, size, work_area, gap=12):
     left,top,right,bottom=work_area
     width,height=size
