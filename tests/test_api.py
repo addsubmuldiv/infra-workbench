@@ -101,3 +101,31 @@ def test_device_command_failure_on_stdout_is_not_reported_as_timeout(tmp_path):
         assert result['status']=='error' and result['error_stage']=='probe'
         assert 'npu-smi' in result['error'] and '-8005' in result['error'] and '187' in result['error']
         assert '超时' not in result['error']
+
+
+def test_collection_pause_blocks_refresh_without_touching_ssh(tmp_path):
+    app = create_app(tmp_path, start_poll=False)
+    app.state.hosts.append(dict(id='paused-test', target='example', auth='key'))
+    app.state.agent_service.snapshots['paused-test'] = dict(status='online', devices=[], collected_at=12345, system=dict(cpu_percent=87))
+    calls = []
+    async def run(*args, **kwargs):
+        calls.append(args)
+        return 1, '', 'synthetic error'
+    app.state.ssh.run = run
+    with TestClient(app) as client:
+        endpoint = '/api/hosts/paused-test/collection'
+        assert client.put(endpoint, json={'paused': True}).status_code == 403
+        assert client.put(endpoint, headers={'X-IWB':'1'}, json={'paused':True}).json()['paused'] is True
+        assert client.post('/api/hosts/paused-test/refresh', headers={'X-IWB':'1'}).status_code == 409
+        host = client.get('/api/state').json()['hosts'][0]
+        assert host['collection']['paused'] is True
+        assert host['snapshot']['collected_at'] == 12345
+        assert host['snapshot']['system']['cpu_percent'] == 87
+        assert not host['snapshot']['fresh']
+        assert client.portal.call(app.state.agent_service.refresh, [app.state.hosts[0]], 1) == {'paused-test'}
+        assert calls == []
+        assert client.put('/api/hosts/missing/collection', headers={'X-IWB':'1'}, json={'paused':True}).status_code == 404
+        assert client.put(endpoint, headers={'X-IWB':'1'}, json={'paused':'false'}).status_code == 422
+        client.put(endpoint, headers={'X-IWB':'1'}, json={'paused':False})
+        assert client.post('/api/hosts/paused-test/refresh', headers={'X-IWB':'1'}).status_code == 200
+        assert calls

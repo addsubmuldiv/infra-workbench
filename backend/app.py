@@ -57,6 +57,10 @@ from .server_import_matching import find_existing,prepare_existing,new_import_ho
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class CollectionSettings(BaseModel):
+    paused: bool = Field(strict=True)
+
+
 class RefreshSettings(BaseModel):
     interval_seconds: int | None = Field(strict=True)
 
@@ -191,6 +195,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     snapshots, locks = {}, {}
     collect_tasks = {}
     collection_metrics = {}
+    paused_collections = set()
     tracker = TransitionTracker()
     invalid_rules = set()
     semaphore = asyncio.Semaphore(8)
@@ -223,6 +228,9 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         metric.update(status='queued', requested_at=time.time())
         state_changes.publish()
         async with locks.setdefault(host_id, asyncio.Lock()), semaphore:
+            if host_id in paused_collections:
+                metric.update(status="idle")
+                raise HTTPException(409, "采集已暂停，请先恢复采集。 / Collection is paused; resume collection first.")
             started = time.monotonic()
             stamp = time.time()
             if metric.get('started_at') is not None:
@@ -345,6 +353,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     async def collect(host, force_slow=False):
         key=host['id']
+        if key in paused_collections:
+            raise HTTPException(409, '采集已暂停，请先恢复采集。 / Collection is paused; resume collection first.')
         task=collect_tasks.get(key)
         if task is None or task.done():
             task=asyncio.create_task(collect_once(host, force_slow=force_slow));collect_tasks[key]=task
@@ -368,13 +378,15 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         try:
             while True:
                 now = time.monotonic()
-                schedule.reconcile([host['id'] for host in hosts], refresh_interval, now)
+                schedule.reconcile([host['id'] for host in hosts if host['id'] not in paused_collections], refresh_interval, now)
                 for key in list(jobs):
                     if key not in schedule.due:
-                        jobs.pop(key).cancel()
+                        # Pausing never cancels an already running remote sample.
+                        if key not in paused_collections or jobs[key].done():
+                            jobs.pop(key).cancel()
                     elif jobs[key].done():
                         jobs.pop(key).result()
-                due_hosts = (h for h in hosts if h['id'] not in jobs and schedule.due[h['id']] <= now)
+                due_hosts = (h for h in hosts if h['id'] not in jobs and h['id'] in schedule.due and schedule.due[h['id']] <= now)
                 for host in sorted(due_hosts, key=lambda h: schedule.due[h['id']]):
                     key = host['id']
                     if key not in jobs and schedule.due[key] <= now:
@@ -583,10 +595,11 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             if request.headers.get('x-iwb-mcp')=='1':
                 # MCP needs a view, not a serialized copy of all ports/processes.
                 items.append(dict({k:host.get(k) for k in ('id','target','user','port','manual','auth')},
+                                  collection=dict(paused=host['id'] in paused_collections),
                                   snapshot=dict(status=snap.get('status','connecting'),collected_at=snap.get('collected_at'),fresh=fresh)))
             else:
                 sections = section_views(snap, now, reservations.max_sample_gap)
-                items.append(dict(**host, collection=collection_metrics.get(host['id']), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
+                items.append(dict(**host, collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})
@@ -776,6 +789,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         probe.stats.pop(host_id, None)
         collection_metrics.pop(host_id, None)
         collect_tasks.pop(host_id, None)
+        paused_collections.discard(host_id)
         if conn:
             conn.close()
         store.save('hosts', hosts)
@@ -824,6 +838,16 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             probe.details.pop(host_id, None)
             probe.stats.pop(host_id, None)
         return result
+
+    @app.put('/api/hosts/{host_id}/collection')
+    async def set_collection(host_id: str, body: CollectionSettings):
+        find(host_id)
+        if body.paused:
+            paused_collections.add(host_id)
+        else:
+            paused_collections.discard(host_id)
+        state_changes.publish()
+        return dict(host_id=host_id, paused=body.paused, draining=bool(collect_tasks.get(host_id) and not collect_tasks[host_id].done()))
 
     @app.post('/api/hosts/{host_id}/refresh')
     async def refresh(host_id: str):

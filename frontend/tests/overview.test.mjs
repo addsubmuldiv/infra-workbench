@@ -289,8 +289,9 @@ test('automatic collection timings stay inside a closed statistics disclosure',t
   const h=harness(t,'#overview',[],items);h.render();
   const panel=h.find(n=>n.props?.className==='collection-summary');
   const children=panel.props.children.flat(Infinity).filter(Boolean);
-  assert.equal(children.length,1);
-  assert.equal(children[0].type,'details');
-  assert.ok(!children[0].props.open);
-  assert.ok(h.text(children[0]).includes('上次耗时'));
+  const disclosures=children.filter(child=>child.type==='details');
+  assert.equal(disclosures.length,1);
+  assert.ok(!disclosures[0].props.open);
+  assert.ok(h.text(disclosures[0]).includes('上次耗时'));
+  assert.ok(!children.filter(child=>child.type!=='details').some(child=>h.text(child).includes('上次耗时')));
 });

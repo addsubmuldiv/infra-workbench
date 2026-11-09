@@ -109,3 +109,49 @@ def test_native_run_allows_time_for_jump_connection_and_probe(tmp_path):
     ssh.command = command
     assert asyncio.run(ssh.run(dict(id='a', target='example', manual=True), 'python3 -', 'probe')) == (
         0, 'probe complete', '')
+
+def test_pause_drains_active_sample_and_keeps_other_hosts_polling(tmp_path, monkeypatch):
+    import threading
+    from backend.polling import FleetSchedule
+    original = FleetSchedule.reconcile
+    def fast(self, ids, interval, now):
+        return original(self, ids, .1, now)
+    monkeypatch.setattr(FleetSchedule, 'reconcile', fast)
+    store = Store(tmp_path/'workbench.db')
+    store.save('hosts', [dict(id=k, target=k, auth='key') for k in ('a','b')])
+    store.db.close()
+    app = create_app(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    ended = threading.Event()
+    calls = {'a':0,'b':0}
+    async def run(host, command, source=None):
+        key=host['id']; calls[key]+=1
+        if key=='a':
+            started.set()
+            try:
+                while not release.is_set():
+                    await asyncio.sleep(.01)
+            finally:
+                ended.set()
+        return 255, '', 'synthetic failure'
+    app.state.ssh.run = run
+    with TestClient(app) as client:
+        assert started.wait(3)
+        result=client.put('/api/hosts/a/collection',headers={'X-IWB':'1'},json={'paused':True})
+        assert result.json()['draining'] is True
+        time.sleep(.2)
+        assert not ended.is_set()
+        release.set()
+        assert ended.wait(2)
+        count=calls['a']; other=calls['b']
+        deadline=time.monotonic()+2
+        while calls['b']==other and time.monotonic()<deadline:
+            time.sleep(.02)
+        assert calls['a']==count
+        assert calls['b']>other
+        client.put('/api/hosts/a/collection',headers={'X-IWB':'1'},json={'paused':False})
+        deadline=time.monotonic()+2
+        while calls['a']==count and time.monotonic()<deadline:
+            time.sleep(.02)
+        assert calls['a']>count
