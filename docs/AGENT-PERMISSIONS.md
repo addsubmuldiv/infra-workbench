@@ -2,6 +2,8 @@
 
 助手输入框的“权限模式”提供三种模式，默认按需批准。无需事先填写目录：直接在消息中描述目标，助手访问时按需请求授权。目录预授权和外部 MCP 放在默认折叠的高级设置中。每轮请求冻结模式和机器范围，切换设置只影响下一轮。新会话不继承旧会话的范围授权；分支恢复原消息的模式和目录，但不复制批准授权。
 
+下表及目录授权规则描述工作台共享工具。Codex 另外使用原生 CLI 的沙箱和批准策略：按需模式允许工作目录内操作，超出原生权限时请求批准；只读关闭原生 Shell 并使用只读沙箱；完全访问使用 CLI 的完全访问策略。原生边界与机器范围的区别见下文。
+
 | 模式 | 行为 |
 |---|---|
 | 按需批准 | 工作台查询、公开网页搜索和读取自动执行。本机授权目录内的文本读取、写入、编辑自动执行；目录外访问、删除、远端写入和其他变更需要批准。Shell 首次执行需要批准。 |
@@ -19,13 +21,21 @@
 - 本机文本文件：目录列表、读取、写入、唯一片段编辑、单文件删除。文本上限 2 MiB，写入/删除须使用读取返回的 revision，新建须使用 missing。读取分页每页最多 6000 字符。
 - 本机 Shell：输出有界，超时 1–300 秒。取消/超时尝试终止 Windows 进程树或 POSIX 进程组；主动脱离树的守护进程不保证清理。服务器后台任务仍使用现有任务管理接口，取消聊天不等于取消服务器任务。
 - 联网：Bing RSS 搜索，失败后尝试 DuckDuckGo HTML，无需搜索 API Key。免费服务可能超时、限流、返回验证码或低相关性结果，不能承诺覆盖完整。读取公开 HTTP(S) 文本，限制下载大小、超时及重定向；逐跳校验公网 DNS 并固定连接 IP。网页结果属于不可信资料，回答应附来源。暂不支持浏览器登录态、JavaScript 渲染页面和 PDF 正文解析。
-- Deep Agents 子 Agent：默认启用 general-purpose，继承同一机器范围、MCP 权限和只读规则，执行步骤共同记录。最多并发 3 个，本轮最多 12 次委派，禁止嵌套委派。原生 CLI 引擎仍通过同一 MCP 使用真实文件、命令和网络工具，不开放额外的独立本机执行通道。
+- Deep Agents 子 Agent：默认启用 general-purpose，继承同一机器范围、MCP 权限和只读规则，执行步骤共同记录。最多并发 3 个，本轮最多 12 次委派，禁止嵌套委派。Deep Agents 的委派限制不适用于 Codex 原生子 Agent。Codex 使用 CLI 原生命令和文件能力，服务器业务继续通过共享 MCP。Claude Code 与 OpenCode 的隔离方式见各引擎文档。
 - 外部 MCP：在输入框填写 name HTTP(S)URL，每行一个，最多 3 个 Streamable HTTP 服务、共 100 个工具。不加载本机 stdio 服务，不支持请求头凭据和交互登录。按需批准在连接前询问；配置的本机/内网服务属于用户明确选择的可信服务，和公开网页抓取的公网边界不同。工具逐次经过同一审批层，工具名使用 external_ 前缀，过长名称生成稳定哈希别名。只读声明由外部服务提供，配置前应确认可信。
+
+Codex 原生命令、文件变更和提权使用 CLI 协议审批，复用工作台批准卡片；结构化问题单独等待当前请求的答案。决定绑定当前 run、thread、turn 和 item，取消或重启后不自动执行。共享 MCP 审批保留原有业务语义。一次批准不意味着用户授予了整个 CLI 会话权限。
+
+Codex 的机器范围只限制工作台 MCP，不限制原生 Shell 自行运行 ssh，也不阻止其读取当前系统账号可读的凭据。本机工作目录是上下文，完全访问不是目录沙箱；只读也不等于禁止一切网络副作用。全局 MCP、插件及其他扩展需要显式选择，实际支持情况以 CLI 探测结果为准。
 
 新本机和联网工具只在绑定了运行权限控制器的助手目录中开放；已有外部 /mcp 客户端不会无声获得本机 Shell 权限。演示模式沿用模拟接口，未知请求不会回落到真实后台。
 
 ## 验证与运行
 
+Codex 原生宿主的只读模式禁止选择额外原生 MCP 和插件，避免远端变更绕过本机沙箱。按需模式遵循 CLI 的 workspace-write/on-request：沙箱内允许的命令和编辑不一定询问，扩大权限请求才交由批准卡片处理。原生文件审批需要可核对的完整差异；等待用户答复不计入模型空闲超时。
+
 后端修改需要重启才能生效。不要为了加载新功能中断真实终端或后台任务；先确认正在运行的实例。测试使用临时数据目录和模拟模型，不使用真实 SSH 或模型凭据。
 
 English: The assistant supports ask/full/read_only per-run modes, local text files and Shell, public web search/read, Deep Agents delegation and explicitly configured Streamable HTTP MCP services. Approval is bound to immutable arguments and run IDs. Conversation grants are explicit, tool/path-specific, and are not OS sandboxes. Cancellation/restart never executes pending approvals. Free search availability and relevance vary; external MCP readonly hints require trusting the configured server.
+
+Codex native commands and file changes use CLI protocol approvals. Workbench host selection constrains Workbench MCP only: native Shell can run ssh and access files readable by the OS account. The working directory is context, not a full-access sandbox. Native questions wait for a run-bound answer; cancellation/restart never approves pending requests. Global extensions require explicit selection.

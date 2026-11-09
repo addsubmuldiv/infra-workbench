@@ -113,7 +113,7 @@ def scrub(value,secret=''):
     # Avoid a quadratic failed match on long unbroken log/file lines. Every
     # credential alternative below contains one of these literal markers.
     if any(marker in text.casefold() for marker in ('api','password','passwd','secret','access','authorization')):
-        text=re.sub(r'(?i)([\w.-]*(?:api[_-]?key|password|passwd|secret|access[_-]?token|authorization)[\w.-]*[\"\x27]?\s*[:=]\s*)(?:[\"\x27][^\"\x27\r\n]*[\"\x27]|[^\s,;\r\n}]+)',r'\1[已隐藏凭据]',text)
+        text=re.sub(r'(?i)(?<![\w.-])([\w.-]*(?:api[_-]?key|password|passwd|secret|access[_-]?token|authorization)[\w.-]*[\"\x27]?\s*[:=]\s*)(?:[\"\x27][^\"\x27\r\n]*[\"\x27]|[^\s,;\r\n}]+)',r'\1[已隐藏凭据]',text)
     text=re.sub(r'(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+','Bearer [已隐藏凭据]',text)
     return text
 

@@ -71,18 +71,20 @@ def test_codex_chat_does_not_require_api_profile_and_scope_is_bound(tmp_path,mon
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize('seed_scope,expected',[(None,False),(['b'],False),(['a'],True)])
+@pytest.mark.parametrize('seed_scope,expected',[(None,False),(['b'],False),(['a'],False)])
 def test_scope_change_starts_fresh_thread_without_old_private_transcript(monkeypatch,seed_scope,expected):
     import backend.codex_agent as module
     from backend.mcp_client import MCPGateway
     calls=[]
     class Connection:
-        def __init__(self,*args):self.events=asyncio.Queue()
+        def __init__(self,*args,**kwargs):self.events=asyncio.Queue()
         async def start(self):pass
         async def close(self):pass
         async def request(self,method,params,**kwargs):
             calls.append((method,params))
             if method=='model/list':return {'data':[{'id':'live-default','isDefault':True}]}
+            if method=='config/read':return {'config':{}}
+            if method=='skills/list':return {'data':[]}
             if method=='thread/start':return {'thread':{'id':'new-scoped-thread'}}
             if method=='mcpServerStatus/list':return {'data':[{'name':'infra_workbench','tools':{'list_hosts':{}}}]}
             if method=='turn/start':
@@ -112,7 +114,8 @@ def test_scope_change_starts_fresh_thread_without_old_private_transcript(monkeyp
         assert 'branch_seed' not in chat
         assert chat['codex_scope']==['a'] and chat['turns'][-1]['model']=='live-default'
         thread=next(params for method,params in calls if method=='thread/start')
-        assert thread['sandbox']=='read-only' and thread['approvalPolicy']=='never'
+        assert thread['sandbox']=='workspace-write' and thread['approvalPolicy']=='on-request'
+        assert thread['config']['features.shell_tool'] is True and thread['config']['features.multi_agent'] is True
     asyncio.run(scenario())
 
 
@@ -171,4 +174,226 @@ def test_bridge_shutdown_cancels_inflight_tool_and_finishes_http_response():
             async with asyncio.timeout(3):await bridge.__aexit__(None,None,None)
             result=await pending
             assert cancelled.is_set() and result.json()['result']['isError']
+    asyncio.run(scenario())
+
+def test_native_policy_fingerprint_and_durable_workspace(tmp_path,monkeypatch):
+    from backend.codex_host import native_policy, configuration_fingerprint, resolve_workspace
+    monkeypatch.setenv('IWB_DATA',str(tmp_path))
+    assert native_policy('read_only')=={'sandbox':'read-only','approvalPolicy':'never'}
+    assert native_policy('full')['sandbox']=='danger-full-access'
+    assert native_policy('ask')['approvalPolicy']=='on-request'
+    first=resolve_workspace({},'chat-a')
+    assert first==resolve_workspace({},'chat-a') and Path(first).is_dir()
+    base=dict(cwd=first,scope=['a'],mode='ask',skills=[],extensions={})
+    fingerprint=configuration_fingerprint(**base)
+    for key,value in [('scope',['b']),('mode','full'),('skills',[{'name':'v','version':2}]),('extensions',{'plugins':['x']})]:
+        assert configuration_fingerprint(**{**base,key:value})!=fingerprint
+
+
+def test_native_items_isolate_children_hide_reasoning_and_bound_output():
+    from backend.codex_host import NativeItems
+    turn={};items=NativeItems(turn,'root',lambda:None)
+    assert not items.root({'threadId':'child','turn':{'id':'child-turn'}})
+    items.record('item/started',{'threadId':'child','item':{'id':'x','type':'commandExecution','command':'echo test'}})
+    items.record('item/commandExecution/outputDelta',{'threadId':'child','itemId':'x','delta':'x'*100000})
+    items.record('item/completed',{'threadId':'child','item':{'id':'x','type':'commandExecution','status':'completed'}})
+    items.record('item/completed',{'threadId':'root','item':{'id':'secret','type':'reasoning','text':'private'}})
+    assert len(turn['codex_items'])==1
+    assert turn['codex_items'][0]['output_next_offset']==32000 and len(turn['codex_items'][0]['output'])<=32000
+    assert turn['codex_items'][0]['status']=='completed'
+
+
+def test_transport_reader_keeps_responses_flowing_while_approval_waits():
+    async def scenario():
+        connection=CodexConnection('unused');gate=asyncio.Event();entered=asyncio.Event()
+        class Broker:
+            async def handle(self,message):entered.set();await gate.wait();return {'decision':'decline'}
+        connection.interactions=Broker()
+        reader=asyncio.StreamReader()
+        connection.process=type('Process',(),{'stdout':reader})()
+        sent=[]
+        async def send(value):sent.append(value)
+        connection.send=send
+        future=asyncio.get_running_loop().create_future();connection.pending[9]=future
+        task=asyncio.create_task(connection.read())
+        reader.feed_data((json.dumps({'id':3,'method':'item/commandExecution/requestApproval','params':{}})+'\n').encode())
+        await asyncio.wait_for(entered.wait(),1)
+        reader.feed_data(b'{"id":9,"result":{"ok":true}}\n')
+        assert await asyncio.wait_for(future,1)=={'ok':True}
+        gate.set();await asyncio.sleep(.01)
+        assert sent[-1]['result']['decision']=='decline'
+        task.cancel();await asyncio.gather(task,return_exceptions=True)
+    asyncio.run(scenario())
+
+def test_native_skill_revision_detects_content_changes(tmp_path):
+    from backend.codex_host import native_skill_revision
+    path=tmp_path/'SKILL.md';path.write_text('first')
+    listing=[{'skills':[{'name':'test','path':str(path),'enabled':True}]}]
+    first=native_skill_revision(listing)
+    path.write_text('second')
+    assert native_skill_revision(listing)!=first
+
+
+@pytest.mark.parametrize('text_reply',[True,False])
+def test_native_runtime_root_completion_resume_and_permission_boundaries(monkeypatch,tmp_path,text_reply):
+    import backend.codex_agent as module
+    from backend.mcp_client import MCPGateway
+    calls=[]
+    class Connection:
+        def __init__(self,*args,**kwargs):self.events=asyncio.Queue()
+        async def start(self):pass
+        async def close(self):self.interactions.close()
+        async def request(self,method,params,**kwargs):
+            calls.append((method,params))
+            if method=='model/list':return {'data':[{'id':'m','isDefault':True,'supportedReasoningEfforts':[{'reasoningEffort':'high'}]}]}
+            if method=='config/read':return {'config':{}}
+            if method=='skills/list':return {'data':[]}
+            if method in ('thread/start','thread/resume'):return {'thread':{'id':'root'}}
+            if method=='mcpServerStatus/list':return {'data':[{'name':'infra_workbench','tools':{'list_hosts':{}}}]}
+            if method=='turn/start':
+                for event in [
+                    {'method':'item/agentMessage/delta','params':{'threadId':'child','delta':'private child'}},
+                    {'method':'turn/completed','params':{'threadId':'child','turn':{'id':'child-turn','status':'completed'}}},
+                    ({'method':'item/agentMessage/delta','params':{'threadId':'root','delta':'root result'}} if text_reply else {'method':'item/completed','params':{'threadId':'root','item':{'id':'cmd','type':'commandExecution','command':'echo test','status':'completed'}}}),
+                    {'method':'turn/completed','params':{'threadId':'root','turn':{'id':'turn','status':'completed'}}}]:await self.events.put(event)
+                return {'turn':{'id':'turn'}}
+            raise AssertionError(method)
+    class Bridge:
+        url='http://127.0.0.1:1/mcp';token='test'
+        def __init__(self,*args):pass
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+    class Service:
+        def scoped(self,*args):return self
+    monkeypatch.setattr(module,'CodexConnection',Connection)
+    monkeypatch.setattr(module,'ScopedMCPBridge',Bridge)
+    monkeypatch.setattr(module,'resolve_codex',lambda:'fake')
+    monkeypatch.setattr(module,'inherited_mcp_names',lambda:[])
+    async def scenario():
+        chat={'id':'test','active_run':'run','state':{},'turns':[{'role':'user','model_history_before':[{'role':'assistant','content':'private-old-epoch'}]},{'tools':[]}],'messages':[{'role':'assistant','content':'private-old-epoch'},{'role':'user','content':'run'}]}
+        request={'permission_mode':'full','codex_options':{'cwd':str(tmp_path),'model':'m','effort':'high','multi_agent':True,'collaboration_mode':'plan'}}
+        for mode in ['full','full','read_only']:
+            request['permission_mode']=mode
+            await module.run_codex_agent(chat,MCPGateway(Service()),{'a'},'rules',lambda:None,lambda:None,lambda *a,**k:None,request=request)
+            assert chat['messages'][-1]['content']==('root result' if text_reply else 'Codex 本轮已结束，请查看工具执行记录。')
+            assert 'private-old-epoch' not in str(chat['messages'])
+            assert chat['turns'][-2]['model_history_before']==[]
+        assert [m for m,p in calls if m.startswith('thread/')]==['thread/start','thread/resume','thread/start']
+        params=[p for m,p in calls if m=='thread/start']
+        assert params[0]['sandbox']=='danger-full-access'
+        assert params[-1]['sandbox']=='read-only' and params[-1]['config']['features.shell_tool'] is False
+        assert all(p['effort']=='high' and p['collaborationMode']['mode']=='plan' for m,p in calls if m=='turn/start')
+    asyncio.run(scenario())
+
+def test_native_plan_events_and_split_output_secret_redaction():
+    from backend.codex_host import NativeItems
+    turn={};items=NativeItems(turn,'root',lambda:None)
+    items.record('turn/plan/updated',{'threadId':'root','turnId':'turn','explanation':'working','plan':[{'step':'test','status':'inProgress'}]})
+    items.record('item/commandExecution/outputDelta',{'itemId':'cmd','delta':'api_'})
+    items.record('item/commandExecution/outputDelta',{'itemId':'cmd','delta':'key=super-secret-value'})
+    assert turn['codex_items'][0]['type']=='plan'
+    assert 'super-secret-value' not in turn['codex_items'][1]['output']
+
+def test_unbound_question_is_rejected_without_fabricating_an_answer():
+    async def scenario():
+        connection=CodexConnection('unused');sent=[]
+        async def send(value):sent.append(value)
+        connection.send=send
+        await connection.server_request({'id':4,'method':'item/tool/requestUserInput','params':{'questions':[]}})
+        assert 'error' in sent[-1] and 'result' not in sent[-1]
+    asyncio.run(scenario())
+
+def test_native_config_revision_detects_extension_settings(tmp_path,monkeypatch):
+    from backend.codex_host import native_config_revision
+    home=tmp_path/'codex';home.mkdir();monkeypatch.setenv('CODEX_HOME',str(home))
+    config=home/'config.toml';config.write_text('[mcp_servers.test]\nurl="http://first"')
+    first=native_config_revision(str(tmp_path))
+    config.write_text('[mcp_servers.test]\nurl="http://second"')
+    assert native_config_revision(str(tmp_path))!=first
+
+def test_native_output_paging_is_scoped_bounded_and_scrubbed(tmp_path,monkeypatch):
+    from backend.codex_host import NativeItems,output_page
+    monkeypatch.setenv('IWB_DATA',str(tmp_path))
+    turn={};items=NativeItems(turn,'thread',lambda:None,chat_id='chat',run_id='run')
+    items.record('item/commandExecution/outputDelta',{'threadId':'thread','itemId':'x','delta':'x'*40000+'\napi_key=secret-value\n'+'z'*40000})
+    item=turn['codex_items'][0]
+    assert item['output_total']>64000 and item['output_next_offset']==32000 and not item['output_truncated']
+    page=output_page('chat','run','thread','x',32000,32000)
+    assert page['next_offset']==64000 and 'secret-value' not in page['text']
+    with pytest.raises(ValueError):output_page('other','run','thread','x')
+    items.record('item/commandExecution/outputDelta',{'threadId':'thread','itemId':'x','delta':'z'*1100000})
+    assert item['output_total']<=1048576 and item['output_truncated']
+    page=output_page('chat','run','thread','x',1048570,32000)
+    assert page['next_offset'] is None and page['truncated']
+
+def test_native_output_unicode_cap_counts_bytes(tmp_path,monkeypatch):
+    from backend.codex_host import NativeItems,output_page
+    monkeypatch.setenv('IWB_DATA',str(tmp_path))
+    turn={};items=NativeItems(turn,'thread',lambda:None,chat_id='chat',run_id='unicode')
+    items.record('item/commandExecution/outputDelta',{'itemId':'x','delta':'中'*400000})
+    assert turn['codex_items'][0]['output_truncated']
+    page=output_page('chat','unicode','thread','x',0,32000)
+    assert page['total']<=1048576//3 and page['text']=='中'*32000
+
+def test_native_protocol_baseline_requires_real_supported_version():
+    from backend.codex_host import validate_protocol_info
+    assert validate_protocol_info({'userAgent':'infra_workbench/0.167.0 (Windows)'})=='0.167.0'
+    for value in [{'userAgent':'codex/0.166.0'}, {'userAgent':'unknown'}, {}]:
+        with pytest.raises(ValueError):validate_protocol_info(value)
+
+def test_native_file_patch_update_preserves_approval_diff():
+    from backend.codex_host import NativeItems
+    turn={};items=NativeItems(turn,'root',lambda:None)
+    changes=[{'path':'test.txt','kind':{'type':'update'},'diff':'-old\n+new'}]
+    items.record('item/fileChange/patchUpdated',{'threadId':'root','turnId':'turn','itemId':'edit','changes':changes})
+    assert turn['codex_items'][0]['data']['changes']==changes
+
+@pytest.mark.parametrize('options',[{'enabled_mcp_servers':['extra']},{'enabled_plugins':['extra']}])
+def test_native_read_only_cannot_enable_ungoverned_extensions(options):
+    with pytest.raises(ValueError,match='read.only|只读'):
+        CodexConnection('unused',options=options,mode='read_only')
+
+def test_effective_extensions_disable_project_injection_and_preserve_only_explicit_choices():
+    from backend.codex_host import effective_extension_overrides
+    config={'mcp_servers':{'project':{'url':'http://secret'},'chosen':{'command':'secret'}},'plugins':{'project@market':{'enabled':True}}}
+    result=effective_extension_overrides(config,{'enabled_mcp_servers':['chosen']})
+    assert result['mcp_servers.project.enabled'] is False and result['mcp_servers.chosen.enabled'] is True
+    assert result['plugins']=={'project@market':{'enabled':False}}
+    assert 'secret' not in str(result)
+    with pytest.raises(ValueError):effective_extension_overrides(config,{'enabled_mcp_servers':['missing']})
+
+def test_delete_chat_outputs_removes_only_bound_items(tmp_path,monkeypatch):
+    from backend.codex_host import NativeItems,output_page,delete_chat_outputs
+    monkeypatch.setenv('IWB_DATA',str(tmp_path))
+    turn={'id':'run'};items=NativeItems(turn,'thread',lambda:None,chat_id='chat',run_id='run')
+    items.record('item/commandExecution/outputDelta',{'itemId':'x','delta':'persist'})
+    delete_chat_outputs({'id':'other','turns':[turn]})
+    assert output_page('chat','run','thread','x')['text']=='persist'
+    delete_chat_outputs({'id':'chat','turns':[turn]})
+    with pytest.raises(ValueError):output_page('chat','run','thread','x')
+
+def test_native_transport_starts_in_neutral_directory_with_native_search(monkeypatch,tmp_path):
+    import backend.codex_agent as module
+    seen={}
+    class Stream:
+        async def read(self,*args):return b''
+        async def readline(self):await asyncio.Event().wait()
+    class Process:
+        returncode=0;stdout=Stream();stderr=Stream()
+        async def communicate(self):return b'',b''
+    async def spawn(*args,**kwargs):seen.update(args=args,cwd=kwargs['cwd']);return Process()
+    monkeypatch.setattr(module.asyncio,'create_subprocess_exec',spawn)
+    monkeypatch.setattr(module,'inherited_mcp_names',lambda:[])
+    monkeypatch.setattr(module,'disabled_plugins_override',lambda *a:'plugins={}')
+    async def scenario():
+        connection=CodexConnection('native')
+        async def request(*args,**kwargs):return {'userAgent':'iwb/0.167.0'}
+        async def send(*args):pass
+        connection.request=request;connection.send=send
+        await connection.start()
+        assert Path(seen['cwd']).is_dir() and Path(seen['cwd'])!=Path.cwd()
+        assert 'web_search="live"' in seen['args']
+        assert 'features.view_image=false' not in seen['args']
+        await connection.close()
+        assert not Path(seen['cwd']).exists()
     asyncio.run(scenario())

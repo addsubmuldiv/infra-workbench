@@ -6,6 +6,7 @@ used: a capability token binds each run to its server-owned scope and skills.
 """
 import asyncio
 import contextlib
+import copy
 import hmac
 import json
 import os
@@ -15,15 +16,15 @@ import secrets
 import shutil
 import socket
 import subprocess
-import tempfile
 import time
+import tempfile
 
 from .chat_tools import scrub
 
-ISOLATED_FEATURES=('shell_tool','code_mode','js_repl','memories','apps',
+ISOLATED_FEATURES=('code_mode','js_repl','memories','apps',
     'plugins','remote_plugin','computer_use','browser_use','browser_use_external',
-    'browser_use_full_cdp_access','in_app_browser','image_generation','view_image',
-    'hooks','multi_agent','multi_agent_v2','workspace_dependencies','goals','skill_search',
+    'browser_use_full_cdp_access','in_app_browser','image_generation',
+    'hooks','workspace_dependencies','goals','skill_search',
     'skill_mcp_dependency_install')
 
 
@@ -50,12 +51,12 @@ def codex_environment(environment=None,system_proxies=None):
     return result
 
 
-def validate_mcp_inventory(inventory):
+def validate_mcp_inventory(inventory,enabled=None):
     if inventory.get('nextCursor'):
         raise ValueError('Codex MCP 工具目录不完整，本轮未开始。')
     for item in inventory.get('data',[]):
         tools=item.get('tools',{})
-        if tools and item.get('name')!='infra_workbench':
+        if tools and item.get('name') not in {'infra_workbench',*(enabled or [])}:
             raise ValueError('Codex 仍启用了工作台之外的 MCP 工具，本轮未开始。请在独立 Codex 配置中禁用额外工具后重试。')
         if item.get('name')=='infra_workbench' and any(name in tools for name in ('get_ssh_password','get_ssh_info')):
             raise ValueError('Codex MCP 目录包含凭据工具，本轮未开始。')
@@ -94,13 +95,15 @@ def inherited_mcp_names():
     except (OSError,ValueError):return []
 
 
-def disabled_plugins_override():
+def disabled_plugins_override(enabled=None):
     import tomllib
     home=Path(os.environ.get('CODEX_HOME',str(Path.home()/'.codex')))
     try:
         with (home/'config.toml').open('rb') as f:names=tomllib.load(f).get('plugins',{})
     except (OSError,ValueError):names={}
-    return 'plugins={'+','.join(json.dumps(name)+'={enabled=false}' for name in names)+'}'
+    selected=set(enabled or [] )
+    if selected-set(names):raise ValueError('Selected Codex plugin is unavailable')
+    return 'plugins={'+','.join(json.dumps(name)+'={enabled='+str(name in selected).lower()+'}' for name in names)+'}'
 
 
 class ScopedMCPBridge:
@@ -169,22 +172,29 @@ class ScopedMCPBridge:
 
 class CodexConnection:
     """Bounded JSONL transport; a single reader services responses and events."""
-    def __init__(self,binary):
+    def __init__(self,binary,options=None,mode='ask'):
+        self.options=options or {};self.mode=mode;self.interactions=None;self.server_tasks=set()
+        if mode=='read_only' and (self.options.get('enabled_mcp_servers') or self.options.get('enabled_plugins')):
+            raise ValueError('Codex read-only mode cannot enable native extensions whose write permissions are unverified')
         self.binary=binary;self.pending={};self.events=asyncio.Queue(maxsize=2048)
-        self.counter=0;self.process=None;self.reader=None;self.stderr=None
+        self.counter=0;self.process=None;self.reader=None;self.stderr=None;self.neutral_workspace=None
 
     async def start(self):
         options={'creationflags':subprocess.CREATE_NO_WINDOW} if os.name=='nt' else {}
-        overrides=[]
-        for name in ISOLATED_FEATURES:overrides.extend(['-c',f'features.{name}=false'])
+        overrides=['-c','features.shell_tool='+str(self.mode!='read_only').lower(),'-c','features.multi_agent='+str(bool(self.options.get('multi_agent',True))).lower()]
+        for name in ISOLATED_FEATURES:
+            enabled=name=='plugins' and bool(self.options.get('enabled_plugins'))
+            overrides.extend(['-c',f'features.{name}='+str(enabled).lower()])
         for name in inherited_mcp_names():
             if not re.fullmatch(r'[A-Za-z0-9_-]+',name):raise ValueError('本机 MCP 服务名称无法安全隔离，请在独立 Codex 配置中使用此集成。')
+            if name in self.options.get('enabled_mcp_servers',[]):continue
             overrides.extend(['-c',f'mcp_servers.{name}.enabled=false'])
+        self.neutral_workspace=tempfile.TemporaryDirectory(prefix='iwb-codex-host-')
         self.process=await asyncio.create_subprocess_exec(self.binary,'app-server','--stdio',
-            '-c','web_search="disabled"','-c',disabled_plugins_override(),
+            '-c','web_search="live"','-c',disabled_plugins_override(self.options.get('enabled_plugins')),
             '-c','features.code_mode_host=true',
             *overrides,
-            env=codex_environment(),
+            env=codex_environment(),cwd=self.neutral_workspace.name,
             stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,
             limit=4*1024*1024,**options)
         self.reader=asyncio.create_task(self.read())
@@ -192,7 +202,9 @@ class CodexConnection:
         async def drain():
             while await self.process.stderr.read(8192):pass
         self.stderr=asyncio.create_task(drain())
-        await self.request('initialize',{'clientInfo':{'name':'infra_workbench','version':'0.2.1'},'capabilities':{'experimentalApi':True}})
+        info=await self.request('initialize',{'clientInfo':{'name':'infra_workbench','version':'0.2.1'},'capabilities':{'experimentalApi':True}})
+        from .codex_host import validate_protocol_info
+        self.protocol_version=validate_protocol_info(info)
         await self.send({'method':'initialized'})
 
     async def send(self,value):
@@ -208,19 +220,29 @@ class CodexConnection:
         finally:self.pending.pop(key,None)
 
     async def server_request(self,message):
+        if self.interactions is not None:
+            try:
+                result=await self.interactions.handle(message)
+                await self.send({'id':message['id'],'result':result})
+            except asyncio.CancelledError:raise
+            except Exception:
+                await self.send({'id':message['id'],'error':{'code':-32601,'message':'Unsupported or expired native request'}})
+            return
         method=message['method']
         if method in ('item/commandExecution/requestApproval','item/fileChange/requestApproval'):
             await self.send({'id':message['id'],'result':{'decision':'decline'}})
         elif method=='item/permissions/requestApproval':
             await self.send({'id':message['id'],'result':{'permissions':{},'scope':'turn'}})
-        elif method=='item/tool/requestUserInput':
-            # This request is surfaced as an in-chat question rather than silently
-            # accepting a default. The next user turn can answer explicitly.
-            questions=message.get('params',{}).get('questions',[])
-            await self.events.put({'method':'workbench/question','params':{'questions':questions}})
-            await self.send({'id':message['id'],'result':{'answers':{}}})
         else:
             await self.send({'id':message['id'],'error':{'code':-32601,'message':'Unsupported request'}})
+
+    def server_task_done(self,task):
+        self.server_tasks.discard(task)
+        if not task.cancelled():
+            error=task.exception()
+            if error:
+                with contextlib.suppress(asyncio.QueueFull):
+                    self.events.put_nowait({'method':'workbench/error','params':{'message':'Codex native request transport failed'}})
 
     async def read(self):
         try:
@@ -233,7 +255,9 @@ class CodexConnection:
                     if future and not future.done():
                         if 'error' in message:future.set_exception(ValueError('Codex 协议请求失败：'+scrub(str(message['error'].get('message','')))[:500]))
                         else:future.set_result(message.get('result',{}))
-                elif 'id' in message:await self.server_request(message)
+                elif 'id' in message:
+                    task=asyncio.create_task(self.server_request(message))
+                    self.server_tasks.add(task);task.add_done_callback(self.server_task_done)
                 else:await self.events.put(message)
         except asyncio.CancelledError:raise
         except Exception as exc:
@@ -242,6 +266,11 @@ class CodexConnection:
             await self.events.put({'method':'workbench/error','params':{'message':str(exc)}})
 
     async def close(self):
+        if self.interactions is not None:self.interactions.close()
+        for future in self.pending.values():
+            if not future.done():future.cancel()
+        for task in self.server_tasks:task.cancel()
+        await asyncio.gather(*self.server_tasks,return_exceptions=True)
         for task in (self.reader,self.stderr):
             if task:task.cancel()
         await asyncio.gather(*(t for t in (self.reader,self.stderr) if t),return_exceptions=True)
@@ -252,12 +281,14 @@ class CodexConnection:
                 with contextlib.suppress(ProcessLookupError):self.process.kill()
                 await self.process.communicate()
         elif self.process:await self.process.communicate()
+        if self.neutral_workspace is not None:self.neutral_workspace.cleanup()
 
 
 class TracedService:
     def __init__(self,service,turn,save):self.service,self.turn,self.save=service,turn,save
-    def catalog(self):return self.service.catalog()
+    def catalog(self):return {name:item for name,item in self.service.catalog().items() if not name.startswith(('local_','web_'))}
     async def call(self,name,args):
+        if name.startswith(('local_','web_')):raise ValueError('Use native Codex tools for local and web operations')
         trace=dict(id=secrets.token_hex(12),name=name,arguments=scrub(args),output='',status='running',started=time.time())
         self.turn['tools'].append(trace);self.save()
         try:
@@ -278,7 +309,7 @@ class TracedService:
         finally:trace['finished']=time.time();self.save()
 
 
-async def run_codex_agent(chat,tools,allowed,instructions,save,start_text,on_text,*,skills=None,controls=None):
+async def run_codex_agent(chat,tools,allowed,instructions,save,start_text,on_text,*,skills=None,controls=None,request=None):
     from .mcp_client import gateway_for
     gateway=gateway_for(tools)
     details=None
@@ -286,82 +317,120 @@ async def run_codex_agent(chat,tools,allowed,instructions,save,start_text,on_tex
         with skills.lock:
             _,receipts=skills.snapshot();details={item['name']:skills.read(item['name']) for item in receipts}
         chat['turns'][-1]['skill_snapshot']=receipts
+    from .codex_host import native_policy, resolve_workspace, configuration_fingerprint, NativeItems, native_skill_revision, native_config_revision, effective_extension_overrides
+    from .codex_interactions import CodexInteractions
+    request=request or (chat['turns'][-2].get('request',{}) if len(chat['turns'])>1 else {})
+    options=request.get('codex_options') or {}
+    mode=request.get('permission_mode',chat.get('permission_mode','ask'))
+    policy=native_policy(mode)
+    cwd=resolve_workspace(options,chat.get('id','standalone'))
+    options={**options,'cwd':cwd}
+    chat['turns'][-1]['codex_options']=options
     scope_key=sorted(allowed) if allowed is not None else None
-    # Changing scope starts a fresh provider thread so old, now-out-of-scope
-    # private tool output is not retained in Codex's hidden context.
-    resume=chat.get('codex_thread_id') if chat.get('codex_scope')==scope_key and chat.get('last_engine','codex')=='codex' else None
+    resume=None
     selected=chat['turns'][-1].get('selected_skill_names',[])
     chat['turns'][-1]['skills_read']=[]
-    instructions+='\n只通过 infra_workbench MCP 工具操作服务器；禁止本机 Shell、文件操作和其他 MCP 服务。'
     if selected:instructions+='\n本轮先读取用户指定技能：'+json.dumps(selected,ensure_ascii=False)
     scoped=gateway.service.scoped(chat['state'],allowed,details)
     traced=TracedService(scoped,chat['turns'][-1],save)
-    connection=CodexConnection(resolve_codex())
-    with tempfile.TemporaryDirectory(prefix='iwb-codex-') as cwd:
-        async with ScopedMCPBridge(traced) as bridge:
-            try:
-                await connection.start()
-                models=(await connection.request('model/list',{})).get('data',[])
-                model=next((m['id'] for m in models if m.get('isDefault')),None)
-                if not model:raise ValueError('Codex 未返回可用的默认模型，请检查 CLI 登录和配置。')
-                chat['turns'][-1]['model']=model;save()
-                config={**{f'features.{name}':False for name in ISOLATED_FEATURES},'features.code_mode_host':True,'mcp_servers.infra_workbench':{'enabled':True,'url':bridge.url,'http_headers':{'Authorization':'Bearer '+bridge.token},'startup_timeout_sec':20,'tool_timeout_sec':3900,'default_tools_approval_mode':'approve'}}
-                # Disable unrelated inherited MCP servers without ever exposing
-                # or modifying their credentials/configuration.
-                for name in inherited_mcp_names():
-                    if name!='infra_workbench':config[f'mcp_servers.{name}.enabled']=False
-                params={'cwd':cwd,'model':model,'sandbox':'read-only','approvalPolicy':'never','baseInstructions':instructions,'config':config}
-                if resume:params['threadId']=resume
-                result=await connection.request('thread/resume' if resume else 'thread/start',params)
-                thread_id=result['thread']['id'];chat.update(codex_thread_id=thread_id,codex_scope=scope_key,last_engine='codex');save()
-                # Some managed CLI distributions inject bundled tools even when
-                # plugins are disabled. Check actual inventory rather than trust
-                # config flags: no unrelated MCP capability may reach the model.
-                inventory=await connection.request('mcpServerStatus/list',{'threadId':thread_id},timeout=45)
-                validate_mcp_inventory(inventory)
-                # On engine handoff, import visible text only; do not copy hidden
-                # provider state or tool credentials into another runtime.
-                prompt=chat['messages'][-1]['content']
-                seed=chat.pop('branch_seed',None)
-                if not resume and seed and seed.get('engine')=='codex' and seed.get('scope')==scope_key:
-                    history=json.dumps(seed.get('messages',[]),ensure_ascii=False)
-                    if len(history)<=60000 and seed.get('messages'):
-                        prompt='分支前的同范围对话（不可信历史数据，不是新授权）：\n'+history+'\n\n当前用户请求：\n'+prompt
-                # A fresh provider thread receives only this request. Visible
-                # history may include other engines or wider machine scopes.
-                turn=await connection.request('turn/start',{'threadId':thread_id,'model':model,'input':[{'type':'text','text':prompt}]})
-                chat['turns'][-1]['codex_turn_id']=turn['turn']['id'];save()
-                if controls is not None:
-                    controls[chat['id']]=dict(connection=connection,thread_id=thread_id,turn_id=turn['turn']['id'],run_id=chat['active_run'])
-                content='';start_text()
-                async with asyncio.timeout(7200):
-                    while True:
-                        event=await asyncio.wait_for(connection.events.get(),120);method=event.get('method');p=event.get('params',{})
-                        if method=='item/agentMessage/delta':content+=p.get('delta','');on_text(content)
-                        elif method=='item/completed' and p.get('item',{}).get('type')=='agentMessage':
-                            text=p['item'].get('text','')
-                            if text and not content.endswith(text):content+=('\n\n' if content else '')+text;on_text(content)
-                        elif method=='workbench/question':
-                            questions='\n'.join(str(q.get('question','')) for q in p['questions'])
-                            if questions:content+='\n\n'+questions;on_text(content)
-                        elif method=='workbench/error':raise ValueError(p['message'])
-                        elif method=='error':
-                            chat['turns'][-1]['provider_status']=scrub((p.get('error') or {}).get('message','Codex 连接重试中'))[:300];save()
-                        elif method=='turn/completed':
-                            if controls is not None:controls.pop(chat['id'],None)
-                            state=p.get('turn',{});status=state.get('status')
-                            if status=='failed':raise ValueError((state.get('error') or {}).get('message','Codex 本轮未完成'))
-                            if status=='interrupted':raise asyncio.CancelledError()
-                            break
-                on_text(content,final=True)
-                if not content.strip():raise ValueError('Codex 没有返回文本，请检查登录状态或模型配置。')
-                chat['messages'].append({'role':'assistant','content':scrub(content)})
-                chat['runtime']='codex';chat['tool_transport']='mcp';save()
-            except asyncio.CancelledError:
-                if chat.get('codex_thread_id') and chat['turns'][-1].get('codex_turn_id'):
-                    with contextlib.suppress(Exception):
-                        await asyncio.wait_for(connection.request('turn/interrupt',{'threadId':chat['codex_thread_id'],'turnId':chat['turns'][-1]['codex_turn_id']},timeout=3),4)
-                raise
-            finally:
-                if controls is not None:controls.pop(chat['id'],None)
-                await connection.close()
+    connection=CodexConnection(resolve_codex(),options=options,mode=mode)
+    async with ScopedMCPBridge(traced) as bridge:
+        try:
+            await connection.start()
+            models=(await connection.request('model/list',{})).get('data',[])
+            selected_model=options.get('model')
+            model=next((m['id'] for m in models if m.get('id')==selected_model),None) if selected_model else next((m['id'] for m in models if m.get('isDefault')),None)
+            effort=options.get('effort') or None
+            model_info=next((m for m in models if m.get('id')==model),{})
+            supported=[e.get('reasoningEffort') for e in model_info.get('supportedReasoningEfforts',[])]
+            if effort and effort not in supported:raise ValueError('Selected reasoning effort is unavailable for this Codex model')
+            if not model:raise ValueError('Codex 未返回可用的默认模型，请检查 CLI 登录和配置。')
+            chat['turns'][-1]['model']=model;save()
+            config={**{f'features.{name}':False for name in ISOLATED_FEATURES},'features.plugins':bool(options.get('enabled_plugins')),'features.shell_tool':mode!='read_only','features.multi_agent':bool(options.get('multi_agent',True)),'features.code_mode_host':True,'mcp_servers.infra_workbench':{'enabled':True,'url':bridge.url,'http_headers':{'Authorization':'Bearer '+bridge.token},'startup_timeout_sec':20,'tool_timeout_sec':3900,'default_tools_approval_mode':'approve'}}
+            # Disable unrelated inherited MCP servers without ever exposing
+            # or modifying their credentials/configuration.
+            effective=(await connection.request('config/read',{'cwd':cwd,'includeLayers':False})).get('config',{})
+            config.update(effective_extension_overrides(effective,options))
+            del effective
+            if mode=='read_only':config['features.shell_tool']=False
+            native_skills=(await connection.request('skills/list',{'cwds':[cwd],'forceReload':True})).get('data',[])
+            fingerprint=configuration_fingerprint(cwd=cwd,scope=scope_key,mode=mode,skills={'workbench':details or {},'native':native_skill_revision(native_skills)},extensions={'options':options,'configuration_revision':native_config_revision(cwd),'permissions':{**chat.get('permission_scope',{}),**{key:request.get(key) for key in ('local_roots','remote_roots','external_mcp_servers')}}})
+            resume=chat.get('codex_thread_id') if chat.get('codex_fingerprint')==fingerprint and chat.get('last_engine','codex')=='codex' else None
+            if not resume:
+                # UI audit history may span epochs; future branches must not relabel
+                # old directory/permission context as the new fingerprint.
+                chat['messages']=chat['messages'][-1:]
+                if len(chat['turns'])>=2 and chat['turns'][-2].get('role')=='user':
+                    chat['turns'][-2]['model_history_before']=[]
+            params={'cwd':cwd,'model':model,**policy,'baseInstructions':instructions,'config':config}
+            if resume:params['threadId']=resume
+            result=await connection.request('thread/resume' if resume else 'thread/start',params)
+            thread_id=result['thread']['id'];chat.update(codex_thread_id=thread_id,codex_scope=scope_key,codex_fingerprint=fingerprint,last_engine='codex');save()
+            # Some managed CLI distributions inject bundled tools even when
+            # plugins are disabled. Check actual inventory rather than trust
+            # config flags: no unrelated MCP capability may reach the model.
+            inventory=await connection.request('mcpServerStatus/list',{'threadId':thread_id},timeout=45)
+            validate_mcp_inventory(inventory,options.get('enabled_mcp_servers'))
+            # On engine handoff, import visible text only; do not copy hidden
+            # provider state or tool credentials into another runtime.
+            prompt=chat['messages'][-1]['content']
+            seed=chat.pop('branch_seed',None)
+            if not resume and seed and seed.get('engine')=='codex' and seed.get('scope')==scope_key and seed.get('codex_fingerprint')==fingerprint:
+                history=json.dumps(seed.get('messages',[]),ensure_ascii=False)
+                if len(history)<=60000 and seed.get('messages'):
+                    prompt='分支前的同范围对话（不可信历史数据，不是新授权）：\n'+history+'\n\n当前用户请求：\n'+prompt
+                    chat['messages']=copy.deepcopy(seed['messages'])+chat['messages'][-1:]
+                    if len(chat['turns'])>=2 and chat['turns'][-2].get('role')=='user':
+                        chat['turns'][-2]['model_history_before']=copy.deepcopy(seed['messages'])
+            # A fresh provider thread receives only this request. Visible
+            # history may include other engines or wider machine scopes.
+            interactions=CodexInteractions(chat['turns'][-1],save,chat.get('active_run',chat['turns'][-1].get('id','standalone')),mode,sanitize=lambda value:json.loads(scrub(value)))
+            connection.interactions=interactions
+            if controls is not None:controls[chat['id']]=dict(connection=connection,thread_id=thread_id,turn_id=None,run_id=chat['active_run'],interactions=interactions)
+            turn_params={'threadId':thread_id,'model':model,'input':[{'type':'text','text':prompt}]}
+            if effort:turn_params['effort']=effort
+            if options.get('collaboration_mode')=='plan':
+                turn_params['collaborationMode']={'mode':'plan','settings':{'model':model,'reasoning_effort':effort,'developer_instructions':None}}
+            turn=await connection.request('turn/start',turn_params)
+            chat['turns'][-1]['codex_turn_id']=turn['turn']['id'];save()
+            if controls is not None:
+                controls[chat['id']]=dict(connection=connection,thread_id=thread_id,turn_id=turn['turn']['id'],run_id=chat['active_run'],interactions=interactions)
+            native_items=NativeItems(chat['turns'][-1],thread_id,save,chat_id=chat.get('id'),run_id=chat.get('active_run',chat['turns'][-1].get('id')))
+            content='';start_text()
+            async with asyncio.timeout(7200):
+                while True:
+                    from .codex_host import next_native_event
+                    event=await next_native_event(connection.events,interactions);method=event.get('method');p=event.get('params',{})
+                    native_items.record(method or '',p)
+                    if not native_items.root(p):continue
+                    if method=='turn/completed' and p.get('turn',{}).get('id',turn['turn']['id'])!=turn['turn']['id']:continue
+                    if method=='item/agentMessage/delta':content+=p.get('delta','');on_text(content)
+                    elif method=='item/completed' and p.get('item',{}).get('type')=='agentMessage':
+                        text=p['item'].get('text','')
+                        if text and not content.endswith(text):content+=('\n\n' if content else '')+text;on_text(content)
+                    elif method=='workbench/question':
+                        questions='\n'.join(str(q.get('question','')) for q in p['questions'])
+                        if questions:content+='\n\n'+questions;on_text(content)
+                    elif method=='workbench/error':raise ValueError(p['message'])
+                    elif method=='error':
+                        chat['turns'][-1]['provider_status']=scrub((p.get('error') or {}).get('message','Codex 连接重试中'))[:300];save()
+                    elif method=='turn/completed':
+                        if controls is not None:controls.pop(chat['id'],None)
+                        state=p.get('turn',{});status=state.get('status')
+                        if status=='failed':raise ValueError((state.get('error') or {}).get('message','Codex 本轮未完成'))
+                        if status=='interrupted':raise asyncio.CancelledError()
+                        break
+            if not content.strip() and (chat['turns'][-1].get('codex_items') or chat['turns'][-1].get('tools')):
+                content='Codex 本轮已结束，请查看工具执行记录。'
+            on_text(content,final=True)
+            if not content.strip():raise ValueError('Codex 没有返回文本，请检查登录状态或模型配置。')
+            chat['messages'].append({'role':'assistant','content':scrub(content)})
+            chat['runtime']='codex';chat['tool_transport']='mcp';save()
+        except asyncio.CancelledError:
+            if chat.get('codex_thread_id') and chat['turns'][-1].get('codex_turn_id'):
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(connection.request('turn/interrupt',{'threadId':chat['codex_thread_id'],'turnId':chat['turns'][-1]['codex_turn_id']},timeout=3),4)
+            raise
+        finally:
+            if controls is not None:controls.pop(chat['id'],None)
+            await connection.close()
