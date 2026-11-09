@@ -17,3 +17,12 @@ def test_placement_uses_the_owners_monitor_and_handles_negative_coordinates():
 def test_dialog_is_clamped_when_neither_side_fits():
     x,y=dialog_position((180,220,480,400),(500,420),(0,0,640,480))
     assert 0<=x<=140 and 0<=y<=60
+
+
+def test_recover_offscreen_window_only_when_no_visible_overlap():
+    from backend.floating_position import recover_position
+    area = (0, 0, 1920, 1040)
+    assert recover_position((2200, 100, 2500, 300), area) == (1620, 100)
+    assert recover_position((-500, 100, -200, 300), area) == (0, 100)
+    assert recover_position((1800, 100, 2100, 300), area) is None
+    assert recover_position((100, 100, 400, 300), area) is None
