@@ -12,4 +12,18 @@
 .device-groups>button:hover{background:var(--hover);border-color:var(--accent)}
 .device-group-name{flex:1;min-width:100px;overflow-wrap:anywhere}
 .device-groups strong{font-size:12px}.device-groups small{color:var(--muted);font-weight:400}
+.machine-section-heading{flex-wrap:wrap;margin-bottom:12px}
+.machine-section-title,.machine-section-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.machine-section-tools{margin-left:auto}
+.machine-refresh-progress{font-size:11px;color:var(--muted)}
+.machine-batch-menu{position:relative}
+.machine-batch-menu>summary{display:flex;align-items:center;gap:6px;list-style:none;cursor:pointer}
+.machine-batch-menu>summary::-webkit-details-marker{display:none}
+.machine-batch-menu[open]>summary{color:var(--accent);background:var(--accent-bg)}
+.machine-batch-menu>div{position:absolute;top:calc(100% + 6px);right:0;z-index:20;min-width:190px;width:max-content;max-width:calc(100vw - 32px);padding:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
+.machine-batch-menu p{padding:5px 8px;color:var(--muted);font-size:11px}
+.machine-batch-menu button{display:flex;width:100%;align-items:center;justify-content:flex-start;gap:8px;padding:8px;border:0;border-radius:5px;background:transparent;color:var(--text);font-size:12px;text-align:left}
+.machine-batch-menu button:not(:disabled):hover,.machine-batch-menu button:focus-visible{background:var(--hover)}
+.machine-batch-menu button .badge{display:inline-flex;margin-left:auto}
+.machine-batch-menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
 @media(max-width:650px){.finder .match-count{width:100%;border-left:0;padding-left:0}.finder .match-count button{margin-left:auto}}

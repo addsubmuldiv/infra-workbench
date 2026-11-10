@@ -26,7 +26,7 @@ import {useWorkspaceRestore,useWorkspaceValue} from './workspaceHooks';
 import {browserId} from './browserId';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {History, ChartLine, KeyRound, ArrowDownLeft, ArrowUpRight, CalendarClock, Check, ChevronRight, CircleHelp, Copy, Cpu, Database, LayoutGrid, LoaderCircle, Monitor, Plus, Palette, Radio, RefreshCw, Search, Server, Settings, ShieldCheck, Terminal, Trash2, X, Zap} from 'lucide-react';
+import {History, ChartLine, KeyRound, ArrowDownLeft, ArrowUpRight, CalendarClock, Check, ChevronDown, ChevronRight, CircleHelp, Copy, Cpu, Database, LayoutGrid, LoaderCircle, Monitor, Pause, Play, Plus, Palette, Radio, RefreshCw, Search, Server, Settings, ShieldCheck, Terminal, Trash2, X, Zap} from 'lucide-react';
 import './style.css';
 import './themes.css';
 import {DeviceDrawerFrame} from './DeviceDrawerFrame';
@@ -140,6 +140,7 @@ function App(){
   const [notice,setNotice]=useState(''),[error,setError]=useState(''),[notify,setNotify]=useState(false),[busy,setBusy]=useState(''),[port,setPort]=useWorkspaceValue('workspace:port',29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
   useEffect(()=>{if(!isDemo)return;const blocked=()=>setNotice(tr('此操作在演示中不可用，不会访问真实服务。','This action is unavailable in demo; no real service is accessed.'));document.addEventListener('demo-operation-blocked',blocked);return()=>document.removeEventListener('demo-operation-blocked',blocked)},[]);
   const lastEvent=useRef<number|null>(null),notifyRef=useRef(false),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
+  const machineActions=useRef<HTMLDetailsElement>(null);
   useEffect(()=>{if(page==='precision')setPrecisionMounted(true);if(pageFromHash(location.hash)!==page&&!hostLocationFromHash(location.hash))window.history.replaceState(window.history.state,'','#'+page)},[page]);
   const [workspaceError,setWorkspaceError]=useState(false);
   useEffect(()=>{const status=(event:globalThis.Event)=>setWorkspaceError((event as unknown as CustomEvent<boolean>).detail);window.addEventListener('workspace-save-status',status as EventListener);return()=>window.removeEventListener('workspace-save-status',status as EventListener)},[]);
@@ -148,6 +149,7 @@ function App(){
     setPage(next);if(next==='precision')setPrecisionMounted(true);
     setDetail(null);setCheck(null);
     if(themeMenu.current)themeMenu.current.open=false;
+    if(machineActions.current)machineActions.current.open=false;
     if(location.hash!=='#'+next&&!(next==='overview'&&!location.hash))location.hash=next;
     if(next!==page)window.scrollTo({top:0});
   };
@@ -158,8 +160,15 @@ function App(){
     window.addEventListener('hashchange',syncLegacy);return()=>window.removeEventListener('hashchange',syncLegacy);
   },[]);
   useEffect(()=>{
-    const outside=(event:PointerEvent)=>{for(const menu of [themeMenu.current])if(menu?.open&&!menu.contains(event.target as Node))menu.open=false};
-    const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')for(const menu of [themeMenu.current])if(menu)menu.open=false};
+    const outside=(event:PointerEvent)=>{for(const menu of [themeMenu.current,machineActions.current])if(menu?.open&&!menu.contains(event.target as Node))menu.open=false};
+    const escape=(event:KeyboardEvent)=>{
+      if(event.key!=='Escape')return;
+      for(const menu of [themeMenu.current,machineActions.current]){
+        if(!menu?.open)continue;
+        menu.open=false;
+        if(menu.contains(event.target as Node))menu.querySelector('summary')?.focus();
+      }
+    };
     document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
     return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape)};
   },[]);
@@ -218,6 +227,11 @@ function App(){
       setNotice(failed.length?tr(`${summary}，失败 ${failed.length} 台（${names.join('、')}）${detail}`,`${summary}. Failed on ${failed.length} (${names.join(', ')})${detail}`):summary);
     }finally{setCollectionBusy(false)}
   };
+  const changeBatchCollection=(hosts:Host[],paused:boolean)=>{
+    const menu=machineActions.current;
+    if(menu){menu.open=false;menu.querySelector('summary')?.focus()}
+    return setCollectionPaused(hosts,paused);
+  };
   const refreshInterval=state.refresh_interval_seconds??MONITORING_REFRESH_INTERVAL_SECONDS;
   const saveRefreshInterval=async(interval:number|null)=>{setBusy('refresh-interval');try{const result=await api('/settings/refresh','PUT',{interval_seconds:interval});setState(old=>({...old,refresh_interval_seconds:result.interval_seconds}));setNotice(ui("刷新间隔已保存"))}catch(error){setNotice(error instanceof Error?error.message:ui("刷新间隔保存失败"))}finally{setBusy('')}};
   useEffect(()=>{load();const timer=setInterval(load,refreshInterval*1000);return()=>clearInterval(timer)},[refreshInterval]);
@@ -271,6 +285,8 @@ function App(){
   const scope=useMemo(()=>scopedHosts(state.hosts,preferences.hostIds),[state.hosts,preferences.hostIds]);
   const collectingHosts=scope.filter(host=>!host.collection?.paused);
   const pausedHosts=scope.filter(host=>host.collection?.paused);
+  const refreshStates=Object.values(refreshing);
+  const refreshInProgress=refreshStates.some(value=>value==='running'||value==='waiting');
   const allMachinesSelected=state.hosts.length>0&&scope.length===state.hosts.length;
   const devices=useMemo(()=>state.hosts.flatMap(h=>h.snapshot.devices),[state.hosts]);
   const online=useMemo(()=>state.hosts.filter(h=>h.snapshot.fresh).length,[state.hosts]);
@@ -350,16 +366,28 @@ function App(){
       {deviceOverview&&<section id="device-overview" className="device-overview" aria-label={ui("加速设备分类概览")}><div className="section-heading"><h2>{ui("全局加速设备 ")}<span>{devices.length} {ui(" 个设备 ")}</span></h2><button className="text-button" onClick={()=>setDeviceOverview(false)}>{ui("收起 ")}<X size={14}/></button></div><p>{ui("按类型和型号查看对应机器；数量包含最近采集记录，请以机器在线状态为准。")}</p><div className="device-groups">{deviceGroups.map(group=><button key={group.key} aria-label={tr(`查看 ${group.kind} ${group.name} 对应机器`,`View machines with ${group.kind} ${group.name}`)} onClick={()=>showMachines(group.hosts.map(h=>h.id),group.kind)}><span className="badge">{group.kind}</span><span className="device-group-name">{group.name}</span><strong>{group.total} {ui(" 个设备 ")}<small>· {group.hosts.length} {ui(" 台机器")}</small></strong><ArrowUpRight size={15}/></button>)}</div>{!deviceGroups.length&&<p>{ui("尚未采集到设备，连接机器后会在这里显示。")}</p>}</section>}
       <section className="finder" data-tour="finder"><div className="finder-label"><Search size={18}/><div>{ui("寻找训练资源")}<small>{selectedScope?tr(`仅搜索所选 ${scope.length} 台机器`,`Search ${scope.length} selected machines only`):tr(`搜索全部 ${state.hosts.length} 台机器 · 不受左侧勾选影响`,`Search all ${state.hosts.length} machines · Independent of sidebar selection`)}</small></div></div><label>{ui("设备类型")}<select aria-label={ui("寻找设备类型")} value={resourceKind} onChange={e=>setResourceKind(e.target.value)}>{['全部','NPU','GPU'].map(kind=><option key={kind} value={kind}>{kind==='全部'?ui(kind):kind}</option>)}</select></label><label>{ui("需要设备数")}<select aria-label={ui("需要设备数")} value={count} onChange={e=>setCount(+e.target.value)}>{Array.from({length:Math.max(8,count,...state.hosts.map(h=>h.snapshot.devices.length))},(_,i)=>i+1).map(i=><option key={i} value={i}>{i} {ui(" 个")}</option>)}</select></label><label>{ui("剩余显存")}<div className="input-unit"><input aria-label={ui("每个设备剩余显存")} type="number" min="0" max="100000" value={minimum} onChange={e=>setMinimum(Math.max(0,+e.target.value))}/><span>GiB</span></div></label><label className="checkbox-label"><input type="checkbox" checked={clear} onChange={e=>setClear(e.target.checked)}/>{ui("无可见计算进程")}</label><label className="checkbox-label"><input type="checkbox" aria-label={ui("仅在所选机器中寻找")} checked={selectedScope} onChange={e=>setSelectedScope(e.target.checked)}/>{ui("仅在所选机器中寻找")}</label><div className="match-count"><strong>{candidates.length}</strong><span>{ui("台符合条件")}{selectedScope?ui("（所选范围）"):ui("（全局）")}</span><button className="secondary" aria-label={ui("查看匹配机器")} disabled={!candidates.length} onClick={()=>showMatches(candidates)}>{ui("查看机器 ")}<ArrowUpRight size={15}/></button></div></section>
     </>}
-    {page==='overview'&&scope.length>1&&!isDemo&&<div className="group-scope-actions"><button className="secondary" onClick={()=>{setGroupDraft({hostIds:scope.map(h=>h.id)});navigate('reservations')}}>{tr(`预约所选 ${scope.length} 台机器`,`Reserve ${scope.length} selected machines`)}</button><button className="secondary" onClick={()=>{setHistoryHostIds(scope.map(h=>h.id));navigate('history')}}>{tr('查看所选机器历史','View selected machine history')}</button></div>}
-    {page==='overview'&&scope.length>0&&<div className="group-scope-actions">
-      <button className="secondary" disabled={Object.values(refreshing).some(value=>value==='running'||value==='waiting')} onClick={()=>void refreshMany(scope)}><RefreshCw size={15}/>{tr('刷新所选机器','Refresh selected machines')}</button>
-      {scope.length>1&&!isDemo&&<>
-        <button className="secondary" disabled={collectionBusy||!collectingHosts.length} onClick={()=>setCollectionPaused(collectingHosts,true)}>{tr('批量暂停采集','Batch pause collection')}<span className="badge">{collectingHosts.length}</span></button>
-        <button className="secondary" disabled={collectionBusy||!pausedHosts.length} onClick={()=>setCollectionPaused(pausedHosts,false)}>{tr('批量恢复采集','Batch resume collection')}<span className="badge">{pausedHosts.length}</span></button>
-      </>}
-      {Object.keys(refreshing).length>0&&<span role="status">{tr('手动刷新','Manual refresh')}: {Object.values(refreshing).filter(value=>value==='done'||value==='error').length}/{Object.keys(refreshing).length} · {tr('失败','Failed')} {Object.values(refreshing).filter(value=>value==='error').length}</span>}
-    </div>}
-    {page==='overview'&&<div className="two-columns"><div className="machines"><div className="section-heading"><h2>{ui("所选机器详情")}<span>{shown.length} {ui(" 台机器")}</span></h2><div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f==='全部'?ui(f):f}</button>)}</div></div>
+    {page==='overview'&&<div className="two-columns"><div className="machines">
+      <div className="section-heading machine-section-heading">
+        <div className="machine-section-title">
+          <h2>{ui("所选机器详情")}<span>{shown.length} {ui(" 台机器")}</span></h2>
+          {refreshStates.length>0&&<span className="machine-refresh-progress" role="status">{tr('手动刷新','Manual refresh')} {refreshStates.filter(value=>value==='done'||value==='error').length}/{refreshStates.length} · {tr('失败','Failed')} {refreshStates.filter(value=>value==='error').length}</span>}
+        </div>
+        <div className="machine-section-tools">
+          <div className="segmented">{['全部','NPU','GPU'].map(f=><button className={filter===f?'chosen':''} key={f} onClick={()=>setFilter(f)}>{f==='全部'?ui(f):f}</button>)}</div>
+          {scope.length>0&&<button className="secondary compact" aria-label={tr('刷新所选机器','Refresh selected machines')} title={collectingHosts.length?tr('刷新所选机器','Refresh selected machines'):tr('所选机器均已暂停采集','Collection is paused on all selected machines')} disabled={!collectingHosts.length||collectionBusy||refreshInProgress} onClick={()=>void refreshMany(scope)}><RefreshCw size={15} className={refreshInProgress?'spin':''}/>{tr('刷新','Refresh')}</button>}
+          {scope.length>1&&!isDemo&&<details className="machine-batch-menu" ref={machineActions}>
+            <summary className="secondary compact">{tr('批量操作','Batch actions')}<ChevronDown size={14}/></summary>
+            <div>
+              <p>{tr(`已选 ${scope.length} 台机器`,`${scope.length} machines selected`)}</p>
+              <button disabled={collectionBusy||!collectingHosts.length} onClick={()=>changeBatchCollection(collectingHosts,true)}><Pause size={15}/>{tr('批量暂停采集','Batch pause collection')}<span className="badge">{collectingHosts.length}</span></button>
+              <button disabled={collectionBusy||!pausedHosts.length} onClick={()=>changeBatchCollection(pausedHosts,false)}><Play size={15}/>{tr('批量恢复采集','Batch resume collection')}<span className="badge">{pausedHosts.length}</span></button>
+              <hr/>
+              <button onClick={()=>{setGroupDraft({hostIds:scope.map(h=>h.id)});navigate('reservations')}}><CalendarClock size={15}/>{tr('预约所选机器','Reserve selected machines')}</button>
+              <button onClick={()=>{setHistoryHostIds(scope.map(h=>h.id));navigate('history')}}><History size={15}/>{tr('查看所选机器历史','View selected machine history')}</button>
+            </div>
+          </details>}
+        </div>
+      </div>
       {shown.length===0&&<div className="empty"><Server size={32}/><h3>{state.hosts.length===0?ui("连接第一台机器"):scope.length===0?ui("选择要查看的机器"):ui("没有符合设备类型的机器")}</h3><p>{state.hosts.length===0?ui("从本机 SSH 配置选择，或输入主机和账号密码。"):ui("在机器列表中点击名称单选，或勾选多台机器。")}</p>{state.hosts.length===0?<button className="primary" onClick={()=>isDemo?setNotice(tr("演示模式不接入真实机器或凭据，请退出演示后配置。","The demo does not accept real machines or credentials. Exit demo to configure them.")):setAdding(true)}><Plus size={16}/>{ui("添加机器")}</button>:<button className="secondary" onClick={()=>showMachines(null)}>{ui("显示全部机器")}</button>}</div>}
       {shown.map(host=>{const snapshot=host.snapshot,ids=selected[host.id]||EMPTY_SELECTION;return <MachineView key={host.id} dependencies={[host,ids,filter,minimum,clear,count,port,resourceKind,busy,locale,refreshing[host.id],collectionBusy]} render={()=> <section className="machine" key={host.id} aria-label={ui("机器详情 ")+host.target}>
         <div className="machine-heading"><span className="machine-icon"><Server size={20}/></span><div className="machine-name"><h3>{host.alias||host.target}<Badge tone={!host.collection?.paused&&snapshot.fresh?'green':'amber'}>{host.collection?.paused?tr('采集已暂停','Collection paused'):snapshot.fresh?ui("在线"):snapshot.status==='error'?(snapshot.sections?.system?.fresh?tr("部分采集失败","Partial collection failure"):ui("采集失败")):snapshot.status==='connecting'?ui("连接中"):ui("数据过期")}</Badge></h3><p>{host.alias&&<>{host.target} · </>}{machineSummary(snapshot.devices)} <span>·</span> SSH {host.auth==='password_session'?ui("密码会话"):ui("免密连接")}</p></div><button data-tour="reservation" className="ssh-open" aria-label={ui("预约 ")+host.target+ui(" 的卡")} title={ui("预约这台机器的卡")} onClick={()=>setReservationDraft({hostId:host.id,devices:ids.filter(id=>snapshot.devices.some(device=>device.id===id)),minimum})}><CalendarClock size={15}/><span>{ui("预约")}</span></button><button className="ssh-open" onClick={()=>{setHistoryHostIds([host.id]);navigate('history')}}>{tr("历史","History")}</button><button className="ssh-open" disabled={isDemo} onClick={()=>setAliasHost(host)}>{tr("别名","Alias")}</button><VSCodeButton host={host} disabled={isDemo}/><SSHTunnelButton host={host} disabled={isDemo}/><button className="ssh-open" onClick={()=>setServiceHost(host)}>{tr("服务","Services")}</button><button data-tour="files" className="ssh-open" aria-label={ui("浏览 ")+host.target+ui(" 文件")} onClick={()=>setFileHost({host,requestId:browserId()})}><Database size={15}/><span>{ui("文件")}</span></button><button data-tour="terminal" className="ssh-open" aria-label={ui("打开 ")+host.target+ui(" 终端")} onClick={()=>setTerminalRequest({id:browserId(),host})}><Terminal size={15}/><span>{ui("终端")}</span></button><button className={'sudo-button '+(host.ssh_password?.password_saved===true?'enabled':'')} aria-label={host.target+ui(" SSH 密码设置")} title={host.ssh_password?.password_saved===true?ui("SSH 密码已保存，点击管理"):host.ssh_password?.password_saved===false?ui("尚未保存 SSH 密码，点击配置"):ui("SSH 密码保存状态尚未确认，点击查看")} onClick={()=>isDemo?setNotice(tr("演示模式不接入真实机器或凭据，请退出演示后配置。","The demo does not accept real machines or credentials. Exit demo to configure them.")):setSSHPasswordHost(host)}><KeyRound size={15}/><span>{ui("SSH 密码")}</span></button><button className={'sudo-button '+(host.sudo?.enabled?'enabled':'')} title={host.sudo?.message||ui("设置 sudo 进程详情")} aria-label={host.target+ui(" sudo 设置")} onClick={()=>isDemo?setNotice(tr("演示模式不接入真实机器或凭据，请退出演示后配置。","The demo does not accept real machines or credentials. Exit demo to configure them.")):setSudoHost(host)}><ShieldCheck size={15}/><span>sudo</span></button><button className="icon-button" aria-label={ui("刷新 ")+host.target} disabled={host.collection?.paused||refreshing[host.id]==='running'||refreshing[host.id]==='waiting'} onClick={()=>refreshHost(host)}><RefreshCw size={16} className={refreshing[host.id]==='running'?'spin':''}/></button><button className="secondary compact remove-host-button" aria-label={ui("移除机器 ")+host.target} title={ui("移除机器")} onClick={()=>setRemovalHosts([host])}><Trash2 size={15}/><span>{ui("移除")}</span></button></div>
