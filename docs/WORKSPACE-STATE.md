@@ -20,3 +20,9 @@
 资源刷新间隔通过独立的 `/api/settings/refresh` 设置，保存在数据库 `refresh_interval_seconds` 中，后台采集、页面和浮窗共用。未设置或恢复默认时，使用 `config/internal-defaults.jsonc` 的 `monitoring.refresh_interval_seconds`；该配置通过生成脚本供前后端引用。手动选择优先于默认值，提交 `interval_seconds: null` 清除手动覆盖，立即恢复默认并在重启后继续跟随默认值。修改配置文件后需重新生成、构建并重启后台。
 
 助手权限模式、本机/远端工作目录和可选外部 MCP 服务地址也使用 workspace:chat-* 键共享。它们只影响下一轮请求；待批准调用、批准 Future 和执行中的连接不写入偏好，而由本轮服务端控制器持有。批准记录保存到聊天历史，页面关闭和 SSE 重连不视为批准。
+
+## 单机暂停采集
+
+机器详情中的“暂停采集 / 恢复采集”调用 `PUT /api/hosts/{host_id}/collection`，正文为 `{"paused": true|false}`。暂停状态由当前后台共享，不作为界面偏好持久化；后台重启后恢复采集。暂停阻止自动和手动资源刷新，已开始的采集自然结束；响应的 `draining` 表示仍有一次采集尚未结束。旧数据和采样时间保留，按原规则过期，不填零。终端、训练、文件操作及其他机器的采集不受此开关控制。演示模式禁用此按钮。
+
+English: Per-host collection pause is shared by all windows in the current backend and resets on backend restart. Automatic and manual resource samples are blocked; an active sample drains naturally. Existing samples retain their timestamps and expire normally. Terminal, training and file operations remain independent.
