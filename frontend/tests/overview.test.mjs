@@ -85,6 +85,48 @@ test('bulk deletion uses checked machines even when the sidebar category hides t
   assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 alpha'));
 });
 
+test('bulk collection changes only checked machines that need the requested state',async t=>{
+  const items=[{...hosts[0]},{...hosts[1],collection:{paused:true}},{...hosts[2]}];
+  const calls=[];
+  t.mock.method(globalThis,'fetch',async (url,options)=>{
+    if(url==='/api/state')return Response.json({hosts:items,rules:[],reservations:[],events:[],server_time:100});
+    const id=url.split('/')[3];
+    const {paused}=JSON.parse(options.body);
+    calls.push([id,paused]);
+    const index=items.findIndex(item=>item.id===id);
+    items[index]={...items[index],collection:{paused}};
+    return Response.json({host_id:id,paused});
+  });
+  const h=harness(t,'#overview',[],items);h.render();
+  h.button('清空').props.onClick();h.render();
+  assert.equal(h.button('批量暂停采集'),undefined);
+  for(const name of ['alpha','beta']){h.find(n=>n.props?.['aria-label']==='显示机器 '+name).props.onChange();h.render()}
+
+  await h.button('批量暂停采集').props.onClick();h.render();
+  assert.deepEqual(calls,[['alpha',true]]);
+  assert.equal(h.button('批量暂停采集').props.disabled,true);
+
+  await h.button('批量恢复采集').props.onClick();h.render();
+  assert.deepEqual(calls,[['alpha',true],['alpha',false],['beta',false]]);
+  assert.equal(h.button('批量恢复采集').props.disabled,true);
+});
+
+test('bulk collection reports partial failures and keeps the successful changes visible',async t=>{
+  const items=hosts.map(host=>({...host}));
+  t.mock.method(globalThis,'fetch',async url=>{
+    if(url==='/api/state')return Response.json({hosts:items,rules:[],reservations:[],events:[],server_time:100});
+    if(url==='/api/hosts/beta/collection')return Response.json({detail:'Unavailable'},{status:503});
+    const index=url==='/api/hosts/alpha/collection'?0:2;
+    items[index]={...items[index],collection:{paused:true}};
+    return Response.json({host_id:items[index].id,paused:true});
+  });
+  const h=harness(t,'#overview',[],items);h.render();
+  await h.button('批量暂停采集').props.onClick();h.render();
+  assert.match(h.text(h.find(n=>n.props?.className==='toast')),/已暂停 2 台机器.*失败 1 台.*beta/);
+  assert.equal(h.text(h.button('批量暂停采集')),'批量暂停采集1');
+  assert.equal(h.text(h.button('批量恢复采集')),'批量恢复采集2');
+});
+
 test('legacy connections page displays overview without a duplicate navigation entry',t=>{
   const h=harness(t,'#connections');h.render();
   assert.ok(h.button('算力总览'));assert.equal(h.button('机器连接'),undefined);
