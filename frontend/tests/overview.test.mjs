@@ -85,6 +85,19 @@ test('bulk deletion uses checked machines even when the sidebar category hides t
   assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 alpha'));
 });
 
+test('selected-machine actions sit beside the details heading in one toolbar',t=>{
+  const h=harness(t);h.render();
+  const heading=h.find(n=>n.props?.className==='section-heading machine-section-heading');
+  assert.ok(h.text(heading).startsWith('所选机器详情'));
+  assert.ok(h.text(heading).includes('批量操作'));
+  const tools=heading.props.children.find(child=>child?.props?.className==='machine-section-tools');
+  assert.ok(tools.props.children.includes(h.button('刷新所选机器')));
+  const menu=tools.props.children.find(child=>child?.type==='details');
+  for(const label of ['批量暂停采集','批量恢复采集','预约所选机器','查看所选机器历史']){
+    assert.ok(h.text(menu).includes(label));
+  }
+});
+
 test('bulk collection changes only checked machines that need the requested state',async t=>{
   const items=[{...hosts[0]},{...hosts[1],collection:{paused:true}},{...hosts[2]}];
   const calls=[];
@@ -105,6 +118,7 @@ test('bulk collection changes only checked machines that need the requested stat
   await h.button('批量暂停采集').props.onClick();h.render();
   assert.deepEqual(calls,[['alpha',true]]);
   assert.equal(h.button('批量暂停采集').props.disabled,true);
+  assert.equal(h.button('刷新所选机器').props.disabled,true);
 
   await h.button('批量恢复采集').props.onClick();h.render();
   assert.deepEqual(calls,[['alpha',true],['alpha',false],['beta',false]]);
