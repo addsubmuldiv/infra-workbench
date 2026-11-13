@@ -10,7 +10,7 @@ import subprocess
 import sys
 import threading
 import time
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, ProxyHandler
 import webbrowser
 
@@ -87,6 +87,19 @@ def notification_events(fetch=get_api):
             # Keep the successful half; a later authoritative pending poll can recover.
             logging.debug('Notification source unavailable: %s', path, exc_info=True)
     return list(events.values())
+
+
+def desktop_notification_events(enabled):
+    request = Request(URL+'api/notifications/desktop-events',
+                      data=json.dumps({'enabled': enabled}).encode('utf-8'),
+                      headers={'Content-Type': 'application/json', 'X-IWB': '1'}, method='POST')
+    try:
+        with OPENER.open(request, timeout=3) as response:
+            return json.load(response)['events']
+    except HTTPError as exc:
+        if exc.code not in (404, 405):
+            raise
+        return notification_events()
 
 
 class EventCursor:
@@ -466,9 +479,10 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 except Exception:
                     logging.exception('Desktop test notification failed')
             try:
-                events=cursor.consume(notification_events()) if not smoke_test else []
+                enabled=settings.notifications
+                events=cursor.consume(desktop_notification_events(enabled)) if not smoke_test else []
                 if events:
-                    deliver_events(events,settings.notifications,notify)
+                    deliver_events(events,enabled,notify)
             except Exception:
                 # Transient local-service/SSH failures remain visible in the UI.
                 # They must not accumulate disconnect/reconnect desktop alerts.

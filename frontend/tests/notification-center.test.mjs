@@ -9,7 +9,7 @@ function harness(t,storage=new Map()){
   let tree,cursor=0,values=[];
   const actions=[],events=[{id:3,host:'a',message:'a：预约设备可用',created:100,url:'#overview?host=a&device=1'},{id:2,host:'a',message:'a：SSH 连接失败',created:99}];
   const props={events,rules:[{id:'rule-a',host_id:'a',devices:['1'],minimum_gib:16,port:29500,status:'active'}],hosts:[{id:'a',target:'atlas'}],tab:null,notify:false,busy:false,
-    setTab:tab=>props.tab=tab,enableNotifications:async()=>actions.push('permission'),removeRule:id=>actions.push(['remove',id]),locate:event=>actions.push(['locate',event])};
+    setTab:tab=>props.tab=tab,toggleNotifications:async()=>{props.notify=!props.notify;actions.push(props.notify?'enable':'disable')},removeRule:id=>actions.push(['remove',id]),locate:event=>actions.push(['locate',event])};
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect(){},
     useState:initial=>{const i=cursor++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],value=>values[i]=typeof value==='function'?value(values[i]):value]},
     useRef:initial=>{const i=cursor++;if(!(i in values))values[i]={current:initial};return values[i]}};
@@ -42,7 +42,9 @@ test('rules, message targets and browser permission each invoke only their own a
   h.button('查看机器和设备').props.onClick();assert.deepEqual(h.actions,[['locate',h.events[0]]]);assert.equal(h.props.tab,null);
   h.props.tab='rules';h.render();h.button('删除监控规则 rule-a').props.onClick();assert.deepEqual(h.actions[1],['remove','rule-a']);
   h.props.busy=true;h.render();assert.equal(h.button('删除监控规则 rule-a').props.disabled,true);
-  await h.button('开启浏览器通知').props.onClick();assert.equal(h.actions[2],'permission');
+  await h.button('开启浏览器通知').props.onClick();assert.equal(h.actions[2],'enable');h.render();
+  await h.button('关闭浏览器通知').props.onClick();assert.equal(h.actions[3],'disable');h.render();
+  assert.ok(h.button('开启浏览器通知'));
 });
 
 test('notification tabs support arrow keys without leaving focus behind',t=>{

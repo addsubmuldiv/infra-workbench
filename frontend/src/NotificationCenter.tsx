@@ -8,9 +8,9 @@ import './notificationCenter.css';
 
 export type NotificationTab='messages'|'rules'|null;
 type Rule={id:string;host_id:string;devices:string[];minimum_gib:number;port:number;status?:string};
-type Props={events:NotificationRecord[];rules:Rule[];hosts:{id:string;target:string}[];tab:NotificationTab;setTab:(tab:NotificationTab)=>void;notify:boolean;busy:boolean;enableNotifications:()=>Promise<void>;removeRule:(id:string)=>void;locate:(event:NotificationRecord)=>void};
+type Props={events:NotificationRecord[];rules:Rule[];hosts:{id:string;target:string}[];tab:NotificationTab;setTab:(tab:NotificationTab)=>void;notify:boolean;busy:boolean;toggleNotifications:()=>Promise<void>;removeRule:(id:string)=>void;locate:(event:NotificationRecord)=>void};
 
-export function NotificationCenter({events,rules,hosts,tab,setTab,notify,busy,enableNotifications,removeRule,locate}:Props){
+export function NotificationCenter({events,rules,hosts,tab,setTab,notify,busy,toggleNotifications,removeRule,locate}:Props){
   useLocale();
   const root=useRef<HTMLDivElement>(null),bell=useRef<HTMLButtonElement>(null),panel=useRef<HTMLElement>(null);
   const [read,setRead]=useState(()=>loadReadEvent(browserStorage()));
@@ -45,7 +45,7 @@ export function NotificationCenter({events,rules,hosts,tab,setTab,notify,busy,en
           {rules.length===0?<div className="notification-empty"><Radio size={26}/><h3>{t("暂无监控规则","No monitoring rules")}</h3><p>{t("已有规则会在这里显示，可随时移除。","Existing rules appear here and can be removed at any time.")}</p></div>:rules.map(rule=><article className="notification-rule" key={rule.id}><Radio size={16}/><div><h3>{hosts.find(host=>host.id===rule.host_id)?.target||t("机器已移除","Machine removed")}</h3><p>{t("设备 ","Devices ")}{rule.devices.join(', ')} {t(" · 每设备 ≥ "," · Per device ≥ ")}{rule.minimum_gib} GiB<br/>{t("端口 ","Port ")}{rule.port}</p><small>{rule.status==='needs_selection'?t("需重新选设备","Select devices again"):rule.status==='active'?t("监控中","Monitoring"):t("等待有效采集","Waiting for valid data")}</small></div><button className="icon-button" disabled={busy} aria-label={t("删除监控规则 ","Delete monitoring rule ")+rule.id} onClick={()=>removeRule(rule.id)}><Trash2 size={15}/></button></article>)}
         </div>}
       </div>
-      <div className="notification-delivery"><span>{t("浏览器通知：","Browser notifications: ")}{notify?t("已开启","Enabled"):t("未开启","Disabled")}</span><button className="secondary compact" onClick={enableNotifications}>{notify?t("检查浏览器权限","Check browser permission"):t("开启浏览器通知","Enable browser notifications")}</button><small>{t("浏览器通知需保持网页打开；系统桌面通知由后台托盘控制。","Keep the page open for browser notifications. System desktop notifications are controlled by the background tray.")}</small></div>
+      <div className="notification-delivery"><span>{t("浏览器通知：","Browser notifications: ")}{notify?t("已开启","Enabled"):t("未开启","Disabled")}</span><button className="secondary compact" onClick={toggleNotifications}>{notify?t("关闭浏览器通知","Turn off browser notifications"):t("开启浏览器通知","Enable browser notifications")}</button><small>{t("托盘开启桌面通知时优先发送桌面通知。浏览器通知需保持网页打开。","Desktop notifications take priority when enabled in the tray. Keep the page open for browser notifications.")}</small></div>
     </section>}
   </div>;
 }

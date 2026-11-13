@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from backend.desktop import (DATA, URL, DesktopSettings, EventCursor, ServiceHost,
-                             deliver_events, get_api, notification_events)
+                             deliver_events, desktop_notification_events, get_api)
 from backend.interface_language import tr, current_locale, update_shared_language
 
 NOTIFICATION_SCRIPT = '''on run argv
@@ -286,7 +286,7 @@ class MainThreadNotifications:
 
 class MenuBar:
     def __init__(self, rumps, service, settings, startup, receipt, *, started_at=None,
-                 notifier=None, events=notification_events, health=None, language_state=None):
+                 notifier=None, events=None, health=None, language_state=None):
         self.rumps, self.service, self.settings, self.startup, self.receipt = rumps, service, settings, startup, receipt
         self.started_at, self.events = started_at, events
         self.health = health or (lambda: get_api('health'))
@@ -374,9 +374,10 @@ class MenuBar:
                         update_shared_language(self.language_state())
                     except Exception:
                         logging.debug('Cannot read attached service language', exc_info=True)
-                events = cursor.consume(self.events())
+                enabled = self.settings.notifications
+                events = cursor.consume(self.events() if self.events else desktop_notification_events(enabled))
                 if events:
-                    deliver_events(events, self.settings.notifications, self.dispatcher.submit)
+                    deliver_events(events, enabled, self.dispatcher.submit)
             except Exception:
                 logging.debug('macOS notification polling unavailable', exc_info=True)
             self.stop.wait(2)

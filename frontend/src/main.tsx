@@ -90,6 +90,29 @@ async function api(path:string,method='GET',body?:unknown,signal?:AbortSignal){
 function isEligible(d:Device,min:number,clear:boolean){return d.memory_free>=min*1024**3&&(!clear||(d.processes_known&&d.processes.length===0))&&d.health!=='Alarm'}
 function Badge({children,tone='muted'}:{children:React.ReactNode;tone?:string}){return <span className={'badge '+tone}>{children}</span>}
 
+const BROWSER_NOTIFICATIONS_KEY='workspace:browser-notifications:v1';
+const browserPermissionGranted=()=>!isDemo&&'Notification' in window&&Notification.permission==='granted';
+const canSendBrowserNotifications=()=>browserPermissionGranted()&&workspaceStorage.getItem(BROWSER_NOTIFICATIONS_KEY)==='true';
+
+async function showBrowserNotifications(events:NotificationRecord[]){
+  if(!events.length)return;
+  try{
+    const {ids}=await api('/notifications/browser-claim','POST',{ids:events.map(event=>event.id)});
+    if(!canSendBrowserNotifications())return;
+    const claimed=new Set<number>(ids);
+    for(const event of events){
+      if(!claimed.has(event.id))continue;
+      const notification=new Notification('Infra Workbench',{
+        body:event.message,tag:String(event.id),
+        icon:new URL('../../backend/assets/workbench.png',import.meta.url).href,
+      });
+      notification.onclick=()=>{window.open(location.origin+location.pathname+notificationLocation(event.url),'_blank','noopener');notification.close()};
+    }
+  }catch{
+    // Events remain visible in the notification center if pop-ups are unavailable.
+  }
+}
+
 // Every value read by the card is listed in dependencies below. Handlers use
 // those same values, stable setters and the shared single-flight state reader.
 const EMPTY_SELECTION:string[]=[];
@@ -137,9 +160,11 @@ function App(){
       setRefreshing(old=>{if(old[hostId]!==status)return old;const next={...old};delete next[hostId];return next});
     },3000));
   };
-  const [notice,setNotice]=useState(''),[error,setError]=useState(''),[notify,setNotify]=useState(false),[busy,setBusy]=useState(''),[port,setPort]=useWorkspaceValue('workspace:port',29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
+  const [notice,setNotice]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(''),[port,setPort]=useWorkspaceValue('workspace:port',29500),[check,setCheck]=useState<{status:string;reasons:string[]}|null>(null);
+  const [browserNotifications,setBrowserNotifications]=useWorkspaceValue(BROWSER_NOTIFICATIONS_KEY,false);
+  const notify=browserNotifications&&browserPermissionGranted();
   useEffect(()=>{if(!isDemo)return;const blocked=()=>setNotice(tr('此操作在演示中不可用，不会访问真实服务。','This action is unavailable in demo; no real service is accessed.'));document.addEventListener('demo-operation-blocked',blocked);return()=>document.removeEventListener('demo-operation-blocked',blocked)},[]);
-  const lastEvent=useRef<number|null>(null),notifyRef=useRef(false),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
+  const lastEvent=useRef<number|null>(null),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
   const machineActions=useRef<HTMLDetailsElement>(null);
   useEffect(()=>{if(page==='precision')setPrecisionMounted(true);if(pageFromHash(location.hash)!==page&&!hostLocationFromHash(location.hash))window.history.replaceState(window.history.state,'','#'+page)},[page]);
   const [workspaceError,setWorkspaceError]=useState(false);
@@ -177,12 +202,10 @@ function App(){
     const controller=new AbortController();stateRequest.current=controller;
     try{
       const next:State=await api('/state','GET',undefined,controller.signal);if(controller.signal.aborted)return;setState(old=>reuseStateSnapshot(old,{...next,reservations:next.reservations??[]}));setError('');
-      if(lastEvent.current!==null&&notifyRef.current&&'Notification' in window&&Notification.permission==='granted')
-        for(const event of [...next.events].reverse())if(event.id>lastEvent.current&&shouldNotify(event)){
-          const notification=new Notification('Infra Workbench',{body:event.message,tag:String(event.id)});
-          notification.onclick=()=>{window.open(location.origin+location.pathname+notificationLocation(event.url),'_blank','noopener');notification.close()};
-        }
+      const previousEvent=lastEvent.current;
       lastEvent.current=next.events[0]?.id??lastEvent.current??0;
+      if(previousEvent!==null&&canSendBrowserNotifications())
+        void showBrowserNotifications(next.events.filter(event=>event.id>previousEvent&&shouldNotify(event)).reverse());
       return true;
     }catch{if(!controller.signal.aborted)setError(ui("本地服务未连接，请检查启动窗口。"));return false}
     finally{if(stateRequest.current===controller)stateRequest.current=null}
@@ -276,11 +299,20 @@ function App(){
   };
 
   const act=async(key:string,fn:()=>Promise<unknown>)=>{setBusy(key);try{await fn();await load()}catch(e){setNotice(e instanceof Error?e.message:String(e))}finally{setBusy('')}};
-  const enableNotifications=async()=>{
+  const toggleNotifications=async()=>{
     if(isDemo){setNotice(tr("演示提醒仅显示在页面内，不申请系统通知权限。","Demo alerts appear only in this page. System notifications are disabled."));return}
     if(!('Notification'in window)){setNotice(ui("此浏览器不支持系统通知，事件仍显示在页面中。"));return}
-    const permission=await Notification.requestPermission();notifyRef.current=permission==='granted';setNotify(notifyRef.current);
-    setNotice(notifyRef.current?ui("浏览器通知已开启；请保持页面和本地服务运行。"):ui("浏览器通知未开启，事件仍显示在页面中。"));
+    if(canSendBrowserNotifications()){
+      setBrowserNotifications(false);
+      setNotice(tr("浏览器通知已关闭，消息仍会记录在通知中心。","Browser notifications are off. Messages remain in the notification center."));
+      return;
+    }
+    let permission=Notification.permission;
+    if(permission==='default'){
+      try{permission=await Notification.requestPermission()}catch{}
+    }
+    if(permission==='granted')setBrowserNotifications(true);
+    setNotice(permission==='granted'?ui("浏览器通知已开启；请保持页面和本地服务运行。"):ui("浏览器通知未开启，事件仍显示在页面中。"));
   };
   const scope=useMemo(()=>scopedHosts(state.hosts,preferences.hostIds),[state.hosts,preferences.hostIds]);
   const collectingHosts=scope.filter(host=>!host.collection?.paused);
@@ -355,7 +387,7 @@ function App(){
       <div className="header-tools"><RefreshIntervalPicker label={ui("刷新间隔")} title={ui("同时调整后台采集与页面刷新频率，设置对本工作台的所有窗口生效")} value={refreshInterval} disabled={busy==='refresh-interval'||!state.server_time} format={seconds=>`${ui("每 ")}${seconds} ${ui(" 秒刷新")}`} onChange={saveRefreshInterval} resetLabel={tr(`恢复默认（${MONITORING_REFRESH_INTERVAL_SECONDS} 秒）`,`Restore default (${MONITORING_REFRESH_INTERVAL_SECONDS}s)`)} onReset={()=>saveRefreshInterval(null)}/>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>{ui("主题")}</span></summary><div className="theme-options"><h3>{ui("选择界面主题")}</h3><p>{ui("主题偏好由本机后台统一保存")}</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
           <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{themeText(t.name)}</strong><small>{t.mode==='light'?ui("亮色"):ui("暗色")} · {themeText(t.description)}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
-        <div className="header-panel-tools"><NotificationCenter events={state.events} rules={state.rules} hosts={state.hosts} tab={notificationTab} setTab={setNotificationTab} notify={notify} busy={!!busy} enableNotifications={enableNotifications} removeRule={id=>act('rule',()=>api('/rules/'+encodeURIComponent(id),'DELETE'))} locate={locateEvent}/><button data-tour="assistant" className={'assistant-toggle'+(assistantOpen?' active':'')} aria-label={ui("AI 助手")} title={assistantOpen?ui("收起 AI 助手"):ui("展开 AI 助手")} aria-expanded={assistantOpen} aria-controls="infra-assistant-panel" onClick={()=>setAssistantOpen(value=>!value)}><Sparkles size={17}/><span>{ui("AI 助手")}</span></button></div>
+        <div className="header-panel-tools"><NotificationCenter events={state.events} rules={state.rules} hosts={state.hosts} tab={notificationTab} setTab={setNotificationTab} notify={notify} busy={!!busy} toggleNotifications={toggleNotifications} removeRule={id=>act('rule',()=>api('/rules/'+encodeURIComponent(id),'DELETE'))} locate={locateEvent}/><button data-tour="assistant" className={'assistant-toggle'+(assistantOpen?' active':'')} aria-label={ui("AI 助手")} title={assistantOpen?ui("收起 AI 助手"):ui("展开 AI 助手")} aria-expanded={assistantOpen} aria-controls="infra-assistant-panel" onClick={()=>setAssistantOpen(value=>!value)}><Sparkles size={17}/><span>{ui("AI 助手")}</span></button></div>
       </div></header>
     {preferences.theme==='frieren'&&<JourneyArt/>}
     <div className="content" data-tour-panel={page==='settings'?'settings':undefined}><div className="page-heading" hidden={page==='history'}><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='history'?'RESOURCE HISTORY':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':page==='assistant'?'AI ASSISTANT':'OVERVIEW'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?ui("跨机器读取训练日志，自动提取指标并按真实步数对齐。"):page==='history'?tr("查看各时段空闲设备和机器数量，未知数据单独标记。","View idle devices and machines over time, with missing data shown separately."):page==='reservations'?tr("单台、指定多台或集群任意几台连续空闲后提醒。","Receive an alert when a machine or group stays available."):page==='settings'?ui("管理模型接口、外部 Agent 接入和邮件通知。"):page==='assistant'?ui("查找多台机器上的任务与会话，了解资源发生了哪些变化。"):tr(`全部 ${state.hosts.length} 台机器的资源概况 · 左侧勾选用于查看详情和批量删除`,`Resources across ${state.hosts.length} machines · Select in the sidebar for details or removal`)}</p></div><div className="page-heading-actions"><TunnelManagerButton hosts={state.hosts} disabled={isDemo}/><button className="primary" onClick={()=>isDemo?setNotice(tr("演示模式不接入真实机器或凭据，请退出演示后配置。","The demo does not accept real machines or credentials. Exit demo to configure them.")):setAdding(true)}><Plus size={17}/>{ui("添加机器")}</button><button className="secondary machine-delete-action" aria-label={ui("删除机器")} title={scope.length?tr(`删除选中的 ${scope.length} 台机器`,`Delete ${scope.length} selected machines`):ui("请先在左侧勾选机器")} disabled={scope.length===0} onClick={()=>setRemovalHosts([...scope])}><Trash2 size={15}/>{ui("删除机器")}{scope.length>0&&<span className="machine-delete-count">{scope.length}</span>}</button></div></div>
@@ -424,7 +456,7 @@ function App(){
 
     {page==='history'&&<ResourceHistory hosts={state.hosts} initialHostIds={historyHostIds}/>}
     {page==='reservations'&&!isDemo&&<GroupReservations hosts={state.hosts} draft={groupDraft} onDraft={setGroupDraft}/>}
-    {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} edit={item=>setReservationDraft(draftFromReservation(item,true))} rebook={item=>setReservationDraft(draftFromReservation(item,false))} locate={locateReservation} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} enableNotifications={enableNotifications} notify={notify}/>}
+    {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} edit={item=>setReservationDraft(draftFromReservation(item,true))} rebook={item=>setReservationDraft(draftFromReservation(item,false))} locate={locateReservation} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} toggleNotifications={toggleNotifications} notify={notify}/>}
     <footer className="page-footer"><span><ShieldCheck size={13}/>{ui("私钥留在本机 · sudo 密码可选存入系统凭据管理器")}</span><span aria-label={tr("软件版本","Software version")}>v{appVersion} · LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
     <React.Suspense fallback={<p role="status">{ui("正在加载 AI 助手…")}</p>}><AssistantWindow open={assistantOpen} onClose={()=>setAssistantOpen(false)} onDockWidthChange={setAssistantWidth} selectedHostIds={scope.map(host=>host.id)} openSettings={()=>navigate('settings')} locate={(hostId,devices)=>{if(!state.hosts.some(host=>host.id===hostId)){setNotice(ui("这台机器已不在当前列表中。"));return}showMachines([hostId]);setSelected({[hostId]:devices});navigate('overview')}} openTerminal={hostId=>{const host=state.hosts.find(host=>host.id===hostId);if(host)setTerminalRequest({id:browserId(),host});else setNotice(ui("这台机器已不在当前列表中。"))}}/></React.Suspense>
     {clusterPanel&&<ClusterPanel openTerminalBatch={id=>{setClusterPanel(null);setClusterTerminal({cluster:null,batchId:id})}} cluster={clusterPanel.cluster} hosts={state.hosts} close={()=>setClusterPanel(null)} terminal={host=>setTerminalRequest({id:browserId(),host})}/>}
