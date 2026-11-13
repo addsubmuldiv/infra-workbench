@@ -52,3 +52,6 @@ frontend/demo-dist/
 
 # Collected signed release artifacts
 /release-assets/
+
+# Local project skills.
+/.agents/skills/

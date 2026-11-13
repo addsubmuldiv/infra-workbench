@@ -61,6 +61,7 @@ Excel 中也可填写本机 SSH 别名，沿用地址和跳板配置；账号以
 | 打开 TensorBoard / Jupyter、连接 VS Code | [远程服务](docs/PORT-FORWARDING.md) · [SSH 隧道与 VS Code](docs/SSH-TUNNELS.md) |
 | 配置 AI、复用固定流程 | [选择 AI 使用方式](docs/GUIDE.md#选择-ai-使用方式) · [用户技能](docs/USER-SKILLS.md) |
 | 将其他 AI 客户端接入工作台 | [MCP](docs/MCP.md) |
+| 给外部 Agent 安装工作台 Skill | [Agent Skills](docs/AGENT-SKILLS.md) |
 | 接收提醒、查看桌面浮窗 | [邮件](docs/MAIL.md) · [浮窗](docs/FLOATING-MONITOR.md) |
 | 对比训练日志 | [精度对比](docs/PRECISION.md) |
 | 解决连接、采集、模型或通知问题 | [故障排查](docs/TROUBLESHOOTING.md) |
