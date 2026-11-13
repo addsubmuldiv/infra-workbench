@@ -47,6 +47,7 @@ def test_connection_rejects_native_approvals_and_unknown_requests():
 
 
 def test_codex_chat_does_not_require_api_profile_and_scope_is_bound(tmp_path,monkeypatch):
+    from fastapi import HTTPException
     from backend.agent_chat import AgentChat,ChatMessageRequest
     from backend.store import Store
     class Provider:
@@ -56,7 +57,8 @@ def test_codex_chat_does_not_require_api_profile_and_scope_is_bound(tmp_path,mon
     seen=[]
     async def run(chat,tools,allowed,instructions,save,start_text,on_text,**kwargs):
         seen.append(allowed);on_text('Codex result',final=True)
-        chat['codex_thread_id']='synthetic-thread'
+        chat.update(codex_thread_id='synthetic-thread',codex_scope=sorted(allowed),last_engine='codex')
+        chat['turns'][-1]['codex_turn_id']='synthetic-turn'
     monkeypatch.setattr('backend.codex_agent.run_codex_agent',run)
     async def scenario():
         service=AgentChat(Store(tmp_path/'test.db'),Provider(),Tools())
@@ -68,11 +70,21 @@ def test_codex_chat_does_not_require_api_profile_and_scope_is_bound(tmp_path,mon
         assert result['turns'][-1]['content']=='Codex result'
         assert seen==[{'a'}] and result['codex_thread_id']=='synthetic-thread'
         assert service.view(result)['engine']=='codex'
+        for changes in ({'restrict_to_selected':False},{'permission_mode':'read_only'},
+                        {'remote_roots':{'a':['/project']}},{'codex_options':{'effort':'high'}}):
+            fields={'content':'next question','engine':'codex','selected_host_ids':['a'],'restrict_to_selected':True}
+            with pytest.raises(HTTPException) as error:
+                service.begin(chat['id'],ChatMessageRequest(**(fields|changes)))
+            assert error.value.status_code==409 and '新建对话' in error.value.detail
+        assert service.get(chat['id'])==result
+        view=service.begin(chat['id'],ChatMessageRequest(content='continue',engine='codex',selected_host_ids=['a'],restrict_to_selected=True,remote_roots={'a':[]}))
+        await service.runs[view['active_run']]
+        assert seen==[{'a'},{'a'}]
     asyncio.run(scenario())
 
 
 @pytest.mark.parametrize('seed_scope,expected',[(None,False),(['b'],False),(['a'],False)])
-def test_scope_change_starts_fresh_thread_without_old_private_transcript(monkeypatch,seed_scope,expected):
+def test_explicit_new_chat_does_not_import_unbound_private_transcript(monkeypatch,seed_scope,expected):
     import backend.codex_agent as module
     from backend.mcp_client import MCPGateway
     calls=[]
@@ -105,7 +117,7 @@ def test_scope_change_starts_fresh_thread_without_old_private_transcript(monkeyp
     monkeypatch.setattr(module,'inherited_mcp_names',lambda:[])
     async def scenario():
         chat={'state':{},'messages':[{'role':'assistant','content':'private-b-machine'},{'role':'user','content':'current request'}],
-              'turns':[{'tools':[]}],'codex_thread_id':'old-wide-thread','codex_scope':None}
+              'turns':[{'tools':[]}]}
         if seed_scope is not None:chat['branch_seed']=dict(engine='codex',scope=seed_scope,messages=[dict(role='user',content='safe branch context')])
         await module.run_codex_agent(chat,MCPGateway(Service()),{'a'},'rules',lambda:None,lambda:None,lambda *a,**k:None)
         prompt=next(params for method,params in calls if method=='turn/start')['input'][0]['text']
@@ -235,14 +247,19 @@ def test_native_skill_revision_detects_content_changes(tmp_path):
 
 
 @pytest.mark.parametrize('text_reply',[True,False])
-def test_native_runtime_root_completion_resume_and_permission_boundaries(monkeypatch,tmp_path,text_reply):
+@pytest.mark.parametrize('legacy_fingerprint',[False,True])
+def test_native_runtime_root_completion_resume_and_permission_boundaries(monkeypatch,tmp_path,text_reply,legacy_fingerprint):
     import backend.codex_agent as module
+    from backend.codex_host import configuration_fingerprint, native_config_revision
     from backend.mcp_client import MCPGateway
     calls=[]
     class Connection:
-        def __init__(self,*args,**kwargs):self.events=asyncio.Queue()
+        def __init__(self,*args,**kwargs):
+            self.events=asyncio.Queue()
+            self.interactions=None
         async def start(self):pass
-        async def close(self):self.interactions.close()
+        async def close(self):
+            if self.interactions is not None:self.interactions.close()
         async def request(self,method,params,**kwargs):
             calls.append((method,params))
             if method=='model/list':return {'data':[{'id':'m','isDefault':True,'supportedReasoningEfforts':[{'reasoningEffort':'high'}]}]}
@@ -272,16 +289,39 @@ def test_native_runtime_root_completion_resume_and_permission_boundaries(monkeyp
     async def scenario():
         chat={'id':'test','active_run':'run','state':{},'turns':[{'role':'user','model_history_before':[{'role':'assistant','content':'private-old-epoch'}]},{'tools':[]}],'messages':[{'role':'assistant','content':'private-old-epoch'},{'role':'user','content':'run'}]}
         request={'permission_mode':'full','codex_options':{'cwd':str(tmp_path),'model':'m','effort':'high','multi_agent':True,'collaboration_mode':'plan'}}
-        for mode in ['full','full','read_only']:
+        for index,(mode,remote_roots,blocked) in enumerate([
+            ('full',{'a':[]},False),
+            ('full',{'b':[]},False),
+            ('full',{'b':['/project']},True),
+            ('read_only',{'b':[]},True),
+            ('full',{'b':[]},False),
+        ]):
             request['permission_mode']=mode
-            await module.run_codex_agent(chat,MCPGateway(Service()),{'a'},'rules',lambda:None,lambda:None,lambda *a,**k:None,request=request)
+            request['remote_roots']=remote_roots
+            if index:
+                chat['turns'].extend([{'role':'user','model_history_before':[]},{'tools':[]}])
+                chat['messages'].append({'role':'user','content':'run'})
+            chat['turns'][-2]['request']=dict(request)
+            run=module.run_codex_agent(chat,MCPGateway(Service()),None,'rules',lambda:None,lambda:None,lambda *a,**k:None,request=request)
+            if blocked:
+                with pytest.raises(ValueError,match='新建对话'):
+                    await run
+                assert chat['codex_thread_id']=='root'
+                continue
+            await run
+            if not index and legacy_fingerprint:
+                cwd=str(tmp_path.resolve())
+                chat['codex_fingerprint']=configuration_fingerprint(
+                    cwd=cwd,scope=None,mode=mode,skills={'workbench':{},'native':[]},
+                    extensions={'options':{**request['codex_options'],'cwd':cwd},
+                                'configuration_revision':native_config_revision(cwd),
+                                'permissions':{'local_roots':None,'remote_roots':remote_roots,'external_mcp_servers':None}})
             assert chat['messages'][-1]['content']==('root result' if text_reply else 'Codex 本轮已结束，请查看工具执行记录。')
             assert 'private-old-epoch' not in str(chat['messages'])
             assert chat['turns'][-2]['model_history_before']==[]
-        assert [m for m,p in calls if m.startswith('thread/')]==['thread/start','thread/resume','thread/start']
+        assert [m for m,p in calls if m.startswith('thread/')]==['thread/start','thread/resume','thread/resume']
         params=[p for m,p in calls if m=='thread/start']
         assert params[0]['sandbox']=='danger-full-access'
-        assert params[-1]['sandbox']=='read-only' and params[-1]['config']['features.shell_tool'] is False
         assert all(p['effort']=='high' and p['collaborationMode']['mode']=='plan' for m,p in calls if m=='turn/start')
     asyncio.run(scenario())
 
