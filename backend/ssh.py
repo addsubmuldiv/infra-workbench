@@ -81,7 +81,7 @@ class SSHService:
     def arguments(self, host):
         args = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
                 '-o', 'ConnectionAttempts=1', '-o', 'ClearAllForwardings=yes',
-                '-o', 'StrictHostKeyChecking='+('accept-new' if host.get('_import_identity') else 'yes'), '-o', 'PermitLocalCommand=no']
+                '-o', 'StrictHostKeyChecking='+('accept-new' if self.accepts_new_host_keys(host) else 'yes'), '-o', 'PermitLocalCommand=no']
         if host.get('user'):
             args += ['-l', host['user']]
         if host.get('port'):
@@ -126,6 +126,10 @@ class SSHService:
             else:
                 result.setdefault(key,value)
         return result
+
+    @staticmethod
+    def accepts_new_host_keys(host):
+        return bool(host.get('_accept_new_host_keys') or host.get('_import_identity'))
 
     @staticmethod
     def check_import_identity(host, config):
@@ -178,10 +182,9 @@ class SSHService:
         routed = any(cfg.get(key) not in (None, 'none') for key in ('proxyjump', 'proxycommand'))
         if routed:
             timeout += SSH_JUMP_EXTRA_TIMEOUT_SECONDS
-        # Import previews can verify a connection before assigning a host ID.
-        importing = bool(host.get('_import_identity'))
-        host_keys = ImportHostKeys(self.known_hosts) if importing else None
-        if importing:
+        accept_new = self.accepts_new_host_keys(host)
+        host_keys = ImportHostKeys(self.known_hosts) if accept_new else None
+        if accept_new:
             self.known_hosts.parent.mkdir(parents=True, exist_ok=True)
         trace = ConnectionTrace(host.get('id', 'unsaved'), host_keys)
         options = dict(host=cfg['hostname'], port=int(cfg.get('port', 22)),
@@ -189,11 +192,11 @@ class SSHService:
                        known_hosts=str(self.known_hosts), connect_timeout=timeout, login_timeout=timeout,
                        client_factory=lambda: trace,
                        preferred_auth=['publickey'] if key_only else ['password', 'keyboard-interactive'])
-        if importing and not self.known_hosts.exists():
+        if accept_new and not self.known_hosts.exists():
             options['known_hosts'] = b''
         if cfg.get('hostkeyalias') and cfg['hostkeyalias'] != 'none':
             options['host_key_alias'] = cfg['hostkeyalias']
-        if importing and cfg.get('proxyjump') and cfg['proxyjump'] != 'none':
+        if accept_new and cfg.get('proxyjump') and cfg['proxyjump'] != 'none':
             options['proxy_command'] = await self.import_proxy(cfg)
         elif cfg.get('proxyjump') and cfg['proxyjump'] != 'none':
             # AsyncSSH inherits config=None for string tunnels, so an OpenSSH
@@ -265,7 +268,7 @@ class SSHService:
 
     async def ensure_monitor_session(self, host):
         """Prefer a persistent key session, retaining native SSH compatibility."""
-        if host.get('_import_identity'):
+        if self.accepts_new_host_keys(host):
             return
         if restore := getattr(self, 'restore_session', None):
             await restore(host)
@@ -339,7 +342,7 @@ class SSHService:
                   '-o', 'Port='+str(config.get('port',22)), '-o', 'CanonicalizeHostname=no',
                   '-o', 'HostKeyAlias='+host_key_alias]
         if config.get('proxyjump') not in (None,'none'):
-            if host.get('_import_identity'):
+            if self.accepts_new_host_keys(host):
                 proxy_command = await self.import_proxy(config)
                 value = subprocess.list2cmdline(proxy_command) if os.name == 'nt' else shlex.join(proxy_command)
                 pinned += ['-o', 'ProxyCommand='+value]
@@ -379,7 +382,7 @@ class SSHService:
 
     async def connect(self, host, password=None, provision=False):
         if not password:
-            if host.get('_import_identity'):
+            if self.accepts_new_host_keys(host):
                 self.known_hosts.parent.mkdir(parents=True, exist_ok=True)
                 cfg = await self.effective(host)
                 self.check_import_identity(host, cfg)
@@ -417,7 +420,7 @@ class SSHService:
             verified = self.connection_configs.get(verify)
             verify.close()
             await verify.wait_closed()
-            if host.get('_import_identity'):
+            if self.accepts_new_host_keys(host):
                 code, out, err = await self.run_bound(candidate, 'printf iwb-connected', None, verified, native=True)
             else:
                 code, out, err = await self.command(self.arguments(candidate)+['printf iwb-connected'])

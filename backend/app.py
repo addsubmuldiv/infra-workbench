@@ -609,7 +609,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             visible_rules.append(dict(rule, status=status))
         return dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, group_reservations=app.state.group_reservations.list()['items'], reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
-    async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None):
+    async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None,accept_new_host_keys=False):
         if body.remember_password and not body.password:
             raise HTTPException(422,'勾选记住 SSH 密码时，请提供本次登录密码')
         if body.manual and not body.user:
@@ -624,13 +624,15 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                             port=effective_port, manual=body.manual)
         try:
             candidate=dict(host,_import_identity=expected_identity) if expected_identity else host
+            if accept_new_host_keys and new:
+                candidate=dict(candidate,_accept_new_host_keys=True)
             result = await ssh.connect(candidate, body.password.get_secret_value() if body.password else None, body.provision)
             if expected_identity:
-                host.update({key:value for key,value in candidate.items() if key!='_import_identity'})
+                host.update({key:value for key,value in candidate.items() if key not in ('_import_identity','_accept_new_host_keys')})
         except Exception as exc:
             message = str(exc)[:1000] or '连接超时'
-            if 'host key' in message.lower() or 'Host key' in message:
-                message += '。首次连接请先在终端核对服务器指纹并信任该主机，再重试；指纹变化时请先核实原因。'
+            if 'host key' in message.lower() or 'host identification' in message.lower():
+                message += '。请核对服务器指纹及本机 SSH 信任记录，再重试。'
             raise HTTPException(400, message) from None
         if new:
             hosts.append(host)
@@ -657,7 +659,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             except AgentError as exc:
                 raise HTTPException(409,exc.message) from None
         try:
-            result = await connect_machine(body)
+            result = await connect_machine(body,accept_new_host_keys=True)
             if body.cluster_id:
                 app.state.clusters.assign_import(result['host_id'],body.cluster_id)
             return result

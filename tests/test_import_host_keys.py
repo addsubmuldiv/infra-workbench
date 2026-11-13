@@ -45,9 +45,10 @@ def test_import_uses_existing_key_when_spreadsheet_password_is_rejected(tmp_path
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize('entry', ['import', 'add-machine'])
 @pytest.mark.parametrize('password', ['synthetic-password', None])
 @pytest.mark.parametrize('replacement_algorithm', ['ssh-ed25519', 'ecdsa-sha2-nistp256'])
-def test_import_remembers_first_key_and_rejects_replacement(tmp_path, password, replacement_algorithm):
+def test_remembers_first_key_and_rejects_replacement(tmp_path, password, replacement_algorithm, entry):
     async def scenario():
         authenticated = []
 
@@ -69,7 +70,10 @@ def test_import_remembers_first_key_and_rejects_replacement(tmp_path, password, 
         service = SSHService(tmp_path/'data', known_hosts=known)
         host = dict(id='import', target='127.0.0.1', user='tester',
                     port=listener.get_port(), manual=True)
-        host['_import_identity'] = connection_identity(await service.effective(host))
+        if entry == 'import':
+            host['_import_identity'] = connection_identity(await service.effective(host))
+        else:
+            host['_accept_new_host_keys'] = True
         try:
             assert (await service.connect(host, password))['auth']
             content = known.read_text()
