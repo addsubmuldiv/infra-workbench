@@ -35,7 +35,8 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   for(const [name,value] of Object.entries({window:{localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},scrollTo(){}},document:{documentElement:{dataset:{}},getElementById:()=>({})},location:{hash}})){
     const original=Object.getOwnPropertyDescriptor(globalThis,name);Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});t.after(()=>{if(original)Object.defineProperty(globalThis,name,original);else delete globalThis[name]});
   }
-  const source=fs.readFileSync(new URL('../src/main.tsx',import.meta.url),'utf8')+'\nexport {App};';
+  const mainUrl=new URL('../src/main.tsx',import.meta.url);
+  const source=fs.readFileSync(mainUrl,'utf8').replaceAll('import.meta.url',JSON.stringify(mainUrl.href))+'\nexport {App};';
   const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const exports={};const mocks={'./clusterApi':clusterApi,'./i18n':{t:(zh)=>zh,useLocale(){}},'./demoBootstrap':{isDemo:demo},'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':{...preferences,browserStorage:()=>window.localStorage},'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
   const sidebarJs=ts.transpileModule(fs.readFileSync(new URL('../src/ClusterSidebar.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
