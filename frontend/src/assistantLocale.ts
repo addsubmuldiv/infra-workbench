@@ -253,6 +253,8 @@ const messages:Record<string,string>={
   "删除这段本机对话和工具记录？不会影响服务器上的文件或进程。": "Delete this local chat and its tool records? Server files and processes will be unaffected.",
   "AI 工作台对话": "AI workbench chat",
   "新对话": "New chat",
+  "当前设置与这段 Codex 对话的设置不同。请恢复原设置继续，或点加号新建对话。": "The settings differ from those used in this Codex chat. Restore the original settings to continue, or click + to start a new chat.",
+  "Codex 返回了不同的会话编号。请重试，或点加号新建对话。": "Codex returned a different thread ID. Try again, or click + to start a new chat.",
   "对话选项": "Chat options",
   "删除当前对话": "Delete current chat",
   "对话保存在本机，上下文较长时会自动压缩早期内容。文件片段和检查结果会发送给当前模型，常见凭据字段会脱敏。": "Chats are stored locally. Earlier context is summarized automatically when it grows long. File excerpts and inspection results go to the current model, with common credential fields redacted.",

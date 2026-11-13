@@ -9,6 +9,24 @@ from pathlib import Path
 from .chat_tools import scrub
 
 
+CODEX_NEW_CHAT_REQUIRED = '当前设置与这段 Codex 对话的设置不同。请恢复原设置继续，或点加号新建对话。'
+
+
+class CodexThreadBoundaryError(ValueError):
+    pass
+
+
+def codex_remote_roots(request):
+    return {host:roots for host,roots in (request.get('remote_roots') or {}).items() if roots}
+
+
+def last_codex_request(turns):
+    for index in range(len(turns)-1,0,-1):
+        if turns[index].get('codex_turn_id'):
+            return turns[index-1].get('request')
+    return None
+
+
 async def next_native_event(queue,interactions,idle_timeout=120):
     while True:
         try:return await asyncio.wait_for(queue.get(),idle_timeout)

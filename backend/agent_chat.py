@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel,ConfigDict,Field,field_validator
 from .chat_tools import scrub
 from .agent_errors import AgentError
+from .codex_host import CODEX_NEW_CHAT_REQUIRED, CodexThreadBoundaryError, codex_remote_roots, last_codex_request
 
 async def run_deep_agent(*args,**kwargs):
     # Resource monitoring and the first page do not need the model framework.
@@ -501,6 +502,10 @@ class AgentChat:
             status='cancelled';note='本轮处理已取消；已完成的步骤保留在记录中；未确认的写入请先核对状态。'
         except TimeoutError:
             status='failed';note='本轮处理超时，已有工具结果仍可查看，未完成部分不能视为成功。'
+        except CodexThreadBoundaryError as exc:
+            status='failed'
+            chat['messages'].pop()
+            turn.update(content=str(exc),error_code='codex_new_chat_required')
         except AgentError as exc:
             status='failed';note='本轮未能完成：'+scrub(exc.message,secret)[:500]
         except ValueError as exc:
