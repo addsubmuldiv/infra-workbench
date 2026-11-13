@@ -1,4 +1,5 @@
 import asyncio
+import time
 from types import SimpleNamespace
 
 import asyncssh
@@ -59,8 +60,8 @@ def test_roundtrips_ownership_and_cleanup(tmp_path):
                     local_port=destination if direction == 'remote' else port,
                     remote_port=port if direction == 'remote' else destination))
                 with pytest.raises(ValueError): await manager.start('b', rule['id'])
-                await manager.start('a', rule['id'])
-                await manager.start('a', rule['id'])
+                await manager.start('a', rule['id'], notify_result=True)
+                await manager.start('a', rule['id'], notify_result=True)
                 await settle(rule, 'connected')
                 with pytest.raises(ValueError): await manager.update('a', rule['id'], TunnelRequest(
                     name='Edit', local_port=1234, remote_port=2345))
@@ -74,6 +75,10 @@ def test_roundtrips_ownership_and_cleanup(tmp_path):
                 assert connections[-1].is_closed()
                 with pytest.raises(OSError): await asyncio.open_connection('127.0.0.1', port)
             assert len(connections) == 2
+            events = store.events()
+            assert len(events) == 2
+            assert all(event['host'] == 'a' and event['notify'] and 'Echo' in event['message']
+                       for event in events)
             assert len(SSHTunnels(store, None, [{'id':'a'}], None).list('a')) == 2
             await manager.remove_host('a')
             assert manager.rules == []
@@ -125,7 +130,8 @@ def test_stop_cancels_connect_and_no_retry_on_bind_failure(tmp_path):
             finally: cancelled.set()
         manager.connect_password = connect
         manager.use_password = lambda host: True
-        rule = manager.create('a', TunnelRequest(name='Cancel', local_port=7890, remote_port=18899))
+        rule = manager.create('a', TunnelRequest(name='Cancel', direction='local',
+                                                local_port=7890, remote_port=18899))
         try:
             await manager.start('a', rule['id'])
             await entered.wait()
@@ -143,8 +149,8 @@ def test_stop_cancels_connect_and_no_retry_on_bind_failure(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize('direction', ['local', 'remote'])
-def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction):
+@pytest.mark.parametrize(('direction', 'auto_reconnect'), [('local', True), ('remote', False), ('remote', True)])
+def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction, auto_reconnect):
     import shutil
     import socket
     from backend.ssh import SSHService
@@ -166,19 +172,29 @@ def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction):
         ssh = SSHService(tmp_path, known_hosts=known)
         store = Store(tmp_path/'native.db')
         manager = SSHTunnels(store, ssh, [host], None)
+        manager.retry_delays = (.1, .2)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
         destination = target.sockets[0].getsockname()[1]
         rule = manager.create('a', TunnelRequest(name='Native', direction=direction,
             local_port=destination if direction=='remote' else port,
-            remote_port=port if direction=='remote' else destination))
+            remote_port=port if direction=='remote' else destination,
+            auto_reconnect=auto_reconnect))
+        retries_bind_rejection = direction == 'remote' and auto_reconnect
         async def settle(status):
-            for _ in range(400):
-                if manager.view(rule)['status']==status: return
+            while manager.view(rule)['status'] != status:
+                if manager.view(rule)['status'] == 'error': break
                 await asyncio.sleep(.025)
             assert manager.view(rule)['status']==status, manager.view(rule)
+        def occupy_port():
+            occupied = socket.socket()
+            if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+                occupied.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            occupied.bind(('127.0.0.1', port))
+            occupied.listen()
+            return occupied
         try:
-            await manager.start('a', rule['id']); await settle('connected')
+            await manager.start('a', rule['id']); await asyncio.wait_for(settle('connected'), 10)
             reader, writer = await asyncio.open_connection('127.0.0.1', port)
             writer.write(b'native'); await writer.drain()
             assert await asyncio.wait_for(reader.read(6), 3)==b'native'
@@ -186,11 +202,21 @@ def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction):
             process = manager.connections[rule['id']].process
             await manager.stop('a', rule['id'])
             assert process.returncode is not None
-            with socket.socket() as occupied:
-                if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'): occupied.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-                occupied.bind(('127.0.0.1', port)); occupied.listen()
-                await manager.start('a', rule['id']); await settle('error')
+            with occupy_port():
+                await manager.start('a', rule['id'])
+                if retries_bind_rejection:
+                    await asyncio.wait_for(settle('reconnecting'), 10)
+                else:
+                    await asyncio.wait_for(settle('error'), 10)
                 assert manager.view(rule)['error_code']=='FORWARD_REJECTED'
+            if retries_bind_rejection:
+                await asyncio.wait_for(settle('connected'), 10)
+                await manager.stop('a', rule['id'])
+                with occupy_port():
+                    await manager.start('a', rule['id'])
+                    await asyncio.wait_for(settle('reconnecting'), 10)
+                    await asyncio.wait_for(settle('error'), 10)
+                    assert manager.view(rule)['error_code']=='FORWARD_REJECTED'
         finally:
             await manager.close(); await ssh.close()
             store.db.close(); server.close(); await server.wait_closed()
@@ -215,6 +241,16 @@ def test_routes_scope_and_saved_password_identity(tmp_path):
         rule=response.json()
         assert client.post(f"/api/hosts/b/tunnels/{rule['id']}/start",headers=headers).status_code==400
         assert client.get(path).json()[0]['status']=='stopped'
+        assert client.post(f"{path}/{rule['id']}/start",headers=headers).json()['status']=='connecting'
+        for _ in range(100):
+            events = client.get('/api/state').json()['events']
+            if events:
+                break
+            time.sleep(.01)
+        assert len(events) == 1
+        assert events[0]['host'] == 'a' and events[0]['notify']
+        assert 'Test' in events[0]['message'] and '连接失败' in events[0]['message']
+        assert client.get(path).json()[0]['status']=='error'
         assert client.delete(f"{path}/{rule['id']}", headers=headers).status_code==200
         assert client.get(path).json()==[]
 
@@ -321,6 +357,7 @@ def test_startup_only_selected_rules_and_reconnect_after_loss(tmp_path):
                 await asyncio.sleep(.01)
             assert len(connections)==2
             assert manager.view(rule)['status']=='connected'
+            assert store.events() == []
             await manager.remove_host('a')
             assert connections[-1].closed.is_set()
         finally:await manager.close();store.db.close()

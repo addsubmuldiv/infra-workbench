@@ -11,6 +11,9 @@ type Draft=Pick<TunnelRule,'name'|'direction'|'local_port'|'remote_port'|'auto_r
 const defaults=():Draft=>({name:t('Codex 代理','Codex proxy'),direction:'remote',local_port:7890,remote_port:18899,auto_reconnect:true,auto_start:false,before_vscode:false});
 const running=(status:string)=>['connecting','connected','reconnecting'].includes(status);
 function statusText(status:string){return status==='connected'?t('已连接','Connected'):status==='connecting'?t('正在连接','Connecting'):status==='reconnecting'?t('正在重连','Reconnecting'):status==='error'?t('连接失败','Connection failed'):t('未连接','Disconnected')}
+function withRule(rules:TunnelRule[],rule:TunnelRule){
+  return rules.some(item=>item.id===rule.id)?rules.map(item=>item.id===rule.id?rule:item):[...rules,rule];
+}
 export async function tunnelRequest(host:string,path='',method='GET',body?:unknown){
   const response=await fetch(`/api/hosts/${encodeURIComponent(host)}/tunnels${path}`,{method,headers:{'Content-Type':'application/json','X-IWB':'1'},body:body===undefined?undefined:JSON.stringify(body)});
   const data=await response.json();
@@ -27,7 +30,7 @@ export function SSHTunnelButton({host,disabled=false}:{host:Host;disabled?:boole
   return <><button className={'ssh-open ssh-tunnel-button tunnel-'+status} disabled={disabled} title={disabled?t('演示模式不建立真实隧道','Tunnels are unavailable in demo mode'):title} aria-label={host.target+' '+title} aria-haspopup="dialog" onClick={()=>setOpen(true)}><Link2 size={16}/><i className={'tunnel-dot '+status}/></button>{open&&<SSHTunnelPanel host={host} close={()=>setOpen(false)} onRules={setLive}/>}</>;
 }
 
-export function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;onRules:(rules:TunnelRule[])=>void}){
+export function SSHTunnelPanel({host,close,onRules,onStarted=close}:{host:Host;close:()=>void;onRules:(rules:TunnelRule[])=>void;onStarted?:()=>void}){
   useLocale();
   const dialog=useRef<HTMLDialogElement>(null),title=useId(),description=useId();
   const [rules,setRules]=useState<TunnelRule[]>(host.ssh_tunnels??[]),[selected,setSelected]=useState<string|null>(null);
@@ -51,12 +54,25 @@ export function SSHTunnelPanel({host,close,onRules}:{host:Host;close:()=>void;on
   const rule=rules.find(r=>r.id===selected),active=!!rule&&running(rule.status);
   const dirty=!!rule&&Object.keys(draft).some(key=>draft[key as keyof Draft]!==rule[key as keyof Draft]);
   const update=<K extends keyof Draft>(key:K,value:Draft[K])=>{setDraft(old=>({...old,[key]:value}));setProbe(null)};
-  async function act(action:()=>Promise<void>){
+  async function act(action:()=>Promise<void>,refresh=true){
     if(acting.current)return;acting.current=true;setBusy(true);setError('');
-    try{await action();const data=await tunnelRequest(host.id);if(mounted.current){setRules(data);onRules(data)}}catch(e){if(mounted.current)setError(e instanceof Error?e.message:String(e))}finally{acting.current=false;if(mounted.current)setBusy(false)}
+    try{await action();if(refresh&&mounted.current){const data=await tunnelRequest(host.id);if(mounted.current){setRules(data);onRules(data)}}}catch(e){if(mounted.current)setError(e instanceof Error?e.message:String(e))}finally{acting.current=false;if(mounted.current)setBusy(false)}
   }
   async function save(connect:boolean){
-    await act(async()=>{const saved:TunnelRule=await tunnelRequest(host.id,selected?`/${selected}`:'',selected?'PUT':'POST',draft);if(mounted.current)choose(saved);if(connect)await tunnelRequest(host.id,`/${saved.id}/start`,'POST')});
+    await act(async()=>{
+      const saved:TunnelRule=connect&&rule&&!dirty?rule:
+        await tunnelRequest(host.id,selected?`/${selected}`:'',selected?'PUT':'POST',draft);
+      if(mounted.current){
+        choose(saved);
+        setRules(old=>withRule(old,saved));
+      }
+      if(!connect)return;
+      const started:TunnelRule=await tunnelRequest(host.id,`/${saved.id}/start`,'POST');
+      if(mounted.current){
+        onRules(withRule(rules,started));
+        onStarted();
+      }
+    },!connect);
   }
   const route=draft.direction==='remote'?[t('远端','Remote'),draft.remote_port,t('本机','Local'),draft.local_port]:[t('本机','Local'),draft.local_port,t('远端','Remote'),draft.remote_port];
   const elapsed=rule?.connected_at?Math.max(0,Math.floor((now/1000-rule.connected_at)/60)):0;
