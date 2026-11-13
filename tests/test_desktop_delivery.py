@@ -64,6 +64,37 @@ def test_interrupted_windows_claim_is_unknown_after_restart(tmp_path):
     assert store.desktop_statuses(['r'])['r']['status'] == 'unknown'
 
 
+def test_notifications_choose_one_channel_across_tray_setting_changes(tmp_path):
+    from backend.desktop_notifications import register_desktop_notification_routes
+    store = Store(tmp_path/'db')
+    app = FastAPI()
+    register_desktop_notification_routes(app, store)
+    with TestClient(app) as client:
+        def poll(enabled):
+            response = client.post('/api/notifications/desktop-events', json={'enabled': enabled})
+            assert response.status_code == 200
+            return [event['id'] for event in response.json()['events']]
+
+        def claim(*ids):
+            response = client.post('/api/notifications/browser-claim', json={'ids': ids})
+            assert response.status_code == 200
+            return response.json()['ids']
+
+        desktop_id = record(store, 'desktop')['id']
+        assert desktop_id in poll(True)
+        store.event('h', 'SSH tunnel connected')
+        waiting_id = store.events()[0]['id']
+        assert claim(desktop_id, waiting_id) == []
+        assert waiting_id in poll(True)
+
+        poll(False)
+        browser_id = record(store, 'browser')['id']
+        assert claim(desktop_id, waiting_id, browser_id) == [browser_id]
+        assert claim(browser_id) == []
+        assert browser_id not in poll(True)
+        assert store.desktop_statuses(['browser'])['browser']['status'] == 'skipped'
+
+
 def test_initial_cursor_includes_startup_events_and_recent_pending_only():
     now = time.time()
     cursor = EventCursor(started_at=now-2)
