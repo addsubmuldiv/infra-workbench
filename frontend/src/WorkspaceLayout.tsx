@@ -6,7 +6,7 @@ import {DEFAULT_SIDEBAR_WIDTH,MIN_SIDEBAR_WIDTH,MOBILE_BREAKPOINT,fitSidebarWidt
 
 function storage(){try{return workspaceStorage}catch{return null}}
 
-export function WorkspaceLayout({children,onClickCapture,assistantWidth=0}:{children:React.ReactNode;onClickCapture?:React.MouseEventHandler<HTMLDivElement>;assistantWidth?:number}){
+export function WorkspaceLayout({children,onClickCapture,assistantWidth=0,desktopTitlebar=false}:{children:React.ReactNode;onClickCapture?:React.MouseEventHandler<HTMLDivElement>;assistantWidth?:number;desktopTitlebar?:boolean}){
   useLocale();
   const [preferred,setPreferred]=useState(()=>loadSidebarWidth(storage()));
   useWorkspaceRestore('infra-workbench:sidebar-width:v1',()=>loadSidebarWidth(storage()),setPreferred);
@@ -30,7 +30,7 @@ export function WorkspaceLayout({children,onClickCapture,assistantWidth=0}:{chil
     commit(lastWidth.current);gesture.current=null;setDragging(false);
     if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
   };
-  return <div onClickCapture={onClickCapture} className={'shell'+(dragging?' resizing-sidebar':'')+(assistantWidth?' assistant-docked':'')} style={{'--sidebar-width':`${width}px`,'--assistant-width':`${assistantWidth}px`} as React.CSSProperties} data-sidebar-wide={width>=480}>
+  return <div onClickCapture={onClickCapture} className={'shell'+(desktopTitlebar?' desktop-shell':'')+(dragging?' resizing-sidebar':'')+(assistantWidth?' assistant-docked':'')} style={{'--sidebar-width':`${width}px`,'--assistant-width':`${assistantWidth}px`} as React.CSSProperties} data-sidebar-wide={width>=480}>
     {children}
     <div className="sidebar-resizer" role="separator" aria-label={t("调整左侧栏宽度","Resize sidebar")} aria-orientation="vertical" aria-valuemin={viewport<=MOBILE_BREAKPOINT?65:MIN_SIDEBAR_WIDTH} aria-valuemax={viewport<=MOBILE_BREAKPOINT?65:maximum} aria-valuenow={width} tabIndex={0}
       title={t("拖动调整左栏宽度；双击恢复默认；方向键微调","Drag to resize; double-click to reset; use arrow keys to adjust")}

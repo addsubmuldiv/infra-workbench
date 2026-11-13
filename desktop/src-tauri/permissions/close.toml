@@ -9,6 +9,11 @@ description = "Show the local workbench only after its first interface has mount
 commands.allow = ["desktop_ready"]
 
 [[permission]]
+identifier = "allow-main-window-action"
+description = "Control the Windows main workbench window from its local page."
+commands.allow = ["main_window_action"]
+
+[[permission]]
 identifier = "allow-quick-window-action"
 description = "Control only the calling local machine tool window."
 commands.allow = ["quick_window_action"]

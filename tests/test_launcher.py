@@ -27,6 +27,7 @@ def test_source_checkout_uses_newest_desktop_build_but_keeps_installed_binary_pr
 def test_defaults_and_independent_mode_persistence(tmp_path):
     settings=LaunchSettings(tmp_path)
     assert settings.mode=='browser' and settings.show_floating
+    assert not settings.explicit_mode
     settings.save_mode('desktop')
     (tmp_path/'floating-monitor-enabled.json').write_text('{"enabled": false}')
     restored=LaunchSettings(tmp_path)
@@ -46,11 +47,13 @@ def test_installed_default_is_shared_by_settings_and_tray(tmp_path, monkeypatch,
     app = FastAPI()
     register_launch_routes(app, tmp_path, root=tmp_path, set_floating=lambda _: None)
     with TestClient(app) as client:
-        assert client.get('/api/settings/launch').json()['mode'] == 'desktop'
+        fresh=client.get('/api/settings/launch').json()
+        assert fresh['mode'] == 'desktop' and fresh['explicit_mode'] is False
         launcher.open_preferred_interface(tmp_path, tmp_path)
         assert calls == ['desktop']
         LaunchSettings(tmp_path).save_mode('browser')
-        assert client.get('/api/settings/launch').json()['mode'] == 'browser'
+        saved=client.get('/api/settings/launch').json()
+        assert saved['mode'] == 'browser' and saved['explicit_mode'] is True
         launcher.open_preferred_interface(tmp_path, tmp_path)
         assert calls == ['desktop', 'browser']
 

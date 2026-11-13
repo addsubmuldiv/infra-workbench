@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-titlebar",
+  "description": "Window controls for the main workbench page.",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "local": true,
+  "remote": { "urls": ["http://127.0.0.1:8765/*"] },
+  "permissions": ["allow-main-window-action"]
+}

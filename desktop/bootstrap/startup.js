@@ -19,12 +19,12 @@
   const messages = {en: {
     connecting:'Connecting to local service…', backend:'Starting local service…', waiting:'Waiting for local service to respond…',
     health:'Local service ready', frontend:'Loading workspace…', error:'Unable to open the workspace',
-    retry:'Try again', hint:'Closing this window keeps your workspace running. To quit, use the system tray or menu bar.',
+    retry:'Try again', minimize:'Minimize window', maximize:'Maximize window', restore:'Restore window', close:'Close window', hint:'Closing this window keeps your workspace running. To quit, use the system tray or menu bar.',
     progress:'Startup stages', note:'Progress follows completed stages; it is not a time estimate.', failedNote:'Loading has stopped. Resolve the error and try again.', elapsed:'Elapsed', slow:'This is taking longer than usual. You can close this window and open it again later.'
   }, zh: {
     connecting:'正在连接本地后台…', backend:'正在启动本地后台…', waiting:'正在等待本地后台恢复响应…',
     health:'本地后台已就绪', frontend:'正在加载工作台…', error:'暂时无法打开工作台',
-    retry:'重新连接', hint:'关闭窗口后，工作台会保留在后台。彻底退出请使用系统托盘或菜单栏。',
+    retry:'重新连接', minimize:'最小化窗口', maximize:'最大化窗口', restore:'还原窗口', close:'关闭窗口', hint:'关闭窗口后，工作台会保留在后台。彻底退出请使用系统托盘或菜单栏。',
     progress:'启动阶段进度', note:'百分比按已完成的启动阶段更新，不代表剩余时间。', failedNote:'加载已停止，请处理错误后重新连接。', elapsed:'已等待', slow:'本次启动用时较长。可以先关闭窗口，稍后重新打开。'
   }};
   let copy = messages[en ? 'en' : 'zh'];
@@ -35,6 +35,43 @@
   <main id="iwb-startup-panel" aria-busy="true"><div class="iwb-startup-brand"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#152c39"/><g fill="none" stroke="#e9fff9" stroke-width="2" stroke-linecap="round"><rect x="8" y="8" width="16" height="16" rx="3"/><path d="M12 5v3m8-3v3M5 12h3m-3 8h3m16-8h3m-3 8h3M12 24v3m8-3v3"/></g><rect x="12" y="12" width="8" height="8" rx="1.5" fill="#70e2c3"/><circle cx="25" cy="25" r="5" fill="#152c39"/><circle cx="25" cy="25" r="3.5" fill="#70e2c3"/></svg><h1>Infra Workbench</h1></div>
   <div class="iwb-startup-status-row"><span class="iwb-startup-spinner" aria-hidden="true"></span><p id="iwb-startup-status" role="status" aria-live="polite"></p></div><div class="iwb-startup-track" id="iwb-startup-progress" role="progressbar" aria-label="${copy.progress}" aria-valuemin="0" aria-valuemax="100"><div id="iwb-startup-bar"></div></div><div class="iwb-startup-meta"><span id="iwb-startup-percent"></span><span id="iwb-startup-elapsed"></span></div><p class="iwb-startup-note" id="iwb-startup-note">${copy.note}</p><p class="iwb-startup-note" id="iwb-startup-slow" hidden>${copy.slow}</p><button id="iwb-startup-retry" hidden>${copy.retry}</button><p class="iwb-startup-note" id="iwb-startup-hint">${copy.hint}</p></main>`;
   document.documentElement.appendChild(layer);
+  if (bootstrap && window.__iwbDesktopTitlebar) {
+    const controls = document.createElement('div');
+    controls.className = 'iwb-startup-window';
+    const drag = document.createElement('div');
+    drag.className = 'iwb-startup-drag';
+    const invoke = action => window.__TAURI_INTERNALS__.invoke('main_window_action', {action});
+    const addButton = (symbol, label, action) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = symbol;
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      button.addEventListener('click', action);
+      controls.appendChild(button);
+      return button;
+    };
+    controls.appendChild(drag);
+    addButton('−', copy.minimize, () => invoke('minimize').catch(() => {}));
+    const maximize = addButton('□', copy.maximize, toggleMaximize);
+    addButton('×', copy.close, () => invoke('close').catch(() => {}));
+    function updateMaximized(value) {
+      maximize.textContent = value ? '❐' : '□';
+      maximize.title = value ? copy.restore : copy.maximize;
+      maximize.setAttribute('aria-label', maximize.title);
+    }
+    function toggleMaximize() {
+      invoke('toggle-maximize').then(updateMaximized).catch(() => {});
+    }
+    invoke('status').then(updateMaximized).catch(() => {});
+    drag.addEventListener('mousedown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      if (event.detail === 2) toggleMaximize();
+      else invoke('drag').catch(() => {});
+    });
+    layer.prepend(controls);
+  }
   const get = id => document.getElementById(`iwb-startup-${id}`);
   const started = performance.now();
   let stoppedAt = null;

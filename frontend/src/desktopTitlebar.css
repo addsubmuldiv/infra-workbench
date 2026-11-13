@@ -1,0 +1,40 @@
+.desktop-shell{
+  --desktop-titlebar-height:62px;
+  padding-top:var(--desktop-titlebar-height);
+}
+.desktop-shell>.desktop-titlebar{
+  position:fixed;
+  inset:0 0 auto;
+  z-index:95;
+  height:var(--desktop-titlebar-height);
+  padding:0 0 0 16px;
+  gap:12px;
+  background:var(--panel);
+}
+.desktop-titlebar .desktop-brand{margin:0;flex:none;pointer-events:none}
+.desktop-titlebar-space{flex:1;min-width:12px;align-self:stretch;user-select:none}
+.desktop-window-controls{display:flex;flex:none;align-self:stretch;border-left:1px solid var(--line)}
+.desktop-window-controls>button{
+  display:grid;
+  place-items:center;
+  width:44px;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--text);
+}
+.desktop-window-controls>button:hover{background:var(--hover)}
+.desktop-window-controls>.desktop-window-close:hover{background:#c42b1c;color:#fff}
+.desktop-window-controls>button:focus-visible{outline-offset:-3px}
+.desktop-shell>.sidebar,.desktop-shell>.sidebar-resizer{top:var(--desktop-titlebar-height)}
+.desktop-shell>.sidebar>.brand{display:none}
+.desktop-shell .assistant-window.docked{
+  top:var(--desktop-titlebar-height)!important;
+  height:calc(100dvh - var(--desktop-titlebar-height))!important;
+}
+@media(max-width:800px){
+  .desktop-titlebar .desktop-brand>div,.desktop-titlebar .breadcrumb{display:none}
+  .desktop-titlebar .header-tools{gap:6px}
+  .desktop-window-controls>button{width:36px}
+}

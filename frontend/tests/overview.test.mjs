@@ -19,7 +19,7 @@ function host(id,kind,count,fresh=true){return {id,target:id,user:null,auth:'key
 const hosts=[host('alpha','NPU',8),host('beta','GPU',4),host('offline','GPU',2,false)];
 hosts[1].snapshot.devices.slice(1).forEach(d=>d.processes=[{pid:123,user:'test'}]);
 
-function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
+function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false,desktopTitlebar=false){
   const values=[],storage=new Map(),cardRenders=new Map();let cursor=0,tree;
   const state={hosts:hostItems,rules:[],reservations,events:[],server_time:100};
   const react={memo:(fn,compare)=>{fn.testCompare=compare;return fn},createElement:(type,props,...children)=>{
@@ -41,6 +41,7 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   const exports={};const mocks={'./clusterApi':clusterApi,'./i18n':{t:(zh)=>zh,useLocale(){}},'./demoBootstrap':{isDemo:demo},'react':react,'react-dom/client':{createRoot:()=>({render(){}})},'./preferences':{...preferences,browserStorage:()=>window.localStorage},'./navigation':navigation,'./notifications':notifications,'./requests':requests,'./hostUsage':usage,'./hostList':hostList,'./browserId':ids,'./assistantLayout':assistantLayout};
   const sidebarJs=ts.transpileModule(fs.readFileSync(new URL('../src/ClusterSidebar.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   const sidebarExports={};new Function('require','exports',sidebarJs)(name=>workspaceMock(name,react)??(mocks[name]||new Proxy({},{get:(_,key)=>key})),sidebarExports);mocks['./ClusterSidebar']=sidebarExports;
+  mocks['./DesktopWindowControls']={hasDesktopTitlebar:()=>desktopTitlebar?async()=>false:undefined,DesktopWindowControls:'DesktopWindowControls'};
   new Function('require','exports',js)(name=>workspaceMock(name,react)??(mocks[name]||new Proxy({},{get:(_,key)=>key})),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=fn=>nodes(tree).find(fn);
@@ -51,6 +52,19 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false){
   const finderCount=()=>text(find(n=>n.props?.className==='match-count').props.children.find(n=>n?.type==='strong'));
   return {render,find,text,metrics,button,finderCount,cardRenders};
 }
+
+test('Windows title bar keeps its window controls above the open assistant',t=>{
+  const h=harness(t,'#assistant',[],hosts,false,true);
+  const layout=h.render();
+  assert.equal(layout.props.children[0].props.className,'desktop-titlebar');
+  assert.ok(h.find(node=>node.type==='DesktopWindowControls'));
+  const assistantToggle=h.find(node=>node.props?.['aria-controls']==='infra-assistant-panel');
+  assert.equal(assistantToggle.props['aria-expanded'],true);
+  assistantToggle.props.onClick();
+  h.render();
+  assert.ok(h.find(node=>node.type==='DesktopWindowControls'));
+  assert.equal(h.find(node=>node.props?.['aria-controls']==='infra-assistant-panel').props['aria-expanded'],false);
+});
 
 test('reservation summary excludes ready reservations and their machines but opens all reservations',t=>{
   const items=[{id:'a',host_id:'alpha',status:'waiting'},{id:'b',host_id:'alpha',status:'settling'},{id:'c',host_id:'beta',status:'ready'}];

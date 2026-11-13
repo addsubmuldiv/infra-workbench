@@ -2,7 +2,7 @@ import {ui} from './assistantLocale';
 import {useWorkspaceRestore} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useRef,useState} from 'react';
-import {GripHorizontal,Minus,PanelRightClose,PanelRightOpen,PanelsTopLeft,Sparkles} from 'lucide-react';
+import {ChevronDown,GripHorizontal,PanelRightClose,PanelRightOpen,PanelsTopLeft,Sparkles} from 'lucide-react';
 import {InfraAssistant} from './InfraAssistantPage';
 import {fitFileWindow,moveFileWindow,resizeFileWindow,type WindowFrame} from './fileWindow';
 import {fitAssistantDockWidth,loadAssistantLayout,saveAssistantLayout,type AssistantLayout} from './assistantLayout';
@@ -75,7 +75,7 @@ export function AssistantWindow({open,onClose,onDockWidthChange,...assistantProp
         const offset:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};
         if(offset[event.key]){event.preventDefault();persist({...current.current,mode:'floating',frame:moveFileWindow(current.current.frame,...offset[event.key],viewport())})}
       }}><span className="assistant-window-icon"><Sparkles size={17}/></span><div><strong>{ui("AI 助手")}</strong><small>{floating?ui("悬浮窗口"):ui("右侧停靠")}</small></div><GripHorizontal size={15} className="assistant-window-grip"/></div>
-      <div className="assistant-window-actions"><button className="icon-button" aria-label={floating?ui("停靠到右侧"):ui("悬浮 AI 助手")} title={floating?ui("停靠到右侧"):ui("切换为悬浮窗口，也可以拖动标题栏")} onClick={floating?dock:detach}>{floating?<PanelRightClose size={16}/>:<PanelsTopLeft size={16}/>}</button><button className="icon-button" aria-label={ui("收起 AI 助手")} title={ui("收起助手，保留对话和输入")} onClick={onClose}><Minus size={17}/></button></div>
+      <div className="assistant-window-actions"><button className="icon-button" aria-label={floating?ui("停靠到右侧"):ui("悬浮 AI 助手")} title={floating?ui("停靠到右侧"):ui("切换为悬浮窗口，也可以拖动标题栏")} onClick={floating?dock:detach}>{floating?<PanelRightClose size={16}/>:<PanelsTopLeft size={16}/>}</button><button className="icon-button" aria-label={ui("收起 AI 助手")} title={ui("收起助手，保留对话和输入")} onClick={onClose}><ChevronDown size={17}/></button></div>
     </header>
     <div className="assistant-window-content"><InfraAssistant {...assistantProps} compact/></div>
     {floating?['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'file-edge-resize edge-'+edge} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?ui("调整助手窗口大小"):undefined} tabIndex={edge==='se'?0:undefined} onPointerDown={event=>start(event,edge)} onKeyDown={event=>{

@@ -51,7 +51,7 @@ fn prefers_browser(client: &reqwest::blocking::Client) -> Result<bool, String> {
         .and_then(|response| response.json::<serde_json::Value>())
         .map_err(|error| format!("无法读取启动方式：{error}"))?;
     match value.get("mode").and_then(|mode| mode.as_str()) {
-        Some("browser") => Ok(true),
+        Some("browser") => Ok(value.get("explicit_mode").and_then(|flag| flag.as_bool()) == Some(true)),
         Some("desktop") => Ok(false),
         _ => Err("后台返回了无效的启动方式".into()),
     }
@@ -165,9 +165,35 @@ fn close_desktop(window: WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn desktop_ready(window: WebviewWindow) -> Result<(), String> {
+fn main_window_action(window: WebviewWindow, action: &str) -> Result<bool, String> {
+    if !cfg!(windows) || window.label() != "main"
+        || !window.url().map(|url| is_service_url(&url) || bootstrap_url(&url)).unwrap_or(false)
+    {
+        return Err("不允许的窗口".into());
+    }
+    match action {
+        "status" => (),
+        "drag" => window.start_dragging().map_err(|error| error.to_string())?,
+        "minimize" => window.minimize().map_err(|error| error.to_string())?,
+        "toggle-maximize" => {
+            let maximized = window.is_maximized().map_err(|error| error.to_string())?;
+            if maximized { window.unmaximize() } else { window.maximize() }
+                .map_err(|error| error.to_string())?;
+        }
+        "close" => close_desktop(window.clone())?,
+        _ => return Err("不支持的窗口操作".into()),
+    }
+    window.is_maximized().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn desktop_ready(window: WebviewWindow, custom_titlebar: Option<bool>) -> Result<(), String> {
     if !window.url().map(|url|is_service_url(&url)).unwrap_or(false) { return Err("不允许的页面".into()); }
     if window.label().starts_with("quick-") { restore_window(&window,false);return Ok(()); }
+    #[cfg(windows)]
+    window.set_decorations(custom_titlebar != Some(true)).map_err(|error| error.to_string())?;
+    #[cfg(not(windows))]
+    let _ = custom_titlebar;
     if window.state::<DesktopSession>().mark_ready() {
         restore_window(&window,false);
     }
@@ -187,7 +213,7 @@ const READY_SCRIPT: &str = concat!(include_str!("../../bootstrap/startup.js"), r
     setTimeout(() => {
       const invoke=window.__TAURI_INTERNALS__?.invoke;
       if (!invoke) { pending=false;setTimeout(ready,50);return; }
-      invoke('desktop_ready').then(()=>{window.__iwbStartup?.update('frontend',100);window.__iwbStartup?.finish();observer.disconnect()}).catch(()=>{pending=false;setTimeout(ready,100)});
+      invoke('desktop_ready',{customTitlebar:!!root.querySelector('.desktop-titlebar')}).then(()=>{window.__iwbStartup?.update('frontend',100);window.__iwbStartup?.finish();observer.disconnect()}).catch(()=>{pending=false;setTimeout(ready,100)});
     },100);
   }
   observer.observe(document,{childList:true,subtree:true});
@@ -206,10 +232,13 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
         return Ok(());
     }
     let navigation_app=app.clone();
-    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
         .visible(true)
-        .background_color(tauri::window::Color(242,245,249,255))
+        .background_color(tauri::window::Color(242,245,249,255));
+    #[cfg(windows)]
+    let builder = builder.decorations(false).initialization_script("window.__iwbDesktopTitlebar = true;");
+    let window = builder
         .initialization_script(READY_SCRIPT)
         .disable_drag_drop_handler() // Keep HTML file/folder upload handlers in the shared UI.
         .on_navigation(move |url| {
@@ -298,7 +327,7 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::default()
             .with_filter(|label|label=="main")
             .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE | tauri_plugin_window_state::StateFlags::POSITION | tauri_plugin_window_state::StateFlags::MAXIMIZED).build())
-        .invoke_handler(tauri::generate_handler![updater::desktop_update_status, updater::desktop_update_check, updater::desktop_update_download, updater::desktop_update_install, updater::desktop_update_safety_response, close_desktop, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
+        .invoke_handler(tauri::generate_handler![updater::desktop_update_status, updater::desktop_update_check, updater::desktop_update_download, updater::desktop_update_install, updater::desktop_update_safety_response, close_desktop, main_window_action, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
         .setup(|app| {
             if std::env::args().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
             watch_service(app.handle().clone());

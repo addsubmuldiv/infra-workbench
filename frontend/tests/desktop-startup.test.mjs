@@ -3,14 +3,26 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const script=()=>readFileSync(new URL('../../desktop/bootstrap/startup.js',import.meta.url),'utf8');
-function harness(origin='http://127.0.0.1:8765',lang='en',readyState='complete') {
+function harness(origin='http://127.0.0.1:8765',lang='en',readyState='complete',window={}) {
  const nodes=new Map(),intervals=new Map(),timeouts=new Map(),observers=[],documentListeners=new Map();let now=0,nextId=0,reloads=0;
- const element=()=>({style:{},attributes:{},listeners:{},setAttribute(k,v){this.attributes[k]=v},remove(){this.removed=true},addEventListener(k,fn){this.listeners[k]=fn}});
+ const element=()=>({style:{},attributes:{},listeners:{},children:[],appendChild(child){this.children.push(child)},prepend(child){this.children.unshift(child)},setAttribute(k,v){this.attributes[k]=v},remove(){this.removed=true},addEventListener(k,fn){this.listeners[k]=fn}});
  const document={readyState,addEventListener(name,fn){documentListeners.set(name,fn)},documentElement:{lang,appendChild(node){nodes.set(node.id,node)}},createElement:element,getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)}};
  class MutationObserver {constructor(callback){this.callback=callback;observers.push(this)} observe(target,options){this.options=options} disconnect(){this.disconnected=true}}
- const window={};const context={window,document,MutationObserver,setTimeout(fn,delay){const id=++nextId;timeouts.set(id,{fn,delay});return id},clearTimeout(id){timeouts.delete(id)},location:{origin,reload(){reloads++}},navigator:{language:'en-US'},performance:{now:()=>now},setInterval(fn){const id=++nextId;intervals.set(id,fn);return id},clearInterval(id){intervals.delete(id)},Date};
+ const context={window,document,MutationObserver,setTimeout(fn,delay){const id=++nextId;timeouts.set(id,{fn,delay});return id},clearTimeout(id){timeouts.delete(id)},location:{origin,reload(){reloads++}},navigator:{language:'en-US'},performance:{now:()=>now},setInterval(fn){const id=++nextId;intervals.set(id,fn);return id},clearInterval(id){intervals.delete(id)},Date};
  vm.runInNewContext(script(),context);return {window,nodes,intervals,timeouts,observers,get reloads(){return reloads},loaded(){document.readyState='interactive';documentListeners.get('DOMContentLoaded')?.()},tick(ms){now=ms;intervals.forEach(fn=>fn())},setLang(value){document.documentElement.lang=value;observers.filter(o=>!o.disconnected).forEach(o=>o.callback())}};
 }
+
+test('Windows startup page can control the window before the backend is ready',async()=>{
+ const calls=[];
+ const native={__iwbDesktopTitlebar:true,__TAURI_INTERNALS__:{invoke:async(command,{action})=>{calls.push([command,action]);return action==='toggle-maximize'}}};
+ const h=harness('http://tauri.localhost','zh-CN','complete',native);
+ const [drag,minimize,maximize,close]=h.nodes.get('iwb-startup').children[0].children;
+ await minimize.listeners.click();
+ drag.listeners.mousedown({button:0,detail:2,preventDefault(){}});
+ await close.listeners.click();
+ assert.equal(maximize.attributes['aria-label'],'Restore window');
+ assert.deepEqual(calls.map(call=>call.join(':')),['main_window_action:status','main_window_action:minimize','main_window_action:toggle-maximize','main_window_action:close']);
+});
 
 test('native document-start injection waits until blocking stylesheets have loaded',()=>{
  const h=harness('http://tauri.localhost','zh-CN','loading');

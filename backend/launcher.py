@@ -23,8 +23,9 @@ class LaunchSettings:
         # Bundled shortcuts open the desktop app directly. Settings, tray and
         # floating-window actions must use the same default on fresh installs.
         default='desktop' if getattr(sys,'frozen',False) else 'browser'
-        self.mode=value.get('mode',default) if isinstance(value,dict) else default
-        if self.mode not in ('browser','desktop'):self.mode=default
+        saved_mode=value.get('mode') if isinstance(value,dict) else None
+        self.explicit_mode=saved_mode in ('browser','desktop')
+        self.mode=saved_mode if self.explicit_mode else default
 
     @property
     def show_floating(self):
@@ -37,6 +38,7 @@ class LaunchSettings:
         temporary=self.path.with_suffix('.tmp')
         temporary.write_text(json.dumps({'mode':mode}),encoding='utf-8');temporary.replace(self.path)
         self.mode=mode
+        self.explicit_mode=True
 
 
 def find_desktop(root=ROOT):
@@ -120,7 +122,7 @@ def register_launch_routes(app,data,root=ROOT,set_floating=None):
     def view():
         value=LaunchSettings(data)
         available = sys.platform == 'win32'
-        return dict(mode=value.mode,show_floating=available and value.show_floating,
+        return dict(mode=value.mode,explicit_mode=value.explicit_mode,show_floating=available and value.show_floating,
                     floating_available=available,desktop_available=bool(find_desktop(root)))
     @app.get('/api/settings/launch')
     async def read_launch_settings():return view()
