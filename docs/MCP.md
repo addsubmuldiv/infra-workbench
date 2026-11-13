@@ -10,6 +10,8 @@ http://127.0.0.1:8765/mcp
 
 ## 本机 agent
 
+如果只想让 Agent 先查机器、再用自己的 SSH 客户端操作，可以安装 [infra-workbench-ssh Skill](AGENT-SKILLS.md)。Skill 自带查询脚本，也可复用已注册的 MCP。
+
 以支持 HTTP MCP 的 Codex 为例，在运行 Workbench 的同一台电脑上配置一次：
 
 ```powershell

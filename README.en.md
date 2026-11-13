@@ -50,6 +50,7 @@ For a frontend-only demo, run `npm ci` and `npm run demo` in `frontend`; `npm ru
 | Open TensorBoard / Jupyter or VS Code | [Services](docs/PORT-FORWARDING.md#english) · [SSH tunnels](docs/SSH-TUNNELS.md#english) |
 | Configure AI or reuse workflows | [Choose AI](docs/GUIDE.en.md#choose-how-to-use-ai) · [Skills](docs/USER-SKILLS.md) |
 | Connect another AI client | [MCP](docs/MCP.md) |
+| Install Workbench skills for external agents | [Agent Skills](docs/AGENT-SKILLS.md#english) |
 | Receive notifications or use the monitor | [Email](docs/MAIL.md) · [Monitor](docs/FLOATING-MONITOR.en.md) |
 | Compare training metrics | [Precision](docs/PRECISION.md) |
 | Diagnose problems | [Troubleshooting](docs/TROUBLESHOOTING.md) |

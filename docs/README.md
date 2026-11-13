@@ -35,6 +35,7 @@
 - [本机 Codex](CODEX.md)、[Claude Code 与 OpenCode](EXTERNAL-AGENTS.md)：使用已安装并登录的 CLI。
 - [用户技能](USER-SKILLS.md)：保存和复用固定流程。
 - [MCP 接入](MCP.md)：让外部 AI 客户端使用工作台能力。
+- [外部 Agent Skills](AGENT-SKILLS.md)：安装工作台提供的 Agent Skills。
 - [数据与凭据](../SECURITY.md)：了解本机存储及发送给模型的信息。
 
 ## 开发与维护
