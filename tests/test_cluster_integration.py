@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,69 @@ from backend.server_import import ImportRow
 from backend.server_import_jobs import ImportJobs
 from backend.terminal_shell import shell_rc
 from backend.terminal_tmux import tmux_command
+
+
+def test_resolve_cluster_name_and_scope_resource_queries(tmp_path):
+    async def run():
+        app = create_app(tmp_path, start_poll=False)
+        refreshed = []
+        for host_id, alias in (('a', '训练机 A3'), ('b', '四机'), ('c', '训练机 A2')):
+            app.state.hosts.append(dict(id=host_id, alias=alias, target='node-' + host_id))
+            app.state.agent_service.snapshots[host_id] = dict(
+                status='online', collected_at=time.time(), devices=[dict(
+                    id='0', kind='NPU', name='Synthetic', health='OK', memory_free=1024,
+                    memory_total=1024, processes_known=True, processes=[])])
+        cluster = app.state.clusters.create('机柜 4', ['a', 'c'])
+        cluster_id = cluster['id']
+
+        async def collect(host):
+            refreshed.append(host['id'])
+
+        app.state.agent_service.collect = collect
+        gateway = app.state.agent_chat.tools
+        async with gateway.session({}, {'a', 'b'}) as session:
+            async def query(tool, **arguments):
+                return (await session.call_tool(tool, arguments)).structured_content
+
+            result = await query('resolve_target', name='机柜４')
+            assert result['ok'], result
+            assert result['data']['status'] == 'resolved'
+            assert result['data']['matches'] == [dict(
+                type='cluster', name='机柜 4', cluster_id=cluster_id, revision=1, host_ids=['a'])]
+            assert result['partial']
+            assert (await query('resolve_target', name='四机'))['data']['matches'] == [
+                dict(type='host', name='四机', host_id='b')]
+            assert (await query('resolve_target', name='四机', type='cluster'))['data']['status'] == 'not_found'
+            assert (await query('resolve_target', name='机柜'))['data']['status'] == 'not_found'
+            for name in ('search_fleet', 'search_hosts', 'get_resources'):
+                result = await query(name, cluster_id=cluster_id, refresh=True)
+                assert result['ok'], result
+                assert [item['host_id'] for item in result['data']['items']] == ['a']
+                assert result['data']['cluster']['name'] == '机柜 4'
+                assert result['data']['cluster']['scope_limited']
+            assert refreshed == ['a', 'a', 'a']
+            result = await query('search_fleet')
+            assert [item['host_id'] for item in result['data']['items']] == ['a']
+            result = await query('search_fleet', cluster_id=None)
+            assert {item['host_id'] for item in result['data']['items']} == {'a', 'b'}
+            result = await query('get_resources', cluster_id=cluster_id, host_id='b', refresh=True)
+            assert result['error']['code'] == 'HOST_NOT_FOUND'
+            result = await query('search_hosts', cluster_id='missing', refresh=True)
+            assert result['error']['code'] == 'NOT_FOUND'
+            assert refreshed == ['a', 'a', 'a']
+
+            app.state.hosts[1]['alias'] = '机柜4'
+            result = await query('resolve_target', name='机柜 4')
+            assert result['data']['status'] == 'ambiguous'
+            assert {match['type'] for match in result['data']['matches']} == {'cluster', 'host'}
+        async with gateway.session({}, {'b'}) as session:
+            result = await query('resolve_target', name='机柜 4', type='cluster')
+            assert result['data']['status'] == 'not_found'
+            result = await query('get_resources', cluster_id=cluster_id, refresh=True)
+            assert result['ok'] and result['data']['items'] == []
+            assert refreshed == ['a', 'a', 'a']
+        app.state.agent_chat.store.db.close()
+    asyncio.run(run())
 
 
 def test_shared_cluster_mcp_scope_and_catalog(tmp_path):

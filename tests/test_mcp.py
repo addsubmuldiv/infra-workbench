@@ -100,6 +100,33 @@ def test_invalid_and_partial_calls_are_mcp_tool_errors_with_actionable_results(t
     asyncio.run(scenario())
 
 
+def test_external_mcp_resolves_cluster_and_keeps_retry_in_scope(tmp_path):
+    async def scenario():
+        async with running_app(tmp_path) as (app, url):
+            app.state.hosts.append(dict(id='outside', target='outside-node', alias='四机'))
+            snapshots = app.state.agent_service.snapshots
+            snapshots['outside'] = dict(snapshots['fixtureid'])
+            cluster = app.state.clusters.create('机柜 4', ['fixtureid'])
+            async with Client(url + '/mcp') as client:
+                async def query(tool, **arguments):
+                    return (await client.call_tool(tool, arguments)).structured_content
+
+                resolved = await query('resolve_target', name='机柜 4')
+                target, = resolved['data']['matches']
+                assert target['cluster_id'] == cluster['id']
+                for arguments, expected in ((dict(cluster_id=cluster['id']), {'fixtureid'}),
+                                            ({}, {'fixtureid', 'outside'})):
+                    result = await query('search_fleet', **arguments)
+                    assert {item['host_id'] for item in result['data']['items']} == expected
+
+                snapshots['fixtureid']['collected_at'] = time.time() - 100
+                stale = await query('search_hosts', cluster_id=cluster['id'], kind='NPU')
+                assert stale['error']['code'] == 'INCOMPLETE_RESOURCE_QUERY'
+                assert stale['error']['next_action']['arguments']['cluster_id'] == cluster['id']
+                assert [host['host_id'] for host in stale['data']['excluded']] == ['fixtureid']
+    asyncio.run(scenario())
+
+
 def test_standard_http_mcp_no_private_header_and_legacy_client_compatibility(tmp_path):
     async def scenario():
         async with running_app(tmp_path) as (app,url):
