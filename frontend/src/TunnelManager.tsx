@@ -37,7 +37,7 @@ export function TunnelManager({hosts,close}:{hosts:Host[];close:()=>void}){
   if(mounted.current){setErrors(old=>[...old,...failures]);setBusy(false)}
  }
  const updateDetail=useCallback((items:TunnelRule[])=>{if(detail)setRules(old=>({...old,[detail.id]:items}))},[detail?.id]);
- if(detail)return <SSHTunnelPanel host={detail} close={()=>{setDetail(null);void refresh()}} onRules={updateDetail}/>;
+ if(detail)return <SSHTunnelPanel host={detail} close={()=>{setDetail(null);void refresh()}} onRules={updateDetail} onStarted={close}/>;
  return createPortal(<dialog ref={dialog} className="ssh-tunnel-panel tunnel-manager" aria-labelledby={title} onCancel={e=>{e.preventDefault();if(!busy)close()}}>
   <header className="tunnel-heading"><div><h2 id={title}><Link2 size={21}/>{t('隧道管理','Tunnel manager')}</h2><p>{t('全部机器 · 运行中 ','All machines · Active ')}{running.length}</p></div><button className="icon-button" disabled={busy} aria-label={t('关闭','Close')} onClick={close}><X size={20}/></button></header>
   <div className="tunnel-body"><div className="tunnel-manager-tools"><label><input type="checkbox" checked={all} onChange={e=>setAll(e.target.checked)}/>{t('显示全部已保存隧道','Show all saved tunnels')}</label><button className="tunnel-disconnect" disabled={busy||!running.length} onClick={()=>void stop(running)}>{t('断开全部运行中隧道','Disconnect all active tunnels')}</button></div>
