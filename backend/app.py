@@ -609,7 +609,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             visible_rules.append(dict(rule, status=status))
         return dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, group_reservations=app.state.group_reservations.list()['items'], reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
 
-    async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None):
+    async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None,accept_new_host_keys=False):
         if body.remember_password and not body.password:
             raise HTTPException(422,'勾选记住 SSH 密码时，请提供本次登录密码')
         if body.manual and not body.user:
