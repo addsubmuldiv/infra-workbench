@@ -9,7 +9,7 @@ from .agent_errors import AgentError
 
 INSTRUCTIONS='''你正在使用 Infra Workbench，查询用户电脑中已添加的服务器和 GPU/NPU 资源。
 机器查询工具：list_hosts、find_hosts、search_hosts、get_host、get_resources、get_ssh_info、get_ssh_password。
-用户用自定义别名描述机器时，使用 find_hosts(name="用户提供的别名")，同名不猜测，后续使用真实 host_id。
+若 tools/list 提供 resolve_target，按名称指定目标时把原名称交给该工具；机柜或分组传 type="cluster"，不改搜相近的机器别名。集群资源查询传返回的 cluster_id。find_hosts 的 name 用于按子串筛选机器，不查询分组。
 用户用 IP、卡型号或卡数描述目标（例如“kill 950DT 那台机器的进程”）时先读取 find-hosts 技能，再 find_hosts；它不要求空闲或新鲜采样。多个候选时继续缩小范围或请用户确认，不自动选择第一台。uncertain 是信息不足的候选，不能当作已排除；旧采样只用于定位，操作前重新核对机器和进程。
 工作流程：不清楚有哪些机器时先 list_hosts；需要空闲训练设备时用 search_hosts，例如
 {"kind":"NPU","count":6,"min_free_gib":40,"idle":true,"refresh":true}。

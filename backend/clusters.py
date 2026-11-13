@@ -4,14 +4,20 @@ import hashlib
 import json
 import threading
 import time
+import unicodedata
 import uuid
 from collections import Counter
 
 from .agent_errors import AgentError
 from .command_tools import ExecuteArgs
+from .host_alias import host_label
 
 TERMINAL = {'completed', 'failed', 'timed_out', 'cancelled'}
 IDENTITY = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
+
+
+def target_name_key(name):
+    return ''.join(unicodedata.normalize('NFKC', name).casefold().split())
 
 
 class ClusterService:
@@ -64,6 +70,33 @@ class ClusterService:
     def list(self, allowed=None):
         with self.lock:
             return {'items': [self.get(row[0], allowed) for row in self.db.execute('SELECT id FROM clusters ORDER BY name_key').fetchall()]}
+
+    def resolve_target(self, name, target_type, allowed=None):
+        key = target_name_key(name)
+        if not key:
+            raise AgentError('INVALID_ARGUMENT', '目标名称不能为空。')
+        matches = []
+        if target_type != 'host':
+            with self.lock:
+                rows = self.db.execute('SELECT id,name FROM clusters ORDER BY name_key').fetchall()
+                for cluster_id, label in rows:
+                    if target_name_key(label) != key:
+                        continue
+                    cluster = self.get(cluster_id, allowed)
+                    if allowed is None or cluster['host_ids']:
+                        matches.append(dict(type='cluster', name=label, cluster_id=cluster_id,
+                                            revision=cluster['revision'], host_ids=cluster['host_ids']))
+        if target_type != 'cluster':
+            for host in self.hosts:
+                if allowed is not None and host['id'] not in allowed:
+                    continue
+                label = host_label(host)
+                if key in (target_name_key(label), target_name_key(host['target'])):
+                    matches.append(dict(type='host', name=label, host_id=host['id']))
+        status = 'not_found'
+        if matches:
+            status = 'resolved' if len(matches) == 1 else 'ambiguous'
+        return dict(query=name, status=status, matches=matches)
 
     @staticmethod
     def _name(name):

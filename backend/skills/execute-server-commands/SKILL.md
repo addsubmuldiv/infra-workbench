@@ -5,8 +5,7 @@ description: 执行用户授权的服务器命令、运行脚本或训练、安�
 
 # 执行服务器操作
 
-用户用自定义机器别名（如“训练机 A3”）指代目标时，先用 `find_hosts(name="训练机 A3")` 查找。`name` 同时匹配自定义别名和原 SSH 连接目标；同名时继续核对，后续操作使用真实 `host_id`。
-
+用户按名称指定目标时，把原名称传给 `resolve_target`。找到唯一机器后使用返回的 `host_id`。对机柜、集群或分组传 `type="cluster"`，按返回的 `cluster_id` 和 `revision` 调用 `execute_cluster_command` 执行已授权的批量命令。存在歧义或查无结果时先核对目标。
 
 1. 从已有上下文或 list_hosts 确认真实机器 ID，遵守当前机器范围。用户按 IP、卡型号或卡数描述机器时，用 find_hosts 的 ip、model、card_count 组合定位，不要求机器空闲；多个候选或 uncertain 信息不足时继续缩小范围，不能猜目标。用户要求的目标、目录或环境不明确时先查；只在会影响实际操作且无法查明时询问。
 2. 用 execute_server_command 执行明确授权的操作，cwd 用绝对路径。训练和脚本使用实际环境的 Python/conda 路径，不假定默认 Python 正确。已明确要求执行就直接操作，不反复请用户自己复制命令。

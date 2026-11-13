@@ -6,8 +6,31 @@ from .agent_schema import envelope
 from .cluster_routes import CreateCluster, BatchCommand
 from .cluster_terminals import TerminalBatchArgs
 
+
 class Empty(BaseModel):
     model_config=ConfigDict(extra='forbid')
+
+class ResolveTarget(Empty):
+    name: str = Field(min_length=1, max_length=512, description='用户原话中的目标名称，例如“机柜 4”；不要改写成近似别名。')
+    type: Literal['auto', 'cluster', 'host'] = Field(
+        default='auto', description='明确指定分组时用 cluster，明确指定单台机器时用 host，类型不明时用 auto 同时查询。')
+
+class HostTarget(BaseModel):
+    type: Literal['host']
+    name: str
+    host_id: str
+
+class ClusterTarget(BaseModel):
+    type: Literal['cluster']
+    name: str
+    cluster_id: str
+    revision: int
+    host_ids: list[str]
+
+class TargetResolution(BaseModel):
+    query: str
+    status: Literal['resolved', 'ambiguous', 'not_found']
+    matches: list[HostTarget | ClusterTarget]
 
 class ClusterID(Empty):
     cluster_id:str
@@ -44,6 +67,7 @@ class Cancel(BatchID):
     item_ids:list[str]|None=Field(default=None,min_length=1,max_length=100,description='省略时取消整个批次，必须有全部目标机器权限。')
 
 DEFINITIONS={
+    'resolve_target':(ResolveTarget,'按原名称定位机器或集群（机柜、分组）；只匹配完整名称。status 为 resolved 时用唯一匹配的 ID；ambiguous 时让用户确认，not_found 时核对原名称，禁止自动换成相近别名。集群查询把 cluster_id 传给 search_fleet、search_hosts 或 get_resources。',True),
     'list_clusters':(Empty,'列出集群；受限会话只显示当前允许的机器，不包含隐藏成员名称和数量。',True),
     'get_cluster':(ClusterID,'读取集群 revision 和当前允许的成员，执行前重新核对目标。',True),
     'create_cluster':(CreateCluster,'创建单层集群，可明确指定已有机器；不会修改 SSH 配置。',False),
@@ -60,12 +84,18 @@ DEFINITIONS={
 }
 
 def catalog():
-    return {name:dict(name=name,title=desc.split('；')[0],description=desc,inputSchema=model.model_json_schema(),outputSchema=envelope({}),annotations=dict(readOnlyHint=read,destructiveHint=not read,idempotentHint=read,openWorldHint=True)) for name,(model,desc,read) in DEFINITIONS.items()}
+    specs = {name:dict(name=name,title=desc.split('；')[0],description=desc,inputSchema=model.model_json_schema(),outputSchema=envelope({}),annotations=dict(readOnlyHint=read,destructiveHint=not read,idempotentHint=read,openWorldHint=True)) for name,(model,desc,read) in DEFINITIONS.items()}
+    schema = TargetResolution.model_json_schema()
+    definitions = schema.pop('$defs')
+    specs['resolve_target']['outputSchema'] = dict(envelope(schema), **{'$defs': definitions})
+    specs['resolve_target']['annotations']['openWorldHint'] = False
+    return specs
 
 async def call(app,name,arguments,allowed=None):
     args=DEFINITIONS[name][0].model_validate(arguments).model_dump()
     service=app.state.clusters
-    if name=='list_clusters':data=service.list(allowed)
+    if name=='resolve_target':data=service.resolve_target(args['name'],args['type'],allowed)
+    elif name=='list_clusters':data=service.list(allowed)
     elif name=='get_cluster':data=service.get(args['cluster_id'],allowed)
     elif name=='create_cluster':data=service.create(args['name'],args['host_ids'],allowed)
     elif name=='update_cluster':data=service.update(args['cluster_id'],args['name'],args['revision'],allowed)

@@ -1,5 +1,11 @@
 # 统一 MCP 与业务技能
 
+## 按名称解析目标和集群范围
+
+`resolve_target({"name":"机柜 4","type":"cluster"})` 匹配工作台登记的集群名称，返回 `status` 和 `matches`。默认 `type="auto"` 同时查集群名、机器显示名和 SSH 目标名。比较完整名称时忽略空白、大小写和全半角差异。「四机」与「机柜 4」仍是不同名称。只有 `resolved` 有唯一结果，`ambiguous` 需要确认候选，`not_found` 需要核对名称。
+
+集群匹配返回 `cluster_id`、`revision` 和当前范围内的 `host_ids`。`search_fleet`、`search_hosts` 和 `get_resources` 接收 `cluster_id`，按当前成员与会话权限的交集采样和查询，并在 `data.cluster` 回显名称、版本及可查询成员数。集群不存在时返回错误。内置 `search_fleet` 按查询类型继承集群筛选，传 `cluster_id=null` 清除。外部客户端每次调用都显式传入 ID。批量命令继续使用 `execute_cluster_command` 的成员版本校验。
+
 ## 移除自动化流程（2026-11-05）
 
 已移除自动化设置页面、流程 HTTP 接口、七个流程 MCP 工具、终端事件触发和 `manage-automation` 内置技能。AI 对话与其他 Skills 保留。旧流程和运行记录仍保留在本地数据库，但不再加载或执行。已运行的后台需要重启才能卸载旧服务。

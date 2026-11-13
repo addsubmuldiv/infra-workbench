@@ -4,7 +4,7 @@ import copy
 from jsonschema import Draft202012Validator
 
 from .agent_errors import AgentError, response
-from .agent_schema import envelope
+from .agent_schema import B, S, envelope, obj, scalar
 from .agent_tools import TOOLS
 from .chat_tools import REGISTRY
 from . import mcp_skills
@@ -13,6 +13,7 @@ from .command_tools import CommandTools, catalog as command_catalog
 PROBE_NAMES = {'read_file': 'read_server_file', 'read_directory': 'read_server_directory'}
 PROBES = {PROBE_NAMES.get(n, n): n for n in REGISTRY}
 PRIVATE = {'get_ssh_password', 'get_ssh_info'}
+CLUSTER_RESOURCE_TOOLS = {'search_fleet', 'search_hosts', 'get_resources'}
 
 
 class WorkbenchMCPService:
@@ -31,6 +32,10 @@ class WorkbenchMCPService:
         return WorkbenchMCPService(self.probes, self.legacy, self.operations,
                                    state=state, allowed=allowed, embedded=True, skills=self.skills, skill_snapshot=skill_snapshot,
                                    permissions=self.permissions or CURRENT_PERMISSIONS.get())
+
+    @property
+    def clusters(self):
+        return getattr(self.operations.app.state, 'clusters', None) if self.operations is not None else None
 
     def catalog(self):
         if self.embedded and self._embedded_catalog is not None:
@@ -58,9 +63,23 @@ class WorkbenchMCPService:
             catalog.update(capability_catalog())
             external=getattr(self.permissions,'external',None)
             if external is not None:catalog.update(external.catalog())
-        if self.operations is not None and getattr(self.operations.app.state, "clusters", None) is not None:
+        if self.clusters is not None:
             from .cluster_mcp import catalog as cluster_catalog
             catalog.update(cluster_catalog())
+            for name in CLUSTER_RESOURCE_TOOLS & catalog.keys():
+                spec = catalog[name]
+                cluster_id = dict(type='string', minLength=1, maxLength=128,
+                                  description='resolve_target 或 get_cluster 返回的集群 ID。先按成员和当前机器权限限制范围，再采样和筛选。')
+                if name == 'search_fleet' and self.embedded:
+                    cluster_id['type'] = ['string', 'null']
+                    cluster_id['description'] += '同一 scope 内省略时继承，传 null 清除集群筛选。'
+                if name == 'get_resources':
+                    spec['inputSchema']['properties']['host_id']['description'] += ' 指定 cluster_id 时须使用成员的完整 host_id。'
+                spec['inputSchema']['properties']['cluster_id'] = cluster_id
+                spec['description'] += ' 用户指定机柜或分组时，先用 resolve_target 取得 cluster_id，并传入此工具。结果的 cluster 字段回显实际查询范围。'
+                data_schema = spec['outputSchema']['properties']['data']['anyOf'][0]
+                data_schema.setdefault('properties', {})['cluster'] = obj(dict(
+                    cluster_id=S, name=S, revision=scalar('integer'), host_count=scalar('integer'), scope_limited=B))
         if self.embedded:
             for name in PRIVATE:
                 catalog.pop(name, None)
@@ -103,9 +122,13 @@ class WorkbenchMCPService:
             if name in atomic_catalog():
                 try:return await atomic_call(self,name,arguments)
                 except ValueError as exc:raise AgentError('INVALID_ARGUMENT',str(exc)) from None
-        if self.operations is not None and getattr(self.operations.app.state, 'clusters', None) is not None:
-            from .cluster_mcp import catalog as cluster_catalog, call as cluster_call
-            if name in cluster_catalog():return await cluster_call(self.operations.app, name, arguments, self.allowed)
+        clusters = self.clusters
+        if clusters is not None:
+            from .cluster_mcp import DEFINITIONS, call as cluster_call
+            if name in DEFINITIONS:
+                return await cluster_call(self.operations.app, name, arguments, self.allowed)
+            if name in CLUSTER_RESOURCE_TOOLS:
+                return await self._resource_query(name, arguments, clusters)
         if self.skill_snapshot is not None and name in ('list_skills', 'read_skill'):
             if name == 'list_skills':
                 return response({'items': [{key: value for key, value in item.items() if key not in ('files', 'file_manifest', 'versions')}
@@ -118,30 +141,73 @@ class WorkbenchMCPService:
             return mcp_skills.registry_call(self.skills, name, arguments, catalog)
         if name in mcp_skills.CATALOG:
             return mcp_skills.call(name, arguments)
-        # Omitted fields remain omitted; legacy fleet filters inherit previous
-        # values. No conversation state is accepted from model tool arguments.
         if name in PROBES and (name not in TOOLS or self.legacy is None):
-            try:
-                value = await self.probes.call(PROBES[name], arguments, self.state if self.embedded else {}, self.allowed)
-                if isinstance(value, dict) and value.get('schema_version') == '1':
-                    return value
-                if isinstance(value, dict) and value.get('ok') is False:
-                    return response(value, error=AgentError('OPERATION_FAILED', str(value.get('error') or '服务器操作未完成。')))
-                return response(value)
-            except ValueError as exc:
-                code = 'HOST_NOT_FOUND' if '允许范围' in str(exc) else 'INVALID_ARGUMENT'
-                raise AgentError(code, str(exc)) from None
+            return await self._probe_query(name, arguments, self.allowed)
         if self.operations is not None and name in self.operations.catalog():
             return await self.operations.call(name, arguments, self.allowed)
         if self.operations is not None and name in command_catalog():
             commands = CommandTools(self.probes, getattr(self.operations.app.state, 'sudo', None),
                                     getattr(self.operations.app.state, 'desktop_command_jobs', None))
             return await commands.call(name, arguments, self.allowed, self.state)
-        if self.allowed is not None:
+        return await self._legacy_query(name, arguments, self.allowed)
+
+    async def _resource_query(self, name, arguments, clusters):
+        query = arguments.copy()
+        cluster_id = query.pop('cluster_id', None)
+        fleet = name == 'search_fleet'
+        if fleet and self.embedded:
+            scope = query.get('scope') or self.state.get('search_plan', {}).get('scope', 'resources')
+            cluster_ids = self.state.setdefault('fleet_cluster_ids', {})
+            previous = cluster_ids.get(scope)
+            if 'cluster_id' not in arguments:
+                cluster_id = previous
+            if cluster_id != previous:
+                query.setdefault('host', '')
+
+        allowed = self.allowed
+        cluster = None
+        if cluster_id is not None:
+            cluster = clusters.get(cluster_id, allowed)
+            allowed = set(cluster['host_ids'])
+            if query.get('host_id') and query['host_id'] not in allowed:
+                raise AgentError('HOST_NOT_FOUND', '指定机器不在该集群的可查询成员中。',
+                                 dict(tool='get_cluster', arguments=dict(cluster_id=cluster_id)))
+        if fleet and self.embedded and 'cluster_id' in arguments:
+            # Preserve the same scope on follow-ups, including after a refresh.
+            cluster_ids[scope] = cluster_id
+
+        if name in PROBES and (name not in TOOLS or self.legacy is None):
+            result = await self._probe_query(name, query, allowed)
+        else:
+            result = await self._legacy_query(name, query, allowed)
+
+        if cluster is not None:
+            if isinstance(result['data'], dict):
+                result['data']['cluster'] = dict(cluster_id=cluster_id, name=cluster['name'], revision=cluster['revision'],
+                                                 host_count=len(allowed), scope_limited=bool(cluster.get('scope_limited')))
+            error = result.get('error')
+            if error and error['next_action'].get('tool') == name:
+                error['next_action']['arguments']['cluster_id'] = cluster_id
+        return result
+
+    async def _probe_query(self, name, arguments, allowed):
+        try:
+            value = await self.probes.call(PROBES[name], arguments, self.state if self.embedded else {}, allowed)
+            if isinstance(value, dict) and value.get('schema_version') == '1':
+                return value
+            if isinstance(value, dict) and value.get('ok') is False:
+                return response(value, error=AgentError('OPERATION_FAILED', str(value.get('error') or '服务器操作未完成。')))
+            return response(value)
+        except ValueError as exc:
+            code = 'HOST_NOT_FOUND' if '允许范围' in str(exc) else 'INVALID_ARGUMENT'
+            raise AgentError(code, str(exc)) from None
+
+    async def _legacy_query(self, name, arguments, allowed):
+        if allowed is not None:
             # Extra legacy tools (e.g. get_host/search_hosts) must use a scoped
             # inventory and cannot refresh/query the whole fleet first.
             from .agent_service import AgentService
-            scoped = AgentService([h for h in self.legacy.hosts if h['id'] in self.allowed],
+            scoped = AgentService([h for h in self.legacy.hosts if h['id'] in allowed],
                                   self.legacy.snapshots, self.legacy.ssh, self.legacy.passwords, self.legacy.collect)
             scoped.pending = self.legacy.pending
             return await scoped.call(name, arguments)
