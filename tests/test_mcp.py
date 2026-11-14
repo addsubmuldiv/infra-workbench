@@ -100,6 +100,19 @@ def test_invalid_and_partial_calls_are_mcp_tool_errors_with_actionable_results(t
     asyncio.run(scenario())
 
 
+def test_schema_bound_error_identifies_limit_without_echoing_argument_values():
+    from backend.agent_errors import AgentError
+    from backend.mcp_service import WorkbenchMCPService
+
+    async def scenario():
+        service = WorkbenchMCPService(probes=None)
+        with pytest.raises(AgentError) as exc:
+            await service.call('read_server_file', {'host_id': 'fixtureid', 'path': '/private/secret', 'max_lines': 200})
+        assert 'max_lines' in exc.value.message and '150' in exc.value.message
+        assert '/private/secret' not in exc.value.message
+    asyncio.run(scenario())
+
+
 def test_standard_http_mcp_no_private_header_and_legacy_client_compatibility(tmp_path):
     async def scenario():
         async with running_app(tmp_path) as (app,url):

@@ -218,8 +218,10 @@ class ApplicationOperations:
 
     async def call(self, name, args, allowed):
         spec = self.catalog()[name]
-        if next(Draft202012Validator(spec['inputSchema']).iter_errors(args), None):
-            raise AgentError('INVALID_ARGUMENT', '参数不符合工具 inputSchema。')
+        validation_error = next(Draft202012Validator(spec['inputSchema']).iter_errors(args), None)
+        if validation_error:
+            from .agent_errors import schema_error_message
+            raise AgentError('INVALID_ARGUMENT', schema_error_message(validation_error, spec['inputSchema']))
         self.check_scope(name, args, allowed)
         method, template, _, _, handoff = OPERATIONS[name]
         path = template

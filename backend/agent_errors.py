@@ -1,4 +1,21 @@
 """Transport-independent agent errors with usable, structured recovery steps."""
+import math
+import re
+
+
+def schema_error_message(error, schema):
+    """Explain simple numeric bounds without echoing any supplied values."""
+    path = list(error.path)
+    if (len(path) == 1 and isinstance(path[0], str)
+            and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', path[0])
+            and path[0] in schema.get('properties', {})
+            and error.validator in ('maximum', 'minimum')
+            and type(error.validator_value) in (int, float)
+            and abs(error.validator_value) <= 10**30
+            and math.isfinite(error.validator_value)):
+        direction = '最大' if error.validator == 'maximum' else '最小'
+        return f'参数 {path[0]} 的{direction}值为 {error.validator_value}；请修正后重试。'
+    return '参数不符合工具 inputSchema。'
 
 def recovery(code,host_id=None):
     if code in ('HOST_NOT_FOUND','AMBIGUOUS_HOST'):

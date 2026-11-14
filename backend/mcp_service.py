@@ -3,7 +3,7 @@ import copy
 
 from jsonschema import Draft202012Validator
 
-from .agent_errors import AgentError, response
+from .agent_errors import AgentError, response, schema_error_message
 from .agent_schema import envelope
 from .agent_tools import TOOLS
 from .chat_tools import REGISTRY
@@ -76,8 +76,9 @@ class WorkbenchMCPService:
         if cached is None or cached[0]!=schema:
             cached=(copy.deepcopy(schema),Draft202012Validator(schema))
             self._input_validators[name]=cached
-        if next(cached[1].iter_errors(arguments), None):
-            raise AgentError('INVALID_ARGUMENT', '参数不符合工具 inputSchema。')
+        validation_error = next(cached[1].iter_errors(arguments), None)
+        if validation_error:
+            raise AgentError('INVALID_ARGUMENT', schema_error_message(validation_error, schema))
         if self.permissions is not None:
             external=getattr(self.permissions,'external',None)
             if external is not None and name in external.catalog():
