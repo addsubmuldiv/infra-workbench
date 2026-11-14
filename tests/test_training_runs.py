@@ -170,15 +170,19 @@ def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path
     class Files:
         marker = {'version': 1, 'completion_id': 'b' * 32, 'pid': 123, 'uid': 1000,
                   'start_ticks': '456', 'boot_id': 'a' * 36, 'exit_code': 0}
-        async def read(self, host, root, path, cursor, offset, allowed, **kwargs):
-            assert (host, root, path, offset) == ('a', '/work', '/work/result.json', 0)
-            return {'content': json.dumps(self.marker), 'has_more': False}
+        stable = True
+        async def read_snapshot(self, host, root, path, allowed, **kwargs):
+            assert (host, root, path) == ('a', '/work', '/work/result.json')
+            return {'content': json.dumps(self.marker), 'has_more': False, 'sha256': 'd' * 64 if self.stable else None}
     commands, files = Commands(), Files()
     service = TrainingRunService(tmp_path / 'runs.db', commands, files=files)
     spec = {'name': 'direct', 'nodes': [{'host_id': 'a', 'cwd': '/work', 'command': 'python train.py'}]}
     run = asyncio.run(service.register_external('s', 'marker', spec, [identity], {'a'}))
     assert run['status'] == 'running'
     commands.observed = {'error': 'process not visible'}
+    files.stable = False
+    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    files.stable = True
     files.marker['completion_id'] = 'c' * 32
     assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
     files.marker['completion_id'] = 'b' * 32
@@ -202,6 +206,38 @@ def test_external_result_marker_rejects_ambiguous_and_mismatched_content():
                     json.dumps({**marker, 'exit_code': True}), json.dumps({**marker, 'exit_code': -1}),
                     json.dumps({**marker, 'start_ticks': '999'}), json.dumps({**marker, 'extra': 'x'}), ' ' * 4097):
         assert parse_external_completion(invalid, identity) is None
+
+
+def test_result_marker_without_trailing_newline_through_training_files(tmp_path):
+    import base64
+    import hashlib
+    from backend.training_files import TrainingFiles
+
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
+                'completion_path': '/work/result.json', 'completion_id': 'b' * 32}
+    payload = json.dumps({'version': 1, 'completion_id': identity['completion_id'], 'pid': 123,
+                          'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36, 'exit_code': 0}).encode()
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+        async def run_bound(self, host, command, script, config):
+            result = {'identity': '1:2', 'offset': 0, 'next_offset': len(payload), 'reset': False,
+                      'has_more': False, 'sha256': hashlib.sha256(payload).hexdigest(),
+                      'data': base64.b64encode(payload).decode()}
+            return 0, 'IWB_TRAINING_FILE:' + json.dumps(result), ''
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, *args, **kwargs): return {'ok': False, 'data': {}}
+    commands = Commands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=TrainingFiles(commands.probes))
+    spec = {'name': 'direct', 'nodes': [{'host_id': 'a', 'cwd': '/work', 'command': 'python train.py'}]}
+    run = asyncio.run(service.register_external('s', 'no-newline', spec, [identity], {'a'}))
+    assert run['status'] == 'completed'
+    assert run['nodes'][0]['result']['exit_code'] == 0
+    assert run['nodes'][0]['result']['completion_source'] == 'agent_result_file'
+    service.close()
 
 
 def test_external_registration_retains_already_started_nodes_when_cluster_changes(tmp_path):

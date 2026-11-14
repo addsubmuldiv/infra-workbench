@@ -665,9 +665,10 @@ class TrainingRunService:
                         try:
                             plan_node = run['plan']['nodes'][index]
                             path = identity['completion_path']
-                            marker = await self.files.read(node['host_id'], self._file_root(plan_node, path),
-                                path, None, 0, allowed, limit=4096, **options)
-                            exit_code = None if marker.get('not_found') or marker.get('has_more') else parse_external_completion(marker.get('content'), identity)
+                            marker = await self.files.read_snapshot(node['host_id'], self._file_root(plan_node, path),
+                                path, allowed, **options)
+                            stable = isinstance(marker.get('sha256'), str) and re.fullmatch(r'[a-f0-9]{64}', marker['sha256'])
+                            exit_code = None if not stable or marker.get('has_more') else parse_external_completion(marker.get('content'), identity)
                             if exit_code is not None:
                                 self._set_node(run_id, index, 'completed' if exit_code == 0 else 'failed',
                                     {'pid': identity['pid'], 'exit_code': exit_code,
