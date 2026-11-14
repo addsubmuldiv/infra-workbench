@@ -78,6 +78,8 @@ class TrainingFiles:
         script = (self.source + '\nimport json\ntry:\n'
                   + ' print("IWB_TRAINING_FILE:"+json.dumps(read_run_file(**'
                   + repr(args) + ')))\n'
+                  + 'except FileNotFoundError:\n'
+                  + ' print("IWB_TRAINING_FILE:"+json.dumps({"not_found":True}))\n'
                   + 'except Exception as exc:\n'
                   + ' print("IWB_TRAINING_FILE:"+json.dumps({"error":str(exc)[:500]}))\n')
         if expected_config is not None:
@@ -89,6 +91,8 @@ class TrainingFiles:
         try:
             line = next(line for line in reversed(out.splitlines()) if line.startswith('IWB_TRAINING_FILE:'))
             result = json.loads(line[len('IWB_TRAINING_FILE:'):])
+            if result.get('not_found') is True and not finalize:
+                return {'not_found': True}
             if result.get('error'):
                 raise ValueError('remote file unavailable')
             raw = base64.b64decode(result.pop('data'), validate=True)

@@ -501,6 +501,21 @@ def test_remote_file_reader_rejects_oversized_reply():
     with pytest.raises(AgentError):
         asyncio.run(TrainingFiles(Probes()).read('a', '/work', '/work/log', None, 0, {'a'}))
 
+
+def test_missing_log_is_waiting_but_missing_snapshot_is_unavailable():
+    from backend.agent_errors import AgentError
+    from backend.training_files import TrainingFiles
+
+    class Probes:
+        def __init__(self): self.ssh = self
+        def host(self, host_id, allowed): return {'id': host_id}
+        async def run(self, *args): return 0, 'IWB_TRAINING_FILE:{"not_found":true}', ''
+
+    reader = TrainingFiles(Probes())
+    assert asyncio.run(reader.read('a', '/work', '/work/not-created.log', None, 0, {'a'})) == {'not_found': True}
+    with pytest.raises(AgentError):
+        asyncio.run(reader.read_snapshot('a', '/work', '/work/missing.yaml', {'a'}))
+
 def test_streaming_redaction_handles_split_secret_and_private_key(tmp_path):
     import base64
     import json
