@@ -314,7 +314,37 @@ class TrainingRunService:
                 ('confirmed:' + fingerprint, run_id, index, PENDING_IDENTITY)).rowcount
         if not changed:
             raise ValueError('SSH identity changed; review the target again')
+        try:
+            node = self.get(session_id, run_id, allowed)['plan']['nodes'][index]
+            config = await self._approved_config(run_id, index, node['host_id'], allowed)
+            await self._recover_snapshots(run_id, index, node, allowed, config)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass  # Confirmation is durable; snapshots can be retried by refresh.
         return self.get(session_id, run_id, allowed)
+
+    async def _recover_snapshots(self, run_id, index, node, allowed, config):
+        if self.files is None or config is None or not hasattr(self.files, 'read_snapshot'):
+            return
+        with self.lock:
+            rows = self.db.execute('SELECT path,data FROM training_snapshots WHERE run_id=? AND node_index=?',
+                                   (run_id, index)).fetchall()
+        for path, original in rows:
+            if json.loads(original).get('status') == 'available':
+                continue
+            try:
+                root = self._file_root(node, path)
+                item = await self.files.read_snapshot(node['host_id'], root, path, allowed, expected_config=config)
+                item = dict(path=path, status='available', capture_phase='recovered',
+                            captured_at=time.time(), **item)
+                with self.lock, self.db:
+                    self.db.execute('UPDATE training_snapshots SET data=? WHERE run_id=? AND node_index=? '
+                                    'AND path=? AND data=?', (scrub(item), run_id, index, path, original))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
 
     @staticmethod
     def _request_digest(plan, external=None, parent=None):
@@ -767,6 +797,7 @@ class TrainingRunService:
                     external = self.db.execute('SELECT identity FROM training_external WHERE run_id=? AND node_index=?',
                                                (run_id, index)).fetchone()
                 if external:
+                    await self._recover_snapshots(run_id, index, run['plan']['nodes'][index], allowed, expected)
                     identity = json.loads(external[0])
                     if any(identity.get(key) is None for key in ('pid', 'uid', 'start_ticks', 'boot_id')):
                         set_observed('unknown', {'process_observation': 'identity_incomplete'})
@@ -860,7 +891,7 @@ class TrainingRunService:
         end = min(offset + 6000, len(content))
         return {'path': snapshot['path'], 'status': snapshot['status'], 'content': content[offset:end],
                 'next_offset': end if end < len(content) else None, 'snapshot_truncated': bool(snapshot.get('has_more')),
-                'captured_at': snapshot.get('captured_at')}
+                'captured_at': snapshot.get('captured_at'), 'capture_phase': snapshot.get('capture_phase')}
 
     def save_draft(self, session_id, run_id, node_index, content, allowed):
         self.read_draft(session_id, run_id, node_index, allowed)

@@ -320,6 +320,43 @@ def test_pending_ssh_target_can_only_be_confirmed_for_the_exact_reviewed_config(
     with pytest.raises(ValueError, match='changed'):
         asyncio.run(service._approved_config(run['run_id'], 0, 'a', {'a'}))
     service.close()
+
+
+def test_user_confirmed_target_recovers_missing_script_as_later_snapshot(tmp_path):
+    class SSH:
+        available = False
+        async def effective(self, host):
+            if not self.available: raise ValueError('unavailable')
+            return {'hostname':'host-a', 'user':'alice', 'port':'22'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id':host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, *args, **kwargs): return {'ok':False, 'data':{}}
+    class Files:
+        reads = 0
+        async def read_snapshot(self, host, root, path, allowed, **kwargs):
+            self.reads += 1
+            assert kwargs['expected_config']['hostname'] == 'host-a'
+            return {'content':'current script', 'sha256':'a' * 64, 'has_more':False}
+    commands, files = Commands(), Files()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=files)
+    plan = {'name':'offline', 'nodes':[{'host_id':'a', 'cwd':'/work', 'command':'python train.py',
+                                      'script_path':'/work/train.py'}]}
+    run = asyncio.run(service.register_external('s', 'r', plan, [{}], {'a'}))
+    assert run['nodes'][0]['snapshots'][0]['status'] == 'unavailable'
+    assert files.reads == 0
+    commands.probes.ssh.available = True
+    review = asyncio.run(service.prepare_identity_confirmation('s', run['run_id'], 0, {'a'}))
+    recovered = asyncio.run(service.confirm_identity('s', run['run_id'], 0, review['fingerprint'], {'a'}))
+    snapshot = recovered['nodes'][0]['snapshots'][0]
+    assert snapshot['content'] == 'current script'
+    assert snapshot['capture_phase'] == 'recovered'
+    assert snapshot['captured_at'] >= run['nodes'][0]['snapshots'][0]['captured_at']
+    assert recovered['status'] == 'unknown'
+    assert files.reads == 1
+    service.close()
 def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path):
     identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
                 'completion_path': '/work/result.json', 'completion_id': 'b' * 32}
