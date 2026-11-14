@@ -293,6 +293,7 @@ class TrainingRunService:
                 raise
             except Exception:
                 item = dict(path=path, status='unavailable')
+            item['captured_at'] = time.time()
             with self.lock, self.db:
                 self.db.execute('INSERT OR REPLACE INTO training_snapshots VALUES (?,?,?,?)',
                                 (run_id, index, path, scrub(item)))
@@ -400,7 +401,8 @@ class TrainingRunService:
                 if result['path'] != target:
                     raise ValueError('staged script path mismatch')
                 item = dict(path=target, status='available', content=content,
-                            sha256=hashlib.sha256(content.encode('utf-8')).hexdigest(), has_more=False)
+                            sha256=hashlib.sha256(content.encode('utf-8')).hexdigest(), has_more=False,
+                            captured_at=time.time())
                 with self.lock, self.db:
                     self.db.execute('INSERT OR REPLACE INTO training_snapshots VALUES (?,?,?,?)',
                                     (run_id, index, target, scrub(item)))
@@ -508,7 +510,8 @@ class TrainingRunService:
         content = snapshot.get('content', '')
         end = min(offset + 6000, len(content))
         return {'path': snapshot['path'], 'status': snapshot['status'], 'content': content[offset:end],
-                'next_offset': end if end < len(content) else None, 'snapshot_truncated': bool(snapshot.get('has_more'))}
+                'next_offset': end if end < len(content) else None, 'snapshot_truncated': bool(snapshot.get('has_more')),
+                'captured_at': snapshot.get('captured_at')}
 
     def save_draft(self, session_id, run_id, node_index, content, allowed):
         self.read_draft(session_id, run_id, node_index, allowed)

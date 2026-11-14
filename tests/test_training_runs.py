@@ -404,6 +404,7 @@ def test_snapshots_are_saved_before_node_launch_and_survive_file_changes(tmp_pat
     service = TrainingRunService(tmp_path / 'runs.db', Commands(), files=files)
     run = asyncio.run(service.start('session-a', 'request-a', spec, {'a'}))
     assert run['nodes'][0]['snapshots'][0]['content'] == 'learning_rate: 0.01'
+    assert run['nodes'][0]['snapshots'][0]['captured_at'] >= run['created_at']
     assert files.value == 'learning_rate: 0.1'
     again = service.get('session-a', run['run_id'], {'a'})
     assert again['nodes'][0]['snapshots'][0]['content'] == 'learning_rate: 0.01'
@@ -423,8 +424,9 @@ def test_unreadable_snapshot_is_marked_without_losing_run(tmp_path):
     service = TrainingRunService(tmp_path / 'runs.db', FakeCommands(), files=Files())
     run = asyncio.run(service.start('session-a', 'request-a', spec, {'a'}))
     assert run['status'] == 'running'
-    assert run['nodes'][0]['snapshots'] == [
-        {'path': '/work/missing.yaml', 'status': 'unavailable'}]
+    item = run['nodes'][0]['snapshots'][0]
+    assert item['path'] == '/work/missing.yaml' and item['status'] == 'unavailable'
+    assert item['captured_at'] >= run['created_at']
     service.close()
 
 def test_list_is_scoped_before_pagination_and_cancel_targets_original_nodes(tmp_path):
