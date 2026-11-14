@@ -110,11 +110,20 @@ def test_external_registration_tracks_only_verified_process_identity(tmp_path):
     assert run['nodes'][0]['result']['pid'] == 123
     assert 'execute_server_command' not in commands.calls
     commands.observed = {**identity, 'start_ticks': '999', 'state': 'S'}
-    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    mismatch = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+    assert mismatch['status'] == 'unknown'
+    assert mismatch['nodes'][0]['result']['process_observation'] == 'identity_mismatch'
     commands.observed = {**identity, 'state': 'Z'}
-    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    zombie = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+    assert zombie['status'] == 'unknown'
+    assert zombie['nodes'][0]['result']['process_observation'] == 'inactive'
     commands.observed = {**identity, 'boot_id': 'b' * 36, 'state': 'S'}
     assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    commands.observed = {'error': 'connection or process unavailable'}
+    unavailable = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+    assert unavailable['status'] == 'unknown'
+    assert unavailable['nodes'][0]['result']['process_observation'] == 'unavailable'
+    assert unavailable['nodes'][0]['process_identity']['pid'] == 123
     same = asyncio.run(service.register_external('s', 'stable', spec, [identity], {'a'}))
     assert same['run_id'] == run['run_id']
     with pytest.raises(ValueError, match='different plan'):
@@ -122,6 +131,7 @@ def test_external_registration_tracks_only_verified_process_identity(tmp_path):
     before = len(commands.calls)
     partial = asyncio.run(service.register_external('s', 'partial', spec, [{'pid': 321}], {'a'}))
     assert partial['status'] == 'unknown'
+    assert partial['nodes'][0]['result']['process_observation'] == 'identity_incomplete'
     assert partial['nodes'][0]['process_identity']['pid'] == 321
     assert len(commands.calls) == before
     child = asyncio.run(service.register_external('s', 'child', spec, [{}], {'a'}, parent_id=run['run_id'], mode='keep'))

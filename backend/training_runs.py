@@ -603,6 +603,7 @@ class TrainingRunService:
             if available_hosts is not None and node['host_id'] not in available_hosts:
                 self._set_node(run_id, index, 'unknown')
                 return
+            external = None
             try:
                 expected = await self._approved_config(run_id, index, node['host_id'], allowed)
                 options = {'expected_config': expected} if expected is not None else {}
@@ -612,14 +613,20 @@ class TrainingRunService:
                 if external:
                     identity = json.loads(external[0])
                     if any(identity.get(key) is None for key in ('pid', 'uid', 'start_ticks', 'boot_id')):
-                        self._set_node(run_id, index, 'unknown')
+                        self._set_node(run_id, index, 'unknown', {'process_observation': 'identity_incomplete'})
                         return
                     response = await self.commands.call('inspect_server_process',
                         {'host_id': node['host_id'], 'pid': identity['pid']}, allowed, {}, **options)
                     data = response.get('data') or {}
-                    matches = all(data.get(key) == identity[key] for key in ('pid', 'uid', 'start_ticks', 'boot_id'))
+                    matches = response.get('ok') is not False and all(data.get(key) == identity[key] for key in ('pid', 'uid', 'start_ticks', 'boot_id'))
                     status = 'running' if matches and data.get('state') not in (None, 'Z', 'X') else 'unknown'
-                    self._set_node(run_id, index, status, {**data, 'identity_verified': True} if matches else None)
+                    observation = ('unavailable' if response.get('ok') is False or not data.get('pid') else
+                                   'identity_mismatch' if not matches else
+                                   'inactive' if data.get('state') in ('Z', 'X') else
+                                   'running' if status == 'running' else 'unavailable')
+                    self._set_node(run_id, index, status,
+                                   {**data, 'identity_verified': True, 'process_observation': observation} if matches
+                                   else {'process_observation': observation})
                     return
                 result = await self.commands.call('get_command_job',
                     {'host_id': node['host_id'], 'job_id': node['job_id']}, allowed, {}, **options)
@@ -632,7 +639,7 @@ class TrainingRunService:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self._set_node(run_id, index, 'unknown')
+                self._set_node(run_id, index, 'unknown', {'process_observation': 'unavailable'} if external else None)
 
         await asyncio.gather(*(read(i, node) for i, node in enumerate(run['nodes'])))
         current = self.get(session_id, run_id, allowed)
