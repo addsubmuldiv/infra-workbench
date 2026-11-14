@@ -59,6 +59,8 @@ def test_auth_wraps_every_route_and_disables_model_desktop(tmp_path):
         assert client.get('/api/health', headers=host_headers).json()['instance'] == app.app.state.service_instance
         assert client.get('/api/state', headers=host_headers).status_code == 200
         assert client.get('/api/settings/agent', headers=host_headers).status_code == 404
+        assert client.post('/mcp/ssh-info', headers=mcp_headers, json={}).status_code in (401, 404)
+        assert client.post('/mcp/ssh-info', headers=host_headers, json={}).status_code == 404
         assert client.post('/api/desktop/floating-monitor', headers=host_headers).status_code == 404
         assert client.get('/api/health', headers={'Authorization': 'Bearer wrong'}).status_code == 401
 

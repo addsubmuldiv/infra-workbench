@@ -401,7 +401,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def lifespan(app):
         if enable_agent:
             app.state.agent_chat.recover()
-        async with app.state.mcp_server.session_manager.run():
+        async with contextlib.AsyncExitStack() as stack:
+            await stack.enter_async_context(app.state.mcp_server.session_manager.run())
+            if app.state.ssh_info_mcp_server is not None:
+                await stack.enter_async_context(app.state.ssh_info_mcp_server.session_manager.run())
             if start_poll:
                 await app.state.ssh_tunnels.startup()
             task = asyncio.create_task(poll()) if start_poll else None
@@ -553,7 +556,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     @app.middleware('http')
     async def local_only(request: Request, call_next):
         REQUEST_ORIGIN.set(str(request.base_url).rstrip('/'))
-        if request.url.path == '/mcp':
+        if request.url.path in ('/mcp', '/mcp/ssh-info'):
             origin=request.headers.get('origin')
             if origin and origin != str(request.base_url).rstrip('/'):
                 return JSONResponse({'detail':'MCP Origin 不匹配'},status_code=403)

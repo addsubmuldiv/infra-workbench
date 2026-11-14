@@ -81,6 +81,19 @@ def test_real_sdk_discovers_six_tools_and_uses_defaults_and_structured_results(t
     asyncio.run(scenario())
     assert SECRET not in caplog.text
 
+def test_ssh_discovery_endpoint_only_exposes_read_only_connection_tools(tmp_path):
+    async def scenario():
+        async with running_app(tmp_path) as (app, url):
+            async with Client(url + '/mcp/ssh-info') as client:
+                names = {tool.name for tool in (await client.list_tools()).tools}
+                assert names == {'list_hosts', 'get_host', 'get_ssh_info', 'list_clusters', 'get_cluster'}
+                result = await client.call_tool('get_ssh_info', {'host_id':'fixtureid'})
+                assert result.structured_content['data']['hostname'] == 'synthetic.example'
+                assert SECRET not in json.dumps(result.model_dump(by_alias=True))
+                denied = await client.call_tool('get_ssh_password', {'host_id':'fixtureid'})
+                assert denied.is_error and SECRET not in json.dumps(denied.model_dump(by_alias=True))
+    asyncio.run(scenario())
+
 
 def test_invalid_and_partial_calls_are_mcp_tool_errors_with_actionable_results(tmp_path):
     async def scenario():
@@ -129,6 +142,8 @@ def test_standard_http_mcp_no_private_header_and_legacy_client_compatibility(tmp
                 assert call.status_code==200 and call.json()['result']['structuredContent']['ok']
                 bad=await http.post(url+'/mcp',headers=dict(headers,Origin='http://untrusted.invalid'),json=init)
                 assert bad.status_code in (400,403)
+                bad_ssh=await http.post(url+'/mcp/ssh-info',headers=dict(headers,Origin='http://untrusted.invalid'),json=init)
+                assert bad_ssh.status_code in (400,403)
                 gui=await http.post(url+'/api/connect',json={})
                 assert gui.status_code==403
                 info=await http.get(url+'/api/mcp-info')
