@@ -22,6 +22,8 @@ VERSION = '0.2.3'
 DEFAULT_TOOLS = frozenset({
     'list_hosts', 'search_hosts', 'get_host', 'get_resources', 'read_changes',
     'read_training_log', 'compare_training_logs', 'get_log_record',
+    'list_clusters', 'get_cluster',
+    'read_server_file', 'read_server_directory',
 })
 
 
@@ -63,6 +65,9 @@ class BearerGate:
                 '/api/health', '/api/config-hosts', '/api/state', '/api/state/changes'}:
             return True
         if method == 'POST' and path == '/api/connect':
+            return True
+        if method == 'POST' and (path in {'/api/training-runs', '/api/training-runs/list', '/api/training-runs/prepare'}
+                or re.fullmatch(r'/api/training-runs/[a-f0-9]{32}/(?:get|refresh|cancel|rerun|log/read|draft/(?:read|save))', path)):
             return True
         if method == 'POST' and re.fullmatch(r'/api/hosts/[^/]+/refresh', path):
             return True

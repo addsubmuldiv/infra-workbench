@@ -427,6 +427,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                         result={'more':False}
                     await asyncio.sleep(.1 if result['more'] else 3600)
             history_task=asyncio.create_task(maintain_resource_history()) if start_poll else None
+            training_task = asyncio.create_task(app.state.training_runs.watch(lambda: [host['id'] for host in hosts])) if start_poll and mcp_policy is not None else None
             import_cleanup=asyncio.create_task(app.state.server_imports.maintain())
             yield
             if group_task:
@@ -435,6 +436,9 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             if history_task:
                 history_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):await history_task
+            if training_task:
+                training_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):await training_task
             import_cleanup.cancel()
             with contextlib.suppress(asyncio.CancelledError):await import_cleanup
             await app.state.server_imports.close()
@@ -461,6 +465,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             await app.state.ssh_tunnels.close()
             await app.state.port_forwarding.close()
             await ssh.close()
+            app.state.training_runs.close()
             resource_stats.close()
             store.db.close()
 
@@ -491,6 +496,14 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     from .cluster_routes import register_cluster_routes
     from .command_tools import CommandTools
     app.state.clusters = ClusterService(store, hosts, CommandTools(probes, sudo, getattr(app.state, 'desktop_command_jobs', None)))
+    from .training_files import TrainingFiles
+    from .training_runs import TrainingRunService
+    app.state.training_runs = TrainingRunService(data / 'training-runs.db',
+        CommandTools(probes, sudo, getattr(app.state, 'desktop_command_jobs', None)),
+        files=TrainingFiles(probes), clusters=app.state.clusters)
+    if mcp_policy is not None:
+        from .training_routes import register_training_routes
+        register_training_routes(app, app.state.training_runs, hosts)
     register_cluster_routes(app, app.state.clusters)
     from .group_reservations import GroupReservationService
     from .group_reservation_routes import register_group_reservation_routes

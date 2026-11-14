@@ -45,7 +45,8 @@ def test_auth_wraps_every_route_and_disables_model_desktop(tmp_path):
     app = make_app(tmp_path)
     assert app.app.state.agent_api is None
     assert not hasattr(app.app.state, 'agent_chat')
-    assert 'backend.agent_runtime' not in sys.modules
+    # Other tests can import agent_runtime before this one in a full suite.
+    # A fresh interpreter below checks the headless import boundary separately.
     desktop_db = tmp_path / 'desktop-data' / 'workbench.db'
     managed = tmp_path / 'managed-data'
     with TestClient(app, base_url='http://127.0.0.1:9001') as client:
@@ -91,6 +92,25 @@ def test_auth_wraps_every_route_and_disables_model_desktop(tmp_path):
     assert desktop_db.read_bytes() == b'synthetic-desktop-database'
     assert os.environ['IWB_DATA'] == str(tmp_path / 'desktop-data')
     assert os.environ['IWB_FACTORY_ONLY'] == '0'
+
+
+def test_headless_does_not_load_agent_runtime_in_fresh_process(tmp_path):
+    script = '''
+import sys
+from backend.headless import create_headless_app
+class Vault:
+    supported = False
+    def get(self, key): return None
+    def put(self, key, value): raise RuntimeError('unsupported')
+    def delete(self, key): pass
+create_headless_app(sys.argv[1], 'a' * 40, 'b' * 40, start_poll=False,
+    credential_store=Vault(), email_credential_store=Vault(), ssh_credential_store=Vault())
+assert 'backend.agent_runtime' not in sys.modules
+'''
+    result = subprocess.run([sys.executable, '-c', script, str(tmp_path / 'fresh')],
+                            cwd=Path(__file__).resolve().parents[1], capture_output=True,
+                            text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
 
 
 def test_policy_blocks_guessed_calls_before_dispatch():
@@ -169,3 +189,42 @@ def test_real_child_ready_dynamic_port_and_parent_eof(tmp_path):
             assert HOST_SECRET not in stderr and MCP_SECRET not in stderr
         finally:
             if proc.poll() is None: proc.kill(); proc.wait()
+
+def test_headless_initializes_training_service_in_isolated_data(tmp_path):
+    app = make_app(tmp_path)
+    with TestClient(app, base_url='http://127.0.0.1:9001'):
+        assert app.app.state.training_runs.commands.probes is not None
+        assert app.app.state.training_runs.files.probes is app.app.state.training_runs.commands.probes
+        assert (tmp_path / 'managed-data' / 'training-runs.db').is_file()
+
+def test_training_routes_are_host_only_and_session_scoped(tmp_path):
+    app = make_app(tmp_path)
+
+    class Commands:
+        async def call(self, name, arguments, allowed, state, *, job_id=None):
+            return {'ok': True, 'data': {'status': 'running', 'job_id': job_id}}
+
+    app.app.state.training_runs.commands = Commands()
+    app.app.state.hosts.append({'id': 'a', 'target': 'example.invalid'})
+    host = {'Authorization': 'Bearer ' + HOST_SECRET, 'X-IWB': '1'}
+    mcp = {'Authorization': 'Bearer ' + MCP_SECRET, 'X-IWB': '1'}
+    body = {'session_id': 'session-a', 'request_id': 'request-a',
+            'host_ids': ['a'], 'plan': {'name': 'test', 'nodes': [
+                {'host_id': 'a', 'command': 'echo test', 'cwd': '/work'}]}}
+    with TestClient(app, base_url='http://127.0.0.1:9001') as client:
+        assert client.post('/api/training-runs', json=body, headers=mcp).status_code == 401
+        response = client.post('/api/training-runs', json=body, headers=host)
+        assert response.status_code == 200, response.text
+        run_id = response.json()['run_id']
+        query = {'session_id': 'session-a', 'host_ids': ['a']}
+        assert client.post(f'/api/training-runs/{run_id}/get', json=query, headers=host).status_code == 200
+        query['session_id'] = 'session-b'
+        assert client.post(f'/api/training-runs/{run_id}/get', json=query, headers=host).status_code == 403
+        query = {'session_id': 'session-a', 'host_ids': []}
+        assert client.post(f'/api/training-runs/{run_id}/get', json=query, headers=host).status_code == 403
+        rerun = {**body, 'request_id': 'rerun', 'content': 'echo changed\n', 'mode': 'keep'}
+        assert client.post(f'/api/training-runs/{run_id}/rerun', json=rerun, headers=mcp).status_code == 401
+        rerun['session_id'] = 'session-b'
+        assert client.post(f'/api/training-runs/{run_id}/rerun', json=rerun, headers=host).status_code == 403
+        body['host_ids'] = ['missing']
+        assert client.post('/api/training-runs', json=body, headers=host).status_code == 403

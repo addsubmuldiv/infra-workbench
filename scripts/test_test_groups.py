@@ -21,7 +21,8 @@ def test_inventory_is_complete_and_every_group_selects_existing_tests():
 
 
 def test_headless_group_is_separately_selectable_from_mcp():
-    assert runner.select(['headless']) == ['tests/test_headless.py']
+    assert runner.select(['headless']) == [
+        'tests/test_headless.py', 'tests/test_training_file_probe.py', 'tests/test_training_runs.py']
     assert 'tests/test_headless.py' not in runner.select(['mcp'])
 
 

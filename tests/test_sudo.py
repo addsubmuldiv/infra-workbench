@@ -320,6 +320,34 @@ def test_native_ssh_sudo_command_pins_destination_before_password_input(tmp_path
         assert all('synthetic-password' not in arg for arg in args)
     asyncio.run(scenario())
 
+def test_bound_ssh_restores_saved_session_only_after_identity_check(tmp_path):
+    from backend.ssh import SSHService
+    class Session:
+        def is_closed(self): return False
+        async def run(self, command, input=None, timeout=None):
+            return type('Result', (), {'exit_status':0, 'stdout':'ok', 'stderr':''})()
+    async def scenario():
+        ssh = SSHService(tmp_path)
+        config = dict(hostname='original', port='22', user='alice')
+        current = dict(config)
+        restores = []
+        async def effective(host): return current
+        async def restore(host):
+            restores.append(host['id'])
+            session = Session()
+            ssh.sessions[host['id']] = session
+            ssh.connection_configs[session] = dict(config)
+        ssh.effective = effective
+        ssh.restore_session = restore
+        current['hostname'] = 'changed'
+        with pytest.raises(ValueError, match='重新确认'):
+            await ssh.run_bound({'id':'one','target':'alias'}, 'true', '', config)
+        assert not restores
+        current['hostname'] = 'original'
+        assert (await ssh.run_bound({'id':'one','target':'alias'}, 'true', '', config))[1] == 'ok'
+        assert restores == ['one']
+    asyncio.run(scenario())
+
 
 def test_api_remember_remove_disable_and_privileged_failure_keep_monitoring(tmp_path):
     from fastapi.testclient import TestClient

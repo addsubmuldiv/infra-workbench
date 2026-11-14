@@ -323,6 +323,14 @@ class SSHService:
     async def run_bound(self, host, command, source, config, *, native=False):
         """Pin secret-bearing commands to the endpoint resolved before validation."""
         fields = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
+        if not native and (restore := getattr(self, 'restore_session', None)):
+            # Password-backed managed hosts may not have an existing session
+            # after a backend restart. The restored session is still checked
+            # against the approved identity immediately below.
+            current = await self.effective(host)
+            if any(config.get(key) != current.get(key) for key in fields):
+                raise ValueError('SSH 配置已变化，请重新确认目标')
+            await restore(host)
         session = None if native else self.sessions.get(host['id'])
         if session and not session.is_closed():
             original = self.connection_configs.get(session)
