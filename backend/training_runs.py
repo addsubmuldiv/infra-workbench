@@ -17,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .chat_tools import scrub
 from .command_tools import ExecuteArgs
 
+PENDING_IDENTITY = 'pending-process-verification'
+
 
 def command_options(command):
     """Return bounded textual option evidence, without executing the shell.
@@ -255,6 +257,28 @@ class TrainingRunService:
             return None
         host = self.commands.probes.host(host_id, allowed)
         config = await self.commands.probes.ssh.effective(host)
+        if row[0] == PENDING_IDENTITY:
+            with self.lock:
+                external = self.db.execute('SELECT identity FROM training_external WHERE run_id=? AND node_index=?',
+                                           (run_id, index)).fetchone()
+            identity = json.loads(external[0]) if external else {}
+            keys = ('pid', 'uid', 'start_ticks', 'boot_id')
+            if any(identity.get(key) is None for key in keys):
+                raise ValueError('SSH identity is pending a complete process identity')
+            response = await self.commands.call('inspect_server_process',
+                {'host_id': host_id, 'pid': identity['pid']}, allowed, {}, expected_config=config)
+            observed = response.get('data') or {}
+            if response.get('ok') is False or not all(observed.get(key) == identity[key] for key in keys):
+                raise ValueError('SSH identity could not be verified against the registered process')
+            digest = self._identity_digest(config)
+            with self.lock, self.db:
+                self.db.execute('UPDATE training_identities SET digest=? WHERE run_id=? AND node_index=? AND digest=?',
+                                (digest, run_id, index, PENDING_IDENTITY))
+                bound = self.db.execute('SELECT digest FROM training_identities WHERE run_id=? AND node_index=?',
+                                        (run_id, index)).fetchone()
+            if not bound or bound[0] != digest:
+                raise ValueError('SSH identity changed during process verification')
+            return config
         if self._identity_digest(config) != row[0]:
             raise ValueError('SSH identity changed; the task needs review')
         return config
@@ -301,7 +325,9 @@ class TrainingRunService:
                 self.db.execute('INSERT INTO training_parents VALUES (?,?,?)', (run_id, parent['run_id'], parent['mode']))
             if configs is not None:
                 self.db.executemany('INSERT INTO training_identities VALUES (?,?,?)', [
-                    (run_id, i, self._identity_digest(configs[node['host_id']])) for i, node in enumerate(plan['nodes'])])
+                    (run_id, i, self._identity_digest(configs[node['host_id']])
+                     if configs[node['host_id']] is not None else PENDING_IDENTITY)
+                    for i, node in enumerate(plan['nodes'])])
             return run_id, True
 
     def _begin_observation(self, run_id, index):
@@ -343,6 +369,8 @@ class TrainingRunService:
             parent = self.db.execute('SELECT parent_id, mode FROM training_parents WHERE run_id=?', (run_id,)).fetchone()
             external = self.db.execute('SELECT 1 FROM training_external WHERE run_id=? LIMIT 1', (run_id,)).fetchone()
             external_identities = dict(self.db.execute('SELECT node_index,identity FROM training_external WHERE run_id=?', (run_id,)).fetchall())
+            connection_identities = dict(self.db.execute('SELECT node_index,digest FROM training_identities WHERE run_id=?',
+                                                         (run_id,)).fetchall())
             granted = self.db.execute('SELECT 1 FROM training_grants WHERE run_id=? AND session_id=?',
                                       (run_id, session_id)).fetchone()
         if (row[0] != session_id and not granted) or allowed is None or any(node[0] not in allowed for node in nodes):
@@ -359,6 +387,8 @@ class TrainingRunService:
             if index in external_identities:
                 identity = json.loads(external_identities[index])
                 node['agent_launch_report'] = identity.get('launch_report')
+                node['connection_identity_status'] = ('pending' if connection_identities.get(index) == PENDING_IDENTITY
+                                                      else 'bound' if index in connection_identities else 'unrecorded')
                 process_identity = {key: identity.get(key) for key in ('pid', 'uid', 'start_ticks', 'boot_id')}
                 node['process_identity'] = process_identity
                 if node['result'] is None:
@@ -482,7 +512,10 @@ class TrainingRunService:
             return self.get(session_id, existing[0], allowed)
         for node in nodes:
             host = self.commands.probes.host(node['host_id'], allowed)
-            configs[node['host_id']] = await self.commands.probes.ssh.effective(host)
+            try:
+                configs[node['host_id']] = await self.commands.probes.ssh.effective(host)
+            except Exception:
+                configs[node['host_id']] = None
         run_id, created = self._record(session_id, request_id, validated, external=identities, configs=configs, parent=parent)
         if not created:
             return await self.refresh(session_id, run_id, allowed)
@@ -494,6 +527,8 @@ class TrainingRunService:
             try:
                 if self.files is None:
                     raise ValueError('file reader unavailable')
+                if external and expected_configs is not None and expected_configs[node['host_id']] is None:
+                    raise ValueError('SSH identity is unavailable')
                 root = self._file_root(node, path)
                 if hasattr(self.files, 'read_snapshot'):
                     if expected_configs is None:

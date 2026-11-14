@@ -240,6 +240,47 @@ def test_external_registration_retry_returns_existing_record_if_ssh_config_is_un
     with pytest.raises(ValueError, match='different plan'):
         asyncio.run(service.register_external('s', 'stable', spec, [{'pid':124}], {'a'}))
     service.close()
+
+
+def test_external_run_survives_initial_config_failure_and_requires_verified_process_before_binding(tmp_path):
+    identity = {'pid':123, 'uid':1000, 'start_ticks':'456', 'boot_id':'a' * 36}
+    class SSH:
+        available = False
+        async def effective(self, host):
+            if not self.available:
+                raise ValueError('SSH config unavailable')
+            return {'hostname':'host', 'user':'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id':host_id}
+    class Commands:
+        probes = Probes()
+        observed = {**identity, 'boot_id':'b' * 36, 'state':'S'}
+        async def call(self, name, args, allowed, state, **kwargs):
+            assert name == 'inspect_server_process'
+            return {'ok':True, 'data':self.observed}
+    class Files:
+        async def read(self, *args, **kwargs):
+            pytest.fail('unverified host must not be used for log access')
+    commands = Commands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=Files())
+    spec = {'name':'offline', 'nodes':[{'host_id':'a', 'cwd':'/work', 'command':'python train.py',
+                                         'log_path':'/work/train.log'}]}
+    first = asyncio.run(service.register_external('s', 'offline', spec, [identity], {'a'}))
+    assert first['status'] == 'unknown'
+    assert first['nodes'][0]['connection_identity_status'] == 'pending'
+    assert first['nodes'][0]['process_identity']['pid'] == 123
+    commands.probes.ssh.available = True
+    mismatch = asyncio.run(service.refresh('s', first['run_id'], {'a'}))
+    assert mismatch['status'] == 'unknown'
+    assert mismatch['nodes'][0]['connection_identity_status'] == 'pending'
+    with pytest.raises(ValueError, match='could not be verified'):
+        asyncio.run(service.read_log('s', first['run_id'], 0, None, 0, {'a'}))
+    commands.observed = {**identity, 'state':'S'}
+    recovered = asyncio.run(service.refresh('s', first['run_id'], {'a'}))
+    assert recovered['status'] == 'running'
+    assert recovered['nodes'][0]['connection_identity_status'] == 'bound'
+    service.close()
 def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path):
     identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
                 'completion_path': '/work/result.json', 'completion_id': 'b' * 32}
