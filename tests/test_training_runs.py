@@ -212,6 +212,34 @@ def test_pending_newer_observation_does_not_starve_progress(tmp_path):
     service._set_node(run['run_id'], 0, 'unknown', {'sample':1}, observation=first)
     assert service.get('s', run['run_id'], {'a', 'b'})['nodes'][0]['result']['sample'] == 2
     service.close()
+
+
+def test_external_registration_retry_returns_existing_record_if_ssh_config_is_unavailable(tmp_path):
+    class SSH:
+        available = True
+        async def effective(self, host):
+            if not self.available:
+                raise ValueError('SSH config unavailable')
+            return {'hostname':host['id'], 'user':'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id':host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, *args, **kwargs):
+            return {'ok':False, 'data':{}}
+    commands = Commands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands)
+    spec = {'name':'external', 'nodes':[{'host_id':'a', 'cwd':'/work', 'command':'python train.py'}]}
+    identities = [{'pid':123}]
+    first = asyncio.run(service.register_external('s', 'stable', spec, identities, {'a'}))
+    commands.probes.ssh.available = False
+    retry = asyncio.run(service.register_external('s', 'stable', spec, identities, {'a'}))
+    assert retry['run_id'] == first['run_id']
+    assert retry['status'] == 'unknown'
+    with pytest.raises(ValueError, match='different plan'):
+        asyncio.run(service.register_external('s', 'stable', spec, [{'pid':124}], {'a'}))
+    service.close()
 def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path):
     identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
                 'completion_path': '/work/result.json', 'completion_id': 'b' * 32}

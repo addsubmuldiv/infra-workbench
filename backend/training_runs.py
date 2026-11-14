@@ -259,10 +259,14 @@ class TrainingRunService:
             raise ValueError('SSH identity changed; the task needs review')
         return config
 
-    def _record(self, session_id, request_id, plan, *, external=None, configs=None, parent=None):
+    @staticmethod
+    def _request_digest(plan, external=None, parent=None):
         payload = json.dumps(plan, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
-        digest = hashlib.sha256((payload + (json.dumps(external, sort_keys=True) if external is not None else '') +
-                                 (json.dumps(parent, sort_keys=True) if parent is not None else '')).encode()).hexdigest()
+        return hashlib.sha256((payload + (json.dumps(external, sort_keys=True) if external is not None else '') +
+                               (json.dumps(parent, sort_keys=True) if parent is not None else '')).encode()).hexdigest()
+
+    def _record(self, session_id, request_id, plan, *, external=None, configs=None, parent=None):
+        digest = self._request_digest(plan, external, parent)
         stored_payload = scrub(plan)
         with self.lock, self.db:
             # Acquire the writer lock before checking the idempotency key. A
@@ -466,6 +470,17 @@ class TrainingRunService:
             for path in [*node['snapshot_paths'], *([node['script_path']] if node['script_path'] else []),
                          *([node['log_path']] if node['log_path'] else [])]:
                 self._file_root(node, path)
+        # A lost registration response must remain recoverable even if SSH
+        # configuration is now broken or the server cannot be resolved.
+        with self.lock:
+            existing = self.db.execute(
+                'SELECT id,plan_hash FROM training_runs WHERE session_id=? AND request_id=?',
+                (session_id, request_id)).fetchone()
+        if existing:
+            if existing[1] != self._request_digest(validated, identities, parent):
+                raise ValueError('request_id belongs to a different plan')
+            return self.get(session_id, existing[0], allowed)
+        for node in nodes:
             host = self.commands.probes.host(node['host_id'], allowed)
             configs[node['host_id']] = await self.commands.probes.ssh.effective(host)
         run_id, created = self._record(session_id, request_id, validated, external=identities, configs=configs, parent=parent)
