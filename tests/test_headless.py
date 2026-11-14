@@ -224,7 +224,14 @@ def test_training_routes_are_host_only_and_session_scoped(tmp_path):
         assert client.post(f'/api/training-runs/{run_id}/get', json=query, headers=host).status_code == 403
         rerun = {**body, 'request_id': 'rerun', 'content': 'echo changed\n', 'mode': 'keep'}
         assert client.post(f'/api/training-runs/{run_id}/rerun', json=rerun, headers=mcp).status_code == 401
-        rerun['session_id'] = 'session-b'
+        grant = {'session_id': 'session-b', 'host_ids': ['a']}
+        assert client.post(f'/api/training-runs/{run_id}/grant', json=grant, headers=mcp).status_code == 401
+        snapshot = {**grant, 'node_index':0, 'snapshot_index':0, 'offset':0}
+        assert client.post(f'/api/training-runs/{run_id}/snapshot/read', json=snapshot, headers=mcp).status_code == 401
+        assert client.post(f'/api/training-runs/{run_id}/snapshot/read', json=snapshot, headers=host).status_code == 403
+        assert client.post(f'/api/training-runs/{run_id}/grant', json=grant, headers=host).status_code == 200
+        assert client.post(f'/api/training-runs/{run_id}/get', json=grant, headers=host).status_code == 200
+        rerun['session_id'] = 'session-c'
         assert client.post(f'/api/training-runs/{run_id}/rerun', json=rerun, headers=host).status_code == 403
         body['host_ids'] = ['missing']
         assert client.post('/api/training-runs', json=body, headers=host).status_code == 403

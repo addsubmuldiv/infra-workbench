@@ -67,7 +67,7 @@ class BearerGate:
         if method == 'POST' and path == '/api/connect':
             return True
         if method == 'POST' and (path in {'/api/training-runs', '/api/training-runs/list', '/api/training-runs/prepare'}
-                or re.fullmatch(r'/api/training-runs/[a-f0-9]{32}/(?:get|refresh|cancel|rerun|log/read|draft/(?:read|save))', path)):
+                or re.fullmatch(r'/api/training-runs/[a-f0-9]{32}/(?:get|refresh|cancel|grant|rerun|log/read|snapshot/read|draft/(?:read|save))', path)):
             return True
         if method == 'POST' and re.fullmatch(r'/api/hosts/[^/]+/refresh', path):
             return True

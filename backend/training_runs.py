@@ -70,6 +70,9 @@ class TrainingRunService:
             self.db.execute('''CREATE TABLE IF NOT EXISTS training_log_claims (
                 host_id TEXT NOT NULL, path TEXT NOT NULL, run_id TEXT NOT NULL,
                 PRIMARY KEY(host_id, path))''')
+            self.db.execute('''CREATE TABLE IF NOT EXISTS training_grants (
+                run_id TEXT NOT NULL, session_id TEXT NOT NULL,
+                PRIMARY KEY(run_id, session_id))''')
             for run_id, payload in self.db.execute('SELECT id,plan FROM training_runs').fetchall():
                 for node in json.loads(payload).get('nodes', []):
                     if node.get('log_path'):
@@ -174,7 +177,9 @@ class TrainingRunService:
                 'SELECT node_index, data FROM training_snapshots WHERE run_id=? ORDER BY rowid',
                 (run_id,)).fetchall()
             parent = self.db.execute('SELECT parent_id, mode FROM training_parents WHERE run_id=?', (run_id,)).fetchone()
-        if row[0] != session_id or allowed is None or any(node[0] not in allowed for node in nodes):
+            granted = self.db.execute('SELECT 1 FROM training_grants WHERE run_id=? AND session_id=?',
+                                      (run_id, session_id)).fetchone()
+        if (row[0] != session_id and not granted) or allowed is None or any(node[0] not in allowed for node in nodes):
             raise PermissionError('run outside session scope')
         plan = json.loads(row[1])
         result_nodes = [dict(host_id=host, job_id=job, status=status,
@@ -193,6 +198,18 @@ class TrainingRunService:
         return dict(run_id=run_id, session_id=row[0], plan=plan, created_at=row[2],
                     status=status, nodes=result_nodes, parent_run_id=parent[0] if parent else None,
                     rerun_mode=parent[1] if parent else None)
+
+    def grant(self, run_id, session_id, allowed):
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
+            raise ValueError('session_id is required')
+        with self.lock:
+            row = self.db.execute('SELECT session_id FROM training_runs WHERE id=?', (run_id,)).fetchone()
+        if row is None:
+            raise KeyError('run not found')
+        run = self.get(row[0], run_id, allowed)
+        with self.lock, self.db:
+            self.db.execute('INSERT OR IGNORE INTO training_grants VALUES (?,?)', (run_id, session_id))
+        return {'run_id':run_id, 'session_id':session_id, 'host_ids':[node['host_id'] for node in run['nodes']]}
 
     async def start(self, session_id, request_id, plan, allowed, *, expected_configs=None):
         if not isinstance(session_id, str) or not session_id or not isinstance(request_id, str) or not request_id:
@@ -421,7 +438,7 @@ class TrainingRunService:
                 for i, node in enumerate(current['nodes']) if node['status'] in {'starting', 'running'}))
         return self.get(session_id, run_id, allowed)
 
-    async def read_log(self, session_id, run_id, node_index, identity, offset, allowed):
+    async def read_log(self, session_id, run_id, node_index, identity, offset, allowed, *, limit=65536):
         run = self.get(session_id, run_id, allowed)
         if type(node_index) is not int or not 0 <= node_index < len(run['nodes']):
             raise IndexError('node not found')
@@ -430,6 +447,8 @@ class TrainingRunService:
             raise ValueError('log is not available')
         expected = await self._approved_config(run_id, node_index, node['host_id'], allowed)
         options = {'expected_config': expected} if expected is not None else {}
+        if limit != 65536:
+            options['limit'] = limit
         return await self.files.read(node['host_id'], self._file_root(node, node['log_path']),
                                      node['log_path'], identity, offset, allowed, **options)
 
@@ -441,6 +460,21 @@ class TrainingRunService:
             row = self.db.execute('SELECT content, updated FROM training_script_drafts WHERE run_id=? AND node_index=?',
                                   (run_id, node_index)).fetchone()
         return {'content': row[0], 'updated_at': row[1]} if row else None
+
+    def read_snapshot_page(self, session_id, run_id, node_index, snapshot_index, offset, allowed):
+        run = self.get(session_id, run_id, allowed)
+        if type(node_index) is not int or not 0 <= node_index < len(run['nodes']):
+            raise IndexError('node not found')
+        snapshots = run['nodes'][node_index]['snapshots']
+        if type(snapshot_index) is not int or not 0 <= snapshot_index < len(snapshots):
+            raise IndexError('snapshot not found')
+        if type(offset) is not int or offset < 0:
+            raise ValueError('invalid snapshot offset')
+        snapshot = snapshots[snapshot_index]
+        content = snapshot.get('content', '')
+        end = min(offset + 6000, len(content))
+        return {'path': snapshot['path'], 'status': snapshot['status'], 'content': content[offset:end],
+                'next_offset': end if end < len(content) else None, 'snapshot_truncated': bool(snapshot.get('has_more'))}
 
     def save_draft(self, session_id, run_id, node_index, content, allowed):
         self.read_draft(session_id, run_id, node_index, allowed)

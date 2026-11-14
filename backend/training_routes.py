@@ -35,6 +35,7 @@ class Log(Scope):
     node_index: int = Field(ge=0, le=63)
     identity: str | None = None
     offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=65536, ge=1, le=65536)
 
 
 class Rerun(Scope):
@@ -47,6 +48,12 @@ class Rerun(Scope):
 class Draft(Scope):
     node_index: int = Field(ge=0, le=63)
     content: str | None = Field(default=None, max_length=65536)
+
+
+class Snapshot(Scope):
+    node_index: int = Field(ge=0, le=63)
+    snapshot_index: int = Field(ge=0, le=16)
+    offset: int = Field(default=0, ge=0)
 
 
 def register_training_routes(app, service, hosts):
@@ -106,6 +113,15 @@ def register_training_routes(app, service, hosts):
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             error(exc)
 
+    @app.post('/api/training-runs/{run_id}/grant')
+    async def grant(run_id: str, body: Scope):
+        if re.fullmatch(r'[a-f0-9]{32}', run_id) is None:
+            raise HTTPException(404, 'Run not found')
+        try:
+            return service.grant(run_id, body.session_id, allowed(body.host_ids))
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
+            error(exc)
+
     @app.post('/api/training-runs/{run_id}/{operation}')
     async def operation(run_id: str, operation: str, body: Scope):
         if re.fullmatch(r'[a-f0-9]{32}', run_id) is None:
@@ -128,7 +144,7 @@ def register_training_routes(app, service, hosts):
             raise HTTPException(404, 'Run not found')
         try:
             return await service.read_log(body.session_id, run_id, body.node_index,
-                                          body.identity, body.offset, allowed(body.host_ids))
+                                          body.identity, body.offset, allowed(body.host_ids), limit=body.limit)
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             if isinstance(exc, ValueError) and str(exc) == 'log cursor expired; restart from offset zero':
                 return {'cursor_expired': True}
@@ -145,5 +161,15 @@ def register_training_routes(app, service, hosts):
             if operation == 'save':
                 return {'draft': service.save_draft(body.session_id, run_id, body.node_index, body.content, scope)}
             raise HTTPException(404, 'Operation not found')
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
+            error(exc)
+
+    @app.post('/api/training-runs/{run_id}/snapshot/read')
+    async def snapshot(run_id: str, body: Snapshot):
+        if re.fullmatch(r'[a-f0-9]{32}', run_id) is None:
+            raise HTTPException(404, 'Run not found')
+        try:
+            return service.read_snapshot_page(body.session_id, run_id, body.node_index,
+                                              body.snapshot_index, body.offset, allowed(body.host_ids))
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             error(exc)

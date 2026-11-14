@@ -58,6 +58,17 @@ def test_scope_and_request_reuse_are_checked_before_execution(tmp_path):
     assert len(commands.calls) == 2
     service.close()
 
+def test_cross_session_access_requires_explicit_per_run_grant(tmp_path):
+    service = TrainingRunService(tmp_path / 'runs.db', FakeCommands())
+    first = asyncio.run(service.start('owner','first',plan(),{'a','b'}))
+    second = asyncio.run(service.start('owner','second',plan(),{'a','b'}))
+    with pytest.raises(PermissionError): service.get('other',first['run_id'],{'a','b'})
+    with pytest.raises(PermissionError): service.grant(first['run_id'],'other',{'a'})
+    service.grant(first['run_id'],'other',{'a','b'})
+    assert service.get('other',first['run_id'],{'a','b'})['run_id'] == first['run_id']
+    with pytest.raises(PermissionError): service.get('other',second['run_id'],{'a','b'})
+    service.close()
+
 def test_changed_ssh_identity_prevents_remote_dispatch(tmp_path):
     class SSH:
         async def effective(self, host): return {'hostname':'changed','user':'alice'}
@@ -365,6 +376,10 @@ def test_snapshots_are_saved_before_node_launch_and_survive_file_changes(tmp_pat
     assert files.value == 'learning_rate: 0.1'
     again = service.get('session-a', run['run_id'], {'a'})
     assert again['nodes'][0]['snapshots'][0]['content'] == 'learning_rate: 0.01'
+    snapshot = service.read_snapshot_page('session-a', run['run_id'], 0, 0, 0, {'a'})
+    assert snapshot['content'] == 'learning_rate: 0.01'
+    with pytest.raises(PermissionError):
+        service.read_snapshot_page('other', run['run_id'], 0, 0, 0, {'a'})
     service.close()
 
 def test_unreadable_snapshot_is_marked_without_losing_run(tmp_path):

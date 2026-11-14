@@ -19,8 +19,8 @@ class TrainingFiles:
         self.cursors = OrderedDict()
         self.lock = threading.RLock()
 
-    async def read(self, host_id, root, path, identity, offset, allowed, *, expected_config=None):
-        return await self._read(host_id, root, path, identity, offset, allowed, finalize=False, expected_config=expected_config)
+    async def read(self, host_id, root, path, identity, offset, allowed, *, expected_config=None, limit=65536):
+        return await self._read(host_id, root, path, identity, offset, allowed, finalize=False, expected_config=expected_config, limit=limit)
 
     async def read_snapshot(self, host_id, root, path, allowed, *, expected_config=None):
         return await self._read(host_id, root, path, None, 0, allowed, finalize=True, expected_config=expected_config)
@@ -58,8 +58,9 @@ class TrainingFiles:
         except (StopIteration, ValueError, KeyError, TypeError):
             raise AgentError('OPERATION_FAILED', 'Unable to stage or verify the training script') from None
 
-    async def _read(self, host_id, root, path, identity, offset, allowed, *, finalize, expected_config=None):
+    async def _read(self, host_id, root, path, identity, offset, allowed, *, finalize, expected_config=None, limit=65536):
         if (type(offset) is not int or offset < 0 or offset > 2**63 - 1
+                or type(limit) is not int or not 1 <= limit <= 65536
                 or (identity is not None and
                     (not isinstance(identity, str) or re.fullmatch(r'[0-9]{1,20}:[0-9]{1,20}', identity) is None))):
             raise ValueError('invalid log cursor')
@@ -72,7 +73,7 @@ class TrainingFiles:
                 state = self.cursors.get(key)
             if state is None:
                 raise ValueError('log cursor expired; restart from offset zero')
-        args = dict(root=root, path=path, identity=identity, offset=offset, limit=65536)
+        args = dict(root=root, path=path, identity=identity, offset=offset, limit=limit)
         # Arguments are serialized into Python string literals rather than a shell.
         script = (self.source + '\nimport json\ntry:\n'
                   + ' print("IWB_TRAINING_FILE:"+json.dumps(read_run_file(**'
@@ -91,7 +92,7 @@ class TrainingFiles:
             if result.get('error'):
                 raise ValueError('remote file unavailable')
             raw = base64.b64decode(result.pop('data'), validate=True)
-            if len(raw) > 65536:
+            if len(raw) > limit:
                 raise ValueError('remote page exceeds limit')
             if (not isinstance(result.get('identity'), str)
                     or re.fullmatch(r'[0-9]{1,20}:[0-9]{1,20}', result['identity']) is None
