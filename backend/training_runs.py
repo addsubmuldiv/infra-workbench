@@ -115,6 +115,26 @@ class TrainingRunService:
         value = {key: config.get(key) for key in fields}
         return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
+    @staticmethod
+    def _command_path_pattern(cwd, path):
+        relative = posixpath.relpath(path, cwd)
+        candidates = {path, relative}
+        if not relative.startswith('.'):
+            candidates.add('./' + relative)
+        choices = '|'.join(re.escape(value) for value in sorted(candidates, key=len, reverse=True))
+        return r'(?<![\w./-])(?:' + choices + r')(?![\w./-])'
+
+    @staticmethod
+    def _check_command_directory(command, cwd):
+        # Relative paths are unambiguous only while the command stays in the
+        # recorded working directory. Permit a single explicit no-op cd.
+        changes = list(re.finditer(r'(?<![\w./-])cd\s+', command))
+        if not changes:
+            return
+        prefix = r'^\s*cd\s+(?:' + re.escape(cwd) + '|' + re.escape(shlex.quote(cwd)) + r')\s*&&\s*'
+        if len(changes) != 1 or re.match(prefix, command) is None:
+            raise ValueError('command changes directory; use explicit paths for rerun')
+
     async def _approved_config(self, run_id, index, host_id, allowed):
         with self.lock:
             row = self.db.execute('SELECT digest FROM training_identities WHERE run_id=? AND node_index=?',
@@ -328,9 +348,12 @@ class TrainingRunService:
             source = original['script_path']
             if (node['host_id'] != original['host_id'] or node['cwd'] != original['cwd']
                     or not source or node['script_path'] != source or not node['log_path']
-                    or node['log_path'] == original['log_path'] or node['log_path'] not in node['command']
-                    or (original['log_path'] and re.search(re.escape(original['log_path']) + r'(?=$|[\s;&|<>"\'])', node['command']))):
+                    or node['log_path'] == original['log_path']):
                 raise ValueError('rerun requires original nodes and a new explicit log path')
+            self._check_command_directory(node['command'], node['cwd'])
+            if (not re.search(self._command_path_pattern(node['cwd'], node['log_path']), node['command'])
+                    or (original['log_path'] and re.search(self._command_path_pattern(node['cwd'], original['log_path']), node['command']))):
+                raise ValueError('rerun command must use the new log path and not the previous log path')
             if re.fullmatch(r'/[A-Za-z0-9_./-]+', source) is None:
                 raise ValueError('script path cannot be safely substituted in this command')
             if '[已隐藏' in node['command'] or scrub(node['command']) != node['command']:
@@ -339,7 +362,7 @@ class TrainingRunService:
             if (not snapshot or snapshot.get('status') != 'available' or snapshot.get('has_more')
                     or not re.fullmatch(r'[a-f0-9]{64}', snapshot.get('sha256', ''))):
                 raise ValueError('complete script snapshot required')
-            pattern = r'(?<![\w./-])' + re.escape(source) + r'(?![\w./-])'
+            pattern = self._command_path_pattern(node['cwd'], source)
             if len(re.findall(pattern, node['command'])) != 1:
                 raise ValueError('command must contain the unambiguous absolute script path')
             target = posixpath.join(posixpath.dirname(source), '.iwb-run-' + version)

@@ -603,6 +603,28 @@ def test_rerun_stages_version_and_preserves_old_run(tmp_path):
     asyncio.run(execute())
     service.close()
 
+def test_rerun_accepts_unambiguous_relative_script_and_log_paths(tmp_path):
+    class Files:
+        async def read_snapshot(self, *args):
+            return {'content':'print(1)\n', 'sha256':'a'*64, 'has_more':False}
+        async def stage(self, host, root, path, version, content, revision, allowed):
+            return {'path':'/work/.iwb-run-'+version}
+    commands = FakeCommands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=Files())
+    parent = {'name':'old','nodes':[{'host_id':'a','cwd':'/work', 'command':'cd /work && python train.py > old.log',
+              'script_path':'/work/train.py','log_path':'/work/old.log'}]}
+    child = {'name':'new','nodes':[{**parent['nodes'][0], 'command':'cd /work && python train.py > new.log', 'log_path':'/work/new.log'}]}
+    async def run():
+        previous = await service.start('s','old',parent,{'a'})
+        current = await service.rerun('s','new',previous['run_id'],child,'print(2)\n','keep',{'a'})
+        assert current['status'] == 'running'
+        assert '/work/.iwb-run-' in commands.calls[-1][1]['command']
+        bad = {'name':'bad','nodes':[{**child['nodes'][0], 'command':'cd /other && python train.py > next.log', 'log_path':'/work/next.log'}]}
+        with pytest.raises(ValueError, match='changes directory'):
+            await service.rerun('s','bad',previous['run_id'],bad,'print(3)\n','keep',{'a'})
+    asyncio.run(run())
+    service.close()
+
 def test_rerun_stop_requires_confirmed_old_exit(tmp_path):
     class Files:
         async def read_snapshot(self, *args):
