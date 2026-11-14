@@ -118,6 +118,11 @@ def test_external_registration_tracks_only_verified_process_identity(tmp_path):
     zombie = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
     assert zombie['status'] == 'unknown'
     assert zombie['nodes'][0]['result']['process_observation'] == 'inactive'
+    for invalid_state in ('?', '', 'unexpected', None):
+        commands.observed = {**identity, 'state': invalid_state}
+        unrecognized = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+        assert unrecognized['status'] == 'unknown'
+        assert unrecognized['nodes'][0]['result']['process_observation'] == 'unavailable'
     for stopped_state in ('T', 't'):
         commands.observed = {**identity, 'state': stopped_state}
         suspended = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
@@ -179,6 +184,8 @@ def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path
     spec = {'name': 'direct', 'nodes': [{'host_id': 'a', 'cwd': '/work', 'command': 'python train.py'}]}
     run = asyncio.run(service.register_external('s', 'marker', spec, [identity], {'a'}))
     assert run['status'] == 'running'
+    commands.observed = {**identity, 'state': '?'}
+    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
     commands.observed = {'error': 'process not visible'}
     files.stable = False
     assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'

@@ -655,13 +655,14 @@ class TrainingRunService:
                         {'host_id': node['host_id'], 'pid': identity['pid']}, allowed, {}, **options)
                     data = response.get('data') or {}
                     matches = response.get('ok') is not False and all(data.get(key) == identity[key] for key in ('pid', 'uid', 'start_ticks', 'boot_id'))
-                    status = 'running' if matches and data.get('state') not in (None, 'Z', 'X', 'T', 't') else 'unknown'
+                    status = 'running' if matches and data.get('state') in ('R', 'S', 'D', 'I', 'K', 'W', 'P') else 'unknown'
                     observation = ('unavailable' if response.get('ok') is False or not data.get('pid') else
                                    'identity_mismatch' if not matches else
-                                   'inactive' if data.get('state') in ('Z', 'X') else
+                                   'inactive' if data.get('state') in ('Z', 'X', 'x') else
                                    'suspended' if data.get('state') in ('T', 't') else
                                    'running' if status == 'running' else 'unavailable')
-                    if observation in ('inactive', 'identity_mismatch', 'unavailable') and self.files is not None and identity.get('completion_path'):
+                    may_have_exited = observation in ('inactive', 'identity_mismatch') or (observation == 'unavailable' and not matches)
+                    if may_have_exited and self.files is not None and identity.get('completion_path'):
                         try:
                             plan_node = run['plan']['nodes'][index]
                             path = identity['completion_path']
