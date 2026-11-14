@@ -106,6 +106,42 @@ def jump_descriptions(info):
     return ordered
 
 
+def require_matching_target(expected, actual):
+    """Compare a DSH profile descriptor to the independent Workbench target."""
+    if not isinstance(expected, dict) or not isinstance(actual, dict):
+        raise SSHClientError('Connection identity is incomplete; recheck both Workbench instances')
+    for key in ('hostname', 'user'):
+        if not isinstance(expected.get(key), str) or not expected[key] or expected[key] != actual.get(key):
+            raise SSHClientError('Connection identity differs; recheck both Workbench instances')
+    if type(expected.get('port')) is not int or expected['port'] != actual.get('port'):
+        raise SSHClientError('Connection identity differs; recheck both Workbench instances')
+    normalize = lambda value: None if value in (None, '', 'none') else value
+    if normalize(expected.get('host_key_alias')) != normalize(actual.get('host_key_alias')):
+        raise SSHClientError('Host-key identity differs; recheck both Workbench instances')
+    known_hosts = expected.get('user_known_hosts_files')
+    if (not isinstance(known_hosts, list) or not all(isinstance(path, str) for path in known_hosts)
+            or known_hosts != actual.get('user_known_hosts_files')):
+        raise SSHClientError('Host-key configuration differs; recheck both Workbench instances')
+    if expected.get('proxy_command_configured') is not False or normalize(actual.get('proxy_command')) is not None:
+        raise SSHClientError('Custom proxy identity cannot be compared safely')
+    if type(expected.get('proxy_jump_configured')) is not bool:
+        raise SSHClientError('Jump identity is incomplete; recheck both Workbench instances')
+    jumps = jump_descriptions(actual)
+    if expected['proxy_jump_configured'] != bool(jumps):
+        raise SSHClientError('Jump identity differs; recheck both Workbench instances')
+    dependencies = expected.get('dependencies')
+    if not isinstance(dependencies, list) or any(not isinstance(item, dict) for item in dependencies):
+        raise SSHClientError('Jump identity is incomplete; recheck both Workbench instances')
+    expected_jumps = [item for item in dependencies if item.get('type') == 'jump']
+    def endpoint(item):
+        host, user, port = item.get('hostname'), item.get('user'), item.get('port')
+        if not isinstance(host, str) or not host or not isinstance(user, str) or not user or type(port) is not int:
+            raise SSHClientError('Jump identity is incomplete; recheck both Workbench instances')
+        return (host, user, port, normalize(item.get('host_key_alias')))
+    if [endpoint(item) for item in expected_jumps] != [endpoint(item) for item in jumps]:
+        raise SSHClientError('Jump identity differs; recheck both Workbench instances')
+
+
 async def password_run(info, host_id, command, source, timeout):
     try:
         import asyncssh
@@ -163,6 +199,8 @@ def run(payload):
             or type(timeout) is not int or not 1 <= timeout <= 120 or auth not in ('key', 'saved_password')):
         raise SSHClientError('Invalid SSH request')
     info = request('get_ssh_info', {'host_id': host_id})
+    if 'expected_connection' in payload:
+        require_matching_target(payload['expected_connection'], info)
     argv = info.get('ssh_argv')
     if not isinstance(argv, list) or not argv or not all(isinstance(v, str) and v for v in argv):
         raise SSHClientError('Workbench did not provide native SSH arguments')

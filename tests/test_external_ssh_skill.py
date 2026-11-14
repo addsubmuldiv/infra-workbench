@@ -80,6 +80,33 @@ def test_invalid_auth_does_not_query_workbench(helper, monkeypatch):
         helper.run({'host_id':'host','command':'echo ok','auth':'automatic'})
 
 
+def test_cross_workbench_identity_is_checked_before_password_or_execution(helper, monkeypatch):
+    expected = {'hostname':'host.example', 'user':'alice', 'port':22, 'host_key_alias':None, 'user_known_hosts_files':['known'],
+                'proxy_command_configured':False, 'proxy_jump_configured':True,
+                'dependencies':[{'type':'jump','hostname':'jump.example','user':'bob','port':22}]}
+    actual = {'hostname':'host.example','user':'alice','port':22,'host_key_alias':None, 'user_known_hosts_files':['known'],
+              'proxy_command':None,'proxy_jump':'jump', 'ssh_argv':['ssh','host'],
+              'dependencies':[{'type':'jump','alias':'jump','hostname':'jump.example','user':'bob','port':22}]}
+    calls = []
+    def lookup(tool, args):
+        calls.append(tool)
+        assert tool == 'get_ssh_info'
+        return {'ok':True, 'data':actual}
+    monkeypatch.setattr(helper.lookup, 'call', lookup)
+    monkeypatch.setattr(helper, 'native_run', lambda *args: (0, b'ok', b'', False))
+    assert helper.run({'host_id':'desktop-id','command':'pwd','auth':'key', 'expected_connection':expected})[0] == 0
+    assert calls == ['get_ssh_info']
+    for changed in ({**expected, 'hostname':'other.example'}, {**expected, 'user_known_hosts_files':['different']},
+                    {**expected, 'proxy_command_configured':True},
+                    {**expected, 'dependencies':[{'type':'jump','hostname':'other','user':'bob','port':22}]},
+                    {**expected, 'proxy_jump_configured':False}):
+        calls.clear()
+        monkeypatch.setattr(helper, 'native_run', lambda *args: pytest.fail('must not execute'))
+        with pytest.raises(helper.SSHClientError):
+            helper.run({'host_id':'desktop-id','command':'pwd','auth':'saved_password', 'expected_connection':changed})
+        assert calls == ['get_ssh_info']
+
+
 def test_helper_does_not_print_exception_contents(helper, monkeypatch, capsys):
     secret = 'synthetic-private-password'
     monkeypatch.setattr(sys, 'stdin', io.TextIOWrapper(io.BytesIO(b'{"host_id":"h"}'), encoding='utf-8'))

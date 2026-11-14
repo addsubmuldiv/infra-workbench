@@ -77,7 +77,7 @@ class ManagedMCPPolicy:
                     data['auth'] = {key: auth[key] for key in auth_fields if key in auth}
                     data['proxy_command_configured'] = bool(source.get('proxy_command'))
                     data['proxy_jump_configured'] = bool(source.get('proxy_jump'))
-                    dependency_fields = ('type', 'hostname', 'user', 'port', 'identity_files', 'path', 'exists', 'scope', 'status')
+                    dependency_fields = ('type', 'hostname', 'user', 'port', 'host_key_alias', 'identity_files', 'path', 'exists', 'scope', 'status')
                     data['dependencies'] = [{key: item[key] for key in dependency_fields if key in item}
                         for item in source.get('dependencies', []) if isinstance(item, dict)]
                     result['data'] = data

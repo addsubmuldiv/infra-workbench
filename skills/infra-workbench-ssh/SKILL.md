@@ -57,6 +57,8 @@ description: 用 Infra Workbench 查机器和 SSH 连接信息，再由 Agent �
 - **结果**：脚本在本机发起 SSH，输出退出码、stdout、stderr 和截断标记。`auth` 必须为 `key` 或 `saved_password`；只有后者读取已保存密码。`timeout` 为 1–120 秒，每路输出最多保留 1 MiB。
 - **失败处理**：需要已验证的 `known_hosts`。嵌套跳板、自定义 ProxyCommand 或独立跳板密码不由密码模式自动处理；改用已配置的 SSH 客户端或用户交互。失败或超时可能意味着远端操作已经发生，先检查状态，不自动切换认证方式重放。
 
+若从 DSH 插件的独立 profile 切换到另一个 Workbench，先分别查询两边的目标；向 `direct_ssh.py` 的 JSON 输入增加 `expected_connection`，填写插件 `get_ssh_info` 返回的整个非密码 `data` 对象，同时将 `host_id` 填为独立 Workbench 的 ID。客户端会在读取密码或执行命令前核对主机、账号、端口、主机密钥别名及已解析跳板；不一致、信息不足或存在自定义 ProxyCommand 时拒绝执行。不要把两个后台的 ID 当作可以互换，也不要绕过被 DSH 拒绝的执行操作。
+
 ## 5. 启动并登记训练
 
 - **何时执行**：用户已授权启动训练并希望工作台跟踪时。
