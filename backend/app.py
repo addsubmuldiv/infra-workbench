@@ -86,6 +86,11 @@ class ConnectionRequest(BaseModel):
         return value
 
 
+class InventoryImportRequest(BaseModel):
+    source_path: str = Field(min_length=1, max_length=4096)
+    revision: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+
+
 class CheckRequest(BaseModel):
     host_id: str
     devices: list[str] = Field(min_length=1, max_length=64)
@@ -505,6 +510,29 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         from .training_routes import register_training_routes
         register_training_routes(app, app.state.training_runs, hosts)
     register_cluster_routes(app, app.state.clusters)
+    if mcp_policy is not None:
+        from .workbench_inventory_import import InventoryImport
+        inventory_import = InventoryImport(hosts, store, app.state.clusters)
+
+        @app.post('/api/workbench-inventory/preview')
+        @serialize_connections
+        async def preview_workbench_inventory(body: InventoryImportRequest):
+            try:
+                return inventory_import.preview(body.source_path)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(400, str(exc)) from None
+
+        @app.post('/api/workbench-inventory/import')
+        @serialize_connections
+        async def import_workbench_inventory(body: InventoryImportRequest):
+            if body.revision is None:
+                raise HTTPException(422, 'Review the inventory before importing.')
+            try:
+                result = inventory_import.apply(body.source_path, body.revision)
+                state_changes.publish()
+                return result
+            except (OSError, ValueError) as exc:
+                raise HTTPException(409, str(exc)) from None
     from .group_reservations import GroupReservationService
     from .group_reservation_routes import register_group_reservation_routes
     app.state.group_reservations = GroupReservationService(store, hosts, snapshots, app.state.clusters, mail)

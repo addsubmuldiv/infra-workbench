@@ -94,6 +94,30 @@ def test_auth_wraps_every_route_and_disables_model_desktop(tmp_path):
     assert os.environ['IWB_FACTORY_ONLY'] == '0'
 
 
+def test_inventory_import_is_host_only_and_requires_fresh_preview(tmp_path):
+    import sqlite3
+    source = tmp_path / 'source.db'
+    with sqlite3.connect(source) as db:
+        db.execute('CREATE TABLE config(id TEXT PRIMARY KEY,value TEXT NOT NULL)')
+        db.execute('INSERT INTO config VALUES (?,?)', ('hosts', json.dumps([
+            {'id': 'a' * 32, 'target': 'example.test', 'user': 'tester', 'port': 22, 'manual': True, 'auth': 'key'}])))
+    app = make_app(tmp_path)
+    with TestClient(app, base_url='http://127.0.0.1:9001') as client:
+        headers = {'Authorization': 'Bearer ' + HOST_SECRET, 'X-IWB': '1'}
+        mcp = {'Authorization': 'Bearer ' + MCP_SECRET, 'X-IWB': '1'}
+        body = {'source_path': str(source)}
+        assert client.post('/api/workbench-inventory/preview', json=body).status_code == 401
+        assert client.post('/api/workbench-inventory/preview', headers=mcp, json=body).status_code == 401
+        preview = client.post('/api/workbench-inventory/preview', headers=headers, json=body)
+        assert preview.status_code == 200 and preview.json()['add_hosts'] == 1
+        assert client.post('/api/workbench-inventory/import', headers=headers, json=body).status_code == 422
+        body['revision'] = preview.json()['revision']
+        imported = client.post('/api/workbench-inventory/import', headers=headers, json=body)
+        assert imported.status_code == 200 and imported.json()['added_hosts'] == 1
+        assert client.post('/api/workbench-inventory/import', headers=headers, json=body).status_code == 409
+        assert len(client.get('/api/state', headers=headers).json()['hosts']) == 1
+
+
 def test_headless_does_not_load_agent_runtime_in_fresh_process(tmp_path):
     script = '''
 import sys
