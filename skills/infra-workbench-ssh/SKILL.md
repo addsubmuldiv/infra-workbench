@@ -8,6 +8,8 @@ description: 用 Infra Workbench 查机器别名、GPU/NPU 资源或 SSH 登录�
 1. 已知可用的本机 SSH Host 别名且无需查询工作台资源时，直接用 `ssh <别名>`。否则按任务查询。用户指定机柜、集群或工作台分组时，先用 `list_clusters` 匹配分组名，再用 `get_cluster(cluster_id)` 取得成员 `host_ids`，只从该集合选机。分组名与机器别名分别查找。按别名或硬件定位用 `find_hosts`，按空闲卡和显存筛选用 `search_hosts`，确认指定机器的设备状态用 `get_resources`。仅在确实需要新采样时传 `refresh=true`。目标有歧义时继续缩小范围。
 2. 优先用已注册的原生查询工具。如果本会话没有注册，运行此技能目录下的 `scripts/lookup.py`，无需预先注册 MCP。命令中的脚本路径使用本文件所在目录的绝对路径。参数是从标准输入传入的 JSON 对象。示例（macOS/Linux 上可用 `python3`）：
 
+   技能目录指加载 `SKILL.md` 时提供的资源根，不是当前工作区。DSH 用户级安装位于其配置根目录的 `skills/infra-workbench-ssh`；如果加载结果没有给出路径，先确认实际安装位置，不要猜测工作区下存在 `scripts` 目录。
+
    ```powershell
    '{"name":"用户给出的别名"}' | python "<技能目录>/scripts/lookup.py" find_hosts
    '{"host_id":"查询返回的完整 ID"}' | python "<技能目录>/scripts/lookup.py" get_ssh_info
@@ -27,4 +29,4 @@ description: 用 Infra Workbench 查机器别名、GPU/NPU 资源或 SSH 登录�
 '{"host_id":"HOST_ID","auth":"saved_password","command":"pwd","timeout":30}' | python "<技能目录>/scripts/direct_ssh.py"
 ```
 
-`auth` 必须明确为 `key` 或 `saved_password`。`key` 使用 Workbench 给出的本机 OpenSSH 参数；`saved_password` 才会在进程内读取已保存密码。可选 `input` 是远端命令标准输入，`timeout` 为 1–120 秒。输出包含退出码、stdout、stderr 和截断标记；只用于短命令，不用于直接启动需要 Workbench 监控的训练。输出在接收后截断，执行时应主动限制日志等可能很大的输出。无论哪种认证，失败或超时都可能意味着远端操作已发生，先检查远端状态，再决定是否重试；不要自动切换认证方式重放命令。
+`auth` 必须明确为 `key` 或 `saved_password`。`key` 使用 Workbench 给出的本机 OpenSSH 参数；`saved_password` 才会在进程内读取已保存密码。可选 `input` 是远端命令标准输入，`timeout` 为 1–120 秒。输出包含退出码、stdout、stderr 和截断标记；只用于短命令，不用于直接启动需要 Workbench 监控的训练。每路输出最多保留 1 MiB，继续读取并丢弃超出部分；查询大日志应在远端限制范围。无论哪种认证，失败或超时都可能意味着远端操作已发生，先检查远端状态，再决定是否重试；不要自动切换认证方式重放命令。

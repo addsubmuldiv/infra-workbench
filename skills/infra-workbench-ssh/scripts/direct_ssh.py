@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 
 import lookup
 
@@ -19,6 +20,59 @@ MAX_OUTPUT = 1024 * 1024
 
 class SSHClientError(Exception):
     """A fixed message safe to show without echoing transport or credentials."""
+
+
+def retain(output, chunk):
+    """Drain all output while retaining at most MAX_OUTPUT bytes per stream."""
+    remaining = max(0, MAX_OUTPUT - len(output))
+    output.extend(chunk[:remaining])
+    return len(chunk) > remaining
+
+
+def native_run(argv, command, source, timeout):
+    proc = subprocess.Popen(argv + [command], stdin=subprocess.PIPE if source is not None else subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    outputs = [bytearray(), bytearray()]
+    truncated = [False, False]
+    failures = []
+    def drain(index, stream):
+        try:
+            while chunk := stream.read(65536):
+                truncated[index] = retain(outputs[index], chunk) or truncated[index]
+        except Exception:
+            failures.append(True)
+    def feed():
+        try:
+            proc.stdin.write(source.encode('utf-8'))
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+    workers = [threading.Thread(target=drain, args=(i, stream), daemon=True)
+               for i, stream in enumerate((proc.stdout, proc.stderr))]
+    if source is not None:
+        workers.append(threading.Thread(target=feed, daemon=True))
+    for worker in workers:
+        worker.start()
+    try:
+        code = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise SSHClientError('SSH timed out; check remote state before retrying') from None
+    for worker in workers:
+        worker.join(timeout=2)
+    if failures or any(worker.is_alive() for worker in workers):
+        raise SSHClientError('SSH output could not be confirmed; check remote state before retrying')
+    return code, bytes(outputs[0]), bytes(outputs[1]), any(truncated)
+
+
+async def drain_async(stream):
+    output = bytearray()
+    truncated = False
+    while chunk := await stream.read(65536):
+        truncated = retain(output, chunk) or truncated
+    return bytes(output), truncated
 
 
 def request(tool, arguments):
@@ -93,8 +147,11 @@ async def password_run(info, host_id, command, source, timeout):
         if tunnel is not None:
             options['tunnel'] = tunnel
         connection = await stack.enter_async_context(asyncssh.connect(**options))
-        result = await asyncio.wait_for(connection.run(command, input=source, check=False), timeout=timeout)
-        return result.exit_status, result.stdout, result.stderr
+        process = await connection.create_process(command, input=source.encode('utf-8') if source is not None else None,
+                                                  encoding=None)
+        stdout, stderr, _ = await asyncio.wait_for(asyncio.gather(
+            drain_async(process.stdout), drain_async(process.stderr), process.wait_closed()), timeout=timeout)
+        return process.exit_status, stdout[0], stderr[0], stdout[1] or stderr[1]
 
 
 def run(payload):
@@ -110,11 +167,8 @@ def run(payload):
     if not isinstance(argv, list) or not argv or not all(isinstance(v, str) and v for v in argv):
         raise SSHClientError('Workbench did not provide native SSH arguments')
     if auth == 'saved_password':
-        return asyncio.run(password_run(info, host_id, command, source, timeout))
-    native = subprocess.run(argv + [command], input=source, capture_output=True, text=True,
-                            encoding='utf-8', errors='replace', timeout=timeout,
-                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
-    return native.returncode, native.stdout, native.stderr
+        return asyncio.run(asyncio.wait_for(password_run(info, host_id, command, source, timeout), timeout=timeout))
+    return native_run(argv, command, source, timeout)
 
 
 def main():
@@ -122,13 +176,11 @@ def main():
         payload = json.loads(sys.stdin.buffer.read().decode('utf-8-sig'))
         if not isinstance(payload, dict):
             raise SSHClientError('Expected a JSON object')
-        code, stdout, stderr = run(payload)
-        out, err = stdout.encode('utf-8'), stderr.encode('utf-8')
+        code, stdout, stderr, truncated = run(payload)
         if hasattr(sys.stdout, 'reconfigure'):
             sys.stdout.reconfigure(encoding='utf-8')
-        print(json.dumps({'exit_code': code, 'stdout': out[:MAX_OUTPUT].decode('utf-8', 'replace'),
-                          'stderr': err[:MAX_OUTPUT].decode('utf-8', 'replace'),
-                          'truncated': len(out) > MAX_OUTPUT or len(err) > MAX_OUTPUT}, ensure_ascii=False))
+        print(json.dumps({'exit_code': code, 'stdout': stdout.decode('utf-8', 'replace'),
+                          'stderr': stderr.decode('utf-8', 'replace'), 'truncated': truncated}, ensure_ascii=False))
         return 0 if code == 0 else 1
     except SSHClientError as error:
         print(str(error), file=sys.stderr)
