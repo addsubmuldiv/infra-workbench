@@ -279,9 +279,42 @@ class TrainingRunService:
             if not bound or bound[0] != digest:
                 raise ValueError('SSH identity changed during process verification')
             return config
-        if self._identity_digest(config) != row[0]:
+        recorded_digest = row[0].removeprefix('confirmed:')
+        if self._identity_digest(config) != recorded_digest:
             raise ValueError('SSH identity changed; the task needs review')
         return config
+
+    async def prepare_identity_confirmation(self, session_id, run_id, index, allowed):
+        run = self.get(session_id, run_id, allowed)
+        if type(index) is not int or not 0 <= index < len(run['nodes']):
+            raise IndexError('node not found')
+        node = run['nodes'][index]
+        if run['launch_mode'] != 'external' or node.get('connection_identity_status') != 'pending':
+            raise ValueError('SSH target does not require confirmation')
+        host = self.commands.probes.host(node['host_id'], allowed)
+        config = await self.commands.probes.ssh.effective(host)
+        if not config.get('hostname') or not config.get('user') or not config.get('port'):
+            raise ValueError('SSH target configuration is incomplete')
+        if config.get('proxycommand') not in (None, '', 'none'):
+            raise ValueError('Custom SSH proxy cannot be reviewed safely here')
+        return {'hostname':config['hostname'], 'user':config['user'], 'port':config['port'],
+                'host_key_alias':config.get('hostkeyalias'),
+                'proxy_jump':config.get('proxyjump'),
+                'fingerprint':self._identity_digest(config)}
+
+    async def confirm_identity(self, session_id, run_id, index, fingerprint, allowed):
+        if not isinstance(fingerprint, str) or re.fullmatch(r'[a-f0-9]{64}', fingerprint) is None:
+            raise ValueError('Invalid SSH identity fingerprint')
+        review = await self.prepare_identity_confirmation(session_id, run_id, index, allowed)
+        if review['fingerprint'] != fingerprint:
+            raise ValueError('SSH identity changed; review the target again')
+        with self.lock, self.db:
+            changed = self.db.execute(
+                'UPDATE training_identities SET digest=? WHERE run_id=? AND node_index=? AND digest=?',
+                ('confirmed:' + fingerprint, run_id, index, PENDING_IDENTITY)).rowcount
+        if not changed:
+            raise ValueError('SSH identity changed; review the target again')
+        return self.get(session_id, run_id, allowed)
 
     @staticmethod
     def _request_digest(plan, external=None, parent=None):
@@ -387,8 +420,10 @@ class TrainingRunService:
             if index in external_identities:
                 identity = json.loads(external_identities[index])
                 node['agent_launch_report'] = identity.get('launch_report')
-                node['connection_identity_status'] = ('pending' if connection_identities.get(index) == PENDING_IDENTITY
-                                                      else 'bound' if index in connection_identities else 'unrecorded')
+                digest = connection_identities.get(index)
+                node['connection_identity_status'] = ('pending' if digest == PENDING_IDENTITY
+                    else 'user_confirmed' if isinstance(digest, str) and digest.startswith('confirmed:')
+                    else 'bound' if digest else 'unrecorded')
                 process_identity = {key: identity.get(key) for key in ('pid', 'uid', 'start_ticks', 'boot_id')}
                 node['process_identity'] = process_identity
                 if node['result'] is None:

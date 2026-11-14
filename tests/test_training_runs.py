@@ -281,6 +281,45 @@ def test_external_run_survives_initial_config_failure_and_requires_verified_proc
     assert recovered['status'] == 'running'
     assert recovered['nodes'][0]['connection_identity_status'] == 'bound'
     service.close()
+
+
+def test_pending_ssh_target_can_only_be_confirmed_for_the_exact_reviewed_config(tmp_path):
+    class SSH:
+        config = None
+        async def effective(self, host):
+            if self.config is None: raise ValueError('unavailable')
+            return self.config
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed):
+            if host_id not in allowed: raise PermissionError('outside scope')
+            return {'id':host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, *args, **kwargs): return {'ok':False, 'data':{}}
+    commands = Commands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands)
+    plan = {'name':'offline', 'nodes':[{'host_id':'a', 'cwd':'/work', 'command':'python train.py'}]}
+    run = asyncio.run(service.register_external('owner', 'r', plan, [{}], {'a'}))
+    commands.probes.ssh.config = {'hostname':'host-a', 'user':'alice', 'port':'22', 'proxycommand':None}
+    review = asyncio.run(service.prepare_identity_confirmation('owner', run['run_id'], 0, {'a'}))
+    assert review['hostname'] == 'host-a'
+    assert 'proxycommand' not in review
+    with pytest.raises(PermissionError):
+        asyncio.run(service.confirm_identity('other', run['run_id'], 0, review['fingerprint'], {'a'}))
+    commands.probes.ssh.config = {**commands.probes.ssh.config, 'hostname':'host-b'}
+    with pytest.raises(ValueError, match='changed'):
+        asyncio.run(service.confirm_identity('owner', run['run_id'], 0, review['fingerprint'], {'a'}))
+    assert service.get('owner', run['run_id'], {'a'})['nodes'][0]['connection_identity_status'] == 'pending'
+    commands.probes.ssh.config = {**commands.probes.ssh.config, 'hostname':'host-a'}
+    confirmed = asyncio.run(service.confirm_identity('owner', run['run_id'], 0, review['fingerprint'], {'a'}))
+    assert confirmed['nodes'][0]['connection_identity_status'] == 'user_confirmed'
+    assert confirmed['status'] == 'unknown'
+    asyncio.run(service._approved_config(run['run_id'], 0, 'a', {'a'}))
+    commands.probes.ssh.config = {**commands.probes.ssh.config, 'hostname':'host-b'}
+    with pytest.raises(ValueError, match='changed'):
+        asyncio.run(service._approved_config(run['run_id'], 0, 'a', {'a'}))
+    service.close()
 def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path):
     identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
                 'completion_path': '/work/result.json', 'completion_id': 'b' * 32}

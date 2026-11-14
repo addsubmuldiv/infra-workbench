@@ -299,6 +299,11 @@ def test_training_routes_are_host_only_and_session_scoped(tmp_path):
         grant = {'session_id': 'session-b', 'host_ids': ['a']}
         assert client.post(f'/api/training-runs/{run_id}/grant', json=grant, headers=mcp).status_code == 401
         snapshot = {**grant, 'node_index':0, 'snapshot_index':0, 'offset':0}
+        identity_review = {**grant, 'node_index':0}
+        identity_confirmation = {**identity_review, 'fingerprint':'a' * 64}
+        assert client.post(f'/api/training-runs/{run_id}/identity/prepare', json=identity_review, headers=mcp).status_code == 401
+        assert client.post(f'/api/training-runs/{run_id}/identity/confirm', json=identity_confirmation, headers=mcp).status_code == 401
+        assert client.post(f'/api/training-runs/{run_id}/identity/prepare', json=identity_review, headers=host).status_code == 403
         assert client.post(f'/api/training-runs/{run_id}/snapshot/read', json=snapshot, headers=mcp).status_code == 401
         assert client.post(f'/api/training-runs/{run_id}/snapshot/read', json=snapshot, headers=host).status_code == 403
         assert client.post(f'/api/training-runs/{run_id}/grant', json=grant, headers=host).status_code == 200

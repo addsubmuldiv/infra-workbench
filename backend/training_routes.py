@@ -71,6 +71,14 @@ class Snapshot(Scope):
     offset: int = Field(default=0, ge=0)
 
 
+class IdentityReview(Scope):
+    node_index: int = Field(ge=0, le=63)
+
+
+class IdentityConfirm(IdentityReview):
+    fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
 def register_training_routes(app, service, hosts):
     def allowed(ids):
         known = {host['id'] for host in hosts}
@@ -180,6 +188,26 @@ def register_training_routes(app, service, hosts):
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             if isinstance(exc, ValueError) and str(exc) == 'log cursor expired; restart from offset zero':
                 return {'cursor_expired': True}
+            error(exc)
+
+    @app.post('/api/training-runs/{run_id}/identity/prepare')
+    async def prepare_identity(run_id: str, body: IdentityReview):
+        if re.fullmatch(r'[a-f0-9]{32}', run_id) is None:
+            raise HTTPException(404, 'Run not found')
+        try:
+            return await service.prepare_identity_confirmation(body.session_id, run_id, body.node_index,
+                                                               allowed(body.host_ids))
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
+            error(exc)
+
+    @app.post('/api/training-runs/{run_id}/identity/confirm')
+    async def confirm_identity(run_id: str, body: IdentityConfirm):
+        if re.fullmatch(r'[a-f0-9]{32}', run_id) is None:
+            raise HTTPException(404, 'Run not found')
+        try:
+            return await service.confirm_identity(body.session_id, run_id, body.node_index, body.fingerprint,
+                                                  allowed(body.host_ids))
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
             error(exc)
 
     @app.post('/api/training-runs/{run_id}/draft/{operation}')
