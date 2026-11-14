@@ -104,6 +104,8 @@ sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH �
 
 桌面工作台还提供 `http://127.0.0.1:8765/mcp/ssh-info`，供外部 Agent 发现机器、集群及非秘密 SSH 连接描述。该入口只提供 `list_hosts`、`get_host`、`get_ssh_info`、`list_clusters` 和 `get_cluster`，不提供密码或远程执行；Agent 自行使用 SSH 客户端连接。端口以当前工作台实例为准。该入口不出现在 DSH 插件管理的隔离 headless 后端；需要外部 Agent 访问真实工作台时，应连接真实工作台实例。原 `/mcp` 的能力和兼容性不变。
 
+可选的 `skills/infra-workbench-ssh` 是外部 Agent 的本地 Skill。DSH 用户可以将整个技能目录放入 `$DSH_HOME/skills/infra-workbench-ssh`；Codex 等兼容的 harness 可放入各自的 skills 目录。技能内的短命令客户端使用 Agent 本机 SSH，密码认证需要本机 Python 安装 `asyncssh`、目标和跳板主机密钥已验证，以及正在运行的本机 Workbench 完整 `/mcp` 端点；非默认端口通过 `IWB_MCP_URL` 指定。密码只在该客户端进程内读取，不作为命令参数或输出。连接异常不代表远端命令一定没执行，必须先检查状态再决定重试。
+
 下载的 `handoff_required` 表示尚未下载。创建上传任务也不代表字节已传到服务器。界面和模型不得把交接描述为成功完成。限定机器范围时，无法证明归属的导入批次/旧下载句柄会拒绝访问。
 
 ## 技能负责流程
