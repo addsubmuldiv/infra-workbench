@@ -90,6 +90,30 @@ class ExternalIdentity(BaseModel):
     boot_id: str | None = Field(default=None, pattern=r'^[a-f0-9-]{36}$')
     uid: int | None = Field(default=None, ge=0, le=4294967295)
     launch_report: Literal['started', 'failed', 'not_started', 'unknown'] | None = None
+    completion_path: str | None = Field(default=None, min_length=1, max_length=4096, pattern=r'^/[^\x00]*$')
+    completion_id: str | None = Field(default=None, pattern=r'^[a-f0-9]{32}$')
+
+
+def parse_external_completion(content, identity):
+    """Read an agent-produced result marker; it is evidence, not a signed attestation."""
+    if not isinstance(content, str) or len(content.encode('utf-8')) > 4096:
+        return None
+    try:
+        value = json.loads(content)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(value, dict) or set(value) != {
+            'version', 'completion_id', 'pid', 'uid', 'start_ticks', 'boot_id', 'exit_code'}:
+        return None
+    if type(value['version']) is not int or value['version'] != 1:
+        return None
+    if type(value['pid']) is not int or type(value['uid']) is not int:
+        return None
+    if any(value.get(key) != identity.get(key) or identity.get(key) is None
+           for key in ('completion_id', 'pid', 'uid', 'start_ticks', 'boot_id')):
+        return None
+    code = value['exit_code']
+    return code if type(code) is int and 0 <= code <= 255 else None
 
 
 class TrainingRunService:
@@ -383,6 +407,18 @@ class TrainingRunService:
         if len({node['host_id'] for node in nodes}) != len(nodes) or len(identities) != len(nodes):
             raise ValueError('one identity per distinct host is required')
         identities = [ExternalIdentity.model_validate(item).model_dump() for item in identities]
+        for node, identity in zip(nodes, identities):
+            if (identity['completion_path'] is None) != (identity['completion_id'] is None):
+                raise ValueError('completion path and ID are required together')
+            if identity['completion_path'] is not None:
+                if any(identity.get(key) is None for key in ('pid', 'uid', 'start_ticks', 'boot_id')):
+                    raise ValueError('completion marker requires a complete process identity')
+                self._file_root(node, identity['completion_path'])
+            else:
+                # Preserve idempotency hashes of registrations made before the
+                # optional result-file fields were introduced.
+                identity.pop('completion_path')
+                identity.pop('completion_id')
         parent = None
         if parent_id is not None or mode is not None:
             if not isinstance(parent_id, str) or not re.fullmatch(r'[a-f0-9]{32}', parent_id) or mode not in {'stop', 'keep'}:
@@ -625,6 +661,22 @@ class TrainingRunService:
                                    'inactive' if data.get('state') in ('Z', 'X') else
                                    'suspended' if data.get('state') in ('T', 't') else
                                    'running' if status == 'running' else 'unavailable')
+                    if observation in ('inactive', 'identity_mismatch', 'unavailable') and self.files is not None and identity.get('completion_path'):
+                        try:
+                            plan_node = run['plan']['nodes'][index]
+                            path = identity['completion_path']
+                            marker = await self.files.read(node['host_id'], self._file_root(plan_node, path),
+                                path, None, 0, allowed, limit=4096, **options)
+                            exit_code = None if marker.get('not_found') or marker.get('has_more') else parse_external_completion(marker.get('content'), identity)
+                            if exit_code is not None:
+                                self._set_node(run_id, index, 'completed' if exit_code == 0 else 'failed',
+                                    {'pid': identity['pid'], 'exit_code': exit_code,
+                                     'completion_source': 'agent_result_file', 'identity_verified': False})
+                                return
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            pass  # Unreadable or malformed evidence must stay unknown.
                     self._set_node(run_id, index, status,
                                    {**data, 'identity_verified': True, 'process_observation': observation} if matches
                                    else {'process_observation': observation})
@@ -644,7 +696,7 @@ class TrainingRunService:
 
         await asyncio.gather(*(read(i, node) for i, node in enumerate(run['nodes'])))
         current = self.get(session_id, run_id, allowed)
-        if any(node['status'] in {'failed', 'timed_out'} for node in current['nodes']):
+        if current['launch_mode'] == 'managed' and any(node['status'] in {'failed', 'timed_out'} for node in current['nodes']):
             await asyncio.gather(*(self._cancel_node(run_id, i, node, allowed)
                 for i, node in enumerate(current['nodes']) if node['status'] in {'starting', 'running'}))
         return self.get(session_id, run_id, allowed)

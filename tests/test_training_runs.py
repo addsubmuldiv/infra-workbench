@@ -1,9 +1,10 @@
 import asyncio
+import json
 
 
 import pytest
 
-from backend.training_runs import TrainingRunService
+from backend.training_runs import TrainingRunService, parse_external_completion
 
 
 class FakeCommands:
@@ -152,6 +153,55 @@ def test_external_registration_tracks_only_verified_process_identity(tmp_path):
     with pytest.raises(ValueError, match='together'):
         asyncio.run(service.register_external('s', 'bad', spec, [{}], {'a'}, parent_id=run['run_id']))
     service.close()
+
+
+def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path):
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
+                'completion_path': '/work/result.json', 'completion_id': 'b' * 32}
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        observed = {**identity, 'state': 'S'}
+        async def call(self, *args, **kwargs): return {'ok': True, 'data': self.observed}
+    class Files:
+        marker = {'version': 1, 'completion_id': 'b' * 32, 'pid': 123, 'uid': 1000,
+                  'start_ticks': '456', 'boot_id': 'a' * 36, 'exit_code': 0}
+        async def read(self, host, root, path, cursor, offset, allowed, **kwargs):
+            assert (host, root, path, offset) == ('a', '/work', '/work/result.json', 0)
+            return {'content': json.dumps(self.marker), 'has_more': False}
+    commands, files = Commands(), Files()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=files)
+    spec = {'name': 'direct', 'nodes': [{'host_id': 'a', 'cwd': '/work', 'command': 'python train.py'}]}
+    run = asyncio.run(service.register_external('s', 'marker', spec, [identity], {'a'}))
+    assert run['status'] == 'running'
+    commands.observed = {'error': 'process not visible'}
+    files.marker['completion_id'] = 'c' * 32
+    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    files.marker['completion_id'] = 'b' * 32
+    files.marker['exit_code'] = 7
+    result = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+    assert result['status'] == 'failed'
+    assert result['nodes'][0]['result']['exit_code'] == 7
+    assert result['nodes'][0]['result']['completion_source'] == 'agent_result_file'
+    with pytest.raises(ValueError, match='outside approved'):
+        asyncio.run(service.register_external('s', 'bad-marker', spec,
+            [{**identity, 'completion_path': '/elsewhere/result.json'}], {'a'}))
+    service.close()
+
+
+def test_external_result_marker_rejects_ambiguous_and_mismatched_content():
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
+                'completion_id': 'b' * 32}
+    marker = {'version': 1, **identity, 'exit_code': 0}
+    assert parse_external_completion(json.dumps(marker), identity) == 0
+    for invalid in (None, '', '[]', '{', json.dumps({**marker, 'uid': True}),
+                    json.dumps({**marker, 'exit_code': True}), json.dumps({**marker, 'exit_code': -1}),
+                    json.dumps({**marker, 'start_ticks': '999'}), json.dumps({**marker, 'extra': 'x'}), ' ' * 4097):
+        assert parse_external_completion(invalid, identity) is None
 
 
 def test_external_registration_retains_already_started_nodes_when_cluster_changes(tmp_path):
