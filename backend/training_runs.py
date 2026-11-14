@@ -83,6 +83,14 @@ class TrainingPlan(BaseModel):
     cluster_revision: int | None = Field(default=None, ge=1)
 
 
+class ExternalIdentity(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    pid: int | None = Field(default=None, ge=2, le=2147483647)
+    start_ticks: str | None = Field(default=None, pattern=r'^[0-9]{1,30}$')
+    boot_id: str | None = Field(default=None, pattern=r'^[a-f0-9-]{36}$')
+    uid: int | None = Field(default=None, ge=0, le=4294967295)
+
+
 class TrainingRunService:
     """Persist a request and all node identities before any remote side effect."""
 
@@ -122,6 +130,9 @@ class TrainingRunService:
             self.db.execute('''CREATE TABLE IF NOT EXISTS training_grants (
                 run_id TEXT NOT NULL, session_id TEXT NOT NULL,
                 PRIMARY KEY(run_id, session_id))''')
+            self.db.execute('''CREATE TABLE IF NOT EXISTS training_external (
+                run_id TEXT NOT NULL, node_index INTEGER NOT NULL, identity TEXT NOT NULL,
+                PRIMARY KEY(run_id,node_index))''')
             for run_id, payload in self.db.execute('SELECT id,plan FROM training_runs').fetchall():
                 for node in json.loads(payload).get('nodes', []):
                     if node.get('log_path'):
@@ -157,6 +168,21 @@ class TrainingRunService:
             raise ValueError('cluster is unavailable in the approved scope') from None
         if cluster['revision'] != revision or not {n['host_id'] for n in plan['nodes']} <= set(cluster['host_ids']):
             raise ValueError('cluster membership or revision changed; confirm the plan again')
+
+    def _external_cluster_status(self, plan, allowed):
+        """Describe the current cluster view without authorizing a new launch."""
+        if plan['cluster_id'] is None:
+            return 'not_declared'
+        try:
+            cluster = self.clusters.get(plan['cluster_id'], allowed) if self.clusters else None
+            if not cluster:
+                return 'unavailable'
+            if cluster['revision'] != plan['cluster_revision'] or not {
+                    node['host_id'] for node in plan['nodes']} <= set(cluster['host_ids']):
+                return 'changed'
+            return 'current'
+        except Exception:
+            return 'unavailable'
 
     @staticmethod
     def _identity_digest(config):
@@ -196,9 +222,10 @@ class TrainingRunService:
             raise ValueError('SSH identity changed; the task needs review')
         return config
 
-    def _record(self, session_id, request_id, plan):
+    def _record(self, session_id, request_id, plan, *, external=None, configs=None, parent=None):
         payload = json.dumps(plan, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
-        digest = hashlib.sha256(payload.encode()).hexdigest()
+        digest = hashlib.sha256((payload + (json.dumps(external, sort_keys=True) if external is not None else '') +
+                                 (json.dumps(parent, sort_keys=True) if parent is not None else '')).encode()).hexdigest()
         stored_payload = scrub(plan)
         with self.lock, self.db:
             # Acquire the writer lock before checking the idempotency key. A
@@ -223,9 +250,17 @@ class TrainingRunService:
             self.db.execute('INSERT INTO training_runs VALUES (?,?,?,?,?,?)',
                             (run_id, session_id, request_id, digest, stored_payload, now))
             self.db.executemany('INSERT INTO training_nodes (run_id,node_index,host_id,job_id,status,result,updated) VALUES (?,?,?,?,?,NULL,?)', [
-                (run_id, index, node['host_id'], uuid.uuid4().hex, 'not_started', now)
+                (run_id, index, node['host_id'], uuid.uuid4().hex, 'unknown' if external is not None else 'not_started', now)
                 for index, node in enumerate(plan['nodes'])
             ])
+            if external is not None:
+                self.db.executemany('INSERT INTO training_external VALUES (?,?,?)', [
+                    (run_id, index, json.dumps(identity, sort_keys=True)) for index, identity in enumerate(external)])
+            if parent is not None:
+                self.db.execute('INSERT INTO training_parents VALUES (?,?,?)', (run_id, parent['run_id'], parent['mode']))
+            if configs is not None:
+                self.db.executemany('INSERT INTO training_identities VALUES (?,?,?)', [
+                    (run_id, i, self._identity_digest(configs[node['host_id']])) for i, node in enumerate(plan['nodes'])])
             return run_id, True
 
     def _set_node(self, run_id, index, status, result=None):
@@ -237,7 +272,7 @@ class TrainingRunService:
 
     def get(self, session_id, run_id, allowed):
         with self.lock:
-            row = self.db.execute('SELECT session_id, plan, created FROM training_runs WHERE id=?', (run_id,)).fetchone()
+            row = self.db.execute('SELECT session_id, plan, created, request_id FROM training_runs WHERE id=?', (run_id,)).fetchone()
             if row is None:
                 raise KeyError('run not found')
             nodes = self.db.execute(
@@ -247,6 +282,8 @@ class TrainingRunService:
                 'SELECT node_index, data FROM training_snapshots WHERE run_id=? ORDER BY rowid',
                 (run_id,)).fetchall()
             parent = self.db.execute('SELECT parent_id, mode FROM training_parents WHERE run_id=?', (run_id,)).fetchone()
+            external = self.db.execute('SELECT 1 FROM training_external WHERE run_id=? LIMIT 1', (run_id,)).fetchone()
+            external_identities = dict(self.db.execute('SELECT node_index,identity FROM training_external WHERE run_id=?', (run_id,)).fetchall())
             granted = self.db.execute('SELECT 1 FROM training_grants WHERE run_id=? AND session_id=?',
                                       (run_id, session_id)).fetchone()
         if (row[0] != session_id and not granted) or allowed is None or any(node[0] not in allowed for node in nodes):
@@ -260,6 +297,11 @@ class TrainingRunService:
         for index, snapshot in snapshots:
             result_nodes[index]['snapshots'].append(json.loads(scrub(json.loads(snapshot))))
         for index, node in enumerate(result_nodes):
+            if index in external_identities:
+                identity = json.loads(external_identities[index])
+                node['process_identity'] = identity
+                if node['result'] is None:
+                    node['result'] = {**identity, 'identity_verified': False}
             node['command_options'], node['command_options_truncated'] = command_options(plan['nodes'][index]['command'])
         states = {node['status'] for node in result_nodes}
         status = ('failed' if 'failed' in states else
@@ -269,10 +311,17 @@ class TrainingRunService:
                   'cancelling' if states & {'cancelling', 'timing_out'} else
                   'running' if 'running' in states else
                   'cancelled' if 'cancelled' in states else 'completed')
-        return dict(run_id=run_id, session_id=row[0], plan=plan, created_at=row[2],
+        return dict(run_id=run_id, session_id=row[0], request_id=row[3], plan=plan, created_at=row[2],
                     updated_at=max(node['updated_at'] for node in result_nodes),
                     status=status, nodes=result_nodes, parent_run_id=parent[0] if parent else None,
-                    rerun_mode=parent[1] if parent else None)
+                    rerun_mode=parent[1] if parent else None, launch_mode='external' if external else 'managed',
+                    cluster_status=self._external_cluster_status(plan, allowed) if external else None)
+
+    def find_request(self, session_id, request_id, allowed):
+        with self.lock:
+            row = self.db.execute('SELECT id FROM training_runs WHERE session_id=? AND request_id=?',
+                                  (session_id, request_id)).fetchone()
+        return {'run': self.get(session_id, row[0], allowed) if row else None}
 
     def grant(self, run_id, session_id, allowed):
         if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
@@ -321,7 +370,42 @@ class TrainingRunService:
                     for i, node in enumerate(validated['nodes'])])
         return await self._start_recorded(session_id, run_id, validated, allowed, expected_configs=expected_configs)
 
-    async def _start_recorded(self, session_id, run_id, validated, allowed, *, expected_configs=None):
+    async def register_external(self, session_id, request_id, plan, identities, allowed, *, parent_id=None, mode=None):
+        if not session_id or not request_id:
+            raise ValueError('session_id and request_id are required')
+        validated = TrainingPlan.model_validate(plan).model_dump()
+        nodes = validated['nodes']
+        if allowed is None or any(node['host_id'] not in allowed for node in nodes):
+            raise ValueError('node outside scope')
+        if len({node['host_id'] for node in nodes}) != len(nodes) or len(identities) != len(nodes):
+            raise ValueError('one identity per distinct host is required')
+        identities = [ExternalIdentity.model_validate(item).model_dump() for item in identities]
+        parent = None
+        if parent_id is not None or mode is not None:
+            if not isinstance(parent_id, str) or not re.fullmatch(r'[a-f0-9]{32}', parent_id) or mode not in {'stop', 'keep'}:
+                raise ValueError('parent run and rerun mode are required together')
+            previous = self.get(session_id, parent_id, allowed)
+            if [node['host_id'] for node in previous['plan']['nodes']] != [node['host_id'] for node in nodes]:
+                raise ValueError('rerun nodes must match the parent')
+            parent = {'run_id': parent_id, 'mode': mode}
+        if (validated['cluster_id'] is None) != (validated['cluster_revision'] is None):
+            raise ValueError('cluster ID and revision are required together')
+        configs = {}
+        for node in nodes:
+            ExecuteArgs.model_validate({k: v for k, v in node.items() if k not in
+                {'log_path', 'script_path', 'snapshot_paths', 'read_roots', 'role', 'device_ids'}})
+            for path in [*node['snapshot_paths'], *([node['script_path']] if node['script_path'] else []),
+                         *([node['log_path']] if node['log_path'] else [])]:
+                self._file_root(node, path)
+            host = self.commands.probes.host(node['host_id'], allowed)
+            configs[node['host_id']] = await self.commands.probes.ssh.effective(host)
+        run_id, created = self._record(session_id, request_id, validated, external=identities, configs=configs, parent=parent)
+        if not created:
+            return await self.refresh(session_id, run_id, allowed)
+        return await self._start_recorded(session_id, run_id, validated, allowed,
+                                          expected_configs=configs, external=True)
+
+    async def _start_recorded(self, session_id, run_id, validated, allowed, *, expected_configs=None, external=False):
         async def snapshot(index, node, path):
             try:
                 if self.files is None:
@@ -348,16 +432,20 @@ class TrainingRunService:
         await asyncio.gather(*(snapshot(i, node, path)
             for i, node in enumerate(validated['nodes'])
             for path in dict.fromkeys([*([node['script_path']] if node['script_path'] else []), *node['snapshot_paths']])))
-        try:
-            self._check_cluster(validated, allowed)
-        except Exception as exc:
-            for index in range(len(validated['nodes'])):
-                self._set_node(run_id, index, 'failed', {'error': str(exc)[:300]})
-            return self.get(session_id, run_id, allowed)
+        if not external:
+            try:
+                self._check_cluster(validated, allowed)
+            except Exception as exc:
+                for index in range(len(validated['nodes'])):
+                    self._set_node(run_id, index, 'failed', {'error': str(exc)[:300]})
+                return self.get(session_id, run_id, allowed)
         nodes = self.get(session_id, run_id, allowed)['nodes']
         # Mark every dispatch uncertain before sending any remote request.
         for index in range(len(nodes)):
             self._set_node(run_id, index, 'unknown')
+
+        if external:
+            return await self.refresh(session_id, run_id, allowed)
 
         async def launch(index, node, stored):
             try:
@@ -393,6 +481,8 @@ class TrainingRunService:
         if scrub(content) != content or 'PRIVATE KEY-----' in content or '[已隐藏凭据]' in content:
             raise ValueError('script contains sensitive or redacted content')
         parent = self.get(session_id, parent_id, allowed)
+        if parent['launch_mode'] == 'external':
+            raise ValueError('external runs cannot be rerun through the managed launcher')
         validated = TrainingPlan.model_validate(plan).model_dump()
         self._check_cluster(validated, allowed)
         if len(validated['nodes']) != len(parent['nodes']) or self.files is None:
@@ -481,6 +571,12 @@ class TrainingRunService:
 
     async def _cancel_node(self, run_id, index, node, allowed):
         try:
+            with self.lock:
+                external = self.db.execute('SELECT 1 FROM training_external WHERE run_id=? AND node_index=?',
+                                           (run_id, index)).fetchone()
+            if external:
+                self._set_node(run_id, index, 'unknown')
+                return
             expected = await self._approved_config(run_id, index, node['host_id'], allowed)
             options = {'expected_config': expected} if expected is not None else {}
             result = await self.commands.call('cancel_command_job',
@@ -507,6 +603,21 @@ class TrainingRunService:
             try:
                 expected = await self._approved_config(run_id, index, node['host_id'], allowed)
                 options = {'expected_config': expected} if expected is not None else {}
+                with self.lock:
+                    external = self.db.execute('SELECT identity FROM training_external WHERE run_id=? AND node_index=?',
+                                               (run_id, index)).fetchone()
+                if external:
+                    identity = json.loads(external[0])
+                    if any(identity.get(key) is None for key in ('pid', 'uid', 'start_ticks', 'boot_id')):
+                        self._set_node(run_id, index, 'unknown')
+                        return
+                    response = await self.commands.call('inspect_server_process',
+                        {'host_id': node['host_id'], 'pid': identity['pid']}, allowed, {}, **options)
+                    data = response.get('data') or {}
+                    matches = all(data.get(key) == identity[key] for key in ('pid', 'uid', 'start_ticks', 'boot_id'))
+                    status = 'running' if matches and data.get('state') not in (None, 'Z', 'X') else 'unknown'
+                    self._set_node(run_id, index, status, {**data, 'identity_verified': True} if matches else None)
+                    return
                 result = await self.commands.call('get_command_job',
                     {'host_id': node['host_id'], 'job_id': node['job_id']}, allowed, {}, **options)
                 data = result.get('data') or {}

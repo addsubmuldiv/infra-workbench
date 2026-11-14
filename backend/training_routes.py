@@ -4,7 +4,7 @@ import re
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from .training_runs import TrainingPlan
+from .training_runs import ExternalIdentity, TrainingPlan
 
 
 class Scope(BaseModel):
@@ -17,6 +17,18 @@ class Start(Scope):
     request_id: str = Field(min_length=1, max_length=256)
     plan: TrainingPlan
     expected_configs: dict[str, dict[str, str | None]] | None = None
+
+
+class Register(Scope):
+    request_id: str = Field(min_length=1, max_length=256)
+    plan: TrainingPlan
+    identities: list[ExternalIdentity] = Field(min_length=1, max_length=64)
+    parent_run_id: str | None = Field(default=None, pattern=r'^[a-f0-9]{32}$')
+    rerun_mode: str | None = Field(default=None, pattern=r'^(stop|keep)$')
+
+
+class FindRequest(Scope):
+    request_id: str = Field(min_length=1, max_length=256)
 
 
 class Prepare(BaseModel):
@@ -96,6 +108,22 @@ def register_training_routes(app, service, hosts):
                 result[host_id] = {key: config.get(key) for key in
                                    ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')}
             return {'configs': result}
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
+            error(exc)
+
+    @app.post('/api/training-runs/register')
+    async def register(body: Register):
+        try:
+            return await service.register_external(body.session_id, body.request_id, body.plan.model_dump(),
+                [identity.model_dump() for identity in body.identities], allowed(body.host_ids),
+                parent_id=body.parent_run_id, mode=body.rerun_mode)
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
+            error(exc)
+
+    @app.post('/api/training-runs/find-request')
+    async def find_request(body: FindRequest):
+        try:
+            return service.find_request(body.session_id, body.request_id, allowed(body.host_ids))
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             error(exc)
 

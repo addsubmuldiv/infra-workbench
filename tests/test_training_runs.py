@@ -85,6 +85,93 @@ def test_changed_ssh_identity_prevents_remote_dispatch(tmp_path):
     assert not commands.calls
     service.close()
 
+
+def test_external_registration_tracks_only_verified_process_identity(tmp_path):
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36}
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        calls = []
+        observed = {**identity, 'state': 'S', 'command': 'python train.py'}
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            self.calls.append(name)
+            assert name == 'inspect_server_process'
+            return {'data': self.observed}
+    commands = Commands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands)
+    spec = {'name': 'direct', 'nodes': [{'host_id': 'a', 'cwd': '/work', 'command': 'python train.py'}]}
+    run = asyncio.run(service.register_external('s', 'stable', spec, [identity], {'a'}))
+    assert run['status'] == 'running'
+    assert run['launch_mode'] == 'external'
+    assert run['nodes'][0]['result']['pid'] == 123
+    assert 'execute_server_command' not in commands.calls
+    commands.observed = {**identity, 'start_ticks': '999', 'state': 'S'}
+    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    commands.observed = {**identity, 'state': 'Z'}
+    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    commands.observed = {**identity, 'boot_id': 'b' * 36, 'state': 'S'}
+    assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
+    same = asyncio.run(service.register_external('s', 'stable', spec, [identity], {'a'}))
+    assert same['run_id'] == run['run_id']
+    with pytest.raises(ValueError, match='different plan'):
+        asyncio.run(service.register_external('s', 'stable', spec, [{**identity, 'pid': 124}], {'a'}))
+    before = len(commands.calls)
+    partial = asyncio.run(service.register_external('s', 'partial', spec, [{'pid': 321}], {'a'}))
+    assert partial['status'] == 'unknown'
+    assert partial['nodes'][0]['process_identity']['pid'] == 321
+    assert len(commands.calls) == before
+    child = asyncio.run(service.register_external('s', 'child', spec, [{}], {'a'}, parent_id=run['run_id'], mode='keep'))
+    assert child['parent_run_id'] == run['run_id']
+    assert service.find_request('s', 'child', {'a'})['run']['run_id'] == child['run_id']
+    assert service.find_request('other', 'child', {'a'})['run'] is None
+    with pytest.raises(PermissionError):
+        service.find_request('s', 'child', set())
+    assert child['rerun_mode'] == 'keep'
+    assert child['request_id'] == 'child'
+    with pytest.raises(PermissionError):
+        asyncio.run(service.register_external('other', 'bad', spec, [{}], {'a'}, parent_id=run['run_id'], mode='keep'))
+    with pytest.raises(ValueError, match='together'):
+        asyncio.run(service.register_external('s', 'bad', spec, [{}], {'a'}, parent_id=run['run_id']))
+    service.close()
+
+
+def test_external_registration_retains_already_started_nodes_when_cluster_changes(tmp_path):
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            return {'data': {'pid': 123, 'uid': 1000, 'start_ticks': '456',
+                             'boot_id': 'a' * 36, 'state': 'S'}}
+    class Clusters:
+        missing = False
+        def get(self, cluster_id, allowed):
+            if self.missing: raise KeyError(cluster_id)
+            return {'revision': 2, 'host_ids': ['a']}
+    clusters = Clusters()
+    service = TrainingRunService(tmp_path / 'runs.db', Commands(), clusters=clusters)
+    spec = {'name': 'already started', 'cluster_id': 'cluster', 'cluster_revision': 1,
+            'nodes': [{'host_id': 'a', 'cwd': '/work', 'command': 'python train.py'}]}
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36}
+    result = asyncio.run(service.register_external('s', 'existing', spec, [identity], {'a'}))
+    assert result['status'] == 'running'
+    assert result['cluster_status'] == 'changed'
+    assert result['plan']['cluster_revision'] == 1
+    clusters.missing = True
+    assert service.get('s', result['run_id'], {'a'})['cluster_status'] == 'unavailable'
+    with pytest.raises(PermissionError):
+        service.get('s', result['run_id'], set())
+    with pytest.raises(ValueError, match='cluster ID and revision'):
+        asyncio.run(service.register_external('s', 'bad', {**spec, 'cluster_revision': None}, [identity], {'a'}))
+    service.close()
+
 def test_recorded_ssh_identity_blocks_later_reads_and_cancellation(tmp_path):
     class SSH:
         hostname = 'original'

@@ -28,6 +28,7 @@ def process_identity(pid):
     root = Path('/proc') / str(pid)
     fields = (root / 'stat').read_text().rsplit(')', 1)[1].split()
     return dict(pid=pid, start_ticks=fields[19], uid=root.stat().st_uid,
+                boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
                 state=fields[0], command=(root/'cmdline').read_bytes()[:4096].replace(b'\0', b' ').decode('utf-8', 'replace'))
 
 

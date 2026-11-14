@@ -239,6 +239,8 @@ def test_training_routes_are_host_only_and_session_scoped(tmp_path):
                 {'host_id': 'a', 'command': 'echo test', 'cwd': '/work'}]}}
     with TestClient(app, base_url='http://127.0.0.1:9001') as client:
         assert client.post('/api/training-runs', json=body, headers=mcp).status_code == 401
+        assert client.post('/api/training-runs/register', json=body, headers=mcp).status_code == 401
+        assert client.post('/api/training-runs/register', json=body, headers=host).status_code == 422
         response = client.post('/api/training-runs', json=body, headers=host)
         assert response.status_code == 200, response.text
         run_id = response.json()['run_id']

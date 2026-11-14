@@ -68,7 +68,7 @@ class BearerGate:
             return True
         if method == 'POST' and path in {'/api/workbench-inventory/preview', '/api/workbench-inventory/import'}:
             return True
-        if method == 'POST' and (path in {'/api/training-runs', '/api/training-runs/list', '/api/training-runs/prepare'}
+        if method == 'POST' and (path in {'/api/training-runs', '/api/training-runs/register', '/api/training-runs/list', '/api/training-runs/prepare', '/api/training-runs/find-request'}
                 or re.fullmatch(r'/api/training-runs/[a-f0-9]{32}/(?:get|refresh|cancel|grant|rerun|log/read|snapshot/read|draft/(?:read|save))', path)):
             return True
         if method == 'POST' and re.fullmatch(r'/api/hosts/[^/]+/refresh', path):
