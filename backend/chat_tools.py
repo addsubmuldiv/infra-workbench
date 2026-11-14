@@ -110,11 +110,19 @@ def scrub(value,secret=''):
     text=value
     if secret:text=text.replace(secret,'[已隐藏 API key]')
     text=re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----','[已隐藏私钥]',text,flags=re.S)
+    # Redact the full Bearer credential before handling options whose first
+    # value could otherwise consume the scheme and leave the token visible.
+    text=re.sub(r'(?i)(?<![A-Za-z0-9_-])Bearer\s+[A-Za-z0-9._~+/=-]+','Bearer [已隐藏凭据]',text)
     # Avoid a quadratic failed match on long unbroken log/file lines. Every
     # credential alternative below contains one of these literal markers.
     if any(marker in text.casefold() for marker in ('api','password','passwd','secret','access','authorization')):
         text=re.sub(r'(?i)([\w.-]*(?:api[_-]?key|password|passwd|secret|access[_-]?token|authorization)[\w.-]*[\"\x27]?\s*[:=]\s*)(?:[\"\x27][^\"\x27\r\n]*[\"\x27]|[^\s,;\r\n}]+)',r'\1[已隐藏凭据]',text)
-    text=re.sub(r'(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+','Bearer [已隐藏凭据]',text)
+    # CLI flags frequently use whitespace rather than '=' (including quoted
+    # values). Redact the value without treating a following option as one.
+    if '--' in text and any(marker in text.casefold() for marker in ('api', 'password', 'passwd', 'secret', 'token', 'credential', 'authorization', 'access', 'private')):
+        text = re.sub(
+            r"(?i)(?<![\w-])(--(?:[\w.-]{0,128}(?:api[_-]?key|access[_-]?key|private[_-]?key|password|passwd|secret|credential|authorization)[\w.-]{0,128}|(?:access[-_]?|auth[-_]?|api[-_]?|hf[-_]?)?token)(?:[ \t]*=[ \t]*|[ \t]+))(?!-\-[A-Za-z_])(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;|&<>]+)",
+            r'\1[已隐藏凭据]', text)
     return text
 
 

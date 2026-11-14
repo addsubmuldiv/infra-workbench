@@ -208,12 +208,14 @@ class TrainingRunService:
                                       (run_id, session_id)).fetchone()
         if (row[0] != session_id and not granted) or allowed is None or any(node[0] not in allowed for node in nodes):
             raise PermissionError('run outside session scope')
-        plan = json.loads(row[1])
+        # Older records may have been saved before newer redaction rules existed.
+        # Sanitize at the read boundary without silently rewriting historical data.
+        plan = json.loads(scrub(json.loads(row[1])))
         result_nodes = [dict(host_id=host, job_id=job, status=status,
-                             result=json.loads(result) if result else None, updated_at=updated or row[2], snapshots=[])
+                             result=json.loads(scrub(json.loads(result))) if result else None, updated_at=updated or row[2], snapshots=[])
                         for host, job, status, result, updated in nodes]
         for index, snapshot in snapshots:
-            result_nodes[index]['snapshots'].append(json.loads(snapshot))
+            result_nodes[index]['snapshots'].append(json.loads(scrub(json.loads(snapshot))))
         states = {node['status'] for node in result_nodes}
         status = ('failed' if 'failed' in states else
                   'timed_out' if 'timed_out' in states else
@@ -501,7 +503,7 @@ class TrainingRunService:
         with self.lock:
             row = self.db.execute('SELECT content, updated FROM training_script_drafts WHERE run_id=? AND node_index=?',
                                   (run_id, node_index)).fetchone()
-        return {'content': row[0], 'updated_at': row[1]} if row else None
+        return {'content': scrub(row[0]), 'updated_at': row[1]} if row else None
 
     def read_snapshot_page(self, session_id, run_id, node_index, snapshot_index, offset, allowed):
         run = self.get(session_id, run_id, allowed)

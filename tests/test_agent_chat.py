@@ -145,6 +145,19 @@ def test_sensitive_field_redaction_preserves_valid_json():
     assert value['description']=='普通内容'
 
 
+def test_sensitive_command_options_are_redacted_for_space_separated_values():
+    command = "python train.py --password synthetic-password --api-key 'synthetic key value' --token=synthetic-token --learning-rate 0.02 --max-new-tokens 512 --num-tokens 128"
+    redacted = scrub(command)
+    assert 'synthetic-password' not in redacted
+    assert 'synthetic key value' not in redacted
+    assert 'synthetic-token' not in redacted
+    assert '--learning-rate 0.02' in redacted
+    assert '--max-new-tokens 512' in redacted
+    assert '--num-tokens 128' in redacted
+    auth = scrub('python --authorization Bearer synthetic-bearer --access-key-id synthetic-access')
+    assert 'synthetic-bearer' not in auth and 'synthetic-access' not in auth
+
+
 def test_fleet_followup_changes_only_the_requested_filter(tmp_path):
     from types import SimpleNamespace
     now=time.time()

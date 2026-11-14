@@ -385,6 +385,40 @@ def test_run_record_redacts_secrets_without_changing_execution(tmp_path):
     assert b'synthetic-secret' not in (tmp_path / 'runs.db').read_bytes()
     service.close()
 
+def test_run_record_redacts_space_separated_credential_options(tmp_path):
+    commands = FakeCommands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands)
+    command = "python train.py --api-key 'synthetic key value' --password synthetic-password --token=synthetic-token"
+    spec = {'name': 'redaction', 'nodes': [{'host_id': 'a', 'command': command, 'cwd': '/work'}]}
+    run = asyncio.run(service.start('session-a', 'request-a', spec, {'a'}))
+    for secret in ('synthetic key value', 'synthetic-password', 'synthetic-token'):
+        assert secret not in str(run)
+        assert secret.encode() not in (tmp_path / 'runs.db').read_bytes()
+    assert commands.calls[0][1]['command'] == command
+    service.close()
+
+
+def test_legacy_training_records_are_redacted_on_read_without_rewriting_database(tmp_path):
+    import json
+    service = TrainingRunService(tmp_path / 'runs.db', FakeCommands())
+    spec = {'name': 'old', 'nodes': [{'host_id':'a', 'command':'echo safe', 'cwd':'/work'}]}
+    run = asyncio.run(service.start('s', 'old', spec, {'a'}))
+    rid = run['run_id']
+    plan = run['plan']
+    plan['nodes'][0]['command'] = 'python --password synthetic-old-secret'
+    stored = json.dumps(plan)
+    with service.db:
+        service.db.execute('UPDATE training_runs SET plan=? WHERE id=?', (stored, rid))
+        service.db.execute('UPDATE training_nodes SET result=? WHERE run_id=?', (json.dumps({'stdout':'--token synthetic-old-secret'}), rid))
+        service.db.execute('INSERT INTO training_snapshots VALUES(?,?,?,?)', (rid, 0, '/work/train.sh', json.dumps({'path':'/work/train.sh','status':'available','content':'--api-key synthetic-old-secret'})))
+        service.db.execute('INSERT INTO training_script_drafts VALUES(?,?,?,?)', (rid, 0, '--password synthetic-old-secret', 1))
+    current = service.get('s', rid, {'a'})
+    assert 'synthetic-old-secret' not in str(current)
+    assert 'synthetic-old-secret' not in str(service.read_draft('s', rid, 0, {'a'}))
+    assert service.db.execute('SELECT plan FROM training_runs WHERE id=?', (rid,)).fetchone()[0] == stored
+    service.close()
+
+
 def test_snapshots_are_saved_before_node_launch_and_survive_file_changes(tmp_path):
     class Files:
         def __init__(self):
