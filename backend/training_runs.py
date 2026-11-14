@@ -18,6 +18,49 @@ from .chat_tools import scrub
 from .command_tools import ExecuteArgs
 
 
+def command_options(command):
+    """Return bounded textual option evidence, without executing the shell.
+
+    The values are observations from the saved command, not effective framework
+    configuration. Command substitution is intentionally left uninterpreted.
+    """
+    if not isinstance(command, str) or '$(' in command or '`' in command:
+        return [], False
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.commenters = '#'
+        tokens = list(lexer)
+    except ValueError:
+        return [], False
+    options, truncated = [], False
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        name, separator, value = token.partition('=')
+        if not re.fullmatch(r'--[A-Za-z][A-Za-z0-9_-]{0,127}', name):
+            index += 1
+            continue
+        if len(options) >= 64:
+            truncated = True
+            break
+        if not separator:
+            value = None
+            if index + 1 < len(tokens):
+                candidate = tokens[index + 1]
+                if not candidate.startswith('-') and not re.fullmatch(r'[();<>|&]+', candidate):
+                    value = candidate
+                    index += 1
+        dynamic = value is not None and any(char in value for char in '$`*?')
+        if value is not None and len(value) > 512:
+            value, dynamic, truncated = None, True, True
+        if dynamic:
+            value = None
+        options.append(dict(name=name, value=value, dynamic=dynamic))
+        index += 1
+    return options, truncated
+
+
 class TrainingNode(BaseModel):
     model_config = ConfigDict(extra='forbid')
     host_id: str = Field(min_length=1, max_length=256)
@@ -216,6 +259,8 @@ class TrainingRunService:
                         for host, job, status, result, updated in nodes]
         for index, snapshot in snapshots:
             result_nodes[index]['snapshots'].append(json.loads(scrub(json.loads(snapshot))))
+        for index, node in enumerate(result_nodes):
+            node['command_options'], node['command_options_truncated'] = command_options(plan['nodes'][index]['command'])
         states = {node['status'] for node in result_nodes}
         status = ('failed' if 'failed' in states else
                   'timed_out' if 'timed_out' in states else

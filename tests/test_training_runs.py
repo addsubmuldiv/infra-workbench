@@ -419,6 +419,32 @@ def test_legacy_training_records_are_redacted_on_read_without_rewriting_database
     service.close()
 
 
+def test_command_option_evidence_is_bounded_redacted_and_does_not_claim_effective_values(tmp_path):
+    commands = FakeCommands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands)
+    command = "python train.py --config '/work/config a.yaml' --learning-rate=0.02 --dry-run --seed $SEED --password synthetic-secret > /work/train.log 2>&1"
+    run = asyncio.run(service.start('s', 'options', {'name':'evidence','nodes':[{'host_id':'a','command':command,'cwd':'/work'}]}, {'a'}))
+    options = run['nodes'][0]['command_options']
+    assert options == [
+        {'name':'--config', 'value':'/work/config a.yaml', 'dynamic':False},
+        {'name':'--learning-rate', 'value':'0.02', 'dynamic':False},
+        {'name':'--dry-run', 'value':None, 'dynamic':False},
+        {'name':'--seed', 'value':None, 'dynamic':True},
+        {'name':'--password', 'value':'[已隐藏凭据]', 'dynamic':False},
+    ]
+    assert 'synthetic-secret' not in str(options)
+    assert run['nodes'][0]['command_options_truncated'] is False
+    service.close()
+
+
+def test_ambiguous_shell_syntax_is_not_interpreted_as_command_evidence():
+    from backend.training_runs import command_options
+    assert command_options("python --x $(other --secret value)") == ([], False)
+    assert command_options("python --x 'unterminated") == ([], False)
+    values, truncated = command_options('python ' + ' '.join(f'--opt{i}=x' for i in range(70)))
+    assert len(values) == 64 and truncated
+
+
 def test_snapshots_are_saved_before_node_launch_and_survive_file_changes(tmp_path):
     class Files:
         def __init__(self):
