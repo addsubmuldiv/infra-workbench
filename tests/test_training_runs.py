@@ -117,6 +117,11 @@ def test_external_registration_tracks_only_verified_process_identity(tmp_path):
     zombie = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
     assert zombie['status'] == 'unknown'
     assert zombie['nodes'][0]['result']['process_observation'] == 'inactive'
+    for stopped_state in ('T', 't'):
+        commands.observed = {**identity, 'state': stopped_state}
+        suspended = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+        assert suspended['status'] == 'unknown'
+        assert suspended['nodes'][0]['result']['process_observation'] == 'suspended'
     commands.observed = {**identity, 'boot_id': 'b' * 36, 'state': 'S'}
     assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
     commands.observed = {'error': 'connection or process unavailable'}

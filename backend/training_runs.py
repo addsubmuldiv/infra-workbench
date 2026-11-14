@@ -619,10 +619,11 @@ class TrainingRunService:
                         {'host_id': node['host_id'], 'pid': identity['pid']}, allowed, {}, **options)
                     data = response.get('data') or {}
                     matches = response.get('ok') is not False and all(data.get(key) == identity[key] for key in ('pid', 'uid', 'start_ticks', 'boot_id'))
-                    status = 'running' if matches and data.get('state') not in (None, 'Z', 'X') else 'unknown'
+                    status = 'running' if matches and data.get('state') not in (None, 'Z', 'X', 'T', 't') else 'unknown'
                     observation = ('unavailable' if response.get('ok') is False or not data.get('pid') else
                                    'identity_mismatch' if not matches else
                                    'inactive' if data.get('state') in ('Z', 'X') else
+                                   'suspended' if data.get('state') in ('T', 't') else
                                    'running' if status == 'running' else 'unavailable')
                     self._set_node(run_id, index, status,
                                    {**data, 'identity_verified': True, 'process_observation': observation} if matches
