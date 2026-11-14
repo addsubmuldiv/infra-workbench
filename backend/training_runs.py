@@ -388,6 +388,8 @@ class TrainingRunService:
             self._file_root(node, node['log_path'])
             sources.append((source, snapshot['sha256'], target))
             identities.append(await self._approved_config(parent_id, index, node['host_id'], allowed))
+        if len({revision for _, revision, _ in sources}) > 1:
+            raise ValueError('original script snapshots differ across nodes; a shared edit cannot safely be applied')
         if any(config is not None for config in identities) and not all(config is not None for config in identities):
             raise ValueError('approved SSH identity is missing for a node')
         run_id, created = self._record(session_id, request_id, validated)

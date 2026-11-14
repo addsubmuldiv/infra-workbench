@@ -700,6 +700,33 @@ def test_rerun_stages_version_and_preserves_old_run(tmp_path):
     service.close()
 
 
+def test_multi_node_rerun_rejects_divergent_original_script_snapshots_before_staging(tmp_path):
+    import hashlib
+    class Files:
+        async def read_snapshot(self, host_id, root, path, allowed):
+            content = f'echo {host_id}\n'
+            return {'content': content, 'sha256': hashlib.sha256(content.encode()).hexdigest(), 'has_more': False}
+        async def stage(self, *args, **kwargs):
+            raise AssertionError('different node snapshots must not be staged')
+    commands = FakeCommands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=Files())
+    old = {'name': 'distributed', 'nodes': [
+        {'host_id': host, 'cwd': '/work', 'script_path': '/work/train.sh',
+         'command': 'sh /work/train.sh > /work/old.log', 'log_path': '/work/old.log'}
+        for host in ('a', 'b')]}
+    new = {'name': 'new', 'nodes': [{**node, 'command': 'sh /work/train.sh > /work/new.log',
+                                    'log_path': '/work/new.log'} for node in old['nodes']]}
+    async def run():
+        parent = await service.start('s', 'old', old, {'a', 'b'})
+        before = len(commands.calls)
+        with pytest.raises(ValueError, match='snapshots differ'):
+            await service.rerun('s', 'new', parent['run_id'], new, 'echo changed\n', 'keep', {'a', 'b'})
+        assert len(commands.calls) == before
+        assert len(service.list_runs({'a', 'b'})['items']) == 1
+    asyncio.run(run())
+    service.close()
+
+
 def test_keep_rerun_rejects_known_device_overlap_with_active_parent(tmp_path):
     class Files:
         async def read_snapshot(self, *args):
