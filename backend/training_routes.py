@@ -29,6 +29,9 @@ class ListRuns(BaseModel):
     host_ids: list[str] = Field(max_length=900)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=20, ge=1, le=100)
+    status: str = Field(default='all', pattern=r'^(all|active|starting|running|unknown|cancelling|completed|failed|timed_out|cancelled)$')
+    host_id: str | None = Field(default=None, min_length=1, max_length=128)
+    session_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class Log(Scope):
@@ -99,7 +102,8 @@ def register_training_routes(app, service, hosts):
     @app.post('/api/training-runs/list')
     async def listing(body: ListRuns):
         try:
-            return service.list_runs(allowed(body.host_ids), offset=body.offset, limit=body.limit)
+            return service.list_runs(allowed(body.host_ids), offset=body.offset, limit=body.limit,
+                                     status=body.status, host_id=body.host_id, session_id=body.session_id)
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             error(exc)
 

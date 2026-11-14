@@ -528,25 +528,65 @@ class TrainingRunService:
             self.db.execute('INSERT OR REPLACE INTO training_script_drafts VALUES (?,?,?,?)', (run_id, node_index, content, updated))
         return {'content': content, 'updated_at': updated}
 
-    def list_runs(self, allowed, *, offset=0, limit=20):
+    def list_runs(self, allowed, *, offset=0, limit=20, status='all', host_id=None, session_id=None):
         if allowed is None or len(allowed) > 900:
             raise ValueError('an explicit bounded host scope is required')
-        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
-            raise ValueError('invalid page')
+        statuses = {'all', 'active', 'starting', 'running', 'unknown', 'cancelling',
+                    'completed', 'failed', 'timed_out', 'cancelled'}
+        if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100
+                or status not in statuses or (host_id is not None and (not isinstance(host_id, str) or not host_id))
+                or (session_id is not None and (not isinstance(session_id, str) or not 0 < len(session_id) <= 256))):
+            raise ValueError('invalid training list filter or page')
+        empty = dict(items=[], has_more=False, next_offset=None, host_options=[], session_options=[],
+                     sessions_truncated=False)
         if not allowed:
-            return dict(items=[], has_more=False, next_offset=None)
+            return empty
         hosts = sorted(allowed)
         placeholders = ','.join('?' for _ in hosts)
+        scope = ('NOT EXISTS (SELECT 1 FROM training_nodes n WHERE n.run_id=r.id '
+                 f'AND n.host_id NOT IN ({placeholders}))')
+        # Keep the same node-state precedence as get(): an explicit failure or timeout
+        # takes priority over another node that is still running or unconfirmed.
+        def any_node(states):
+            values = ','.join("'" + state + "'" for state in states)
+            return f'EXISTS (SELECT 1 FROM training_nodes n WHERE n.run_id=r.id AND n.status IN ({values}))'
+        state_sql = ('CASE '
+            f"WHEN {any_node(('failed',))} THEN 'failed' "
+            f"WHEN {any_node(('timed_out',))} THEN 'timed_out' "
+            f"WHEN {any_node(('unknown',))} THEN 'unknown' "
+            f"WHEN {any_node(('starting', 'not_started'))} THEN 'starting' "
+            f"WHEN {any_node(('cancelling', 'timing_out'))} THEN 'cancelling' "
+            f"WHEN {any_node(('running',))} THEN 'running' "
+            f"WHEN {any_node(('cancelled',))} THEN 'cancelled' ELSE 'completed' END")
+        conditions = [scope]
+        params = list(hosts)
+        if status != 'all':
+            if status == 'active':
+                conditions.append(f"({state_sql}) IN ('starting','running','unknown','cancelling')")
+            else:
+                conditions.append(f'({state_sql}) = ?')
+                params.append(status)
+        if host_id is not None:
+            conditions.append('EXISTS (SELECT 1 FROM training_nodes n WHERE n.run_id=r.id AND n.host_id=?)')
+            params.append(host_id)
+        if session_id is not None:
+            conditions.append('r.session_id = ?')
+            params.append(session_id)
         with self.lock:
             rows = self.db.execute(
-                'SELECT r.id,r.session_id FROM training_runs r WHERE NOT EXISTS '
-                '(SELECT 1 FROM training_nodes n WHERE n.run_id=r.id '
-                f'AND n.host_id NOT IN ({placeholders})) '
-                'ORDER BY r.created DESC,r.id DESC LIMIT ? OFFSET ?',
-                (*hosts, limit + 1, offset)).fetchall()
+                'SELECT r.id,r.session_id FROM training_runs r WHERE ' + ' AND '.join(conditions) +
+                ' ORDER BY r.created DESC,r.id DESC LIMIT ? OFFSET ?',
+                (*params, limit + 1, offset)).fetchall()
+            host_options = [row[0] for row in self.db.execute(
+                'SELECT DISTINCT n.host_id FROM training_nodes n JOIN training_runs r ON r.id=n.run_id '
+                'WHERE ' + scope + ' ORDER BY n.host_id', hosts)]
+            sessions = [row[0] for row in self.db.execute(
+                'SELECT DISTINCT r.session_id FROM training_runs r WHERE ' + scope +
+                ' ORDER BY r.session_id LIMIT 1001', hosts)]
         items = [self.get(session, run_id, allowed) for run_id, session in rows[:limit]]
         has_more = len(rows) > limit
-        return dict(items=items, has_more=has_more, next_offset=offset + limit if has_more else None)
+        return dict(items=items, has_more=has_more, next_offset=offset + limit if has_more else None,
+                    host_options=host_options, session_options=sessions[:1000], sessions_truncated=len(sessions) > 1000)
 
     async def cancel(self, session_id, run_id, allowed):
         run = self.get(session_id, run_id, allowed)

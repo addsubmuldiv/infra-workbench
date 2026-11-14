@@ -455,6 +455,54 @@ def test_list_is_scoped_before_pagination_and_cancel_targets_original_nodes(tmp_
     assert calls[0][1]['job_id'] == first['nodes'][0]['job_id']
     service.close()
 
+def test_list_filters_before_pagination_and_does_not_expose_other_hosts(tmp_path):
+    service = TrainingRunService(tmp_path / 'runs.db', FakeCommands())
+    def start(session, request, host):
+        return asyncio.run(service.start(session, request, {'name': request, 'nodes': [
+            {'host_id': host, 'command': 'sleep 5', 'cwd': '/work'}]}, {host}))
+    old = start('old-session', 'old-active', 'a')
+    for i in range(4):
+        item = start('new-session', f'completed-{i}', 'a')
+        service._set_node(item['run_id'], 0, 'completed', {'status': 'completed', 'exit_code': 0})
+    hidden = start('secret-session', 'hidden', 'b')
+    active = service.list_runs({'a'}, offset=0, limit=1, status='active')
+    assert [item['run_id'] for item in active['items']] == [old['run_id']]
+    assert not active['has_more']
+    assert active['host_options'] == ['a']
+    assert set(active['session_options']) == {'old-session', 'new-session'}
+    assert 'secret-session' not in active['session_options']
+    assert service.list_runs({'a'}, status='completed', session_id='old-session')['items'] == []
+    assert service.list_runs({'a'}, status='active', host_id='b')['items'] == []
+    assert len(service.list_runs({'a'}, status='completed', session_id='new-session', limit=2)['items']) == 2
+    mixed = asyncio.run(service.start('mixed', 'multi', plan(), {'a', 'b'}))
+    service._set_node(mixed['run_id'], 0, 'failed', {'status': 'failed'})
+    assert mixed['run_id'] not in [r['run_id'] for r in service.list_runs({'a', 'b'}, status='active')['items']]
+    assert mixed['run_id'] in [r['run_id'] for r in service.list_runs({'a', 'b'}, status='failed', host_id='a')['items']]
+    assert mixed['run_id'] not in [r['run_id'] for r in service.list_runs({'a'}, status='failed')['items']]
+    service.close()
+
+
+def test_list_status_precedence_matches_run_details_for_all_node_state_pairs(tmp_path):
+    service = TrainingRunService(tmp_path / 'runs.db', FakeCommands())
+    states = ['not_started', 'starting', 'running', 'unknown', 'cancelling', 'timing_out',
+              'completed', 'failed', 'timed_out', 'cancelled']
+    expected = {}
+    for i, left in enumerate(states):
+        for j, right in enumerate(states):
+            run = asyncio.run(service.start('s', f'{i}-{j}', plan(), {'a', 'b'}))
+            with service.db:
+                service.db.execute('UPDATE training_nodes SET status=? WHERE run_id=? AND node_index=0', (left, run['run_id']))
+                service.db.execute('UPDATE training_nodes SET status=? WHERE run_id=? AND node_index=1', (right, run['run_id']))
+            expected[run['run_id']] = service.get('s', run['run_id'], {'a', 'b'})['status']
+    for status in ['starting', 'running', 'unknown', 'cancelling', 'completed', 'failed', 'timed_out', 'cancelled']:
+        actual = service.list_runs({'a', 'b'}, status=status, limit=100)
+        assert {r['run_id'] for r in actual['items']} == {rid for rid, value in expected.items() if value == status}
+    actual = service.list_runs({'a', 'b'}, status='active', limit=100)
+    assert {r['run_id'] for r in actual['items']} == {rid for rid, value in expected.items()
+                                                        if value in {'starting', 'running', 'unknown', 'cancelling'}}
+    service.close()
+
+
 def test_unapproved_snapshot_path_is_rejected_before_remote_actions(tmp_path):
     commands = FakeCommands()
     service = TrainingRunService(tmp_path / 'runs.db', commands)
