@@ -79,6 +79,7 @@ def test_auth_wraps_every_route_and_disables_model_desktop(tmp_path):
 
         info = client.get('/api/mcp-info', headers={'Authorization': 'Bearer ' + MCP_SECRET}).json()
         assert {t['name'] for t in info['tools']} <= DEFAULT_TOOLS
+        assert 'get_ssh_info' in {t['name'] for t in info['tools']}
         assert 'get_ssh_password' not in str(info)
         listed = client.post('/mcp', headers=mcp_headers, json={
             'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}})
@@ -151,6 +152,49 @@ def test_policy_blocks_guessed_calls_before_dispatch():
             with pytest.raises(Exception, match='not authorized'):
                 await bound.call(name, {})
     asyncio.run(run())
+
+
+def test_managed_ssh_description_omits_executable_proxy_and_password_tools():
+    class Service:
+        def catalog(self):
+            return {'get_ssh_info': {'name': 'get_ssh_info', 'description': 'original'},
+                    'get_ssh_password': {'name': 'get_ssh_password'}}
+        async def call(self, name, arguments):
+            return {'ok': True, 'data': {'host_id': 'a', 'hostname': 'host.example',
+                'proxy_command': 'proxy --password synthetic-secret',
+                'ssh_argv': ['ssh', '--password', 'synthetic-secret'],
+                'dependencies': [{'type': 'jump', 'proxy_command': 'synthetic-secret'},
+                                 {'type': 'proxy_command', 'command': 'synthetic-secret'}],
+                'auth': {'ssh_password_available': True}}, 'warnings': ['synthetic-secret']}
+    bound = ManagedMCPPolicy().bind(Service())
+    assert 'get_ssh_password' not in bound.catalog()
+    assert '不提供密码读取' in bound.catalog()['get_ssh_info']['description']
+    result = asyncio.run(bound.call('get_ssh_info', {'host_id': 'a'}))
+    assert result['data']['hostname'] == 'host.example'
+    assert result['data']['proxy_command_configured'] is True
+    assert 'ssh_argv' not in result['data']
+    assert 'synthetic-secret' not in str(result)
+
+
+def test_managed_mcp_exposes_scoped_ssh_description_without_password(tmp_path, monkeypatch):
+    import backend.agent_service as agent_service
+    async def fake_description(ssh, passwords, host):
+        return {'host_id': host['id'], 'hostname': 'synthetic.example', 'user': 'tester', 'port': 22,
+                'proxy_command': 'helper --password synthetic-secret', 'ssh_argv': ['synthetic-secret'],
+                'dependencies': [], 'auth': {'ssh_password_available': True, 'password': 'synthetic-secret'},
+                'warnings': []}
+    monkeypatch.setattr(agent_service, 'describe_connection', fake_description)
+    app = make_app(tmp_path)
+    app.app.state.agent_service.hosts.append({'id': 'a' * 32, 'target': 'synthetic.example', 'manual': True})
+    headers = {'Authorization': 'Bearer ' + MCP_SECRET, 'Content-Type': 'application/json',
+               'X-IWB': '1', 'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-11-25'}
+    with TestClient(app, base_url='http://127.0.0.1:9001') as client:
+        response = client.post('/mcp', headers=headers, json={'jsonrpc': '2.0', 'id': 3,
+            'method': 'tools/call', 'params': {'name': 'get_ssh_info', 'arguments': {'host_id': 'a' * 32}}})
+        assert response.status_code == 200
+        assert 'synthetic.example' in response.text
+        assert 'synthetic-secret' not in response.text
+        assert 'proxy_command_configured' in response.text
 
 
 @pytest.mark.parametrize(('host_secret', 'mcp_secret'), [

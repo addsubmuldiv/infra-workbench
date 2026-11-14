@@ -8,6 +8,7 @@ Only the ready JSON is written to stdout.
 import argparse
 import asyncio
 import contextlib
+import copy
 import hmac
 import json
 import os
@@ -23,7 +24,7 @@ DEFAULT_TOOLS = frozenset({
     'list_hosts', 'search_hosts', 'get_host', 'get_resources', 'read_changes',
     'read_training_log', 'compare_training_logs', 'get_log_record',
     'list_clusters', 'get_cluster',
-    'read_server_file', 'read_server_directory',
+    'read_server_file', 'read_server_directory', 'get_ssh_info',
 })
 
 
@@ -38,13 +39,51 @@ class ManagedMCPPolicy:
 
         class Bound:
             def catalog(self):
-                return {k: v for k, v in service.catalog().items() if policy.allows(k)}
+                catalog = {k: v for k, v in service.catalog().items() if policy.allows(k)}
+                if 'get_ssh_info' in catalog:
+                    info = copy.deepcopy(catalog['get_ssh_info'])
+                    info['description'] = (
+                        '读取此 DSH 工作台内主机的非密码 SSH 连接描述，不主动连接。为避免泄露命令中的凭据，'
+                        '不返回原始 ProxyCommand 或 ssh_argv；需要时使用本机已配置的 SSH 客户端。'
+                        '不提供密码读取；软件内已有连接不代表独立 SSH 可以连接。')
+                    if 'outputSchema' in info:
+                        data_schema = info['outputSchema']['properties']['data']['anyOf'][0]
+                        data_schema['required'] = [key for key in data_schema['required'] if key != 'ssh_argv']
+                        for key in ('ssh_argv', 'proxy_command', 'proxy_jump'):
+                            data_schema['properties'].pop(key, None)
+                        data_schema['properties'].update(proxy_command_configured={'type': 'boolean'},
+                                                         proxy_jump_configured={'type': 'boolean'})
+                    catalog['get_ssh_info'] = info
+                return catalog
 
             async def call(self, name, arguments):
                 from .agent_errors import AgentError
                 if not policy.allows(name):
                     raise AgentError('PERMISSION_DENIED', 'Tool is not authorized in managed mode.')
-                return await service.call(name, arguments)
+                result = await service.call(name, arguments)
+                if name == 'get_ssh_info' and isinstance(result.get('data'), dict):
+                    # ProxyCommand and argv can embed arbitrary local command
+                    # arguments, including credentials. Return dependency
+                    # metadata but never forward those command strings.
+                    result = dict(result)
+                    source = result['data']
+                    safe_fields = ('host_id', 'alias', 'hostname', 'user', 'port', 'identity_files',
+                                   'certificate_files', 'identities_only', 'identity_agent', 'host_key_alias',
+                                   'user_known_hosts_files', 'ssh_config_path', 'resolved_on')
+                    data = {key: source[key] for key in safe_fields if key in source}
+                    auth = source.get('auth') if isinstance(source.get('auth'), dict) else {}
+                    auth_fields = ('configured_methods', 'open_software_session', 'software_session_exportable',
+                                   'external_ssh_status', 'ssh_password_available', 'missing_requirements')
+                    data['auth'] = {key: auth[key] for key in auth_fields if key in auth}
+                    data['proxy_command_configured'] = bool(source.get('proxy_command'))
+                    data['proxy_jump_configured'] = bool(source.get('proxy_jump'))
+                    dependency_fields = ('type', 'hostname', 'user', 'port', 'identity_files', 'path', 'exists', 'scope', 'status')
+                    data['dependencies'] = [{key: item[key] for key in dependency_fields if key in item}
+                        for item in source.get('dependencies', []) if isinstance(item, dict)]
+                    result['data'] = data
+                    result['warnings'] = (['SSH 依赖可能未完整解析，请在本机核对配置。']
+                                          if result.get('warnings') else [])
+                return result
 
         return Bound()
 
