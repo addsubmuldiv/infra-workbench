@@ -134,6 +134,36 @@ def test_unknown_start_is_persisted_and_never_retried(tmp_path):
     assert same['nodes'][0]['job_id'] == commands.calls[0][2]
     recovered.close()
 
+
+def test_watch_refreshes_reachable_sibling_when_host_is_removed(tmp_path):
+    class Commands(FakeCommands):
+        async def call(self, name, arguments, allowed, state, *, job_id=None):
+            self.calls.append((name, arguments, job_id))
+            if name == 'get_command_job':
+                assert arguments['host_id'] == 'b'
+                return {'data': {'status': 'completed', 'exit_code': 0}}
+            return {'data': {'status': 'running'}}
+
+    async def run():
+        commands = Commands()
+        service = TrainingRunService(tmp_path / 'runs.db', commands)
+        initial = await service.start('s', 'r', plan(), {'a', 'b'})
+        watcher = asyncio.create_task(service.watch(lambda: {'b'}, interval=0.01))
+        try:
+            for _ in range(100):
+                current = service.get('s', initial['run_id'], {'a', 'b'})
+                if current['nodes'][1]['status'] == 'completed':
+                    break
+                await asyncio.sleep(0.01)
+            assert [n['status'] for n in current['nodes']] == ['unknown', 'completed']
+            assert len([c for c in commands.calls if c[0] == 'execute_server_command']) == 2
+        finally:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+            service.close()
+
+    asyncio.run(run())
+
 def test_nodes_start_concurrently_and_refresh_with_original_job_ids(tmp_path):
     class CoordinatedCommands(FakeCommands):
         def __init__(self):

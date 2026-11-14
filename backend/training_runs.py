@@ -440,11 +440,14 @@ class TrainingRunService:
         except Exception:
             self._set_node(run_id, index, 'unknown')
 
-    async def refresh(self, session_id, run_id, allowed):
+    async def refresh(self, session_id, run_id, allowed, *, available_hosts=None):
         run = self.get(session_id, run_id, allowed)
 
         async def read(index, node):
             if node['status'] in {'not_started', 'completed', 'failed', 'timed_out', 'cancelled'}:
+                return
+            if available_hosts is not None and node['host_id'] not in available_hosts:
+                self._set_node(run_id, index, 'unknown')
                 return
             try:
                 expected = await self._approved_config(run_id, index, node['host_id'], allowed)
@@ -558,14 +561,8 @@ class TrainingRunService:
                     with self.lock:
                         ids = {r[0] for r in self.db.execute('SELECT host_id FROM training_nodes WHERE run_id=?', (run_id,))}
                     available = set(available_hosts())
-                    if not ids <= available:
-                        run = self.get(session_id, run_id, ids)
-                        for index, node in enumerate(run['nodes']):
-                            if node['host_id'] not in available:
-                                self._set_node(run_id, index, 'unknown')
-                        return
                     try:
-                        await asyncio.wait_for(self.refresh(session_id, run_id, ids), timeout=30)
+                        await asyncio.wait_for(self.refresh(session_id, run_id, ids, available_hosts=available), timeout=30)
                     except asyncio.CancelledError:
                         raise
                     except Exception:
