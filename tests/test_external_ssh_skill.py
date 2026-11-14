@@ -2,6 +2,7 @@ import importlib.util
 import asyncio
 from pathlib import Path
 import io
+import json
 import sys
 
 import pytest
@@ -116,3 +117,27 @@ def test_helper_does_not_print_exception_contents(helper, monkeypatch, capsys):
     assert helper.main() == 1
     captured = capsys.readouterr()
     assert secret not in captured.out + captured.err
+
+
+def test_read_only_identity_check_distinguishes_results(helper, monkeypatch, capsys):
+    expected = {'hostname':'host', 'user':'alice', 'port':22, 'user_known_hosts_files':['known'],
+                'proxy_command_configured':False, 'proxy_jump_configured':False, 'dependencies':[]}
+    actual = {'hostname':'host', 'user':'alice', 'port':22, 'user_known_hosts_files':['known'],
+              'proxy_command':None, 'proxy_jump':None, 'dependencies':[]}
+    calls = []
+    def lookup(tool, args):
+        calls.append(tool)
+        return {'ok':True, 'data':actual}
+    monkeypatch.setattr(helper.lookup, 'call', lookup)
+    monkeypatch.setattr(helper, 'native_run', lambda *args: pytest.fail('unexpected SSH'))
+    for descriptor, code, status in [(expected, 0, 'match'), ({**expected, 'hostname':'other'}, 0, 'mismatch'),
+                                     ({}, 1, None)]:
+        payload = {'host_id':'host', 'check_identity':True, 'expected_connection':descriptor}
+        monkeypatch.setattr(sys, 'stdin', io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode()), encoding='utf-8'))
+        assert helper.main() == code
+        output = capsys.readouterr()
+        if status:
+            assert json.loads(output.out)['status'] == status
+        else:
+            assert not output.out and 'incomplete' in output.err
+    assert calls == ['get_ssh_info'] * 3

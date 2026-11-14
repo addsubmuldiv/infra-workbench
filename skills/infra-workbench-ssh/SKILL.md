@@ -59,6 +59,8 @@ description: 用 Infra Workbench 查机器和 SSH 连接信息，再由 Agent �
 
 若从 DSH 插件的独立 profile 切换到另一个 Workbench，先分别查询两边的目标；向 `direct_ssh.py` 的 JSON 输入增加 `expected_connection`，填写插件 `get_ssh_info` 返回的整个非密码 `data` 对象，同时将 `host_id` 填为独立 Workbench 的 ID。客户端会在读取密码或执行命令前核对主机、账号、端口、主机密钥别名及已解析跳板；不一致、信息不足或存在自定义 ProxyCommand 时拒绝执行。不要把两个后台的 ID 当作可以互换，也不要绕过被 DSH 拒绝的执行操作。
 
+只读核对时输入 `{"host_id":"独立后台的 ID","expected_connection":插件返回的完整 data 对象,"check_identity":true}`。输出 `status: match` 或 `status: mismatch`；进程报错代表无法确认，不能当成不匹配。此操作不读取密码、不连接远端。
+
 ## 5. 启动并登记训练
 
 - **何时执行**：用户已授权启动训练并希望工作台跟踪时。

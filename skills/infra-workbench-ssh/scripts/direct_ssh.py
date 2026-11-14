@@ -22,6 +22,10 @@ class SSHClientError(Exception):
     """A fixed message safe to show without echoing transport or credentials."""
 
 
+class SSHIdentityMismatch(SSHClientError):
+    """The two complete connection descriptions actually differ."""
+
+
 def retain(output, chunk):
     """Drain all output while retaining at most MAX_OUTPUT bytes per stream."""
     remaining = max(0, MAX_OUTPUT - len(output))
@@ -77,7 +81,7 @@ async def drain_async(stream):
 
 def request(tool, arguments):
     result = lookup.call(tool, arguments)
-    if not result.get('ok') or not isinstance(result.get('data'), dict):
+    if not result.get('ok') or result.get('partial') or not isinstance(result.get('data'), dict):
         raise SSHClientError('Workbench could not provide the requested SSH information')
     return result['data']
 
@@ -111,24 +115,30 @@ def require_matching_target(expected, actual):
     if not isinstance(expected, dict) or not isinstance(actual, dict):
         raise SSHClientError('Connection identity is incomplete; recheck both Workbench instances')
     for key in ('hostname', 'user'):
-        if not isinstance(expected.get(key), str) or not expected[key] or expected[key] != actual.get(key):
-            raise SSHClientError('Connection identity differs; recheck both Workbench instances')
-    if type(expected.get('port')) is not int or expected['port'] != actual.get('port'):
-        raise SSHClientError('Connection identity differs; recheck both Workbench instances')
+        if not isinstance(expected.get(key), str) or not expected[key] or not isinstance(actual.get(key), str) or not actual[key]:
+            raise SSHClientError('Connection identity is incomplete; recheck both Workbench instances')
+        if expected[key] != actual[key]:
+            raise SSHIdentityMismatch('Connection identity differs; recheck both Workbench instances')
+    if type(expected.get('port')) is not int or type(actual.get('port')) is not int:
+        raise SSHClientError('Connection identity is incomplete; recheck both Workbench instances')
+    if expected['port'] != actual['port']:
+        raise SSHIdentityMismatch('Connection identity differs; recheck both Workbench instances')
     normalize = lambda value: None if value in (None, '', 'none') else value
     if normalize(expected.get('host_key_alias')) != normalize(actual.get('host_key_alias')):
-        raise SSHClientError('Host-key identity differs; recheck both Workbench instances')
+        raise SSHIdentityMismatch('Host-key identity differs; recheck both Workbench instances')
     known_hosts = expected.get('user_known_hosts_files')
     if (not isinstance(known_hosts, list) or not all(isinstance(path, str) for path in known_hosts)
-            or known_hosts != actual.get('user_known_hosts_files')):
-        raise SSHClientError('Host-key configuration differs; recheck both Workbench instances')
+            or not isinstance(actual.get('user_known_hosts_files'), list)):
+        raise SSHClientError('Host-key configuration is incomplete; recheck both Workbench instances')
+    if known_hosts != actual['user_known_hosts_files']:
+        raise SSHIdentityMismatch('Host-key configuration differs; recheck both Workbench instances')
     if expected.get('proxy_command_configured') is not False or normalize(actual.get('proxy_command')) is not None:
         raise SSHClientError('Custom proxy identity cannot be compared safely')
     if type(expected.get('proxy_jump_configured')) is not bool:
         raise SSHClientError('Jump identity is incomplete; recheck both Workbench instances')
     jumps = jump_descriptions(actual)
     if expected['proxy_jump_configured'] != bool(jumps):
-        raise SSHClientError('Jump identity differs; recheck both Workbench instances')
+        raise SSHIdentityMismatch('Jump identity differs; recheck both Workbench instances')
     dependencies = expected.get('dependencies')
     if not isinstance(dependencies, list) or any(not isinstance(item, dict) for item in dependencies):
         raise SSHClientError('Jump identity is incomplete; recheck both Workbench instances')
@@ -139,7 +149,16 @@ def require_matching_target(expected, actual):
             raise SSHClientError('Jump identity is incomplete; recheck both Workbench instances')
         return (host, user, port, normalize(item.get('host_key_alias')))
     if [endpoint(item) for item in expected_jumps] != [endpoint(item) for item in jumps]:
-        raise SSHClientError('Jump identity differs; recheck both Workbench instances')
+        raise SSHIdentityMismatch('Jump identity differs; recheck both Workbench instances')
+
+
+def check_identity(payload):
+    """Compare without reading credentials or opening an SSH connection."""
+    host_id = payload.get('host_id')
+    if not isinstance(host_id, str) or not host_id or len(host_id) > 128:
+        raise SSHClientError('Invalid SSH request')
+    info = request('get_ssh_info', {'host_id': host_id})
+    require_matching_target(payload.get('expected_connection'), info)
 
 
 async def password_run(info, host_id, command, source, timeout):
@@ -214,6 +233,14 @@ def main():
         payload = json.loads(sys.stdin.buffer.read().decode('utf-8-sig'))
         if not isinstance(payload, dict):
             raise SSHClientError('Expected a JSON object')
+        if payload.get('check_identity') is True:
+            try:
+                check_identity(payload)
+            except SSHIdentityMismatch:
+                print(json.dumps({'status': 'mismatch'}))
+                return 0
+            print(json.dumps({'status': 'match'}))
+            return 0
         code, stdout, stderr, truncated = run(payload)
         if hasattr(sys.stdout, 'reconfigure'):
             sys.stdout.reconfigure(encoding='utf-8')
