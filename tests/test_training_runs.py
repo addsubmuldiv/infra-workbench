@@ -39,6 +39,7 @@ def test_one_request_creates_one_run_even_with_concurrent_calls(tmp_path):
     assert len({call[2] for call in commands.calls}) == 2
     assert all(call[2] for call in commands.calls)
     assert service.get('session-a', runs[0]['run_id'], {'a', 'b'})['status'] == 'running'
+    assert runs[0]['updated_at'] >= runs[0]['created_at']
     service.close()
 
 

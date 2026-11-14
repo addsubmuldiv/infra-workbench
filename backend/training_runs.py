@@ -56,6 +56,12 @@ class TrainingRunService:
                 run_id TEXT NOT NULL, node_index INTEGER NOT NULL, host_id TEXT NOT NULL,
                 job_id TEXT NOT NULL, status TEXT NOT NULL, result TEXT,
                 PRIMARY KEY(run_id, node_index), UNIQUE(host_id, job_id))''')
+            if 'updated' not in {row[1] for row in self.db.execute('PRAGMA table_info(training_nodes)')}:
+                try:
+                    self.db.execute('ALTER TABLE training_nodes ADD COLUMN updated REAL')
+                except sqlite3.OperationalError as exc:
+                    if 'duplicate column name' not in str(exc).lower():
+                        raise
             self.db.execute('''CREATE TABLE IF NOT EXISTS training_snapshots (
                 run_id TEXT NOT NULL, node_index INTEGER NOT NULL, path TEXT NOT NULL,
                 data TEXT NOT NULL, PRIMARY KEY(run_id, node_index, path))''')
@@ -170,19 +176,20 @@ class TrainingRunService:
                                        (node['host_id'], path)).fetchone():
                         raise ValueError('log path is already associated with another run')
                     self.db.execute('INSERT INTO training_log_claims VALUES (?,?,?)', (node['host_id'], path, run_id))
+            now = time.time()
             self.db.execute('INSERT INTO training_runs VALUES (?,?,?,?,?,?)',
-                            (run_id, session_id, request_id, digest, stored_payload, time.time()))
-            self.db.executemany('INSERT INTO training_nodes VALUES (?,?,?,?,?,NULL)', [
-                (run_id, index, node['host_id'], uuid.uuid4().hex, 'not_started')
+                            (run_id, session_id, request_id, digest, stored_payload, now))
+            self.db.executemany('INSERT INTO training_nodes (run_id,node_index,host_id,job_id,status,result,updated) VALUES (?,?,?,?,?,NULL,?)', [
+                (run_id, index, node['host_id'], uuid.uuid4().hex, 'not_started', now)
                 for index, node in enumerate(plan['nodes'])
             ])
             return run_id, True
 
     def _set_node(self, run_id, index, status, result=None):
         with self.lock, self.db:
-            self.db.execute("UPDATE training_nodes SET status=?, result=? WHERE run_id=? AND node_index=? "
+            self.db.execute("UPDATE training_nodes SET status=?, result=?, updated=? WHERE run_id=? AND node_index=? "
                             "AND status NOT IN ('completed','failed','timed_out','cancelled')",
-                            (status, scrub(result) if result is not None else None,
+                            (status, scrub(result) if result is not None else None, time.time(),
                              run_id, index))
 
     def get(self, session_id, run_id, allowed):
@@ -191,7 +198,7 @@ class TrainingRunService:
             if row is None:
                 raise KeyError('run not found')
             nodes = self.db.execute(
-                'SELECT host_id,job_id,status,result FROM training_nodes WHERE run_id=? ORDER BY node_index',
+                'SELECT host_id,job_id,status,result,updated FROM training_nodes WHERE run_id=? ORDER BY node_index',
                 (run_id,)).fetchall()
             snapshots = self.db.execute(
                 'SELECT node_index, data FROM training_snapshots WHERE run_id=? ORDER BY rowid',
@@ -203,8 +210,8 @@ class TrainingRunService:
             raise PermissionError('run outside session scope')
         plan = json.loads(row[1])
         result_nodes = [dict(host_id=host, job_id=job, status=status,
-                             result=json.loads(result) if result else None, snapshots=[])
-                        for host, job, status, result in nodes]
+                             result=json.loads(result) if result else None, updated_at=updated or row[2], snapshots=[])
+                        for host, job, status, result, updated in nodes]
         for index, snapshot in snapshots:
             result_nodes[index]['snapshots'].append(json.loads(snapshot))
         states = {node['status'] for node in result_nodes}
@@ -216,6 +223,7 @@ class TrainingRunService:
                   'running' if 'running' in states else
                   'cancelled' if 'cancelled' in states else 'completed')
         return dict(run_id=run_id, session_id=row[0], plan=plan, created_at=row[2],
+                    updated_at=max(node['updated_at'] for node in result_nodes),
                     status=status, nodes=result_nodes, parent_run_id=parent[0] if parent else None,
                     rerun_mode=parent[1] if parent else None)
 
