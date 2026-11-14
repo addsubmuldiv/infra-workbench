@@ -636,6 +636,33 @@ def test_rerun_stages_version_and_preserves_old_run(tmp_path):
     asyncio.run(execute())
     service.close()
 
+
+def test_keep_rerun_rejects_known_device_overlap_with_active_parent(tmp_path):
+    class Files:
+        async def read_snapshot(self, *args):
+            return {'content': 'echo old\n', 'sha256': 'a' * 64, 'has_more': False}
+        async def stage(self, host, root, path, version, content, revision, allowed):
+            return {'path': '/work/.iwb-run-' + version}
+
+    commands = FakeCommands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=Files())
+    original = {'name': 'old', 'nodes': [{'host_id': 'a', 'cwd': '/work', 'device_ids': ['0'],
+        'command': 'sh /work/train.sh > /work/old.log', 'script_path': '/work/train.sh', 'log_path': '/work/old.log'}]}
+    new = {'name': 'new', 'nodes': [{**original['nodes'][0], 'command': 'sh /work/train.sh > /work/new.log',
+                                     'log_path': '/work/new.log'}]}
+    async def run():
+        parent = await service.start('s', 'old', original, {'a'})
+        with pytest.raises(ValueError, match='device'):
+            await service.rerun('s', 'new', parent['run_id'], new, 'echo new\n', 'keep', {'a'})
+        assert len([call for call in commands.calls if call[0] == 'execute_server_command']) == 1
+        assert len(service.list_runs({'a'})['items']) == 1
+        new['nodes'][0]['device_ids'] = ['1']
+        child = await service.rerun('s', 'new', parent['run_id'], new, 'echo new\n', 'keep', {'a'})
+        assert child['status'] == 'running'
+        assert child['plan']['nodes'][0]['device_ids'] == ['1']
+    asyncio.run(run())
+    service.close()
+
 def test_rerun_accepts_unambiguous_relative_script_and_log_paths(tmp_path):
     class Files:
         async def read_snapshot(self, *args):

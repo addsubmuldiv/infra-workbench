@@ -359,6 +359,10 @@ class TrainingRunService:
                     or not source or node['script_path'] != source or not node['log_path']
                     or node['log_path'] == original['log_path']):
                 raise ValueError('rerun requires original nodes and a new explicit log path')
+            if (mode == 'keep'
+                    and parent['nodes'][index]['status'] not in {'completed', 'failed', 'timed_out', 'cancelled'}
+                    and set(original['device_ids']) & set(node['device_ids'])):
+                raise ValueError('planned device conflicts with the active or unknown previous node')
             self._check_command_directory(node['command'], node['cwd'])
             if (not re.search(self._command_path_pattern(node['cwd'], node['log_path']), node['command'])
                     or (original['log_path'] and re.search(self._command_path_pattern(node['cwd'], original['log_path']), node['command']))):
