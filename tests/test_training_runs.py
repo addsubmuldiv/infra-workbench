@@ -172,6 +172,39 @@ def test_external_registration_retains_already_started_nodes_when_cluster_change
         asyncio.run(service.register_external('s', 'bad', {**spec, 'cluster_revision': None}, [identity], {'a'}))
     service.close()
 
+
+def test_partial_external_launch_preserves_agent_report_without_inventing_exit_status(tmp_path):
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        calls = []
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            self.calls.append((name, arguments['host_id']))
+            return {'data': {'pid': 123, 'uid': 1000, 'start_ticks': '456',
+                             'boot_id': 'a' * 36, 'state': 'S'}}
+    commands = Commands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands)
+    spec = {'name': 'partial', 'nodes': [
+        {'host_id': 'a', 'cwd': '/work', 'command': 'python train.py --rank=0'},
+        {'host_id': 'b', 'cwd': '/work', 'command': 'python train.py --rank=1'}]}
+    identities = [{'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
+                   'launch_report': 'started'}, {'launch_report': 'failed'}]
+    run = asyncio.run(service.register_external('s', 'partial', spec, identities, {'a', 'b'}))
+    assert run['status'] == 'unknown'
+    assert run['nodes'][0]['status'] == 'running'
+    assert run['nodes'][1]['status'] == 'unknown'
+    assert run['nodes'][1]['agent_launch_report'] == 'failed'
+    assert (run['nodes'][1]['result'] or {}).get('exit_code') is None
+    assert run['nodes'][1]['process_identity'].get('pid') is None
+    assert all(name == 'inspect_server_process' for name, _ in commands.calls)
+    with pytest.raises(ValueError):
+        asyncio.run(service.register_external('s', 'invalid', spec, [{}, {'launch_report': 'invented'}], {'a', 'b'}))
+    service.close()
+
 def test_recorded_ssh_identity_blocks_later_reads_and_cancellation(tmp_path):
     class SSH:
         hostname = 'original'

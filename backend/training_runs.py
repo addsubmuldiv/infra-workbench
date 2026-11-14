@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -89,6 +89,7 @@ class ExternalIdentity(BaseModel):
     start_ticks: str | None = Field(default=None, pattern=r'^[0-9]{1,30}$')
     boot_id: str | None = Field(default=None, pattern=r'^[a-f0-9-]{36}$')
     uid: int | None = Field(default=None, ge=0, le=4294967295)
+    launch_report: Literal['started', 'failed', 'not_started', 'unknown'] | None = None
 
 
 class TrainingRunService:
@@ -299,9 +300,11 @@ class TrainingRunService:
         for index, node in enumerate(result_nodes):
             if index in external_identities:
                 identity = json.loads(external_identities[index])
-                node['process_identity'] = identity
+                node['agent_launch_report'] = identity.get('launch_report')
+                process_identity = {key: identity.get(key) for key in ('pid', 'uid', 'start_ticks', 'boot_id')}
+                node['process_identity'] = process_identity
                 if node['result'] is None:
-                    node['result'] = {**identity, 'identity_verified': False}
+                    node['result'] = {**process_identity, 'identity_verified': False}
             node['command_options'], node['command_options_truncated'] = command_options(plan['nodes'][index]['command'])
         states = {node['status'] for node in result_nodes}
         status = ('failed' if 'failed' in states else
