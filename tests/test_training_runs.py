@@ -160,6 +160,58 @@ def test_external_registration_tracks_only_verified_process_identity(tmp_path):
     service.close()
 
 
+def test_older_refresh_cannot_replace_newer_process_observation(tmp_path):
+    identity = {'pid':123, 'uid':1000, 'start_ticks':'456', 'boot_id':'a' * 36}
+    class SSH:
+        async def effective(self, host): return {'hostname':host['id'], 'user':'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id':host_id}
+    class Commands:
+        probes = Probes()
+        delay = False
+        def __init__(self):
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            if self.delay:
+                self.delay = False
+                self.started.set()
+                await self.release.wait()
+                return {'data':{**identity, 'state':'S'}}
+            return {'data':{**identity, 'state':'Z'}}
+    async def scenario():
+        commands = Commands()
+        service = TrainingRunService(tmp_path / 'race.db', commands)
+        spec = {'name':'race', 'nodes':[{'host_id':'a', 'cwd':'/work', 'command':'python train.py'}]}
+        run = await service.register_external('s', 'r', spec, [identity], {'a'})
+        second_service = TrainingRunService(tmp_path / 'race.db', commands)
+        commands.delay = True
+        old = asyncio.create_task(service.refresh('s', run['run_id'], {'a'}))
+        await commands.started.wait()
+        newer = await second_service.refresh('s', run['run_id'], {'a'})
+        assert newer['nodes'][0]['result']['process_observation'] == 'inactive'
+        commands.release.set()
+        await old
+        final = service.get('s', run['run_id'], {'a'})
+        assert final['status'] == 'unknown'
+        assert final['nodes'][0]['result']['process_observation'] == 'inactive'
+        second_service.close()
+        service.close()
+    asyncio.run(scenario())
+
+
+def test_pending_newer_observation_does_not_starve_progress(tmp_path):
+    service = TrainingRunService(tmp_path / 'runs.db', FakeCommands())
+    run = asyncio.run(service.start('s', 'r', plan(), {'a', 'b'}))
+    first = service._begin_observation(run['run_id'], 0)
+    second = service._begin_observation(run['run_id'], 0)
+    service._set_node(run['run_id'], 0, 'unknown', {'sample':1}, observation=first)
+    assert service.get('s', run['run_id'], {'a', 'b'})['nodes'][0]['result']['sample'] == 1
+    service._set_node(run['run_id'], 0, 'running', {'sample':2}, observation=second)
+    service._set_node(run['run_id'], 0, 'unknown', {'sample':1}, observation=first)
+    assert service.get('s', run['run_id'], {'a', 'b'})['nodes'][0]['result']['sample'] == 2
+    service.close()
 def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path):
     identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
                 'completion_path': '/work/result.json', 'completion_id': 'b' * 32}

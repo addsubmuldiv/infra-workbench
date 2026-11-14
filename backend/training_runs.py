@@ -138,6 +138,18 @@ class TrainingRunService:
                 except sqlite3.OperationalError as exc:
                     if 'duplicate column name' not in str(exc).lower():
                         raise
+            if 'observation_seq' not in {row[1] for row in self.db.execute('PRAGMA table_info(training_nodes)')}:
+                try:
+                    self.db.execute('ALTER TABLE training_nodes ADD COLUMN observation_seq INTEGER NOT NULL DEFAULT 0')
+                except sqlite3.OperationalError as exc:
+                    if 'duplicate column name' not in str(exc).lower():
+                        raise
+            if 'observation_applied' not in {row[1] for row in self.db.execute('PRAGMA table_info(training_nodes)')}:
+                try:
+                    self.db.execute('ALTER TABLE training_nodes ADD COLUMN observation_applied INTEGER NOT NULL DEFAULT 0')
+                except sqlite3.OperationalError as exc:
+                    if 'duplicate column name' not in str(exc).lower():
+                        raise
             self.db.execute('''CREATE TABLE IF NOT EXISTS training_snapshots (
                 run_id TEXT NOT NULL, node_index INTEGER NOT NULL, path TEXT NOT NULL,
                 data TEXT NOT NULL, PRIMARY KEY(run_id, node_index, path))''')
@@ -288,12 +300,30 @@ class TrainingRunService:
                     (run_id, i, self._identity_digest(configs[node['host_id']])) for i, node in enumerate(plan['nodes'])])
             return run_id, True
 
-    def _set_node(self, run_id, index, status, result=None):
+    def _begin_observation(self, run_id, index):
         with self.lock, self.db:
-            self.db.execute("UPDATE training_nodes SET status=?, result=?, updated=? WHERE run_id=? AND node_index=? "
-                            "AND status NOT IN ('completed','failed','timed_out','cancelled')",
-                            (status, scrub(result) if result is not None else None, time.time(),
-                             run_id, index))
+            changed = self.db.execute(
+                "UPDATE training_nodes SET observation_seq=observation_seq+1 WHERE run_id=? AND node_index=? "
+                "AND status NOT IN ('completed','failed','timed_out','cancelled')",
+                (run_id, index)).rowcount
+            if not changed:
+                return None
+            return self.db.execute('SELECT observation_seq FROM training_nodes WHERE run_id=? AND node_index=?',
+                                   (run_id, index)).fetchone()[0]
+
+    def _set_node(self, run_id, index, status, result=None, *, observation=None):
+        with self.lock, self.db:
+            query = ("UPDATE training_nodes SET status=?, result=?, updated=?, "
+                     "observation_seq=observation_seq+?, "
+                     "observation_applied=CASE WHEN ? IS NULL THEN observation_seq+1 ELSE ? END "
+                     "WHERE run_id=? AND node_index=? "
+                     "AND status NOT IN ('completed','failed','timed_out','cancelled')")
+            params = (status, scrub(result) if result is not None else None, time.time(),
+                      1 if observation is None else 0, observation, observation, run_id, index)
+            if observation is not None:
+                query += ' AND observation_applied<?'
+                params += (observation,)
+            self.db.execute(query, params)
 
     def get(self, session_id, run_id, allowed):
         with self.lock:
@@ -636,8 +666,13 @@ class TrainingRunService:
         async def read(index, node):
             if node['status'] in {'not_started', 'completed', 'failed', 'timed_out', 'cancelled'}:
                 return
+            observation_seq = self._begin_observation(run_id, index)
+            if observation_seq is None:
+                return
+            def set_observed(status, result=None):
+                self._set_node(run_id, index, status, result, observation=observation_seq)
             if available_hosts is not None and node['host_id'] not in available_hosts:
-                self._set_node(run_id, index, 'unknown')
+                set_observed('unknown')
                 return
             external = None
             try:
@@ -649,7 +684,7 @@ class TrainingRunService:
                 if external:
                     identity = json.loads(external[0])
                     if any(identity.get(key) is None for key in ('pid', 'uid', 'start_ticks', 'boot_id')):
-                        self._set_node(run_id, index, 'unknown', {'process_observation': 'identity_incomplete'})
+                        set_observed('unknown', {'process_observation': 'identity_incomplete'})
                         return
                     response = await self.commands.call('inspect_server_process',
                         {'host_id': node['host_id'], 'pid': identity['pid']}, allowed, {}, **options)
@@ -671,7 +706,7 @@ class TrainingRunService:
                             stable = isinstance(marker.get('sha256'), str) and re.fullmatch(r'[a-f0-9]{64}', marker['sha256'])
                             exit_code = None if not stable or marker.get('has_more') else parse_external_completion(marker.get('content'), identity)
                             if exit_code is not None:
-                                self._set_node(run_id, index, 'completed' if exit_code == 0 else 'failed',
+                                set_observed('completed' if exit_code == 0 else 'failed',
                                     {'pid': identity['pid'], 'exit_code': exit_code,
                                      'completion_source': 'agent_result_file', 'identity_verified': False})
                                 return
@@ -679,7 +714,7 @@ class TrainingRunService:
                             raise
                         except Exception:
                             pass  # Unreadable or malformed evidence must stay unknown.
-                    self._set_node(run_id, index, status,
+                    set_observed(status,
                                    {**data, 'identity_verified': True, 'process_observation': observation} if matches
                                    else {'process_observation': observation})
                     return
@@ -690,11 +725,11 @@ class TrainingRunService:
                 if status not in {'starting', 'running', 'cancelling', 'timing_out',
                                   'completed', 'failed', 'timed_out', 'cancelled'}:
                     status = 'unknown'
-                self._set_node(run_id, index, status, data)
+                set_observed(status, data)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self._set_node(run_id, index, 'unknown', {'process_observation': 'unavailable'} if external else None)
+                set_observed('unknown', {'process_observation': 'unavailable'} if external else None)
 
         await asyncio.gather(*(read(i, node) for i, node in enumerate(run['nodes'])))
         current = self.get(session_id, run_id, allowed)
