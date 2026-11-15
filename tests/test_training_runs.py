@@ -452,6 +452,13 @@ def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path
     files.marker['completion_id'] = 'c' * 32
     assert asyncio.run(service.refresh('s', run['run_id'], {'a'}))['status'] == 'unknown'
     files.marker['completion_id'] = 'b' * 32
+    files.marker.update(exit_code=124, timed_out=True)
+    timeout_run = asyncio.run(service.register_external('s', 'timeout-marker', spec, [identity], {'a'}))
+    assert timeout_run['status'] == 'timed_out'
+    assert timeout_run['nodes'][0]['result']['completion_source'] == 'agent_result_file'
+    del files.marker['timed_out']
+    ordinary_124 = asyncio.run(service.register_external('s', 'ordinary-124', spec, [identity], {'a'}))
+    assert ordinary_124['status'] == 'failed'
     files.marker['exit_code'] = 7
     result = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
     assert result['status'] == 'failed'
@@ -468,8 +475,11 @@ def test_external_result_marker_rejects_ambiguous_and_mismatched_content():
                 'completion_id': 'b' * 32}
     marker = {'version': 1, **identity, 'exit_code': 0}
     assert parse_external_completion(json.dumps(marker), identity) == 0
+    assert parse_external_completion(json.dumps({**marker, 'exit_code': 124, 'timed_out': True}), identity) == 124
+    assert parse_external_completion(json.dumps({**marker, 'exit_code': 124}), identity) == 124
     for invalid in (None, '', '[]', '{', json.dumps({**marker, 'uid': True}),
                     json.dumps({**marker, 'exit_code': True}), json.dumps({**marker, 'exit_code': -1}),
+                    json.dumps({**marker, 'timed_out': True}), json.dumps({**marker, 'exit_code': 124, 'timed_out': False}),
                     json.dumps({**marker, 'start_ticks': '999'}), json.dumps({**marker, 'extra': 'x'}), ' ' * 4097):
         assert parse_external_completion(invalid, identity) is None
 

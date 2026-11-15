@@ -105,8 +105,8 @@ def parse_external_completion(content, identity):
         value = json.loads(content)
     except (ValueError, TypeError):
         return None
-    if not isinstance(value, dict) or set(value) != {
-            'version', 'completion_id', 'pid', 'uid', 'start_ticks', 'boot_id', 'exit_code'}:
+    keys = {'version', 'completion_id', 'pid', 'uid', 'start_ticks', 'boot_id', 'exit_code'}
+    if not isinstance(value, dict) or set(value) not in (keys, keys | {'timed_out'}):
         return None
     if type(value['version']) is not int or value['version'] != 1:
         return None
@@ -116,6 +116,8 @@ def parse_external_completion(content, identity):
            for key in ('completion_id', 'pid', 'uid', 'start_ticks', 'boot_id')):
         return None
     code = value['exit_code']
+    if 'timed_out' in value and (value['timed_out'] is not True or type(code) is not int or code != 124):
+        return None
     return code if type(code) is int and 0 <= code <= 255 else None
 
 
@@ -909,7 +911,8 @@ class TrainingRunService:
                             stable = isinstance(marker.get('sha256'), str) and re.fullmatch(r'[a-f0-9]{64}', marker['sha256'])
                             exit_code = None if not stable or marker.get('has_more') else parse_external_completion(marker.get('content'), identity)
                             if exit_code is not None:
-                                set_observed('completed' if exit_code == 0 else 'failed',
+                                timed_out = json.loads(marker['content']).get('timed_out') is True
+                                set_observed('timed_out' if timed_out else 'completed' if exit_code == 0 else 'failed',
                                     {'pid': identity['pid'], 'exit_code': exit_code,
                                      'completion_source': 'agent_result_file', 'identity_verified': False})
                                 return
