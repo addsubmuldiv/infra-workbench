@@ -171,12 +171,12 @@ def parse_ports(result):
     return ports
 
 
-def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None, agent_credential_store=None, *, enable_agent=True, mcp_policy=None, allow_remote_provision=True):
+def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=None, email_credential_store=None, ssh_credential_store=None, agent_credential_store=None, *, enable_agent=True, mcp_policy=None, allow_remote_provision=True, ssh_known_hosts=None):
     service_instance=uuid.uuid4().hex
     state_changes = StateChanges(service_instance)
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
-    ssh = SSHService(data)
+    ssh = SSHService(data, known_hosts=ssh_known_hosts)
     ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else create_credential_store('InfraWorkbench/ssh/'))
     sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store())
     refresh_interval = store.load('refresh_interval_seconds', MONITORING_REFRESH_INTERVAL_SECONDS)

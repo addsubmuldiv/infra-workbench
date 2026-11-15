@@ -215,6 +215,28 @@ def test_cli_requires_data_dir_even_when_iwb_data_is_inherited(monkeypatch, caps
     assert 'required' in capsys.readouterr().err
 
 
+def test_headless_can_use_explicit_known_hosts_without_disabling_verification(tmp_path):
+    known = tmp_path / 'known_hosts'
+    known.write_text('synthetic-host-key\n')
+    app = create_headless_app(tmp_path / 'managed', HOST_SECRET, MCP_SECRET, start_poll=False,
+                              credential_store=Vault(), email_credential_store=Vault(),
+                              ssh_credential_store=Vault(), ssh_known_hosts=known)
+    ssh = app.app.state.ssh
+    args = ssh.arguments({'id':'test', 'target':'example.invalid', 'manual':True})
+    assert 'StrictHostKeyChecking=yes' in args
+    assert 'UserKnownHostsFile=' + str(known) in args
+    assert ssh.known_hosts == known
+
+
+@pytest.mark.parametrize('path_kind', ['relative', 'missing', 'directory'])
+def test_cli_rejects_invalid_known_hosts_path(tmp_path, path_kind, capsys):
+    from backend.headless import main
+    path = {'relative':'known_hosts', 'missing':str(tmp_path / 'missing'),
+            'directory':str(tmp_path)}[path_kind]
+    assert main(['--data-dir', str(tmp_path / 'data'), '--ssh-known-hosts', path]) == 1
+    assert 'Headless startup failed' in capsys.readouterr().err
+
+
 def test_existing_workbench_database_requires_dsh_marker(tmp_path):
     data = tmp_path / 'existing-workbench'
     data.mkdir()

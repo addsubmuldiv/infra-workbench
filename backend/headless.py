@@ -193,11 +193,11 @@ def create_headless_app(data_dir, host_secret, mcp_secret, *, start_poll=True, *
     return BearerGate(app, host_secret, mcp_secret)
 
 
-async def serve(data_dir, host_secret, mcp_secret, parent_stream, ready_stream):
+async def serve(data_dir, host_secret, mcp_secret, parent_stream, ready_stream, ssh_known_hosts=None):
     import uvicorn
     os.environ['IWB_DATA'] = str(Path(data_dir).resolve())
     with contextlib.redirect_stdout(sys.stderr):
-        app = create_headless_app(data_dir, host_secret, mcp_secret)
+        app = create_headless_app(data_dir, host_secret, mcp_secret, ssh_known_hosts=ssh_known_hosts)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(('127.0.0.1', 0))
     port = sock.getsockname()[1]
@@ -235,15 +235,24 @@ async def serve(data_dir, host_secret, mcp_secret, parent_stream, ready_stream):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', required=True, help='absolute DSH-owned data directory; never inherited from IWB_DATA')
+    parser.add_argument('--ssh-known-hosts', help='absolute path to an existing SSH known_hosts file')
     args = parser.parse_args(argv)
     try:
+        known_hosts = None
+        if args.ssh_known_hosts:
+            candidate = Path(args.ssh_known_hosts)
+            if not candidate.is_absolute():
+                raise ValueError('SSH known_hosts path must be absolute')
+            known_hosts = candidate.resolve(strict=True)
+            if not known_hosts.is_file():
+                raise ValueError('SSH known_hosts must be a regular file')
         line = sys.stdin.readline(65537)
         if len(line) > 65536 or not line.endswith('\n'):
             raise ValueError('Expected one bounded bootstrap JSON line.')
         bootstrap = json.loads(line)
         if not isinstance(bootstrap, dict) or set(bootstrap) != {'hostSecret', 'mcpSecret'}:
             raise ValueError('Bootstrap must contain only independent Host and MCP secrets.')
-        asyncio.run(serve(args.data_dir, bootstrap['hostSecret'], bootstrap['mcpSecret'], sys.stdin, sys.stdout))
+        asyncio.run(serve(args.data_dir, bootstrap['hostSecret'], bootstrap['mcpSecret'], sys.stdin, sys.stdout, known_hosts))
     except (ValueError, KeyError, OSError):
         print('Headless startup failed: invalid bootstrap, data directory or listener.', file=sys.stderr)
         return 1
