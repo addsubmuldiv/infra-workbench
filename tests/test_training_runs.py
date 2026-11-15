@@ -962,7 +962,7 @@ def test_list_filters_before_pagination_and_does_not_expose_other_hosts(tmp_path
     assert len(service.list_runs({'a'}, status='completed', session_id='new-session', limit=2)['items']) == 2
     mixed = asyncio.run(service.start('mixed', 'multi', plan(), {'a', 'b'}))
     service._set_node(mixed['run_id'], 0, 'failed', {'status': 'failed'})
-    assert mixed['run_id'] not in [r['run_id'] for r in service.list_runs({'a', 'b'}, status='active')['items']]
+    assert mixed['run_id'] in [r['run_id'] for r in service.list_runs({'a', 'b'}, status='active')['items']]
     assert mixed['run_id'] in [r['run_id'] for r in service.list_runs({'a', 'b'}, status='failed', host_id='a')['items']]
     assert mixed['run_id'] not in [r['run_id'] for r in service.list_runs({'a'}, status='failed')['items']]
     service.close()
@@ -973,6 +973,7 @@ def test_list_status_precedence_matches_run_details_for_all_node_state_pairs(tmp
     states = ['not_started', 'starting', 'running', 'unknown', 'cancelling', 'timing_out',
               'completed', 'failed', 'timed_out', 'cancelled']
     expected = {}
+    active_expected = set()
     for i, left in enumerate(states):
         for j, right in enumerate(states):
             run = asyncio.run(service.start('s', f'{i}-{j}', plan(), {'a', 'b'}))
@@ -980,12 +981,14 @@ def test_list_status_precedence_matches_run_details_for_all_node_state_pairs(tmp
                 service.db.execute('UPDATE training_nodes SET status=? WHERE run_id=? AND node_index=0', (left, run['run_id']))
                 service.db.execute('UPDATE training_nodes SET status=? WHERE run_id=? AND node_index=1', (right, run['run_id']))
             expected[run['run_id']] = service.get('s', run['run_id'], {'a', 'b'})['status']
+            if (expected[run['run_id']] in {'starting', 'running', 'unknown', 'cancelling'} or
+                    {left, right} & {'starting', 'running', 'unknown', 'cancelling', 'timing_out'}):
+                active_expected.add(run['run_id'])
     for status in ['starting', 'running', 'unknown', 'cancelling', 'completed', 'failed', 'timed_out', 'cancelled']:
         actual = service.list_runs({'a', 'b'}, status=status, limit=100)
         assert {r['run_id'] for r in actual['items']} == {rid for rid, value in expected.items() if value == status}
     actual = service.list_runs({'a', 'b'}, status='active', limit=100)
-    assert {r['run_id'] for r in actual['items']} == {rid for rid, value in expected.items()
-                                                        if value in {'starting', 'running', 'unknown', 'cancelling'}}
+    assert {r['run_id'] for r in actual['items']} == active_expected
     service.close()
 
 

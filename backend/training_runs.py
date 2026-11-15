@@ -938,7 +938,11 @@ class TrainingRunService:
         params = list(hosts)
         if status != 'all':
             if status == 'active':
-                conditions.append(f"({state_sql}) IN ('starting','running','unknown','cancelling')")
+                # A failed or timed-out group can still contain a running or
+                # unconfirmed node which needs attention and may use resources.
+                # Keep the aggregate failure visible on the returned record.
+                conditions.append(f"(({state_sql}) IN ('starting','running','unknown','cancelling') OR "
+                                  f"{any_node(('starting', 'running', 'unknown', 'cancelling', 'timing_out'))})")
             else:
                 conditions.append(f'({state_sql}) = ?')
                 params.append(status)
