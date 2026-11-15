@@ -327,7 +327,13 @@ class TrainingRunService:
     async def _recover_snapshots(self, run_id, index, node, allowed, config):
         if self.files is None or config is None or not hasattr(self.files, 'read_snapshot'):
             return
-        with self.lock:
+        with self.lock, self.db:
+            # Earlier registrations could be interrupted before inserting any
+            # snapshot row. Make those declared paths recoverable as well.
+            for path in dict.fromkeys([*([node['script_path']] if node['script_path'] else []),
+                                       *node['snapshot_paths']]):
+                self.db.execute('INSERT OR IGNORE INTO training_snapshots VALUES (?,?,?,?)',
+                    (run_id, index, path, scrub(dict(path=path, status='unavailable'))))
             rows = self.db.execute('SELECT path,data FROM training_snapshots WHERE run_id=? AND node_index=?',
                                    (run_id, index)).fetchall()
         for path, original in rows:
@@ -384,6 +390,11 @@ class TrainingRunService:
             if external is not None:
                 self.db.executemany('INSERT INTO training_external VALUES (?,?,?)', [
                     (run_id, index, json.dumps(identity, sort_keys=True)) for index, identity in enumerate(external)])
+                for index, node in enumerate(plan['nodes']):
+                    for path in dict.fromkeys([*([node['script_path']] if node['script_path'] else []),
+                                               *node['snapshot_paths']]):
+                        self.db.execute('INSERT INTO training_snapshots VALUES (?,?,?,?)',
+                            (run_id, index, path, scrub(dict(path=path, status='unavailable'))))
             if parent is not None:
                 self.db.execute('INSERT INTO training_parents VALUES (?,?,?)', (run_id, parent['run_id'], parent['mode']))
             if configs is not None:
@@ -589,6 +600,12 @@ class TrainingRunService:
 
     async def _start_recorded(self, session_id, run_id, validated, allowed, *, expected_configs=None, external=False):
         async def snapshot(index, node, path):
+            original = None
+            if external:
+                with self.lock:
+                    row = self.db.execute('SELECT data FROM training_snapshots WHERE run_id=? AND node_index=? AND path=?',
+                                          (run_id, index, path)).fetchone()
+                    original = row[0] if row else None
             try:
                 if self.files is None:
                     raise ValueError('file reader unavailable')
@@ -610,8 +627,12 @@ class TrainingRunService:
                 item = dict(path=path, status='unavailable')
             item['captured_at'] = time.time()
             with self.lock, self.db:
-                self.db.execute('INSERT OR REPLACE INTO training_snapshots VALUES (?,?,?,?)',
-                                (run_id, index, path, scrub(item)))
+                if external:
+                    self.db.execute('UPDATE training_snapshots SET data=? WHERE run_id=? AND node_index=? '
+                                    'AND path=? AND data=?', (scrub(item), run_id, index, path, original))
+                else:
+                    self.db.execute('INSERT OR REPLACE INTO training_snapshots VALUES (?,?,?,?)',
+                                    (run_id, index, path, scrub(item)))
 
         await asyncio.gather(*(snapshot(i, node, path)
             for i, node in enumerate(validated['nodes'])

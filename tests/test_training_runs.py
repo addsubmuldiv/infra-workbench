@@ -511,6 +511,97 @@ def test_partial_external_launch_preserves_agent_report_without_inventing_exit_s
         asyncio.run(service.register_external('s', 'invalid', spec, [{}, {'launch_report': 'invented'}], {'a', 'b'}))
     service.close()
 
+
+def test_interrupted_external_registration_recovers_missing_snapshots_without_relaunch(tmp_path):
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        calls = []
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            self.calls.append(name)
+            return {'ok': True, 'data': {'pid': 123, 'uid': 1000, 'start_ticks': '456',
+                                         'boot_id': 'a' * 36, 'state': 'S'}}
+    class Files:
+        block = True
+        started = None
+        async def read_snapshot(self, host, root, path, allowed, **kwargs):
+            if self.block:
+                self.started.set()
+                await asyncio.Future()
+            return {'content': 'original script', 'sha256': 'b' * 64, 'has_more': False}
+    commands, files = Commands(), Files()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=files)
+    spec = {'name': 'interrupted', 'nodes': [{'host_id': 'a', 'cwd': '/work',
+            'command': 'python train.py', 'script_path': '/work/train.py'}]}
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36}
+    async def exercise():
+        files.started = asyncio.Event()
+        task = asyncio.create_task(service.register_external('s', 'request', spec, [identity], {'a'}))
+        await asyncio.wait_for(files.started.wait(), 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        recorded = service.find_request('s', 'request', {'a'})['run']
+        assert recorded['nodes'][0]['snapshots'][0]['status'] == 'unavailable'
+        files.block = False
+        repeated = await service.register_external('s', 'request', spec, [identity], {'a'})
+        assert repeated['run_id'] == recorded['run_id']
+        # Records created by older versions may have no placeholder at all.
+        with service.db:
+            service.db.execute('DELETE FROM training_snapshots WHERE run_id=?', (recorded['run_id'],))
+        recovered = await service.refresh('s', recorded['run_id'], {'a'})
+        snapshot = recovered['nodes'][0]['snapshots'][0]
+        assert snapshot['content'] == 'original script'
+        assert snapshot['capture_phase'] == 'recovered'
+        assert recovered['status'] == 'running'
+        assert 'execute_server_command' not in commands.calls
+    asyncio.run(exercise())
+    service.close()
+
+
+def test_late_initial_snapshot_failure_does_not_replace_recovered_snapshot(tmp_path):
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            return {'ok': True, 'data': {'pid': 123, 'uid': 1000, 'start_ticks': '456',
+                                         'boot_id': 'a' * 36, 'state': 'S'}}
+    class Files:
+        count = 0
+        async def read_snapshot(self, host, root, path, allowed, **kwargs):
+            self.count += 1
+            if self.count == 1:
+                self.started.set()
+                await self.finish.wait()
+                raise OSError('late failure')
+            return {'content': 'recovered', 'sha256': 'b' * 64, 'has_more': False}
+    files = Files()
+    service = TrainingRunService(tmp_path / 'runs.db', Commands(), files=files)
+    spec = {'name': 'concurrent', 'nodes': [{'host_id': 'a', 'cwd': '/work',
+            'command': 'python train.py', 'script_path': '/work/train.py'}]}
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36}
+    async def exercise():
+        files.started, files.finish = asyncio.Event(), asyncio.Event()
+        pending = asyncio.create_task(service.register_external('s', 'request', spec, [identity], {'a'}))
+        await asyncio.wait_for(files.started.wait(), 2)
+        run_id = service.find_request('s', 'request', {'a'})['run']['run_id']
+        refreshed = await service.refresh('s', run_id, {'a'})
+        assert refreshed['nodes'][0]['snapshots'][0]['content'] == 'recovered'
+        files.finish.set()
+        result = await pending
+        assert result['nodes'][0]['snapshots'][0]['content'] == 'recovered'
+        assert result['nodes'][0]['snapshots'][0]['capture_phase'] == 'recovered'
+    asyncio.run(exercise())
+    service.close()
+
 def test_recorded_ssh_identity_blocks_later_reads_and_cancellation(tmp_path):
     class SSH:
         hostname = 'original'
