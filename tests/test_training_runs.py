@@ -602,6 +602,52 @@ def test_late_initial_snapshot_failure_does_not_replace_recovered_snapshot(tmp_p
     asyncio.run(exercise())
     service.close()
 
+
+def test_terminal_external_run_recovers_snapshot_after_remote_file_becomes_available(tmp_path):
+    identity = {'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
+                'completion_path': '/work/result.json', 'completion_id': 'b' * 32}
+    marker = {'version': 1, 'completion_id': identity['completion_id'], 'pid': identity['pid'],
+              'uid': identity['uid'], 'start_ticks': identity['start_ticks'], 'boot_id': identity['boot_id'],
+              'exit_code': 0}
+    class SSH:
+        hostname = 'a'
+        async def effective(self, host): return {'hostname': self.hostname, 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            assert name == 'inspect_server_process'
+            return {'ok': False, 'data': {}}
+    class Files:
+        script_available = False
+        async def read_snapshot(self, host, root, path, allowed, **kwargs):
+            if path == '/work/result.json':
+                return {'content': json.dumps(marker), 'sha256': 'c' * 64, 'has_more': False}
+            if not self.script_available:
+                raise OSError('temporary file read failure')
+            return {'content': 'script after reconnect', 'sha256': 'd' * 64, 'has_more': False}
+    files = Files()
+    service = TrainingRunService(tmp_path / 'runs.db', Commands(), files=files)
+    spec = {'name': 'finished', 'nodes': [{'host_id': 'a', 'cwd': '/work',
+            'command': 'python train.py', 'script_path': '/work/train.py'}]}
+    run = asyncio.run(service.register_external('s', 'request', spec, [identity], {'a'}))
+    assert run['status'] == 'completed'
+    assert run['nodes'][0]['snapshots'][0]['status'] == 'unavailable'
+    files.script_available = True
+    service.commands.probes.ssh.hostname = 'different-host'
+    changed = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+    assert changed['status'] == 'completed'
+    assert changed['nodes'][0]['snapshots'][0]['status'] == 'unavailable'
+    service.commands.probes.ssh.hostname = 'a'
+    recovered = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
+    assert recovered['status'] == 'completed'
+    assert recovered['nodes'][0]['result']['exit_code'] == 0
+    assert recovered['nodes'][0]['snapshots'][0]['content'] == 'script after reconnect'
+    assert recovered['nodes'][0]['snapshots'][0]['capture_phase'] == 'recovered'
+    service.close()
+
 def test_recorded_ssh_identity_blocks_later_reads_and_cancellation(tmp_path):
     class SSH:
         hostname = 'original'

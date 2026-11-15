@@ -801,6 +801,20 @@ class TrainingRunService:
 
         async def read(index, node):
             if node['status'] in {'not_started', 'completed', 'failed', 'timed_out', 'cancelled'}:
+                if (run['launch_mode'] == 'external' and node['status'] != 'not_started'
+                        and self.files is not None and hasattr(self.files, 'read_snapshot')
+                        and (available_hosts is None or node['host_id'] in available_hosts)):
+                    plan_node = run['plan']['nodes'][index]
+                    paths = set(plan_node['snapshot_paths']) | ({plan_node['script_path']} if plan_node['script_path'] else set())
+                    available = {item['path'] for item in node['snapshots'] if item.get('status') == 'available'}
+                    if paths - available:
+                        try:
+                            config = await self._approved_config(run_id, index, node['host_id'], allowed)
+                            await self._recover_snapshots(run_id, index, plan_node, allowed, config)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            pass  # Keep the terminal status; retry the snapshot later.
                 return
             observation_seq = self._begin_observation(run_id, index)
             if observation_seq is None:
