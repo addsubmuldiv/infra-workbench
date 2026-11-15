@@ -353,6 +353,7 @@ def test_user_confirmed_target_recovers_missing_script_as_later_snapshot(tmp_pat
     snapshot = recovered['nodes'][0]['snapshots'][0]
     assert snapshot['content'] == 'current script'
     assert snapshot['capture_phase'] == 'recovered'
+    assert service.read_snapshot_page('s', run['run_id'], 0, 0, 0, {'a'})['capture_phase'] == 'recovered'
     assert snapshot['captured_at'] >= run['nodes'][0]['snapshots'][0]['captured_at']
     assert recovered['status'] == 'unknown'
     assert files.reads == 1
