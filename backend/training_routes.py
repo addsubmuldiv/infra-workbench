@@ -63,6 +63,15 @@ class Rerun(Scope):
 class Draft(Scope):
     node_index: int = Field(ge=0, le=63)
     content: str | None = Field(default=None, max_length=65536)
+    request_id: str | None = Field(default=None, min_length=1, max_length=256)
+    encoding: str = Field(default='text', pattern=r'^(text|base64)$')
+
+
+class ExternalRerunDraft(Scope):
+    node_index: int = Field(ge=0, le=63)
+    content: str = Field(min_length=1, max_length=65536)
+    request_id: str = Field(min_length=1, max_length=256)
+    mode: str = Field(pattern=r'^(stop|keep)$')
 
 
 class Snapshot(Scope):
@@ -210,6 +219,16 @@ def register_training_routes(app, service, hosts):
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             error(exc)
 
+    @app.post('/api/training-runs/{run_id}/external-rerun/prepare')
+    async def prepare_external_rerun(run_id: str, body: ExternalRerunDraft):
+        if re.fullmatch(r'[a-f0-9]{32}', run_id) is None:
+            raise HTTPException(404, 'Run not found')
+        try:
+            return service.prepare_external_rerun_draft(body.session_id, body.request_id, run_id,
+                body.node_index, body.content, body.mode, allowed(body.host_ids))
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
+            error(exc)
+
     @app.post('/api/training-runs/{run_id}/draft/{operation}')
     async def draft(run_id: str, operation: str, body: Draft):
         if re.fullmatch(r'[a-f0-9]{32}', run_id) is None:
@@ -217,8 +236,11 @@ def register_training_routes(app, service, hosts):
         try:
             scope = allowed(body.host_ids)
             if operation == 'read':
-                return {'draft': service.read_draft(body.session_id, run_id, body.node_index, scope)}
+                return {'draft': service.read_draft(body.session_id, run_id, body.node_index, scope,
+                                                     request_id=body.request_id, encoding=body.encoding)}
             if operation == 'save':
+                if body.request_id is not None or body.encoding != 'text':
+                    raise ValueError('request_id is only valid for reading a confirmed draft')
                 return {'draft': service.save_draft(body.session_id, run_id, body.node_index, body.content, scope)}
             raise HTTPException(404, 'Operation not found')
         except (ValueError, PermissionError, KeyError, IndexError) as exc:

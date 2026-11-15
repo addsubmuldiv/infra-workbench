@@ -319,6 +319,9 @@ def test_training_routes_are_host_only_and_session_scoped(tmp_path):
         rerun = {**body, 'request_id': 'rerun', 'content': 'echo changed\n', 'mode': 'keep'}
         assert client.post(f'/api/training-runs/{run_id}/rerun', json=rerun, headers=mcp).status_code == 401
         grant = {'session_id': 'session-b', 'host_ids': ['a']}
+        external_draft = {**grant, 'node_index': 0, 'content': 'echo changed\n', 'request_id': 'next', 'mode': 'keep'}
+        assert client.post(f'/api/training-runs/{run_id}/external-rerun/prepare', json=external_draft, headers=mcp).status_code == 401
+        assert client.post(f'/api/training-runs/{run_id}/external-rerun/prepare', json=external_draft, headers=host).status_code == 403
         assert client.post(f'/api/training-runs/{run_id}/grant', json=grant, headers=mcp).status_code == 401
         snapshot = {**grant, 'node_index':0, 'snapshot_index':0, 'offset':0}
         identity_review = {**grant, 'node_index':0}

@@ -1,5 +1,6 @@
 """Durable training run records and coordinated remote command launches."""
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -160,6 +161,16 @@ class TrainingRunService:
             self.db.execute('''CREATE TABLE IF NOT EXISTS training_script_drafts (
                 run_id TEXT NOT NULL, node_index INTEGER NOT NULL, content TEXT NOT NULL, updated REAL NOT NULL,
                 PRIMARY KEY(run_id, node_index))''')
+            self.db.execute('''CREATE TABLE IF NOT EXISTS training_rerun_drafts (
+                session_id TEXT NOT NULL, request_id TEXT NOT NULL, parent_id TEXT NOT NULL,
+                node_index INTEGER NOT NULL, mode TEXT NOT NULL, digest TEXT NOT NULL, content TEXT,
+                PRIMARY KEY(session_id, request_id))''')
+            if 'content' not in {row[1] for row in self.db.execute('PRAGMA table_info(training_rerun_drafts)')}:
+                try:
+                    self.db.execute('ALTER TABLE training_rerun_drafts ADD COLUMN content TEXT')
+                except sqlite3.OperationalError as exc:
+                    if 'duplicate column name' not in str(exc).lower():
+                        raise
             self.db.execute('''CREATE TABLE IF NOT EXISTS training_identities (
                 run_id TEXT NOT NULL, node_index INTEGER NOT NULL, digest TEXT NOT NULL,
                 PRIMARY KEY(run_id, node_index))''')
@@ -443,6 +454,9 @@ class TrainingRunService:
                 'SELECT node_index, data FROM training_snapshots WHERE run_id=? ORDER BY rowid',
                 (run_id,)).fetchall()
             parent = self.db.execute('SELECT parent_id, mode FROM training_parents WHERE run_id=?', (run_id,)).fetchone()
+            expected_draft = self.db.execute(
+                'SELECT parent_id,mode,digest FROM training_rerun_drafts WHERE session_id=? AND request_id=?',
+                (row[0], row[3])).fetchone()
             external = self.db.execute('SELECT 1 FROM training_external WHERE run_id=? LIMIT 1', (run_id,)).fetchone()
             external_identities = dict(self.db.execute('SELECT node_index,identity FROM training_external WHERE run_id=?', (run_id,)).fetchall())
             connection_identities = dict(self.db.execute('SELECT node_index,digest FROM training_identities WHERE run_id=?',
@@ -460,6 +474,15 @@ class TrainingRunService:
         for index, snapshot in snapshots:
             result_nodes[index]['snapshots'].append(json.loads(scrub(json.loads(snapshot))))
         for index, node in enumerate(result_nodes):
+            if external and expected_draft:
+                if parent != expected_draft[:2]:
+                    node['draft_comparison'] = 'request_mismatch'
+                else:
+                    script_path = plan['nodes'][index].get('script_path')
+                    snapshot = next((item for item in node['snapshots'] if item.get('path') == script_path), None)
+                    digest = snapshot.get('sha256') if snapshot and snapshot.get('status') == 'available' and not snapshot.get('has_more') else None
+                    node['draft_comparison'] = ('unknown' if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest)
+                                                else 'match' if digest == expected_draft[2] else 'mismatch')
             if index in external_identities:
                 identity = json.loads(external_identities[index])
                 node['agent_launch_report'] = identity.get('launch_report')
@@ -897,11 +920,30 @@ class TrainingRunService:
         return await self.files.read(node['host_id'], self._file_root(node, node['log_path']),
                                      node['log_path'], identity, offset, allowed, **options)
 
-    def read_draft(self, session_id, run_id, node_index, allowed):
+    def read_draft(self, session_id, run_id, node_index, allowed, *, request_id=None, encoding='text'):
         run = self.get(session_id, run_id, allowed)
         if type(node_index) is not int or not 0 <= node_index < len(run['nodes']):
             raise IndexError('node not found')
+        if encoding not in {'text', 'base64'} or (encoding == 'base64' and request_id is None):
+            raise ValueError('base64 requires a confirmed rerun request')
         with self.lock:
+            if request_id is not None:
+                if not isinstance(request_id, str) or not 0 < len(request_id) <= 256:
+                    raise ValueError('invalid rerun request')
+                row = self.db.execute('SELECT content,digest FROM training_rerun_drafts WHERE session_id=? AND request_id=? '
+                                      'AND parent_id=? AND node_index=?',
+                                      (session_id, request_id, run_id, node_index)).fetchone()
+                if not row or row[0] is None:
+                    raise KeyError('confirmed draft not found')
+                if (scrub(row[0]) != row[0] or 'PRIVATE KEY-----' in row[0]
+                        or '[已隐藏凭据]' in row[0]
+                        or hashlib.sha256(row[0].encode('utf-8')).hexdigest() != row[1]):
+                    raise ValueError('confirmed draft is sensitive, redacted or inconsistent')
+                if encoding == 'base64':
+                    raw = row[0].encode('utf-8')
+                    return {'content_base64': base64.b64encode(raw).decode('ascii'), 'byte_length': len(raw),
+                            'sha256': row[1], 'updated_at': None}
+                return {'content': scrub(row[0]), 'sha256': row[1], 'updated_at': None}
             row = self.db.execute('SELECT content, updated FROM training_script_drafts WHERE run_id=? AND node_index=?',
                                   (run_id, node_index)).fetchone()
         return {'content': scrub(row[0]), 'updated_at': row[1]} if row else None
@@ -932,6 +974,33 @@ class TrainingRunService:
         with self.lock, self.db:
             self.db.execute('INSERT OR REPLACE INTO training_script_drafts VALUES (?,?,?,?)', (run_id, node_index, content, updated))
         return {'content': content, 'updated_at': updated}
+
+    def prepare_external_rerun_draft(self, session_id, request_id, run_id, node_index, content, mode, allowed):
+        if not isinstance(request_id, str) or not 0 < len(request_id) <= 256 or mode not in {'stop', 'keep'}:
+            raise ValueError('invalid rerun request')
+        run = self.get(session_id, run_id, allowed)
+        if run['launch_mode'] != 'external':
+            raise ValueError('external rerun requires an external parent')
+        if type(node_index) is not int or not 0 <= node_index < len(run['nodes']):
+            raise IndexError('node not found')
+        if (not isinstance(content, str) or not content or len(content.encode('utf-8')) > 65536
+                or '\x00' in content or scrub(content) != content
+                or 'PRIVATE KEY-----' in content or '[已隐藏凭据]' in content):
+            raise ValueError('invalid, sensitive or redacted script draft')
+        digest = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        expected = (run_id, node_index, mode, digest)
+        updated = time.time()
+        with self.lock, self.db:
+            existing = self.db.execute('SELECT parent_id,node_index,mode,digest FROM training_rerun_drafts '
+                                       'WHERE session_id=? AND request_id=?', (session_id, request_id)).fetchone()
+            if existing and existing != expected:
+                raise ValueError('request_id belongs to a different draft')
+            if not existing:
+                self.db.execute('INSERT INTO training_rerun_drafts VALUES (?,?,?,?,?,?,?)',
+                                (session_id, request_id, *expected, content))
+                self.db.execute('INSERT OR REPLACE INTO training_script_drafts VALUES (?,?,?,?)',
+                                (run_id, node_index, content, updated))
+        return {'sha256': digest, 'updated_at': updated}
 
     def list_runs(self, allowed, *, offset=0, limit=20, status='all', host_id=None, session_id=None):
         if allowed is None or len(allowed) > 900:

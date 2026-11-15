@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import hashlib
 import json
 
 
@@ -15,6 +17,65 @@ class FakeCommands:
         self.calls.append((name, arguments, job_id))
         await asyncio.sleep(0)
         return {'ok': True, 'data': {'status': 'running', 'job_id': job_id}}
+
+
+def test_external_rerun_compares_captured_scripts_with_confirmed_draft(tmp_path):
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+    class Files:
+        values = {'a': b'edited\n', 'b': b'different\n'}
+        async def read_snapshot(self, host, root, path, allowed, **kwargs):
+            value = self.values[host]
+            return {'content': value.decode(), 'sha256': hashlib.sha256(value).hexdigest(), 'has_more': False}
+    files = Files()
+    service = TrainingRunService(tmp_path / 'runs.db', Commands(), files=files)
+    spec = {'name': 'direct', 'nodes': [
+        {'host_id': host, 'cwd': '/work', 'command': 'python /work/train.py', 'script_path': '/work/train.py'}
+        for host in ('a', 'b')]}
+    parent = asyncio.run(service.register_external('s', 'parent', spec, [{}, {}], {'a', 'b'}))
+    parent_id = parent['run_id']
+    service.prepare_external_rerun_draft('s', 'next', parent_id, 0, 'edited\n', 'keep', {'a', 'b'})
+    service.save_draft('s', parent_id, 0, 'later edit\n', {'a', 'b'})
+    fixed = service.read_draft('s', parent_id, 0, {'a', 'b'}, request_id='next')
+    assert fixed['content'] == 'edited\n'
+    assert fixed['sha256'] == hashlib.sha256(b'edited\n').hexdigest()
+    encoded = service.read_draft('s', parent_id, 0, {'a', 'b'}, request_id='next', encoding='base64')
+    assert base64.b64decode(encoded['content_base64']) == b'edited\n'
+    assert encoded['byte_length'] == len(b'edited\n')
+    assert encoded['sha256'] == fixed['sha256']
+    with pytest.raises(ValueError, match='confirmed'):
+        service.read_draft('s', parent_id, 0, {'a', 'b'}, encoding='base64')
+    with pytest.raises(KeyError):
+        service.read_draft('s', parent_id, 1, {'a', 'b'}, request_id='next')
+    with service.lock, service.db:
+        service.db.execute('UPDATE training_rerun_drafts SET content=? WHERE session_id=? AND request_id=?',
+                           ('tampered', 's', 'next'))
+    with pytest.raises(ValueError, match='inconsistent'):
+        service.read_draft('s', parent_id, 0, {'a', 'b'}, request_id='next', encoding='base64')
+    with service.lock, service.db:
+        service.db.execute('UPDATE training_rerun_drafts SET content=? WHERE session_id=? AND request_id=?',
+                           ('edited\n', 's', 'next'))
+    service.prepare_external_rerun_draft('s', 'next', parent_id, 0, 'edited\n', 'keep', {'a', 'b'})
+    assert service.read_draft('s', parent_id, 0, {'a', 'b'})['content'] == 'later edit\n'
+    with pytest.raises(ValueError, match='different draft'):
+        service.prepare_external_rerun_draft('s', 'next', parent_id, 0, 'other\n', 'keep', {'a', 'b'})
+    with pytest.raises(PermissionError):
+        service.prepare_external_rerun_draft('other', 'next', parent_id, 0, 'edited\n', 'keep', {'a', 'b'})
+    child = asyncio.run(service.register_external('s', 'next', spec, [{}, {}], {'a', 'b'}, parent_id=parent_id, mode='keep'))
+    assert [node['draft_comparison'] for node in child['nodes']] == ['match', 'mismatch']
+    service.prepare_external_rerun_draft('s', 'wrong-mode', parent_id, 0, 'edited\n', 'stop', {'a', 'b'})
+    wrong = asyncio.run(service.register_external('s', 'wrong-mode', spec, [{}, {}], {'a', 'b'}, parent_id=parent_id, mode='keep'))
+    assert all(node['draft_comparison'] == 'request_mismatch' for node in wrong['nodes'])
+    with service.lock, service.db:
+        service.db.execute('UPDATE training_snapshots SET data=? WHERE run_id=? AND node_index=0',
+                           (json.dumps({'path': '/work/train.py', 'status': 'unavailable'}), child['run_id']))
+    assert service.get('s', child['run_id'], {'a', 'b'})['nodes'][0]['draft_comparison'] == 'unknown'
+    service.close()
 
 
 def plan():
