@@ -1326,6 +1326,53 @@ def test_rerun_stages_version_and_preserves_old_run(tmp_path):
     service.close()
 
 
+def test_managed_rerun_parent_is_saved_atomically_with_new_run(tmp_path):
+    import hashlib
+    import sqlite3
+    class Files:
+        async def read_snapshot(self, host_id, root, path, allowed):
+            return {'content': 'echo old\n', 'sha256': hashlib.sha256(b'echo old\n').hexdigest(), 'has_more': False}
+        async def stage(self, *args, **kwargs):
+            raise AssertionError('staging must not happen after a failed database transaction')
+    commands = FakeCommands()
+    service = TrainingRunService(tmp_path / 'runs.db', commands, files=Files())
+    old = {'name': 'old', 'nodes': [{'host_id': 'a', 'cwd': '/work',
+           'command': 'sh /work/train.sh > /work/old.log', 'script_path': '/work/train.sh', 'log_path': '/work/old.log'}]}
+    new = {'name': 'new', 'nodes': [{'host_id': 'a', 'cwd': '/work',
+           'command': 'sh /work/train.sh > /work/new.log', 'script_path': '/work/train.sh', 'log_path': '/work/new.log'}]}
+    parent = asyncio.run(service.start('s', 'old', old, {'a'}))
+    with service.db:
+        service.db.execute("CREATE TRIGGER reject_parent BEFORE INSERT ON training_parents "
+                           "BEGIN SELECT RAISE(ABORT, 'parent write failed'); END")
+    with pytest.raises(sqlite3.IntegrityError, match='parent write failed'):
+        asyncio.run(service.rerun('s', 'new', parent['run_id'], new, 'echo new\n', 'keep', {'a'}))
+    assert service.find_request('s', 'new', {'a'})['run'] is None
+    assert len([call for call in commands.calls if call[0] == 'execute_server_command']) == 1
+    service.close()
+
+
+def test_managed_start_ssh_identity_is_saved_atomically_with_run(tmp_path):
+    import sqlite3
+    class SSH:
+        async def effective(self, host): return {'hostname': 'target', 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    commands = FakeCommands()
+    commands.probes = Probes()
+    service = TrainingRunService(tmp_path / 'runs.db', commands)
+    with service.db:
+        service.db.execute("CREATE TRIGGER reject_identity BEFORE INSERT ON training_identities "
+                           "BEGIN SELECT RAISE(ABORT, 'identity write failed'); END")
+    spec = {'name': 'start', 'nodes': [{'host_id': 'a', 'cwd': '/work', 'command': 'echo ok'}]}
+    with pytest.raises(sqlite3.IntegrityError, match='identity write failed'):
+        asyncio.run(service.start('s', 'start', spec, {'a'},
+                                  expected_configs={'a': {'hostname': 'target', 'user': 'alice'}}))
+    assert service.find_request('s', 'start', {'a'})['run'] is None
+    assert not commands.calls
+    service.close()
+
+
 def test_multi_node_rerun_rejects_divergent_original_script_snapshots_before_staging(tmp_path):
     import hashlib
     class Files:

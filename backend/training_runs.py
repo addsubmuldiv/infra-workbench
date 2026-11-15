@@ -359,7 +359,9 @@ class TrainingRunService:
                                (json.dumps(parent, sort_keys=True) if parent is not None else '')).encode()).hexdigest()
 
     def _record(self, session_id, request_id, plan, *, external=None, configs=None, parent=None):
-        digest = self._request_digest(plan, external, parent)
+        # Managed rerun plans already embed a version derived from the parent,
+        # mode and content. Preserve their existing request hashes for retries.
+        digest = self._request_digest(plan, external, parent if external is not None else None)
         stored_payload = scrub(plan)
         with self.lock, self.db:
             # Acquire the writer lock before checking the idempotency key. A
@@ -527,14 +529,9 @@ class TrainingRunService:
             for path in [*node['snapshot_paths'], *([node['script_path']] if node['script_path'] else []),
                          *([node['log_path']] if node['log_path'] else [])]:
                 self._file_root(node, path)
-        run_id, created = self._record(session_id, request_id, validated)
+        run_id, created = self._record(session_id, request_id, validated, configs=expected_configs)
         if not created:
             return self.get(session_id, run_id, allowed)
-        if expected_configs is not None:
-            with self.lock, self.db:
-                self.db.executemany('INSERT INTO training_identities VALUES (?,?,?)', [
-                    (run_id, i, self._identity_digest(expected_configs[node['host_id']]))
-                    for i, node in enumerate(validated['nodes'])])
         return await self._start_recorded(session_id, run_id, validated, allowed, expected_configs=expected_configs)
 
     async def register_external(self, session_id, request_id, plan, identities, allowed, *, parent_id=None, mode=None):
@@ -734,13 +731,12 @@ class TrainingRunService:
             raise ValueError('original script snapshots differ across nodes; a shared edit cannot safely be applied')
         if any(config is not None for config in identities) and not all(config is not None for config in identities):
             raise ValueError('approved SSH identity is missing for a node')
-        run_id, created = self._record(session_id, request_id, validated)
+        expected = ({node['host_id']: identities[i] for i, node in enumerate(validated['nodes'])}
+                    if all(config is not None for config in identities) else None)
+        run_id, created = self._record(session_id, request_id, validated, configs=expected,
+                                       parent={'run_id': parent_id, 'mode': mode})
         if not created:
             return self.get(session_id, run_id, allowed)
-        with self.lock, self.db:
-            self.db.execute('INSERT INTO training_parents VALUES (?,?,?)', (run_id, parent_id, mode))
-            self.db.executemany('INSERT INTO training_identities VALUES (?,?,?)', [
-                (run_id, i, self._identity_digest(config)) for i, config in enumerate(identities) if config is not None])
         try:
             for index, (node, (source, revision, target)) in enumerate(zip(validated['nodes'], sources)):
                 options = {'expected_config': identities[index]} if identities[index] is not None else {}
@@ -770,8 +766,6 @@ class TrainingRunService:
             for index in range(len(validated['nodes'])):
                 self._set_node(run_id, index, 'failed', {'error': str(exc)[:300]})
             return self.get(session_id, run_id, allowed)
-        expected = ({node['host_id']: identities[i] for i, node in enumerate(validated['nodes'])}
-                    if all(config is not None for config in identities) else None)
         return await self._start_recorded(session_id, run_id, validated, allowed, expected_configs=expected)
 
     async def _cancel_node(self, run_id, index, node, allowed):
