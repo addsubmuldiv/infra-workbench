@@ -618,6 +618,41 @@ class TrainingRunService:
         return await self._start_recorded(session_id, run_id, validated, allowed,
                                           expected_configs=configs, external=True)
 
+    async def update_external_node(self, session_id, run_id, node_index, identity, allowed):
+        run = self.get(session_id, run_id, allowed)
+        if run['session_id'] != session_id:
+            raise PermissionError('only the originating session may update a run')
+        if type(node_index) is not int or not 0 <= node_index < len(run['nodes']):
+            raise IndexError('node not found')
+        item = ExternalIdentity.model_validate(identity).model_dump()
+        if item['launch_report'] != 'started' or any(item.get(k) is None for k in ('pid', 'uid', 'start_ticks', 'boot_id')):
+            raise ValueError('a complete started process identity is required')
+        if (item['completion_path'] is None) != (item['completion_id'] is None):
+            raise ValueError('completion path and ID are required together')
+        if item['completion_path'] is not None:
+            self._file_root(run['plan']['nodes'][node_index], item['completion_path'])
+        else:
+            item.pop('completion_path')
+            item.pop('completion_id')
+        with self.lock, self.db:
+            row = self.db.execute('SELECT identity FROM training_external WHERE run_id=? AND node_index=?',
+                                  (run_id, node_index)).fetchone()
+            if row is None:
+                raise ValueError('node is not externally registered')
+            old = json.loads(row[0])
+            if old != item:
+                if old.get('launch_report') != 'not_started' or any(old.get(k) is not None for k in
+                    ('pid', 'uid', 'start_ticks', 'boot_id', 'completion_path', 'completion_id')):
+                    raise ValueError('existing process identity cannot be replaced')
+                changed = self.db.execute('UPDATE training_external SET identity=? WHERE run_id=? AND node_index=? AND identity=?',
+                                          (scrub(item), run_id, node_index, row[0])).rowcount
+                if not changed:
+                    raise ValueError('node identity changed concurrently; read the run before retrying')
+                self.db.execute("UPDATE training_nodes SET status='unknown', result=NULL, updated=?, "
+                                'observation_seq=observation_seq+1, observation_applied=observation_seq+1 '
+                                'WHERE run_id=? AND node_index=?', (time.time(), run_id, node_index))
+        return await self.refresh(session_id, run_id, allowed)
+
     async def _start_recorded(self, session_id, run_id, validated, allowed, *, expected_configs=None, external=False):
         async def snapshot(index, node, path):
             original = None

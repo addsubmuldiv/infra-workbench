@@ -573,6 +573,45 @@ def test_partial_external_launch_preserves_agent_report_without_inventing_exit_s
     service.close()
 
 
+def test_external_node_identity_can_be_added_once_by_owner(tmp_path):
+    class SSH:
+        async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}
+    class Probes:
+        ssh = SSH()
+        def host(self, host_id, allowed): return {'id': host_id}
+    class Commands:
+        probes = Probes()
+        async def call(self, name, arguments, allowed, state, **kwargs):
+            return {'ok': True, 'data': {'pid': 124, 'uid': 1000, 'start_ticks': '457',
+                                         'boot_id': 'b' * 36, 'state': 'S'}}
+    service = TrainingRunService(tmp_path / 'runs.db', Commands())
+    plan = {'name': 'partial', 'nodes': [
+        {'host_id': 'a', 'cwd': '/work', 'command': 'train --rank=0'},
+        {'host_id': 'b', 'cwd': '/work', 'command': 'train --rank=1'}]}
+    original = [{'pid': 123, 'uid': 1000, 'start_ticks': '456', 'boot_id': 'a' * 36,
+                 'launch_report': 'started'}, {'launch_report': 'not_started'}]
+    run = asyncio.run(service.register_external('owner', 'request', plan, original, {'a', 'b'}))
+    update = {'pid': 124, 'uid': 1000, 'start_ticks': '457', 'boot_id': 'b' * 36,
+              'launch_report': 'started'}
+    result = asyncio.run(service.update_external_node('owner', run['run_id'], 1, update, {'a', 'b'}))
+    assert result['nodes'][1]['process_identity']['pid'] == 124
+    assert result['nodes'][1]['agent_launch_report'] == 'started'
+    assert asyncio.run(service.update_external_node('owner', run['run_id'], 1, update, {'a', 'b'}))['run_id'] == run['run_id']
+    assert asyncio.run(service.register_external('owner', 'request', plan, original, {'a', 'b'}))['run_id'] == run['run_id']
+    with pytest.raises(ValueError):
+        asyncio.run(service.update_external_node('owner', run['run_id'], 1, {**update, 'pid': 125}, {'a', 'b'}))
+    with pytest.raises(PermissionError):
+        asyncio.run(service.update_external_node('other', run['run_id'], 1, update, {'a', 'b'}))
+    service.grant(run['run_id'], 'other', {'a', 'b'})
+    with pytest.raises(PermissionError):
+        asyncio.run(service.update_external_node('other', run['run_id'], 1, update, {'a', 'b'}))
+    with pytest.raises(PermissionError):
+        asyncio.run(service.update_external_node('owner', run['run_id'], 1, update, {'a'}))
+    with pytest.raises(ValueError):
+        asyncio.run(service.update_external_node('owner', run['run_id'], 0, {**update, 'uid': None}, {'a', 'b'}))
+    service.close()
+
+
 def test_interrupted_external_registration_recovers_missing_snapshots_without_relaunch(tmp_path):
     class SSH:
         async def effective(self, host): return {'hostname': host['id'], 'user': 'alice'}

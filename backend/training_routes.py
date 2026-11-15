@@ -27,6 +27,11 @@ class Register(Scope):
     rerun_mode: str | None = Field(default=None, pattern=r'^(stop|keep)$')
 
 
+class ExternalNodeUpdate(Scope):
+    node_index: int = Field(ge=0, le=63)
+    identity: ExternalIdentity
+
+
 class FindRequest(Scope):
     request_id: str = Field(min_length=1, max_length=256)
 
@@ -134,6 +139,16 @@ def register_training_routes(app, service, hosts):
             return await service.register_external(body.session_id, body.request_id, body.plan.model_dump(),
                 [identity.model_dump() for identity in body.identities], allowed(body.host_ids),
                 parent_id=body.parent_run_id, mode=body.rerun_mode)
+        except (ValueError, PermissionError, KeyError, IndexError) as exc:
+            error(exc)
+
+    @app.post('/api/training-runs/{run_id}/external-node/update')
+    async def update_external_node(run_id: str, body: ExternalNodeUpdate):
+        try:
+            if not re.fullmatch(r'[a-f0-9]{32}', run_id):
+                raise ValueError('invalid run ID')
+            return await service.update_external_node(body.session_id, run_id, body.node_index,
+                                                      body.identity.model_dump(), allowed(body.host_ids))
         except (ValueError, PermissionError, KeyError, IndexError) as exc:
             error(exc)
 

@@ -319,6 +319,10 @@ def test_training_routes_are_host_only_and_session_scoped(tmp_path):
         rerun = {**body, 'request_id': 'rerun', 'content': 'echo changed\n', 'mode': 'keep'}
         assert client.post(f'/api/training-runs/{run_id}/rerun', json=rerun, headers=mcp).status_code == 401
         grant = {'session_id': 'session-b', 'host_ids': ['a']}
+        node_update = {**grant, 'node_index': 0, 'identity': {'pid': 12, 'uid': 1,
+                       'start_ticks': '45', 'boot_id': 'a' * 36, 'launch_report': 'started'}}
+        assert client.post(f'/api/training-runs/{run_id}/external-node/update', json=node_update, headers=mcp).status_code == 401
+        assert client.post(f'/api/training-runs/{run_id}/external-node/update', json=node_update, headers=host).status_code == 403
         external_draft = {**grant, 'node_index': 0, 'content': 'echo changed\n', 'request_id': 'next', 'mode': 'keep'}
         assert client.post(f'/api/training-runs/{run_id}/external-rerun/prepare', json=external_draft, headers=mcp).status_code == 401
         assert client.post(f'/api/training-runs/{run_id}/external-rerun/prepare', json=external_draft, headers=host).status_code == 403
