@@ -106,7 +106,7 @@ def parse_external_completion(content, identity):
     except (ValueError, TypeError):
         return None
     keys = {'version', 'completion_id', 'pid', 'uid', 'start_ticks', 'boot_id', 'exit_code'}
-    if not isinstance(value, dict) or set(value) not in (keys, keys | {'timed_out'}):
+    if not isinstance(value, dict) or set(value) not in (keys, keys | {'timed_out'}, keys | {'stopped'}):
         return None
     if type(value['version']) is not int or value['version'] != 1:
         return None
@@ -117,6 +117,8 @@ def parse_external_completion(content, identity):
         return None
     code = value['exit_code']
     if 'timed_out' in value and (value['timed_out'] is not True or type(code) is not int or code != 124):
+        return None
+    if 'stopped' in value and (value['stopped'] is not True or type(code) is not int or code != 143):
         return None
     return code if type(code) is int and 0 <= code <= 255 else None
 
@@ -911,8 +913,8 @@ class TrainingRunService:
                             stable = isinstance(marker.get('sha256'), str) and re.fullmatch(r'[a-f0-9]{64}', marker['sha256'])
                             exit_code = None if not stable or marker.get('has_more') else parse_external_completion(marker.get('content'), identity)
                             if exit_code is not None:
-                                timed_out = json.loads(marker['content']).get('timed_out') is True
-                                set_observed('timed_out' if timed_out else 'completed' if exit_code == 0 else 'failed',
+                                evidence = json.loads(marker['content'])
+                                set_observed('cancelled' if evidence.get('stopped') else 'timed_out' if evidence.get('timed_out') else 'completed' if exit_code == 0 else 'failed',
                                     {'pid': identity['pid'], 'exit_code': exit_code,
                                      'completion_source': 'agent_result_file', 'identity_verified': False})
                                 return

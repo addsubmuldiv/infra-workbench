@@ -459,6 +459,12 @@ def test_agent_result_file_is_scoped_and_does_not_override_live_process(tmp_path
     del files.marker['timed_out']
     ordinary_124 = asyncio.run(service.register_external('s', 'ordinary-124', spec, [identity], {'a'}))
     assert ordinary_124['status'] == 'failed'
+    files.marker.update(exit_code=143, stopped=True)
+    stopped_run = asyncio.run(service.register_external('s', 'stopped-marker', spec, [identity], {'a'}))
+    assert stopped_run['status'] == 'cancelled'
+    del files.marker['stopped']
+    ordinary_143 = asyncio.run(service.register_external('s', 'ordinary-143', spec, [identity], {'a'}))
+    assert ordinary_143['status'] == 'failed'
     files.marker['exit_code'] = 7
     result = asyncio.run(service.refresh('s', run['run_id'], {'a'}))
     assert result['status'] == 'failed'
