@@ -23,6 +23,7 @@ from .core import TransitionTracker, discover_aliases, eligible, parse_npu, pars
 from .port_forwarding import register_port_forwarding
 from .ssh_tunnels import register_ssh_tunnels
 from .vscode import register_vscode
+from .ssh_config_export import register_ssh_config_export
 from .ssh import SSHService
 from .probe_cache import ProbeCache
 from .polling import FleetSchedule
@@ -487,6 +488,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_port_forwarding(app,store,ssh,hosts)
     register_ssh_tunnels(app,store,ssh,hosts,ssh_passwords,on_result=state_changes.publish)
     register_vscode(app)
+    register_ssh_config_export(app)
     app.state.agent_service = AgentService(hosts,snapshots,ssh,ssh_passwords,collect)
     app.state.reservations, app.state.workbench_rules = reservations, rules
     async def refresh_assistant():

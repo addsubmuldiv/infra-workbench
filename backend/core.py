@@ -147,6 +147,7 @@ def discover_aliases(config):
             return
         seen.add(path)
         for line in path.read_text(encoding='utf-8-sig', errors='replace').splitlines():
+            line = re.sub(r'^\s*(Host|Include)\s*=\s*', r'\1 ', line, flags=re.I)
             try:
                 tokens = shlex.split(line, comments=True, posix=True)
             except ValueError:

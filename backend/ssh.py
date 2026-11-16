@@ -83,15 +83,21 @@ class SSHService:
         args = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8',
                 '-o', 'ConnectionAttempts=1', '-o', 'ClearAllForwardings=yes',
                 '-o', 'StrictHostKeyChecking='+('accept-new' if self.accepts_new_host_keys(host) else 'yes'), '-o', 'PermitLocalCommand=no']
+        args += self.connection_options(host)
+        if self.custom_known_hosts:
+            args += ['-o', 'UserKnownHostsFile='+str(self.known_hosts)]
+        return args + [self.destination(host)]
+
+    @staticmethod
+    def connection_options(host):
+        args = []
         if host.get('user'):
             args += ['-l', host['user']]
         if host.get('port'):
             args += ['-p', str(host['port'])]
         if host.get('key_path'):
             args += ['-i', host['key_path'], '-o', 'IdentitiesOnly=yes']
-        if self.custom_known_hosts:
-            args += ['-o', 'UserKnownHostsFile='+str(self.known_hosts)]
-        return args + [self.destination(host)]
+        return args
 
     async def effective(self, host):
         # Literal addresses also match Host patterns (e.g. 177.*). Resolve
@@ -113,7 +119,10 @@ class SSHService:
     async def effective_details(self, host):
         """Resolve the same native invocation, retaining repeatable SSH options."""
         args = self.arguments(host)
-        code, out, _ = await self.command(args[:-1]+['-G',args[-1]])
+        return await self.config_details(args[1:-1], args[-1])
+
+    async def config_details(self, options, target):
+        code, out, _ = await self.command(['ssh', '-G', *options, target])
         if code:
             raise ValueError('无法解析 SSH 配置，请检查该别名与 OpenSSH 配置。')
         result = {}
