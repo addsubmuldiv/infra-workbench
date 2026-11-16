@@ -1,0 +1,5 @@
+.render-failure{max-width:520px;margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
+.render-failure h2{margin:0;font-size:15px}
+.render-failure p{margin:8px 0 12px;color:var(--muted);line-height:1.6}
+.render-failure>div{display:flex;gap:8px;flex-wrap:wrap}
+.render-failure.floating{position:fixed;right:20px;bottom:20px;z-index:145;width:min(440px,calc(100vw - 40px));margin:0;box-shadow:var(--shadow)}
