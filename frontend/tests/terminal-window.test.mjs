@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import ts from 'typescript';
 import * as frames from '../src/terminalWindow.ts';
 
-function harness(t){
+function harness(t,{titlebarBottom=0}={}){
   const state=[],effects=[],deps=[],cleanups=[],disk=new Map();let slot=0,tree;
   const host={id:'fixture',target:'training-node',user:'fixture'};
   const tabs=[{id:'tab',host,phase:'running',generation:0}];
@@ -14,7 +14,7 @@ function harness(t){
     useRef:current=>{const i=slot++;if(!(i in state))state[i]={current};return state[i]},
     useEffect:(fn,next)=>{const i=slot++;if(!deps[i]||next.some((v,j)=>v!==deps[i][j])){deps[i]=next;effects.push(fn)}}};
   const globals={window:{innerWidth:1400,innerHeight:900,localStorage:{getItem:key=>disk.get(key)??null,setItem:(key,value)=>disk.set(key,value)},addEventListener(){},removeEventListener(){},confirm:()=>false},
-    document:{documentElement:{style:{setProperty(){},removeProperty(){}}}},requestAnimationFrame:fn=>{fn();return 1}};
+    document:{querySelector:selector=>titlebarBottom&&selector==='.desktop-shell > .desktop-titlebar'?{getBoundingClientRect:()=>({bottom:titlebarBottom})}:null,documentElement:{style:{setProperty(){},removeProperty(){}}}},requestAnimationFrame:fn=>{fn();return 1}};
   t.after(()=>cleanups.forEach(fn=>fn?.()));
   for(const [key,value] of Object.entries(globals)){const original=Object.getOwnPropertyDescriptor(globalThis,key);Object.defineProperty(globalThis,key,{configurable:true,value,writable:true});t.after(()=>{if(original)Object.defineProperty(globalThis,key,original);else delete globalThis[key]})}
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/TerminalDock.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
@@ -68,6 +68,27 @@ test('all resize edges preserve viewport bounds and corrupt saved frames fall ba
   }
   const fallback=frames.loadTerminalFrame({getItem:()=>'{broken'},viewport);
   assert.ok(Number.isFinite(fallback.x)&&fallback.x>=12);
+});
+
+test('the desktop title bar stays clear when maximizing, restoring, dragging and resizing the terminal',t=>{
+  const h=harness(t,{titlebarBottom:62});
+  const original=h.render().props.style;
+  h.button('最大化终端').props.onClick();
+  let root=h.render();
+  assert.equal(root.props.style.top,74);
+  assert.equal(root.props.style.top+root.props.style.height,888);
+  h.button('还原终端').props.onClick();
+  root=h.render();
+  assert.deepEqual(root.props.style,original);
+  h.find(n=>n.props.className==='terminal-topbar').props.onPointerDown(h.event());
+  root.props.onPointerMove(h.event(100,-900));
+  root.props.onPointerUp(h.event());
+  assert.equal(h.render().props.style.top,74);
+  const viewport={width:1400,height:900,topInset:62};
+  const frame={x:100,y:300,width:600,height:400};
+  const resized=frames.resizeTerminalFrame(frame,'n',0,-900,viewport);
+  assert.equal(resized.y,74);
+  assert.equal(resized.y+resized.height,700);
 });
 
 test('dragging does not write geometry to storage until release, including cancellation',t=>{

@@ -56,7 +56,7 @@ function harness(t,{tabs=null,initialStates={}}={}){
     WebSocket:Socket,
     fetch:async()=>({ok:true,json:async()=>({ticket:'test-ticket'})}),
     location:{protocol:'http:',host:'localhost'},
-    document:{documentElement:{style:{setProperty(){},removeProperty(){}}}},
+    document:{querySelector:()=>null,documentElement:{style:{setProperty(){},removeProperty(){}}}},
     window:{confirm:()=>false,addEventListener:(type,fn)=>listeners.set(type,fn),removeEventListener:type=>listeners.delete(type)},
     getComputedStyle:()=>({getPropertyValue:()=>''}),
     ResizeObserver:class {constructor(fn){observers.push(fn)}observe(){}disconnect(){}},

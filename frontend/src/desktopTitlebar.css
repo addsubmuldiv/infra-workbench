@@ -29,6 +29,15 @@
 .desktop-window-controls>button:focus-visible{outline-offset:-3px}
 .desktop-shell>.sidebar,.desktop-shell>.sidebar-resizer{top:var(--desktop-titlebar-height)}
 .desktop-shell>.sidebar>.brand{display:none}
+.desktop-shell .terminal-dock.maximized .terminal-tabbar{position:relative}
+.desktop-shell .terminal-dock.maximized .terminal-add{position:static}
+.desktop-shell .terminal-dock.maximized .terminal-picker{
+  top:calc(100% + 4px);
+  bottom:auto;
+  left:8px;
+  width:min(360px, calc(100vw - 48px))!important;
+  max-height:min(60vh, calc(100dvh - var(--desktop-titlebar-height) - 120px));
+}
 .desktop-shell .assistant-window.docked{
   top:var(--desktop-titlebar-height)!important;
   height:calc(100dvh - var(--desktop-titlebar-height))!important;

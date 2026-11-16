@@ -25,7 +25,11 @@ import {emptyCommandLine,editCommandLine,historySuggestion,type CommandLine,type
 import {TERMINAL_FRAME_KEY,fitTerminalFrame,loadTerminalFrame,moveTerminalFrame,resizeTerminalFrame,terminalFrameStyle,type TerminalFrame} from './terminalWindow';
 import {activateFloatingWindow,registerFloatingWindow} from './windowLayers';
 
-const terminalViewport=()=>({width:window.innerWidth||1200,height:window.innerHeight||900});
+const terminalViewport=()=>({
+  width:window.innerWidth||1200,
+  height:window.innerHeight||900,
+  topInset:document.querySelector('.desktop-shell > .desktop-titlebar')?.getBoundingClientRect().bottom??0,
+});
 function terminalStorage(){try{return workspaceStorage??null}catch{return null}}
 
 type Host={id:string;target:string;user:string|null};
@@ -308,7 +312,7 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
     if(event.button!==0||maximized||collapsed||gesture.current)return;
     if(edge==='move'&&(event.target as HTMLElement).closest('button,input,select,textarea,a'))return;
     event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current={id:event.pointerId,edge,x:event.clientX,y:event.clientY,frame};setDragging(true);
+    gesture.current={id:event.pointerId,edge,x:event.clientX,y:event.clientY,frame:fitTerminalFrame(frame,terminalViewport())};setDragging(true);
   };
   const moveGesture=(event:React.PointerEvent)=>{
     const start=gesture.current;if(!start||event.pointerId!==start.id)return;
@@ -324,7 +328,9 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
     {collapsed&&<button className="terminal-minimized-launcher" aria-label={tt("恢复 SSH 终端")} title={tt("恢复终端 · ")+(current?.host.target||tt("SSH 会话"))} onClick={restore}><span className="terminal-launcher-icon"><Terminal size={21}/><i className={'session-dot '+(disconnected?'error':running?'running':'connecting')}/></span><span className="terminal-launcher-text"><strong>{tt("SSH 终端 ")}<b>{tabs.length}</b><ChevronUp size={14}/></strong><small>{running} {tt(" 个运行中")}{disconnected>0?` · ${disconnected}${tt(" 个已断开")}`:tt(" · 点击恢复")}</small></span></button>}
     {!collapsed&&!maximized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'terminal-resize-handle edge-'+edge} onPointerDown={event=>startGesture(event,edge)} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?tt("调整终端大小"):undefined} tabIndex={edge==='se'?0:undefined} onKeyDown={event=>{
       const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(!offset)return;
-      event.preventDefault();setFrame(old=>resizeTerminalFrame(old,'se',...offset,terminalViewport()));
+      event.preventDefault();
+      const viewport=terminalViewport();
+      setFrame(old=>resizeTerminalFrame(fitTerminalFrame(old,viewport),'se',...offset,viewport));
     }}/ >)}
     <div className="terminal-topbar" style={{display:collapsed?'none':undefined}} onPointerDown={event=>startGesture(event)} onDoubleClick={event=>{if(!(event.target as HTMLElement).closest('button'))setMaximized(!maximized)}}><div className="terminal-brand"><span><Terminal size={16}/></span><strong>{tt("终端")}</strong><small>{tt("拖动移动 · 边缘缩放")}</small><b>{tabs.length}</b></div>
       <div className="terminal-window-actions"><button data-window-action="minimize" aria-label={tt("最小化终端")} title={tt("收到右下角，保持所有连接")} onClick={()=>{setCollapsed(true);setPicker(false)}}><ChevronDown size={16}/></button><button data-window-action="maximize" aria-label={maximized?tt("还原终端"):tt("最大化终端")} onClick={()=>{setMaximized(!maximized);setCollapsed(false)}}>{maximized?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label={tt("关闭所有终端")} title={tt("关闭所有终端连接")} onClick={async()=>{if(!hasLiveSessions||await confirm(tt("关闭所有 SSH 会话？普通会话的前台任务可能结束；持久会话只断开显示连接。")))setTabs([])}}><X size={17}/></button></div>
