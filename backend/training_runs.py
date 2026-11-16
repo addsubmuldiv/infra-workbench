@@ -496,6 +496,8 @@ class TrainingRunService:
                     else 'bound' if digest else 'unrecorded')
                 process_identity = {key: identity.get(key) for key in ('pid', 'uid', 'start_ticks', 'boot_id')}
                 node['process_identity'] = process_identity
+                if identity.get('completion_path') and identity.get('completion_id'):
+                    node['completion_reference'] = {'path': scrub(identity['completion_path']), 'id': identity['completion_id']}
                 if node['result'] is None:
                     node['result'] = {**process_identity, 'identity_verified': False}
             node['command_options'], node['command_options_truncated'] = command_options(plan['nodes'][index]['command'])
@@ -970,7 +972,7 @@ class TrainingRunService:
             if request_id is not None:
                 if not isinstance(request_id, str) or not 0 < len(request_id) <= 256:
                     raise ValueError('invalid rerun request')
-                row = self.db.execute('SELECT content,digest FROM training_rerun_drafts WHERE session_id=? AND request_id=? '
+                row = self.db.execute('SELECT content,digest,mode FROM training_rerun_drafts WHERE session_id=? AND request_id=? '
                                       'AND parent_id=? AND node_index=?',
                                       (session_id, request_id, run_id, node_index)).fetchone()
                 if not row or row[0] is None:
@@ -982,7 +984,7 @@ class TrainingRunService:
                 if encoding == 'base64':
                     raw = row[0].encode('utf-8')
                     return {'content_base64': base64.b64encode(raw).decode('ascii'), 'byte_length': len(raw),
-                            'sha256': row[1], 'updated_at': None}
+                            'sha256': row[1], 'updated_at': None, 'rerun_mode': row[2]}
                 return {'content': scrub(row[0]), 'sha256': row[1], 'updated_at': None}
             row = self.db.execute('SELECT content, updated FROM training_script_drafts WHERE run_id=? AND node_index=?',
                                   (run_id, node_index)).fetchone()

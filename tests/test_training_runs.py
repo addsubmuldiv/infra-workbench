@@ -46,6 +46,7 @@ def test_external_rerun_compares_captured_scripts_with_confirmed_draft(tmp_path)
     assert fixed['sha256'] == hashlib.sha256(b'edited\n').hexdigest()
     encoded = service.read_draft('s', parent_id, 0, {'a', 'b'}, request_id='next', encoding='base64')
     assert base64.b64decode(encoded['content_base64']) == b'edited\n'
+    assert encoded['rerun_mode'] == 'keep'
     assert encoded['byte_length'] == len(b'edited\n')
     assert encoded['sha256'] == fixed['sha256']
     with pytest.raises(ValueError, match='confirmed'):
