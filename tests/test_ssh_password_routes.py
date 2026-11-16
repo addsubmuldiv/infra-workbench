@@ -102,3 +102,58 @@ def test_saved_password_session_restores_once_and_checks_identity(tmp_path):
             await passwords.restore_session(host)
         assert calls == ['test-password']
     asyncio.run(run())
+
+
+def test_monitor_falls_back_only_after_target_key_denial(tmp_path):
+    from types import SimpleNamespace
+    from backend.ssh import SSHService
+    from backend.ssh_passwords import SSHPasswords, connection_identity
+
+    ssh = SSHService(tmp_path)
+    passwords = SSHPasswords(ssh, Vault())
+    host = dict(id='alpha', target='alpha', manual=True, auth='key')
+    config = dict(hostname='alpha.example', user='root', port='22')
+    calls = []
+
+    async def effective(_host):
+        return config
+
+    class Connection:
+        def is_closed(self):
+            return False
+
+        async def run(self, command, **kwargs):
+            calls.append(command)
+            return SimpleNamespace(exit_status=0, stdout='sample', stderr='')
+
+    async def connect(candidate, password, provision=False):
+        assert candidate['_credential_identity'] == connection_identity(config)
+        assert not ssh.accepts_new_host_keys(candidate)
+        assert password == 'test-password'
+        calls.append('password')
+        connection = Connection()
+        ssh.connection_configs[connection] = config.copy()
+        ssh.sessions[host['id']] = connection
+
+    async def native(*args, **kwargs):
+        calls.append('native')
+        return native_result
+
+    ssh.effective = ssh.effective_details = effective
+    ssh.connect = connect
+    ssh.command = native
+    ssh.monitor_retry[host['id']] = float('inf')
+    command = 'probe # IWB_MONITOR'
+    native_result = (255, '', 'root@jump.example: Permission denied (publickey).\n')
+
+    async def run():
+        nonlocal native_result
+        await passwords.save(host, 'test-password')
+        assert await ssh.run(host, command) == native_result
+        native_result = (255, '', 'banner\nroot@alpha.example: Permission denied (publickey,password).\n')
+        assert await ssh.run(host, command) == (0, 'sample', '')
+        assert await ssh.run(host, command) == (0, 'sample', '')
+        assert calls == ['native', 'native', 'password', command, command]
+        assert host['auth'] == 'key'
+
+    asyncio.run(run())

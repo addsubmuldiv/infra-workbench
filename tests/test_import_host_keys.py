@@ -9,6 +9,43 @@ from backend.ssh import SSHService
 from backend.ssh_passwords import connection_identity
 
 
+def test_manual_first_connection_persists_provisioned_key(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend.app import create_app
+    from backend.store import Store
+
+    app = create_app(tmp_path, start_poll=False)
+    key_path = str(tmp_path/'keys'/'id_ed25519')
+
+    async def connect(candidate, password, provision):
+        assert candidate['_accept_new_host_keys']
+        assert password == 'synthetic-password' and provision
+        candidate['key_path'] = key_path
+        return dict(auth='key', message='configured')
+
+    async def probe(host, command, source=None):
+        assert host.get('key_path') == key_path
+        return 255, '', 'synthetic probe failure'
+
+    monkeypatch.setattr(app.state.ssh, 'connect', connect)
+    monkeypatch.setattr(app.state.ssh, 'run', probe)
+    with TestClient(app) as client:
+        result = client.post('/api/connect', headers={'X-IWB': '1'}, json=dict(
+            target='127.0.0.1', user='tester', port=22, manual=True,
+            password='synthetic-password', provision=True,
+        ))
+        assert result.status_code == 200
+        store = Store(tmp_path/'workbench.db')
+        try:
+            [host] = store.load('hosts', [])
+            assert host['id'] == result.json()['host_id']
+            assert host['auth'] == 'key'
+            assert host['key_path'] == key_path
+            assert '_accept_new_host_keys' not in host
+        finally:
+            store.db.close()
+
+
 def test_import_uses_existing_key_when_spreadsheet_password_is_rejected(tmp_path):
     async def scenario():
         service = SSHService(tmp_path/'data', known_hosts=tmp_path/'known_hosts')

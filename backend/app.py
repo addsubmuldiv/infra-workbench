@@ -627,7 +627,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             if accept_new_host_keys and new:
                 candidate=dict(candidate,_accept_new_host_keys=True)
             result = await ssh.connect(candidate, body.password.get_secret_value() if body.password else None, body.provision)
-            if expected_identity:
+            if candidate is not host:
                 host.update({key:value for key,value in candidate.items() if key not in ('_import_identity','_accept_new_host_keys')})
         except Exception as exc:
             message = str(exc)[:1000] or '连接超时'

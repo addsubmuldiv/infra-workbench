@@ -2,6 +2,7 @@ from .internal_defaults import SSH_CONNECT_TIMEOUT_SECONDS, SSH_JUMP_EXTRA_TIMEO
 import asyncio
 import logging
 import os
+import re
 import subprocess
 import shlex
 import time
@@ -175,6 +176,8 @@ class SSHService:
     async def password_connection(self, host, password, key_only=False, monitor=False):
         cfg = await (self.effective_details(host) if monitor else self.effective(host))
         self.check_import_identity(host, cfg)
+        if (identity := host.get('_credential_identity')) and identity != connection_identity(cfg):
+            raise ValueError('SSH 目标、账号或路由已变化，请重新保存密码。')
         # AsyncSSH connect_timeout covers proxy startup, handshake AND auth.
         # A separate short login timer would cut off that larger budget early.
         configured = cfg.get('connecttimeout', 'none')
@@ -300,28 +303,42 @@ class SSHService:
             self.monitor_retry.pop(key, None)
 
     async def run(self, host, command, source=None):
-        if command.endswith('# IWB_MONITOR'):
+        monitor = command.endswith('# IWB_MONITOR')
+        if monitor:
             await self.ensure_monitor_session(host)
-        if restore := getattr(self, 'restore_session', None):
+        restore = getattr(self, 'restore_session', None)
+        if restore and not monitor:
             await restore(host)
         session = self.sessions.get(host['id'])
-        if session and not session.is_closed():
+        if not session or session.is_closed():
+            # Native OpenSSH can still handle keys and providers unavailable to
+            # the persistent AsyncSSH monitor. Try it before using a password.
+            result = await self.command(self.arguments(host)+[command], source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
+            code, out, err = result
+            lines = err.rstrip().splitlines()
+            denied = re.fullmatch(r'(\S+)@(\S+): Permission denied \([^)]*\)\.', lines[-1]) if lines else None
+            if not (monitor and restore and host.get('auth') == 'key' and code == 255 and not out and denied):
+                return result
             current = await self.effective(host)
-            original = self.connection_configs.get(session)
-            fields = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
-            if original is None or any(current.get(key)!=original.get(key) for key in fields):
-                raise ValueError('SSH 配置已变化，请重新连接这台机器后再配置 sudo')
-            started = time.monotonic()
-            try:
-                done = await session.run(command, input=source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
-                logging.warning('SSH command timeout host_id=%s elapsed=%.3fs session_closed=%s',
-                                host['id'], time.monotonic() - started, session.is_closed())
-                raise SSHCommandTimeout('远端命令等待结果超时（35 秒）；请检查远端负载及跳板链路') from None
-            return done.exit_status, done.stdout, done.stderr
-        # Native SSH includes target/jump authentication in this wall-clock
-        # budget, unlike an already authenticated AsyncSSH session above.
-        return await self.command(self.arguments(host)+[command], source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
+            if denied.groups() != (current.get('user'), current.get('hostname')):
+                return result
+            await restore(host, fallback=True)
+            session = self.sessions.get(host['id'])
+            if not session or session.is_closed():
+                return result
+        current = await self.effective(host)
+        original = self.connection_configs.get(session)
+        fields = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
+        if original is None or any(current.get(key)!=original.get(key) for key in fields):
+            raise ValueError('SSH 配置已变化，请重新连接这台机器后再配置 sudo')
+        started = time.monotonic()
+        try:
+            done = await session.run(command, input=source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logging.warning('SSH command timeout host_id=%s elapsed=%.3fs session_closed=%s',
+                            host['id'], time.monotonic() - started, session.is_closed())
+            raise SSHCommandTimeout('远端命令等待结果超时（35 秒）；请检查远端负载及跳板链路') from None
+        return done.exit_status, done.stdout, done.stderr
 
     async def run_bound(self, host, command, source, config, *, native=False):
         """Pin secret-bearing commands to the endpoint resolved before validation."""

@@ -2,6 +2,9 @@
 import asyncio
 import hashlib
 import json
+import time
+
+import asyncssh
 
 from .agent_errors import AgentError
 
@@ -17,6 +20,7 @@ class SSHPasswords:
     def __init__(self,ssh,vault):
         self.ssh,self.vault=ssh,vault
         self.restore_locks = {}
+        self.fallback_retry = {}
         ssh.restore_session = self.restore_session
 
     def view(self,host):
@@ -42,10 +46,16 @@ class SSHPasswords:
             self.vault.put(host['id'],dict(identity=connection_identity(cfg),password=password))
         except Exception:
             raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','SSH 密码未能保存到系统凭据存储。') from None
+        self.fallback_retry.pop(host['id'], None)
         return self.view(host)
 
     async def get(self,host):
         cfg=await self.config(host)
+        password = self.password_for(host, cfg)
+        return dict(host_id=host['id'],hostname=cfg['hostname'],user=cfg['user'],port=int(cfg.get('port',22)),
+                    credential_type='ssh-password',password=password)
+
+    def password_for(self, host, cfg):
         try:
             value=self.vault.get(host['id'])
         except Exception:
@@ -54,11 +64,10 @@ class SSHPasswords:
             raise AgentError('SSH_PASSWORD_UNAVAILABLE','未保存此机器的 SSH 登录密码。')
         if value.get('identity')!=connection_identity(cfg):
             raise AgentError('CREDENTIAL_IDENTITY_CHANGED','SSH 目标、账号或路由已变化，请重新保存密码。')
-        return dict(host_id=host['id'],hostname=cfg['hostname'],user=cfg['user'],port=int(cfg.get('port',22)),
-                    credential_type='ssh-password',password=value['password'])
+        return value['password']
 
-    async def restore_session(self, host):
-        if host.get('auth') != 'password_session':
+    async def restore_session(self, host, *, fallback=False):
+        if host.get('auth') != ('key' if fallback else 'password_session'):
             return
         async with self.restore_locks.setdefault(host['id'], asyncio.Lock()):
             session = self.ssh.sessions.get(host['id'])
@@ -66,11 +75,17 @@ class SSHPasswords:
                 return
             if self.view(host)['password_saved'] is False:
                 return
+            if fallback and time.monotonic() < self.fallback_retry.get(host['id'], 0):
+                return
             config = await self.config(host)
-            credential = await self.get(host)
-            # Recheck the endpoint inside connect before sending a saved secret.
-            candidate = dict(host, _import_identity=connection_identity(config))
-            await self.ssh.connect(candidate, credential['password'], False)
+            password = self.password_for(host, config)
+            candidate = dict(host, _credential_identity=connection_identity(config))
+            try:
+                await self.ssh.connect(candidate, password, False)
+            except asyncssh.PermissionDenied:
+                if not fallback:
+                    raise
+                self.fallback_retry[host['id']] = time.monotonic() + 120
 
     def forget(self,host):
         try:
