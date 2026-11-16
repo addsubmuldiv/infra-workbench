@@ -15,7 +15,7 @@ pub struct Status {
 struct Inner { status: Status, update: Option<Update>, bytes: Option<Vec<u8>>, safety: HashMap<String, Option<bool>> }
 pub struct UpdaterState(Mutex<Inner>);
 impl Default for UpdaterState {
-    fn default() -> Self { Self(Mutex::new(Inner { status: Status { supported: cfg!(windows) && !cfg!(debug_assertions), current_version: env!("CARGO_PKG_VERSION").into(), phase: "idle".into(), available_version: None, notes: None, downloaded_bytes: 0, total_bytes: None, last_checked: None, error: None }, update: None, bytes: None, safety: HashMap::new() })) }
+    fn default() -> Self { Self(Mutex::new(Inner { status: Status { supported: cfg!(all(windows, feature = "signed-updater", not(debug_assertions))), current_version: env!("CARGO_PKG_VERSION").into(), phase: "idle".into(), available_version: None, notes: None, downloaded_bytes: 0, total_bytes: None, last_checked: None, error: None }, update: None, bytes: None, safety: HashMap::new() })) }
 }
 pub fn installing(app: &tauri::AppHandle) -> bool { app.state::<UpdaterState>().0.lock().unwrap().status.phase == "installing" }
 fn allowed(label: &str, url: &reqwest::Url) -> bool {
@@ -309,6 +309,16 @@ pub async fn desktop_update_install(window: WebviewWindow, english: Option<bool>
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[cfg(not(feature = "signed-updater"))]
+    #[test] fn development_build_rejects_update_operations() {
+        let state = UpdaterState::default();
+        let mut inner = state.0.lock().unwrap();
+        assert!(!inner.status.supported);
+        for phase in ["checking", "downloading", "installing"] {
+            assert!(begin_inner(&mut inner, phase).is_err());
+        }
+        assert_eq!(inner.status.phase, "idle");
+    }
     #[test] fn fresh_check_discards_previous_download_even_when_it_later_fails() {
         let state=UpdaterState::default(); let mut inner=state.0.lock().unwrap();
         inner.status.supported=true; inner.bytes=Some(vec![1,2]); inner.status.available_version=Some("99.0.0".into()); inner.status.phase="error".into();

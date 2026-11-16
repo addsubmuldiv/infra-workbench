@@ -5,6 +5,9 @@ description = "Infra Workbench desktop entrance"
 edition = "2021"
 rust-version = "1.90"
 
+[features]
+signed-updater = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

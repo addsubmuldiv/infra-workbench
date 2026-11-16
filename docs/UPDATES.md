@@ -41,7 +41,7 @@ npm run build
 Pop-Location
 ```
 
-只做开发测试安装包时可显式设置 `IWB_UNSIGNED_BUILD=1`；该产物不生成更新签名，不可用于正式更新发布。正式签名步骤遵循 [Tauri 更新器文档](https://v2.tauri.app/plugin/updater/)。
+只做开发测试安装包时可显式设置 `IWB_UNSIGNED_BUILD=1`；该产物不生成更新签名，也不会检查正式更新。直接使用 Cargo 构建的桌面程序同样默认关闭更新，即使使用 release 模式。正式签名步骤遵循 [Tauri 更新器文档](https://v2.tauri.app/plugin/updater/)。
 
 ## 验证边界
 
