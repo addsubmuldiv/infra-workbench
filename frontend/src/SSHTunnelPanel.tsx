@@ -1,7 +1,7 @@
 import {UI_TUNNEL_POLL_MS} from './internalDefaults.ts';
 import {useEffect,useId,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {ArrowDown,Link2,LoaderCircle,Plus,Unplug,X} from 'lucide-react';
+import {ArrowDown,Check,Link2,LoaderCircle,Plus,Unplug,X} from 'lucide-react';
 import {t,useLocale} from './i18n';
 import './sshTunnels.css';
 
@@ -34,11 +34,12 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close}:{host:Host;c
   useLocale();
   const dialog=useRef<HTMLDialogElement>(null),title=useId(),description=useId();
   const [rules,setRules]=useState<TunnelRule[]>(host.ssh_tunnels??[]),[selected,setSelected]=useState<string|null>(null);
+  const [starting,setStarting]=useState<string|null>(null);
   const [draft,setDraft]=useState<Draft>(defaults),[error,setError]=useState(''),[busy,setBusy]=useState(false),[loaded,setLoaded]=useState(false);
   const [probe,setProbe]=useState<{reachable:boolean|null;message:string}|null>(null),[now,setNow]=useState(Date.now());
   const initialized=useRef(false),mounted=useRef(true),acting=useRef(false);
   useEffect(()=>{const previous=document.activeElement;const element=dialog.current;element?.showModal();return()=>{element?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus()}},[]);
-  function choose(rule:TunnelRule|null){setSelected(rule?.id??null);setDraft(rule?{name:rule.name,direction:rule.direction,local_port:rule.local_port,remote_port:rule.remote_port,auto_reconnect:rule.auto_reconnect,auto_start:rule.auto_start,before_vscode:rule.before_vscode??false}:defaults());setProbe(null);setError('')}
+  function choose(rule:TunnelRule|null){setStarting(null);setSelected(rule?.id??null);setDraft(rule?{name:rule.name,direction:rule.direction,local_port:rule.local_port,remote_port:rule.remote_port,auto_reconnect:rule.auto_reconnect,auto_start:rule.auto_start,before_vscode:rule.before_vscode??false}:defaults());setProbe(null);setError('')}
   useEffect(()=>{
     mounted.current=true;let active=true;let timer:ReturnType<typeof setTimeout>;
     async function load(){
@@ -52,6 +53,14 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close}:{host:Host;c
     return()=>{active=false;mounted.current=false;clearTimeout(timer);clearInterval(clock)};
   },[host.id,onRules]);
   const rule=rules.find(r=>r.id===selected),active=!!rule&&running(rule.status);
+  const confirming=starting!==null&&starting===selected&&rule?.status==='connected';
+  const onStartedRef=useRef(onStarted);
+  useEffect(()=>{onStartedRef.current=onStarted},[onStarted]);
+  useEffect(()=>{
+    if(!confirming)return;
+    const timer=setTimeout(()=>onStartedRef.current(),1000);
+    return()=>clearTimeout(timer);
+  },[confirming,starting,rule?.connected_at]);
   const dirty=!!rule&&Object.keys(draft).some(key=>draft[key as keyof Draft]!==rule[key as keyof Draft]);
   const update=<K extends keyof Draft>(key:K,value:Draft[K])=>{setDraft(old=>({...old,[key]:value}));setProbe(null)};
   async function act(action:()=>Promise<void>,refresh=true){
@@ -69,8 +78,10 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close}:{host:Host;c
       if(!connect)return;
       const started:TunnelRule=await tunnelRequest(host.id,`/${saved.id}/start`,'POST');
       if(mounted.current){
-        onRules(withRule(rules,started));
-        onStarted();
+        const updated=withRule(rules,started);
+        setRules(updated);
+        onRules(updated);
+        setStarting(started.id);
       }
     },!connect);
   }
@@ -94,7 +105,7 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close}:{host:Host;c
         <fieldset className="tunnel-options" disabled={busy||active||!loaded}><label><input type="checkbox" checked={draft.auto_reconnect} onChange={e=>update('auto_reconnect',e.target.checked)}/>{t('断线自动重连','Reconnect after network failure')}</label><label><input type="checkbox" checked={draft.auto_start} onChange={e=>update('auto_start',e.target.checked)}/>{t('软件启动时连接','Connect on app startup')}</label><label><input type="checkbox" checked={draft.before_vscode} onChange={e=>update('before_vscode',e.target.checked)}/>{t('打开 VS Code 前连接此隧道','Connect before opening VS Code')}</label></fieldset>
         {active&&<p className="tunnel-note">{t('断开后可修改配置。','Disconnect to edit this configuration.')}</p>}
         {error&&<p className="tunnel-error" role="alert">{error}</p>}
-        <div className="tunnel-actions">{active?<><button type="button" className="secondary" disabled={busy||rule?.status!=='connected'} onClick={()=>void act(async()=>{const result=await tunnelRequest(host.id,`/${selected}/probe`,'POST');if(mounted.current)setProbe(result)})}>{t('检测目标端口','Check target port')}</button><button type="button" className="tunnel-disconnect" disabled={busy} onClick={()=>void act(async()=>{await tunnelRequest(host.id,`/${selected}/stop`,'POST');setProbe(null)})}><Unplug size={15}/>{rule?.status==='connected'?t('断开隧道','Disconnect'):t('取消连接','Cancel connection')}</button></>:<><button type="button" className="secondary" disabled={busy||!loaded} onClick={()=>{const form=dialog.current?.querySelector('form');if(form?.reportValidity())void save(false)}}>{t('保存','Save')}</button><button className="primary" disabled={busy||!loaded}>{busy?<LoaderCircle size={15} className="spin"/>:<Link2 size={15}/>} {!selected||dirty?t('保存并连接','Save and connect'):t('连接隧道','Connect')}</button></>}</div>
+        <div className="tunnel-actions">{confirming?<button type="button" className="primary" disabled><Check size={15}/>{t('已连接','Connected')}</button>:active?<>{starting===selected&&rule?.status!=='connected'?<button type="button" className="primary" disabled><LoaderCircle size={15} className="spin"/>{statusText(rule.status)}</button>:<button type="button" className="secondary" disabled={busy||rule?.status!=='connected'} onClick={()=>void act(async()=>{const result=await tunnelRequest(host.id,`/${selected}/probe`,'POST');if(mounted.current)setProbe(result)})}>{t('检测目标端口','Check target port')}</button>}<button type="button" className="tunnel-disconnect" disabled={busy} onClick={()=>void act(async()=>{await tunnelRequest(host.id,`/${selected}/stop`,'POST');setStarting(null);setProbe(null)})}><Unplug size={15}/>{rule?.status==='connected'?t('断开隧道','Disconnect'):t('取消连接','Cancel connection')}</button></>:<><button type="button" className="secondary" disabled={busy||!loaded} onClick={()=>{const form=dialog.current?.querySelector('form');if(form?.reportValidity())void save(false)}}>{t('保存','Save')}</button><button className="primary" disabled={busy||!loaded}>{busy?<LoaderCircle size={15} className="spin"/>:<Link2 size={15}/>} {!selected||dirty?t('保存并连接','Save and connect'):t('连接隧道','Connect')}</button></>}</div>
       </form>
       {selected&&!active&&<button className="text-button tunnel-delete" disabled={busy} onClick={()=>void act(async()=>{await tunnelRequest(host.id,`/${selected}`,'DELETE');if(mounted.current)choose(null)})}>{t('删除此配置','Delete configuration')}</button>}
       <p id={description} className="tunnel-footnote">{t('监听与目标地址均设为 127.0.0.1。关闭窗口后隧道继续在托盘后台运行，退出后台时断开。','Listening and target addresses are set to 127.0.0.1. Tunnels keep running in the tray after closing the window and disconnect when the backend exits.')}</p>

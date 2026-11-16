@@ -107,16 +107,14 @@ class SSHTunnels:
         self.states[rule_id] = dict(dict(status=status, error=error, error_code=code,
                                    connected_at=None, next_retry_at=None), **extra)
 
-    def _notify_result(self, rule, connected):
+    def _notify_result(self, rule, zh, en):
         try:
             host = self.host(rule['host_id'])
             label = f"{host.get('alias') or host.get('target') or host['id']} / {rule['name']}"
-            message = (tr(f'{label}：SSH 隧道已连接', f'{label}: SSH tunnel connected') if connected else
-                       tr(f'{label}：SSH 隧道连接失败，请在隧道管理中查看原因',
-                          f'{label}: SSH tunnel connection failed. See Tunnel manager for details.'))
+            message = tr(f'{label}：{zh}', f'{label}: {en}')
             self.store.event(host['id'], message)
         except (ValueError, sqlite3.Error):
-            logging.exception('Could not record SSH tunnel connection result')
+            logging.exception('Could not record SSH tunnel event')
         if self.on_result:
             self.on_result()
 
@@ -135,7 +133,7 @@ class SSHTunnels:
                 self.states[rule_id] = dict(status='connected', error='', error_code=None,
                                             connected_at=time.time(), next_retry_at=None)
                 if notify_result:
-                    self._notify_result(rule, connected=True)
+                    self._notify_result(rule, 'SSH 隧道已连接', 'SSH tunnel connected')
                     notify_result = False
                 attempts = forward_retries = 0
                 await transport.wait_closed()
@@ -153,8 +151,12 @@ class SSHTunnels:
                              and forward_retries < len(self.retry_delays))
             if not rule['auto_reconnect'] or not (failure.retry or retry_forward):
                 self.state(rule_id, 'error', str(failure), failure.code)
-                if notify_result:
-                    self._notify_result(rule, connected=False)
+                if transport:
+                    self._notify_result(rule, 'SSH 隧道已意外断开，请在隧道管理中查看原因',
+                                        'SSH tunnel disconnected unexpectedly. See Tunnel manager for details.')
+                elif notify_result:
+                    self._notify_result(rule, 'SSH 隧道连接失败，请在隧道管理中查看原因',
+                                        'SSH tunnel connection failed. See Tunnel manager for details.')
                 return
             if retry_forward:
                 delay = self.retry_delays[forward_retries]
@@ -162,8 +164,10 @@ class SSHTunnels:
             else:
                 delay = self.retry_delays[min(attempts, len(self.retry_delays)-1)]
                 attempts += 1
-            self.state(rule_id, 'reconnecting', str(failure), failure.code)
-            self.states[rule_id]['next_retry_at'] = time.time()+delay
+            self.state(rule_id, 'reconnecting', str(failure), failure.code, next_retry_at=time.time()+delay)
+            if transport:
+                self._notify_result(rule, 'SSH 隧道已意外断开，正在自动重连',
+                                    'SSH tunnel disconnected unexpectedly. Reconnecting automatically.')
             await asyncio.sleep(delay)
 
     async def start(self, host_id, rule_id, *, notify_result=False):

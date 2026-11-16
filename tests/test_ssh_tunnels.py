@@ -91,6 +91,59 @@ def test_roundtrips_ownership_and_cleanup(tmp_path):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize('auto_reconnect', [False, True])
+def test_unexpected_disconnect_notifies_once(tmp_path, monkeypatch, auto_reconnect):
+    async def run():
+        from backend.ssh_tunnels import NativeTunnel
+
+        disconnected = asyncio.Event()
+        published = []
+        store = Store(tmp_path/'loss.db')
+        manager = SSHTunnels(store, None, [{'id': 'a'}], None,
+                             on_result=lambda: published.append(store.events()))
+        manager.retry_delays = (.01,)
+
+        class Transport:
+            wait_closed = disconnected.wait
+
+            async def close(self):
+                pass
+
+        attempts = 0
+
+        async def open_tunnel(*args):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return Transport()
+            raise ConnectionResetError('still offline')
+
+        monkeypatch.setattr(NativeTunnel, 'open', open_tunnel)
+        rule = manager.create('a', TunnelRequest(name='Loss', local_port=7890, remote_port=18899,
+                                                 auto_reconnect=auto_reconnect))
+        async def wait_until(predicate):
+            while not predicate():
+                await asyncio.sleep(.01)
+
+        try:
+            await manager.start('a', rule['id'])
+            await asyncio.wait_for(wait_until(lambda: manager.view(rule)['status'] == 'connected'), 2)
+            disconnected.set()
+            await asyncio.wait_for(wait_until(lambda: bool(published)), 2)
+            assert manager.view(rule)['status'] == ('reconnecting' if auto_reconnect else 'error')
+            if auto_reconnect:
+                await asyncio.wait_for(wait_until(lambda: attempts >= 3), 2)
+            await manager.stop('a', rule['id'])
+            assert len(published) == 1
+            assert len(store.events()) == 1
+            assert published[0][0]['notify'] and 'Loss' in published[0][0]['message']
+        finally:
+            await manager.close()
+            store.db.close()
+
+    asyncio.run(run())
+
+
 def test_reconnect_and_stop_during_backoff(tmp_path):
     async def run():
         store = Store(tmp_path/'retry.db')
@@ -351,13 +404,15 @@ def test_startup_only_selected_rules_and_reconnect_after_loss(tmp_path):
                 await asyncio.sleep(.01)
             assert len(connections)==1
             assert manager.view(manual)['status']=='stopped'
+            assert store.events() == []
             connections[0].close()
             for _ in range(100):
                 if len(connections)>=2:break
                 await asyncio.sleep(.01)
             assert len(connections)==2
             assert manager.view(rule)['status']=='connected'
-            assert store.events() == []
+            event, = store.events()
+            assert event['notify'] and 'Auto' in event['message']
             await manager.remove_host('a')
             assert connections[-1].closed.is_set()
         finally:await manager.close();store.db.close()
