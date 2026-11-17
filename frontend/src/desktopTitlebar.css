@@ -11,6 +11,21 @@
   gap:12px;
   background:var(--panel);
 }
+@supports (color:oklch(0.5 0 0)){
+  :root[data-theme] .desktop-shell>.desktop-titlebar{
+    background:transparent;
+    border-bottom-color:transparent;
+  }
+  /* Keep backdrop filtering off the header itself so fixed menus can still
+     position against the viewport. */
+  :root[data-theme] .desktop-shell>.desktop-titlebar::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    z-index:-1;
+    pointer-events:none;
+  }
+}
 .desktop-titlebar .desktop-brand{margin:0;flex:none;pointer-events:none}
 .desktop-titlebar-space{flex:1;min-width:12px;align-self:stretch;user-select:none}
 .desktop-window-controls{display:flex;flex:none;align-self:stretch;border-left:1px solid var(--line)}

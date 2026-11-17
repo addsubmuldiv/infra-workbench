@@ -97,14 +97,16 @@
 :root[data-theme] :is(.stats,.finder,.machine,.mobile-hosts,.empty,.events,.device-overview),
 :root[data-theme] :is(.theme-options,.chat-session-menu,.chat-model-menu),
 :root[data-theme] .sidebar,
-:root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock) {
+:root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock),
+:root[data-theme] .desktop-shell>.desktop-titlebar::before {
   -webkit-backdrop-filter: var(--sg-glass-blur);
   backdrop-filter: var(--sg-glass-blur);
 }
 
 /* Thinnest: the panels a page is laid out in. A shade off the page, so a
    column of them does not outshine what is being read. */
-:root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock) {
+:root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock),
+:root[data-theme] .desktop-shell>.desktop-titlebar::before {
   background-color: var(--sg-panel);
 }
 
@@ -114,7 +116,8 @@
    its edge and its hairline outside, and a border between the two — even a
    see-through one — shows as a second ring round the pane. */
 :root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock),
-:root[data-theme] :is(.stats,.finder,.machine,.mobile-hosts,.empty,.events,.device-overview) {
+:root[data-theme] :is(.stats,.finder,.machine,.mobile-hosts,.empty,.events,.device-overview),
+:root[data-theme] .desktop-shell>.desktop-titlebar::before {
   border-width: 0;
   box-shadow:
     inset 0 1px 0 var(--sg-glass-rim),
