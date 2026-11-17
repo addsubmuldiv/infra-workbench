@@ -67,7 +67,7 @@ jobs:
           pattern: desktop-*
           path: release-assets
           merge-multiple: true
-      - name: Generate signed update feed and checksums
+      - name: Generate release notes, signed update feed and checksums
         env:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           INCLUDE_MACOS: ${{ inputs.include_macos || false }}
@@ -80,8 +80,17 @@ jobs:
             test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-x86_64.app.tar.gz"
             test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-x86_64.dmg"
           fi
+          notes="$RUNNER_TEMP/release-notes.md"
+          awk -v version="${RELEASE_TAG#v}" '
+            /^## / {
+              if (found) exit
+              found = ($2 == version)
+            }
+            found { print }
+            END { if (!found) exit 1 }
+          ' CHANGELOG.md > "$notes"
           flags=(--partial)
-          node desktop/release.mjs manifest release-assets "${RELEASE_TAG#v}" CHANGELOG.md "${flags[@]}"
+          node desktop/release.mjs manifest release-assets "${RELEASE_TAG#v}" "$notes" "${flags[@]}"
           node desktop/release.mjs checksums release-assets "${flags[@]}"
       - name: Create draft release
         env:
@@ -92,4 +101,4 @@ jobs:
             echo "Release already exists; preserving its published assets."
             exit 0
           fi
-          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --title "Infra Workbench $RELEASE_TAG" --notes "Signed updater release. Windows x64 is the default target; experimental macOS packages are included only when explicitly requested. Updater artifacts are cryptographically signed. Windows installers have no Authenticode signature, and macOS builds are not notarized. Review platform verification and known limitations before publishing. SHA256SUMS.txt verifies download integrity; it does not authenticate the publisher."
+          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --title "Infra Workbench $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
