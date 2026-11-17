@@ -154,8 +154,13 @@ def test_shared_theme_uses_web_css_tokens_and_updates_after_workspace_save(tmp_p
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     colors=palettes()
-    assert set(colors)=={'daylight','paper','midnight','graphite','frieren'}
+    assert set(colors)=={'daylight','paper','midnight','graphite','frieren',
+                         'glass-light','glass-dark','glass-jade','glass-dusk','glass-white','glass-black'}
     assert colors['midnight']['panel']=='#1b2838'
+    assert colors['glass-jade']['panel']!=colors['glass-light']['panel']
+    assert colors['glass-dusk']['native-glass-rim']!=colors['glass-dark']['native-glass-rim']
+    assert colors['glass-white']['bg']=='#ffffff'
+    assert colors['glass-black']['bg']=='#000000'
     app=FastAPI();register_workspace_state(app,Store(tmp_path/'theme.sqlite'))
     with TestClient(app) as client:
         for theme in colors:
@@ -163,7 +168,7 @@ def test_shared_theme_uses_web_css_tokens_and_updates_after_workspace_save(tmp_p
             assert client.put('/api/workspace-state',json={'values':{'infra-workbench:preferences:v1':value}}).status_code==200
             assert current_theme()==(theme,colors[theme])
     app2=FastAPI();register_workspace_state(app2,Store(tmp_path/'theme.sqlite'))
-    assert current_theme()[0]=='frieren'
+    assert current_theme()[0]=='glass-black'
 
 
 def test_rounded_sprite_has_antialiased_edge_pixels():

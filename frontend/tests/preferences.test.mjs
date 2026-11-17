@@ -22,5 +22,13 @@ test('invalid stored settings fall back and storage errors do not crash the app'
   assert.deepEqual(loadPreferences({getItem:()=>'{broken'}),{theme:'daylight',hostIds:null});
   assert.deepEqual(loadPreferences({getItem:()=>JSON.stringify({theme:'unknown',hostIds:123})}),{theme:'daylight',hostIds:null});
   assert.equal(savePreferences({setItem:()=>{throw Error('quota')}},{theme:'daylight',hostIds:[]}),false);
-  assert.deepEqual(THEMES.map(t=>t.mode).sort(),['dark','dark','light','light','light']);
+});
+test('Solid Glass variants can be restored with the existing machine selection',()=>{
+  const disk=storage();
+  for(const [theme,mode] of [['glass-light','light'],['glass-dark','dark'],['glass-jade','light'],['glass-dusk','dark'],['glass-white','light'],['glass-black','dark']]){
+    assert.equal(THEMES.find(option=>option.id===theme)?.mode,mode);
+    const preferences={theme,hostIds:['one']};
+    assert.equal(savePreferences(disk,preferences),true);
+    assert.deepEqual(loadPreferences(disk),preferences);
+  }
 });

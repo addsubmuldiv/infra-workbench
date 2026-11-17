@@ -1,0 +1,111 @@
+/* Theme values shared by the workspace, assistant, terminal and menu previews. */
+:root,[data-theme="daylight"]{
+  color-scheme:light;--bg:#f2f5f9;--panel:#ffffff;--panel2:#f7f9fc;--sidebar:#ffffff;
+  --text:#26374a;--muted:#758597;--line:#dce4ed;--accent:#157e73;--accent-bg:#e6f4ef;
+  --green:#16815c;--amber:#9b6b24;--warning-bg:#fff5e3;--danger:#c55048;--danger-bg:#fff0eb;
+  --input:#ffffff;--hover:#edf3f8;--shadow:0 10px 36px #26394b15;--brand:#183a48;
+  --term-bg:#fcfdff;--term-fg:#304158;--term-selection:#cde6ed;
+  --native-glass-rim:#ffffff;
+}
+[data-theme="paper"]{
+  color-scheme:light;--bg:#f4f0e8;--panel:#fffdf7;--panel2:#f8f4eb;--sidebar:#fcf9f1;
+  --text:#4b443a;--muted:#8b8070;--line:#e1d9c9;--accent:#89653c;--accent-bg:#efe5d3;
+  --green:#56824f;--amber:#a06d28;--warning-bg:#fff1d5;--danger:#b55244;--danger-bg:#fae9df;
+  --input:#fffdf9;--hover:#f1ebdf;--shadow:0 10px 36px #57452b16;--brand:#675039;
+  --term-bg:#fffcf6;--term-fg:#4c453d;--term-selection:#e6d8b8;
+  --native-glass-rim:#ffffff;
+}
+[data-theme="midnight"]{
+  color-scheme:dark;--bg:#111b28;--panel:#1b2838;--panel2:#152131;--sidebar:#14202e;
+  --text:#dbe7f1;--muted:#92a6bc;--line:#304357;--accent:#78ddbd;--accent-bg:#233e3b;
+  --green:#79d9ae;--amber:#e8bc80;--warning-bg:#3f3529;--danger:#ee9c95;--danger-bg:#482f32;
+  --input:#142131;--hover:#263a4e;--shadow:0 10px 36px #0004;--brand:#a9d7dc;
+  --term-bg:#101c29;--term-fg:#d7e4f2;--term-selection:#36576b;
+  --native-glass-rim:#425574;
+  --primary-text:var(--bg);
+}
+[data-theme="graphite"]{
+  color-scheme:dark;--bg:#202024;--panel:#2b2b31;--panel2:#25252b;--sidebar:#242429;
+  --text:#eeeaf4;--muted:#aaa3b8;--line:#42414c;--accent:#c1afff;--accent-bg:#3b334f;
+  --green:#9acda9;--amber:#e3bc86;--warning-bg:#43382d;--danger:#edaaa7;--danger-bg:#483134;
+  --input:#24242a;--hover:#39363f;--shadow:0 10px 36px #0004;--brand:#dfd3fc;
+  --term-bg:#202027;--term-fg:#e4dfef;--term-selection:#514268;
+  --native-glass-rim:#514c64;
+  --primary-text:var(--bg);
+}
+[data-theme="frieren"]{
+  --journey-sunlight:#fff4cf;
+  --journey-lavender-light:#e9e3f080;
+  --journey-sage-light:#e3ebd8b0;
+  color-scheme:light;--bg:#f3f5ee;--panel:#fffefb;--panel2:#f5f5f0;--sidebar:#fafbf6;
+  --text:#38473e;--muted:#748074;--line:#dde4d7;--accent:#5c7755;--accent-bg:#eaf0e3;
+  --green:#42765c;--amber:#956a2c;--warning-bg:#faf0dd;--danger:#b25759;--danger-bg:#faeeee;
+  --input:#fffefb;--hover:#edf1e7;--shadow:0 12px 38px #56674617;--brand:#52694a;
+  --term-bg:#fcfdf8;--term-fg:#424c43;--term-selection:#d7e4cf;
+  --native-glass-rim:#ffffff;
+}
+[data-theme="glass-light"],[data-theme="glass-jade"],[data-theme="glass-white"]{
+  color-scheme:light;
+  --bg:#e4e7ec;--panel:#f0f1f5;--panel2:#e9ebf0;--sidebar:#e9ecf1;
+  --text:#232c3a;--muted:#556276;--line:#c5cfdd;--accent:#3b6caf;--accent-bg:#e0eaf8;
+  --green:#266748;--amber:#80551d;--warning-bg:#f6ead7;--danger:#a33b39;--danger-bg:#f9e7e7;
+  --input:#fcfdff;--hover:#e5ecf6;--shadow:0 12px 30px #24395228;--brand:#304478;
+  --term-bg:#f7f9fc;--term-fg:#232c3a;--term-selection:#ccdff8;
+  --native-glass-rim:#ffffff;
+}
+[data-theme="glass-dark"],[data-theme="glass-dusk"],[data-theme="glass-black"]{
+  color-scheme:dark;
+  --bg:#0d0d0d;--panel:#232323;--panel2:#191919;--sidebar:#151515;
+  --text:#eef1f6;--muted:#acb6c6;--line:#414854;--accent:#81baff;--accent-bg:#2c3b53;
+  --green:#8bd6ae;--amber:#edc38c;--warning-bg:#3c3025;--danger:#f0a6a5;--danger-bg:#402c32;
+  --input:#191c22;--hover:#303640;--shadow:0 12px 30px #0008;--brand:#d4e2ff;
+  --term-bg:#16191f;--term-fg:#eef1f6;--term-selection:#3a5276;
+  --native-glass-rim:#454545;
+}
+
+@supports (color:oklch(0.5 0 0)) {
+  [data-theme^="glass-"] {
+    --bg:var(--sg-background);
+    --text:var(--sg-foreground);
+    --muted:var(--sg-muted-foreground);
+    --line:var(--sg-border);
+    --accent:var(--sg-link);
+    --accent-bg:var(--sg-secondary);
+    --hover:var(--sg-hover);
+    --panel:var(--sg-popover);
+    --primary-text:var(--sg-background);
+  }
+}
+
+/* Workbench backdrops behind the original Solid Glass material. */
+[data-theme="glass-light"] {
+  --glass-backdrop-light:#a8caff;
+  --glass-backdrop-tint:#c4b0eb;
+  --glass-backdrop-reflection:#f8fcff;
+}
+[data-theme="glass-dark"] {
+  --glass-backdrop-light:#294576;
+  --glass-backdrop-tint:#42355c;
+  --glass-backdrop-reflection:#5c739d;
+}
+[data-theme="glass-jade"] {
+  --glass-backdrop-light:#a1dbc8;
+  --glass-backdrop-tint:#e7d3a8;
+  --glass-backdrop-reflection:#fbfff2;
+  --native-bg:#e1eae5;--native-panel:#ecf3ef;--native-panel2:#e4ede7;
+}
+[data-theme="glass-dusk"] {
+  --glass-backdrop-light:#604679;
+  --glass-backdrop-tint:#673650;
+  --glass-backdrop-reflection:#865977;
+  --native-bg:#211925;--native-panel:#312936;--native-panel2:#28202c;
+  --native-glass-rim:#56475d;
+}
+[data-theme="glass-white"] {
+  --bg:#ffffff;
+  --native-bg:#ffffff;
+}
+[data-theme="glass-black"] {
+  --bg:#000000;
+  --native-bg:#000000;
+}

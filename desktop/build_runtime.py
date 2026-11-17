@@ -128,8 +128,7 @@ def main():
     # Optional imports must not turn development/build tooling into runtime code.
     for module in ('pytest', '_pytest', 'pip', 'setuptools', '_distutils_hack'):
         args += ['--exclude-module', module]
-    for theme_file in ('themes.css', 'journey.css'):
-        args += ['--add-data', str(ROOT/'frontend'/'src'/theme_file)+os.pathsep+'frontend/src']
+    args += ['--add-data', str(ROOT/'frontend'/'src'/'themeTokens.css')+os.pathsep+'frontend/src']
     # SSH/file probes read their own source to send it to the remote interpreter.
     # Only explicit .py files are included, never backend caches or user data.
     for source in sorted((ROOT/'backend').glob('*.py')):

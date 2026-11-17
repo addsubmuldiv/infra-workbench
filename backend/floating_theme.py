@@ -9,12 +9,18 @@ _theme='daylight'
 
 @lru_cache(maxsize=1)
 def palettes():
-    result={}
-    for name in ('themes.css','journey.css'):
-        text=(ROOT/'frontend'/'src'/name).read_text(encoding='utf-8')
-        for match in re.finditer(r'\[data-theme="([a-z]+)"\]\s*\{([^}]+)\}',text):
-            tokens=dict(re.findall(r'--([\w-]+)\s*:\s*(#[0-9a-fA-F]{6})(?=\s*[;}])',match[2]+'}'))
-            if 'panel' in tokens:result[match[1]]=tokens
+    css = (ROOT / 'frontend' / 'src' / 'themeTokens.css').read_text(encoding='utf-8')
+    result = {}
+    for selectors, declarations in re.findall(r'^([^\n{]*\[data-theme="[^"]+"\][^\n{]*)\{([^}]+)\}', css, re.M):
+        tokens = dict(re.findall(r'--([\w-]+)\s*:\s*(#[\da-fA-F]{6})\s*;', declarations))
+        for name in re.findall(r'\[data-theme="([a-z-]+)"\]', selectors):
+            if 'panel' in tokens:
+                result[name] = tokens.copy()
+            elif name in result:
+                for role in ('bg', 'panel', 'panel2', 'native-glass-rim'):
+                    color = tokens.get('native-' + role) if role != 'native-glass-rim' else tokens.get(role)
+                    if color:
+                        result[name][role] = color
     return result
 
 def update_shared_theme(state):

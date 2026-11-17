@@ -21,3 +21,4 @@ desktop/src-tauri/tests/fixtures/updater/payload.bin binary
 # Generated bundles embed third-party template strings with intentional spaces.
 # Keep whitespace checks on sources without rewriting compiled string contents.
 frontend/dist/** -whitespace
+frontend/**/licenses/*.txt text eol=lf

@@ -3,13 +3,16 @@ from functools import lru_cache
 from PIL import Image, ImageDraw
 
 @lru_cache(maxsize=256)
-def rounded_sprite(width,height,radius,fill,outline,background):
+def rounded_sprite(width,height,radius,fill,outline,background,rim=None):
     width,height=max(1,width),max(1,height)
     scale=4
     image=Image.new('RGB',(width*scale,height*scale),background)
     drawing=ImageDraw.Draw(image)
     drawing.rounded_rectangle((0,0,width*scale-1,height*scale-1),radius=radius*scale,
                               fill=fill,outline=outline or fill,width=scale)
+    inset = max(radius, 2) * scale
+    if rim and width * scale > 2 * inset and height >= 4:
+        drawing.line((inset, scale, width * scale - inset - 1, scale), fill=rim, width=scale)
     return image.resize((width,height),Image.Resampling.LANCZOS)
 
 @lru_cache(maxsize=64)

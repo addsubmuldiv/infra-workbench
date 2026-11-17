@@ -35,6 +35,7 @@ import './sidebarLayout.css';
 import './windowLayers.css';
 import './resourceOverview.css';
 import './rendering.css';
+import './solidGlass.css';
 import {WorkspaceLayout} from './WorkspaceLayout';
 import {DesktopWindowControls,hasDesktopTitlebar} from './DesktopWindowControls';
 import {JourneyArt} from './JourneyArt';
@@ -413,7 +414,7 @@ function App(){
       }}/>}
       <div className="header-tools"><RefreshIntervalPicker label={ui("刷新间隔")} title={ui("同时调整后台采集与页面刷新频率，设置对本工作台的所有窗口生效")} value={refreshInterval} disabled={busy==='refresh-interval'||!state.server_time} format={seconds=>`${ui("每 ")}${seconds} ${ui(" 秒刷新")}`} onChange={saveRefreshInterval} resetLabel={tr(`恢复默认（${MONITORING_REFRESH_INTERVAL_SECONDS} 秒）`,`Restore default (${MONITORING_REFRESH_INTERVAL_SECONDS}s)`)} onReset={()=>saveRefreshInterval(null)}/>
         <details className="theme-menu" ref={themeMenu}><summary><Palette size={16}/><span>{ui("主题")}</span></summary><div className="theme-options"><h3>{ui("选择界面主题")}</h3><p>{ui("主题偏好由本机后台统一保存")}</p>{THEMES.map(t=><button key={t.id} aria-pressed={preferences.theme===t.id} onClick={()=>{setPreferences(old=>({...old,theme:t.id}));if(themeMenu.current)themeMenu.current.open=false}}>
-          <span className="theme-swatches">{t.swatches.map(color=><i key={color} style={{background:color}}/>)}</span><span><strong>{themeText(t.name)}</strong><small>{t.mode==='light'?ui("亮色"):ui("暗色")} · {themeText(t.description)}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
+          <span className="theme-swatches" data-theme={t.id} aria-hidden="true"><i/><i/><i/></span><span><strong>{themeText(t.name)}</strong><small>{t.mode==='light'?ui("亮色"):ui("暗色")} · {themeText(t.description)}</small></span>{preferences.theme===t.id&&<Check size={15}/>}</button>)}</div></details>
         <div className="header-panel-tools"><NotificationCenter events={state.events} rules={state.rules} hosts={state.hosts} tab={notificationTab} setTab={setNotificationTab} notify={notify} busy={!!busy} toggleNotifications={toggleNotifications} removeRule={id=>act('rule',()=>api('/rules/'+encodeURIComponent(id),'DELETE'))} locate={locateEvent}/><button data-tour="assistant" className={'assistant-toggle'+(assistantOpen?' active':'')} aria-label={ui("AI 助手")} title={assistantOpen?ui("收起 AI 助手"):ui("展开 AI 助手")} aria-expanded={assistantOpen} aria-controls="infra-assistant-panel" onClick={()=>setAssistantOpen(value=>!value)}><Sparkles size={17}/><span>{ui("AI 助手")}</span></button></div>
       </div>{desktopTitlebar&&<DesktopWindowControls invoke={desktopTitlebar}/>}</header>;
   return <WorkspaceLayout desktopTitlebar={!!desktopTitlebar} assistantWidth={assistantWidth} onClickCapture={event=>{

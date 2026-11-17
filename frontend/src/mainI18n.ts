@@ -291,5 +291,5 @@ const messages:Record<string,string>={
 };
 export function ui(text:string){const key=text.trim();return messages[key]===undefined?text:t(text,messages[key])}
 
-const themeMessages:Record<string,string>={"晴空":"Daylight","暖纸":"Warm paper","午夜":"Midnight","石墨":"Graphite","花语旅途":"Floral journey","浅灰与蓝绿":"Light gray and teal","米白与暖棕":"Ivory and warm brown","深蓝与薄荷绿":"Deep blue and mint","炭灰与浅紫":"Charcoal and lavender","芙莉莲 × 菲伦 · 浅绿与淡紫":"Frieren × Fern · Sage and lavender"};
+const themeMessages:Record<string,string>={"晴空":"Daylight","暖纸":"Warm paper","午夜":"Midnight","石墨":"Graphite","花语旅途":"Floral journey","浅灰与蓝绿":"Light gray and teal","米白与暖棕":"Ivory and warm brown","深蓝与薄荷绿":"Deep blue and mint","炭灰与浅紫":"Charcoal and lavender","芙莉莲 × 菲伦 · 浅绿与淡紫":"Frieren × Fern · Sage and lavender","玻璃亮色":"Solid Glass Light","玻璃暗色":"Solid Glass Dark","冷蓝与淡紫光带":"Cool blue and lavender light","深蓝与烟紫光带":"Deep blue and smoky violet light","玻璃青岚":"Solid Glass Jade","玻璃暮霞":"Solid Glass Dusk","青绿与浅金光带":"Jade and pale gold light","暮紫与玫瑰光带":"Twilight purple and rose light","玻璃纯白":"Solid Glass White","玻璃纯黑":"Solid Glass Black","纯白背景":"Pure white background","纯黑背景":"Pure black background"};
 export function themeText(text:string){return t(text,themeMessages[text]??text)}

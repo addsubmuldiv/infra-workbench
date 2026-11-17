@@ -739,14 +739,15 @@ class FloatingMonitor:
             return image
         def rr(x, y, right, bottom, radius=10, fill='#ffffff', outline='#dfe6ed', tag=None):
             factor=scale*self.dpi_scale
+            rim = self.palette.get('native-glass-rim') if fill == '#ffffff' else None
             parameters=(max(1,round((right-x)*factor)),max(1,round((bottom-y)*factor)),max(1,round(radius/2*factor)),
-                        self.theme_color(fill),self.theme_color(outline),self.BG)
+                        self.theme_color(fill),self.theme_color(outline),self.BG,rim)
             item=c.create_image(x,y,image=sprite(parameters),anchor='nw',tags=tag or ())
             self.rounded_items[item]=parameters
             return item
         def recolor_round(item,fill,outline):
             old=self.rounded_items[item]
-            c.itemconfigure(item,image=sprite((*old[:3],fill,outline,old[-1])))
+            c.itemconfigure(item,image=sprite((*old[:3],fill,outline,*old[5:])))
         def text(x, y, value, size=10, color=self.INK, bold=False, anchor='w', **kw):
             # Width is a single-line limit, never permission to wrap into the next label.
             from tkinter import font as tkfont

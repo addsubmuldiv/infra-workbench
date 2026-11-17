@@ -1,10 +1,16 @@
 import {workspaceStorage} from './workspaceState.ts';
 export const THEMES = [
-  {id:'daylight',name:'晴空',mode:'light',description:'浅灰与蓝绿',swatches:['#f3f6fa','#ffffff','#177b70']},
-  {id:'paper',name:'暖纸',mode:'light',description:'米白与暖棕',swatches:['#f5f1e9','#fffdf7','#8d6840']},
-  {id:'midnight',name:'午夜',mode:'dark',description:'深蓝与薄荷绿',swatches:['#111b28','#1c2939','#78ddbd']},
-  {id:'graphite',name:'石墨',mode:'dark',description:'炭灰与浅紫',swatches:['#202024','#2b2b31','#c1afff']},
-  {id:'frieren',name:'花语旅途',mode:'light',description:'芙莉莲 × 菲伦 · 浅绿与淡紫',swatches:['#f3f5ee','#faf8ff','#758669']},
+  {id:'daylight',name:'晴空',mode:'light',description:'浅灰与蓝绿'},
+  {id:'paper',name:'暖纸',mode:'light',description:'米白与暖棕'},
+  {id:'midnight',name:'午夜',mode:'dark',description:'深蓝与薄荷绿'},
+  {id:'graphite',name:'石墨',mode:'dark',description:'炭灰与浅紫'},
+  {id:'frieren',name:'花语旅途',mode:'light',description:'芙莉莲 × 菲伦 · 浅绿与淡紫'},
+  {id:'glass-light',name:'玻璃亮色',mode:'light',description:'冷蓝与淡紫光带'},
+  {id:'glass-dark',name:'玻璃暗色',mode:'dark',description:'深蓝与烟紫光带'},
+  {id:'glass-jade',name:'玻璃青岚',mode:'light',description:'青绿与浅金光带'},
+  {id:'glass-dusk',name:'玻璃暮霞',mode:'dark',description:'暮紫与玫瑰光带'},
+  {id:'glass-white',name:'玻璃纯白',mode:'light',description:'纯白背景'},
+  {id:'glass-black',name:'玻璃纯黑',mode:'dark',description:'纯黑背景'},
 ] as const;
 export type Theme = typeof THEMES[number]['id'];
 export type Preferences = {theme:Theme;hostIds:string[]|null};

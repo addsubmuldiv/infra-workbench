@@ -1,0 +1,154 @@
+/*! Solid Glass by DeepLethe (MIT)
+ * https://github.com/deeplethe/solid-glass/blob/6e8903e494a15491ceda38fafea5056c95a74d44/src/solid-glass.css
+ * Excerpt: palette and material rules. Selectors mapped to Workbench and tokens prefixed with sg-.
+ *
+ * MIT License
+ *
+ * Copyright (c) 2026 DeepLethe
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+[data-theme] {
+  --sg-radius: 0.875rem;
+  --sg-background: oklch(0.925 0.007 265);
+  --sg-foreground: oklch(0.16 0 0);
+  --sg-panel: oklch(0.975 0.004 265 / 44%);
+  --sg-card: oklch(0.98 0.004 265 / 60%);
+  --sg-popover: oklch(0.985 0.003 265 / 96%);
+  --sg-muted-foreground: oklch(0.47 0 0);
+  --sg-primary: oklch(0.2 0 0);
+  --sg-primary-foreground: oklch(0.985 0 0);
+  --sg-secondary: oklch(0.3 0.02 265 / 9%);
+  --sg-hover: oklch(0.3 0.02 265 / 10%);
+  --sg-border: oklch(0.3 0.02 265 / 13%);
+  --sg-link: oklch(0.5 0.17 255);
+  --sg-sidebar: oklch(0.975 0.004 265 / 44%);
+  --sg-glass-rim: oklch(1 0 0 / 90%);
+  --sg-glass-inner: oklch(1 0 0 / 35%);
+  --sg-glass-edge: oklch(0.38 0.03 265 / 10%);
+  --sg-popover-edge: oklch(0.38 0.03 265 / 22%);
+  --sg-popover-under: oklch(0.38 0.03 265 / 16%);
+  --sg-glass-shade: oklch(0.3 0.06 265 / 28%);
+  --sg-glass-contact: oklch(0.25 0.03 265 / 6%);
+  --sg-glass-lift: oklch(0.25 0.03 265 / 14%);
+  --sg-glass-blur: blur(26px) saturate(180%);
+  --sg-glass-control: oklch(1 0 0 / 55%);
+  --sg-glass-blur-control: blur(14px);
+  --sg-light-1: oklch(0.68 0.13 165 / 7%);
+  --sg-light-2: oklch(0.75 0.08 240 / 11%);
+  --sg-light-3: oklch(0.68 0.13 165 / 4%);
+}
+
+[data-theme="midnight"],[data-theme="graphite"],[data-theme="glass-dark"],[data-theme="glass-dusk"],[data-theme="glass-black"] {
+  --sg-background: oklch(0.16 0 0);
+  --sg-foreground: oklch(0.985 0 0);
+  --sg-panel: oklch(1 0 0 / 4.5%);
+  --sg-card: oklch(0.31 0 0 / 46%);
+  --sg-popover: oklch(0.22 0 0 / 96%);
+  --sg-muted-foreground: oklch(0.72 0 0);
+  --sg-primary: oklch(0.94 0 0);
+  --sg-primary-foreground: oklch(0.18 0 0);
+  --sg-secondary: oklch(1 0 0 / 10%);
+  --sg-hover: oklch(1 0 0 / 8%);
+  --sg-border: oklch(1 0 0 / 11%);
+  --sg-link: oklch(0.76 0.12 250);
+  --sg-sidebar: oklch(0.11 0 0 / 50%);
+  --sg-glass-rim: oklch(1 0 0 / 16%);
+  --sg-glass-inner: oklch(1 0 0 / 4%);
+  --sg-glass-edge: oklch(1 0 0 / 6%);
+  --sg-popover-edge: var(--sg-glass-edge);
+  --sg-popover-under: oklch(0 0 0 / 0%);
+  --sg-glass-shade: oklch(0 0 0 / 60%);
+  --sg-glass-contact: oklch(0 0 0 / 10%);
+  --sg-glass-lift: oklch(0 0 0 / 22%);
+  --sg-glass-blur: blur(26px);
+  --sg-glass-control: oklch(1 0 0 / 7%);
+  --sg-light-1: transparent;
+  --sg-light-2: transparent;
+  --sg-light-3: transparent;
+}
+
+:root[data-theme^="glass-"] body {
+  background-image:
+    radial-gradient(62rem 42rem at 12% -6rem, var(--sg-light-1), transparent 62%),
+    radial-gradient(52rem 38rem at 92% 4rem, var(--sg-light-2), transparent 60%),
+    radial-gradient(64rem 46rem at 55% 110%, var(--sg-light-3), transparent 62%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+:root[data-theme] :is(.stats,.finder,.machine,.mobile-hosts,.empty,.events,.device-overview),
+:root[data-theme] :is(.theme-options,.chat-session-menu,.chat-model-menu),
+:root[data-theme] .sidebar,
+:root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock) {
+  -webkit-backdrop-filter: var(--sg-glass-blur);
+  backdrop-filter: var(--sg-glass-blur);
+}
+
+/* Thinnest: the panels a page is laid out in. A shade off the page, so a
+   column of them does not outshine what is being read. */
+:root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock) {
+  background-color: var(--sg-panel);
+}
+
+/* A pane: the rim on top, the hairline all round, the shadow below.
+
+   A pane gives up whatever border it was given. Its lines are drawn inside
+   its edge and its hairline outside, and a border between the two — even a
+   see-through one — shows as a second ring round the pane. */
+:root[data-theme] :is(.shell>main>header,.assistant-window,.chat-composer,.terminal-dock),
+:root[data-theme] :is(.stats,.finder,.machine,.mobile-hosts,.empty,.events,.device-overview) {
+  border-width: 0;
+  box-shadow:
+    inset 0 1px 0 var(--sg-glass-rim),
+    inset 0 0 0 1px var(--sg-glass-inner),
+    0 0 0 1px var(--sg-glass-edge),
+    0 1px 2px var(--sg-glass-contact),
+    0 12px 32px -14px var(--sg-glass-shade);
+}
+
+/* Thickest: menus, popovers and dialogs, lifted further off the page. */
+:root[data-theme] :is(.theme-options,.chat-session-menu,.chat-model-menu) {
+  border-width: 0;
+  box-shadow:
+    inset 0 1px 0 var(--sg-glass-rim),
+    inset 0 -1px 0 var(--sg-popover-under),
+    0 0 0 1px var(--sg-popover-edge),
+    0 24px 60px -18px var(--sg-glass-shade),
+    0 6px 16px -6px var(--sg-glass-lift);
+}
+
+/* A sidebar is a pane standing on its edge: lit along the side that faces
+   the page. */
+:root[data-theme] .sidebar {
+  box-shadow:
+    inset -1px 0 0 var(--sg-glass-edge),
+    inset 0 1px 0 var(--sg-glass-inner);
+}
+
+/* Small things made of clear glass: a message bubble, a glass button. */
+:root[data-theme] :is(.theme-menu>summary,.machine-icon) {
+  -webkit-backdrop-filter: var(--sg-glass-blur-control);
+  backdrop-filter: var(--sg-glass-blur-control);
+  box-shadow:
+    inset 0 1px 0 var(--sg-glass-rim),
+    0 0 0 1px var(--sg-glass-edge),
+    0 1px 2px var(--sg-glass-contact);
+}
