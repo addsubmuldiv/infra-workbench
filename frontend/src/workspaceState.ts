@@ -1,10 +1,14 @@
+import {withRequestTimeout} from './requests.ts';
+
 type Snapshot={revision:number;values:Record<string,string>};
 type Requester=(values?:Record<string,string|null>,onlyMissing?:boolean)=>Promise<Snapshot>;
 export const legacyKeys=['infra-workbench:preferences:v1','infra-workbench:assistant-window:v1','infra-workbench:assistant-open:v1','infra-workbench:sidebar-width:v1','infra-workbench:terminal-frame:v1','infra-workbench:notifications:read:v1','infra-workbench:reservation-wait-minutes','iwb-assistant-chat','iwb.precision.draft.v1','iwb-terminal-command-window'];
 async function request(values?:Record<string,string|null>,only_missing=false):Promise<Snapshot>{
- const response=await fetch('/api/workspace-state',{method:values?'PUT':'GET',cache:'no-store',headers:{'Content-Type':'application/json','X-IWB':'1'},body:values?JSON.stringify({values,only_missing}):undefined,keepalive:!!values&&JSON.stringify(values).length<30000,signal:AbortSignal.timeout(8000)});
- if(!response.ok)throw new Error('无法保存或读取工作空间状态');
- return response.json();
+ return withRequestTimeout(8000,async signal=>{
+  const response=await fetch('/api/workspace-state',{method:values?'PUT':'GET',cache:'no-store',headers:{'Content-Type':'application/json','X-IWB':'1'},body:values?JSON.stringify({values,only_missing}):undefined,keepalive:!!values&&JSON.stringify(values).length<30000,signal});
+  if(!response.ok)throw new Error('无法保存或读取工作空间状态');
+  return response.json();
+ });
 }
 export function createWorkspaceStorage(send:Requester=request,onError:(failed:boolean)=>void=()=>{}){
  let values:Record<string,string>={},revision=-1,inflight=false,saving=false,timer:ReturnType<typeof setTimeout>|undefined;

@@ -15,7 +15,7 @@ function harness(t,{ready=true,hasHosts=false,completed=false,shared}={}){
   const window=new EventTarget(),document={body:{},activeElement:null};
   const compile=(file,require)=>{const exports={};const js=ts.transpileModule(fs.readFileSync(new URL(file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;new Function('require','exports','window','document','HTMLElement',js)(require,exports,window,document,class{});return exports};
   const hooks=compile('../src/workspaceHooks.ts',name=>name==='react'?react:{workspaceStorage});
-  const component=compile('../src/FirstRunGuide.tsx',name=>i18nMock(name)??(name==='react'?react:name==='react-dom'?{createPortal:node=>node}:name==='./workspaceHooks'?hooks:{}));
+  const component=compile('../src/FirstRunGuide.tsx',name=>i18nMock(name)??(name==='react'?react:name==='./ModalDialog'?{ModalDialog:'ModalDialog'}:name==='./workspaceHooks'?hooks:{}));
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children??[]).flat(Infinity).flatMap(nodes)];
   const text=n=>n==null||n===false?'':typeof n!=='object'?String(n):(n.props?.children??[]).flat(Infinity).map(text).join('');
   const render=()=>{let iterations=0;do{dirty=false;slot=0;tree=component.FirstRunGuide({ready,hasHosts,onAddMachine(){added++}});effects.splice(0).forEach(fn=>fn());assert.ok(++iterations<15,'render should settle')}while(dirty);return tree};
@@ -25,7 +25,7 @@ function harness(t,{ready=true,hasHosts=false,completed=false,shared}={}){
 
 test('fresh workspace waits for loaded state, then shows the real getting-started guide',t=>{
   const h=harness(t,{ready:false});assert.equal(h.render(),null);h.setReady(true);
-  assert.equal(h.find(n=>n.type==='dialog').props['aria-modal'],true);assert.match(h.text(),/连接第一台机器/);
+  assert.equal(h.find(n=>n.type==='ModalDialog').props.labelledBy,'first-run-title');assert.match(h.text(),/连接第一台机器/);
 });
 test('skip is persisted and a later window does not automatically replay it',t=>{
   const h=harness(t);h.render();h.click('暂时跳过');assert.equal(h.render(),null);
@@ -42,6 +42,6 @@ test('adding a machine is an explicit user action after dismissing the guide',t=
   const h=harness(t);h.render();h.click('添加机器');assert.equal(h.added(),1);assert.equal(h.render(),null);
 });
 test('Escape skips and replay does not erase the saved completion state',t=>{
-  const h=harness(t);h.render();h.find(n=>n.type==='dialog').props.onCancel({preventDefault(){}});h.render();h.replay();
-  assert.ok(h.find(n=>n.type==='dialog'));assert.equal(h.storage.get('workspace:onboarding-completed:v1'),'true');
+  const h=harness(t);h.render();h.find(n=>n.type==='ModalDialog').props.onDismiss();h.render();h.replay();
+  assert.ok(h.find(n=>n.type==='ModalDialog'));assert.equal(h.storage.get('workspace:onboarding-completed:v1'),'true');
 });

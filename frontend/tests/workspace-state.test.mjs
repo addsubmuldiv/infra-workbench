@@ -1,6 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createWorkspaceStorage} from '../src/workspaceState.ts';
+import {createWorkspaceStorage,workspaceStorage} from '../src/workspaceState.ts';
+import {withRequestTimeout} from '../src/requests.ts';
+
+test('workspace loads without the newer AbortSignal methods',async t=>{
+ for(const name of ['timeout','any']){
+  const descriptor=Object.getOwnPropertyDescriptor(AbortSignal,name);
+  delete AbortSignal[name];
+  t.after(()=>{if(descriptor)Object.defineProperty(AbortSignal,name,descriptor)});
+ }
+ t.mock.method(globalThis,'fetch',async (url,{signal})=>{
+  assert.equal(url,'/api/workspace-state');assert.equal(signal.aborted,false);
+  return new Response(JSON.stringify({revision:0,values:{theme:'dark'}}));
+ });
+ await workspaceStorage.initialize();
+ assert.equal(workspaceStorage.getItem('theme'),'dark');
+});
+
+test('request deadline and caller cancellation abort the request',async ()=>{
+ const waitForAbort=signal=>new Promise(resolve=>signal.addEventListener('abort',()=>resolve(signal.reason),{once:true}));
+ assert.equal((await withRequestTimeout(1,waitForAbort)).name,'TimeoutError');
+ const caller=new AbortController();
+ const pending=withRequestTimeout(8000,waitForAbort,caller.signal);
+ caller.abort();
+ assert.equal((await pending).name,'AbortError');
+});
 function server(){let state={revision:0,values:{}};return async(values,missing)=>{if(values){const next={...state.values};for(const [k,v] of Object.entries(values)){if(missing&&k in next)continue;if(v===null)delete next[k];else next[k]=v}state={revision:state.revision+1,values:next}}return structuredClone(state)}}
 test('separate clients share changes without overwriting unrelated keys',async t=>{
  const send=server(),a=createWorkspaceStorage(send),b=createWorkspaceStorage(send);t.after(()=>{a.dispose();b.dispose()});

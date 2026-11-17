@@ -1,8 +1,9 @@
 import {useEffect,useId,useRef,useState} from 'react';
-import {createPortal} from 'react-dom';
+import {ModalDialog} from './ModalDialog';
 import {Code2,LoaderCircle,X} from 'lucide-react';
 import {t,useLocale} from './i18n';
 import {openVSCode,VSCodeError,type VSCodePhase} from './vscode';
+import {withRequestTimeout} from './requests';
 import './vscode.css';
 
 type Host={id:string;target:string};
@@ -13,7 +14,7 @@ export function VSCodeButton({host,disabled=false}:{host:Host;disabled?:boolean}
 
 function VSCodeLaunch({host,close}:{host:Host;close:()=>void}){
   useLocale();
-  const dialog=useRef<HTMLDialogElement>(null),title=useId(),description=useId();
+  const title=useId(),description=useId();
   const [phase,setPhase]=useState<VSCodePhase>('preparing'),[error,setError]=useState<VSCodeError|null>(null),[busy,setBusy]=useState(true);
   const controller=useRef<AbortController|null>(null),mounted=useRef(true);
   const expectedAuthority=useRef<string|undefined>(undefined);
@@ -22,13 +23,12 @@ function VSCodeLaunch({host,close}:{host:Host;close:()=>void}){
     controller.current?.abort();const current=new AbortController();controller.current=current;
     setBusy(true);setError(null);setPhase(skip?'opening':'preparing');
     if(!skip)expectedAuthority.current=undefined;
-    async function request(path:string,method='GET',body?:unknown){
-      const signal=AbortSignal.any([current.signal,AbortSignal.timeout(20000)]);
+    const request=(path:string,method='GET',body?:unknown)=>withRequestTimeout(20000,async signal=>{
       const response=await fetch(`/api/hosts/${encodeURIComponent(host.id)}${path}`,{method,signal,headers:{'Content-Type':'application/json','X-IWB':'1'},body:body===undefined?undefined:JSON.stringify(body)});
       const data=await response.json();
       if(!response.ok){const detail=data.detail;const code=detail?.code??'VSCODE_REQUEST_FAILED';if(typeof detail?.expected_authority==='string')expectedAuthority.current=detail.expected_authority;throw new VSCodeError(code,detail?.message??(typeof detail==='string'?detail:t('操作失败','Operation failed')),['TUNNEL_NOT_READY','TUNNEL_START_FAILED'].includes(code)&&!!expectedAuthority.current)}
       return data;
-    }
+    },current.signal);
     try{
       await openVSCode({request,skip,expectedAuthority:expectedAuthority.current,prepared:value=>{expectedAuthority.current=value},signal:current.signal,phase:value=>{if(mounted.current)setPhase(value)}});
       if(mounted.current&&!current.signal.aborted)closeRef.current();
@@ -37,18 +37,18 @@ function VSCodeLaunch({host,close}:{host:Host;close:()=>void}){
     }finally{if(mounted.current&&controller.current===current)setBusy(false)}
   }
   useEffect(()=>{
-    mounted.current=true;const previous=document.activeElement;const element=dialog.current;element?.showModal();void run();
-    return()=>{mounted.current=false;controller.current?.abort();element?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus()};
+    mounted.current=true;void run();
+    return()=>{mounted.current=false;controller.current?.abort()};
   },[host.id]);
   const opening=busy&&phase==='opening';
   function cancel(){if(opening)return;controller.current?.abort();close()}
-  return createPortal(<dialog ref={dialog} className="vscode-launch" aria-labelledby={title} aria-describedby={description} onCancel={e=>{e.preventDefault();cancel()}}>
+  return <ModalDialog className="vscode-launch" labelledBy={title} describedBy={description} onDismiss={cancel}>
     <div className="vscode-launch-heading"><h2 id={title}><Code2 size={21}/>VS Code</h2><button className="icon-button" disabled={opening} aria-label={t('取消打开 VS Code','Cancel opening VS Code')} onClick={cancel}><X size={19}/></button></div>
     <p className="vscode-launch-target">{host.target}</p>
     {busy?<p className="vscode-launch-status" role="status"><LoaderCircle size={18} className="spin"/>{phase==='preparing'?t('正在准备连接…','Preparing connection…'):phase==='connecting'?t('正在等待 SSH 隧道连接…','Waiting for SSH tunnels…'):t('正在打开本机 VS Code…','Opening local VS Code…')}</p>:error&&<p className="vscode-launch-error" role="alert">{errorMessage(error)}</p>}
     <p id={description} className="vscode-launch-note">{t('取消打开不会断开后台隧道。VS Code 的远端连接由 Remote - SSH 扩展完成。','Cancelling does not disconnect background tunnels. The Remote - SSH extension handles the VS Code connection.')}</p>
     <div className="vscode-launch-actions"><button className="secondary" disabled={opening} onClick={cancel}>{t('取消','Cancel')}</button>{!busy&&<button className="primary" onClick={()=>void run()}>{t('重试','Retry')}</button>}{!busy&&error?.canSkip&&<button className="secondary" onClick={()=>void run(true)}>{t('仍然打开 VS Code','Open VS Code anyway')}</button>}</div>
-  </dialog>,document.body);
+  </ModalDialog>;
 }
 
 function errorMessage(error:VSCodeError){

@@ -35,3 +35,21 @@ export function reuseStateSnapshot<T extends {server_time:number}>(previous:T,ne
   const shared=reuseJson(previous,{...next,server_time:previous.server_time||next.server_time}) as T;
   return shared===previous?previous:{...shared,server_time:next.server_time};
 }
+
+export async function withRequestTimeout<T>(
+  milliseconds:number,
+  request:(signal:AbortSignal)=>Promise<T>,
+  parent?:AbortSignal,
+):Promise<T>{
+  const controller=new AbortController();
+  const cancel=()=>controller.abort(parent?.reason);
+  if(parent?.aborted)cancel();
+  else parent?.addEventListener('abort',cancel,{once:true});
+  const timer=setTimeout(()=>controller.abort(new DOMException('Request timed out','TimeoutError')),milliseconds);
+  try{
+    return await request(controller.signal);
+  }finally{
+    clearTimeout(timer);
+    parent?.removeEventListener('abort',cancel);
+  }
+}

@@ -1,0 +1,25 @@
+:where(dialog.workbench-modal) {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  box-sizing: border-box;
+  max-width: calc(100% - 24px);
+  color: inherit;
+}
+
+section.workbench-modal[aria-modal] {
+  height: fit-content;
+  max-height: calc(100vh - 24px);
+  max-width: 100%;
+}
+
+dialog.workbench-modal[open] {
+  overscroll-behavior: contain;
+}
+
+:where(dialog.workbench-modal)::backdrop {
+  background: #050a10b8;
+  backdrop-filter: blur(3px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}

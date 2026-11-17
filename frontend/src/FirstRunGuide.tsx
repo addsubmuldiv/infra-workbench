@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {createPortal} from 'react-dom';
+import {ModalDialog} from './ModalDialog';
 import {ArrowRight,BookOpen,Check,Server,X} from 'lucide-react';
 import {t,useLocale} from './i18n';
 import {useWorkspaceValue} from './workspaceHooks';
@@ -36,7 +36,7 @@ export function FirstRunGuide({ready,hasHosts,onAddMachine}:{ready:boolean;hasHo
   useLocale();
   const [completed,setCompleted]=useWorkspaceValue('workspace:onboarding-completed:v1',false);
   const [mode,setMode]=useState<'automatic'|'manual'|null>(null),[step,setStep]=useState(0);
-  const decided=useRef(false),dialog=useRef<HTMLDialogElement>(null),next=useRef<HTMLButtonElement>(null);
+  const decided=useRef(false);
   useEffect(()=>{
     if(!ready||decided.current||completed)return;
     decided.current=true;
@@ -49,20 +49,14 @@ export function FirstRunGuide({ready,hasHosts,onAddMachine}:{ready:boolean;hasHo
     window.addEventListener('iwb:replay-getting-started',replay);
     return()=>window.removeEventListener('iwb:replay-getting-started',replay);
   },[]);
-  useEffect(()=>{
-    if(!mode)return;
-    const previous=document.activeElement,element=dialog.current;
-    element?.showModal();next.current?.focus();
-    return()=>{element?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus()};
-  },[mode]);
   const finish=()=>{setCompleted(true);setMode(null)};
   if(!mode)return null;
   const current=steps[step],last=step===steps.length-1;
-  return createPortal(<dialog ref={dialog} className="modal first-run-guide" aria-modal={true} aria-labelledby="first-run-title" aria-describedby="first-run-description" onCancel={event=>{event.preventDefault();finish()}}>
+  return <ModalDialog className="modal first-run-guide" labelledBy="first-run-title" describedBy="first-run-description" onDismiss={finish}>
     <header className="modal-header"><div className="first-run-brand"><BookOpen size={23}/><div><small>{t('新手引导','Getting started')}</small><h2 id="first-run-title">{t('欢迎使用 Infra Workbench','Welcome to Infra Workbench')}</h2></div></div><button type="button" className="icon-button" aria-label={t('关闭并跳过引导','Close and skip guide')} onClick={finish}><X size={20}/></button></header>
     <div className="first-run-content"><div className="first-run-step" aria-label={t('引导进度','Guide progress')}>{step+1} / {steps.length}</div><h3>{t(current.title[0],current.title[1])}</h3><p className="first-run-location">{t(current.location[0],current.location[1])}</p><ul id="first-run-description">{current.items.map(([zh,en])=><li key={en}>{t(zh,en)}</li>)}</ul>
       <p className="first-run-demo"><a href="?demo=1" onClick={finish}>{t('没有服务器？先用模拟数据体验演示','No server? Try the demo with simulated data')}</a></p>
     </div>
-    <footer className="modal-footer first-run-actions"><button type="button" className="text-button" onClick={finish}>{t('暂时跳过','Skip for now')}</button><span/>{step>0&&<button type="button" className="secondary" onClick={()=>setStep(value=>value-1)}>{t('上一步','Back')}</button>}{step===0&&<button type="button" className="secondary" onClick={()=>{finish();onAddMachine()}}><Server size={15}/>{t('添加机器','Add machine')}</button>}<button ref={next} type="button" className="primary" onClick={()=>last?finish():setStep(value=>value+1)}>{last?<Check size={16}/>:<ArrowRight size={16}/ >}{last?t('完成引导','Finish guide'):t('下一步','Next')}</button></footer>
-  </dialog>,document.body);
+    <footer className="modal-footer first-run-actions"><button type="button" className="text-button" onClick={finish}>{t('暂时跳过','Skip for now')}</button><span/>{step>0&&<button type="button" className="secondary" onClick={()=>setStep(value=>value-1)}>{t('上一步','Back')}</button>}{step===0&&<button type="button" className="secondary" onClick={()=>{finish();onAddMachine()}}><Server size={15}/>{t('添加机器','Add machine')}</button>}<button data-dialog-focus type="button" className="primary" onClick={()=>last?finish():setStep(value=>value+1)}>{last?<Check size={16}/>:<ArrowRight size={16}/ >}{last?t('完成引导','Finish guide'):t('下一步','Next')}</button></footer>
+  </ModalDialog>;
 }
