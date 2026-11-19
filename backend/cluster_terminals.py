@@ -36,6 +36,12 @@ class ClusterTerminals:
         batch=self.records[key];self._scope(batch['items'],allowed)
         return {k:v for k,v in batch.items() if k!='identities'}
 
+    def list(self, allowed=None):
+        return {'items': [
+            self.get(key, allowed) for key, batch in reversed(self.records.items())
+            if allowed is None or all(item['host_id'] in allowed for item in batch['items'])
+        ]}
+
     async def create(self,arguments,allowed=None):
         args=TerminalBatchArgs.model_validate(arguments)
         service=self.app.state.clusters
@@ -119,7 +125,7 @@ def register_cluster_terminal_routes(app,hosts,ssh,workspace,sudo):
     def error(exc):return HTTPException(403 if exc.code=='PERMISSION_DENIED' else 409 if exc.code=='CONFLICT' else 404 if exc.code=='NOT_FOUND' else 400,exc.message)
     @app.get('/api/cluster-terminal-batches')
     async def listing():
-        return dict(items=[manager.get(key) for key in reversed(manager.records)])
+        return manager.list()
     @app.post('/api/cluster-terminal-batches')
     async def create(body:TerminalBatchArgs):
         try:return await manager.create(body.model_dump(exclude_none=True))

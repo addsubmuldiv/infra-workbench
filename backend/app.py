@@ -596,7 +596,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             fresh = bool(snap.get('collected_at') and now-snap['collected_at'] <= reservations.max_sample_gap and snap['status'] == 'online')
             if request.headers.get('x-iwb-mcp')=='1':
                 # MCP needs a view, not a serialized copy of all ports/processes.
-                items.append(dict({k:host.get(k) for k in ('id','target','user','port','manual','auth')},
+                items.append(dict({k:host.get(k) for k in ('id','target','alias','user','port','manual','auth')},
                                   collection=dict(paused=host['id'] in paused_collections),
                                   snapshot=dict(status=snap.get('status','connecting'),collected_at=snap.get('collected_at'),fresh=fresh)))
             else:

@@ -10,6 +10,7 @@ import sys
 import shlex
 import time
 from .terminal_tmux import tmux_command,tmux_response
+from .terminal_workspace import TerminalSettingsPatch, TerminalWorkspace
 from ctypes import wintypes
 
 from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -357,7 +358,6 @@ class TerminalManager:
 
 
 def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
-    from .terminal_workspace import TerminalWorkspace
     workspace=TerminalWorkspace(store) if store else None
     manager=TerminalManager(ssh,workspace,sudo)
     app.state.terminals=manager
@@ -376,6 +376,29 @@ def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
         host,identity=await resolve(host_id)
         from fastapi.responses import JSONResponse
         return JSONResponse(workspace.view(host_id,identity),headers={'Cache-Control':'no-store'})
+
+    @app.patch('/api/hosts/{host_id}/terminal-workspace/settings')
+    async def update_terminal_settings(host_id: str, body: TerminalSettingsPatch):
+        _, identity = await resolve(host_id)
+        settings = body.model_dump(exclude_unset=True)
+        if not settings:
+            raise HTTPException(400, '请提供要修改的终端设置')
+        try:
+            workspace.update(host_id, identity, {'action': 'settings', 'settings': settings})
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(manager.workspace_state(host_id, identity), timeout=2)
+        return {'host_id': host_id, 'settings': workspace.view(host_id, identity)['settings']}
+
+    @app.delete('/api/hosts/{host_id}/terminal-workspace/history')
+    async def clear_terminal_history(host_id: str):
+        _, identity = await resolve(host_id)
+        count = len(workspace.view(host_id, identity)['history'])
+        workspace.clear_history(host_id, identity)
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(manager.workspace_state(host_id, identity), timeout=2)
+        return {'host_id': host_id, 'cleared': count}
 
     @app.post('/api/hosts/{host_id}/terminal-sessions')
     async def create_session(host_id:str,request:Request):

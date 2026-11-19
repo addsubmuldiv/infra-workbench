@@ -1,5 +1,25 @@
 # 统一 MCP 与业务技能
 
+## 让助手操作工作台
+
+内置助手和本机外部 MCP 客户端都可使用下列工具。内置助手会按当前权限模式处理写入。例如，可以在助手里说“切换到玻璃暗色主题”“把界面改成英文”“打开资源历史页面”或“把终端字号设为 16”。其它连接选项和工具参数以 `tools/list` 为准。
+
+| 工作台功能 | MCP 工具 |
+| --- | --- |
+| 主题、语言和共享界面偏好 | `get_workbench_preferences`、`set_workbench_theme`、`set_workbench_language`、`update_workbench_preferences`。可调整页面、侧栏宽度、选中机器、算力总览和找卡筛选、默认预约等待时长、浏览器通知、普通终端字号及图片显示、助手展开状态。 |
+| 启动方式、监控浮窗和后台检查 | `get_launch_settings`、`update_launch_settings`、`open_floating_monitor`、`get_workbench_health`。浮窗取决于系统支持。 |
+| 模型、邮件和通知 | `get_workbench_model_settings`、`activate_workbench_model_profile`、`set_workbench_model`、`test_workbench_model`、`send_test_email`、`mark_notifications_read`。模型切换影响后续请求，测试调用现有配置，标记已读保留通知记录。 |
+| 机器与采集 | `set_host_alias`、`set_host_collection`、`set_refresh_interval`。用 `get_workbench_state` 查看别名和暂停状态。改全局采集频率需要全部机器范围。 |
+| 历史统计 | `get_resource_history`。传 `host_ids` 和日期、时区，或绝对起止时间。默认读统计摘要，用 `view="segments"` 按页读时段。指定 `segment_host_id` 可查看逐卡信息和采样缺口。 |
+| 多机预约 | `list_group_reservations`、`get_group_reservation`、`create_group_reservation`、`update_group_reservation`、`cancel_group_reservation`、`rebook_group_reservation`、`delete_group_reservation`。检查已有预约和新候选的机器范围，编辑使用版本号，创建重试沿用相同的 `request_id`。 |
+| SSH 隧道和 VS Code | `get_ssh_tunnel_status` 查询当前状态或连接历史，`create_ssh_tunnel`、`update_ssh_tunnel`、`start_ssh_tunnel`、`stop_ssh_tunnel`、`delete_ssh_tunnel`、`probe_ssh_tunnel` 管理配置和连接。`get_ssh_config_aliases`、`export_host_ssh_config` 对应 SSH 别名。`prepare_vscode_remote`、`open_vscode_remote` 对应前置隧道和本机 VS Code Remote SSH 窗口。 |
+| 终端与批量命令 | `update_terminal_settings` 修改按机器保存的历史、提醒和 sudo 复用偏好。`clear_terminal_history` 清除指定机器的工作台输入历史。`list_cluster_terminal_batches`、`get_cluster_terminal_batch` 查专用工作区，`broadcast_cluster_terminal_command` 沿用现有终端安全检查。`delete_cluster_command_batch` 清理已终止的批次历史。 |
+| 表格导入 | `preview_server_import` 给出原始 Excel 字节的提交入口，客户端提交后才创建预览。 |
+
+偏好工具只访问已公布的字段，复用工作空间状态的持久化和同步，保留聊天草稿等其它键。凭据录入、系统授权、桌面更新和窗口内的临时交互由原界面处理。终端交互仍使用原 WebSocket。演示环境沿用模拟数据和隔离请求。
+
+English: The embedded assistant and local MCP clients can change the theme, language, shared workspace preferences and sampling settings. They can also query resource history, manage multi-host alerts and SSH tunnels, open VS Code for a registered host, and inspect or manage cluster terminal workspaces. Shared preferences use the same persisted values as the UI. Credentials and OS permission prompts remain in their original interfaces.
+
 `get_ssh_tunnel_status(host_id, section="current")` 查询指定机器的独立 SSH 隧道。返回隧道状态、方向、端口、错误代码和错误说明。`section="history"` 返回该机器最近的连接、断开和失败记录，保留事件发生时的端口，按 `next_offset` 翻页。内置助手和外部 MCP 共用同一入口，机器范围限制照常生效。远端转发可用 `ssh_check(check="ports", port=remote_port)` 核对监听。端口仍被占用时，还需确认监听进程归属。详见 [SSH 隧道](SSH-TUNNELS.md)。
 
 ## 按名称解析目标和集群范围
@@ -108,7 +128,7 @@ sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH �
 | 文件传输 | 创建上传、进度与取消；下载工具返回 HTTP 交接参数 |
 | 技能和设置入口 | list_skills、read_skill、get_workbench_entry；只读邮件、sudo 和密码保存状态 |
 
-凭据输入/保存、模型连接自配置、桌面通知发送回执、聊天自身管理不暴露为模型业务工具。原有外部连接工具兼容保留；内置模型不获得 `get_ssh_info` / `get_ssh_password`，直接复用后台 SSH。MCP 请求体上限 64 KiB，大文件由客户端通过原传输接口发送。
+凭据输入和保存、修改模型接口地址、桌面通知发送回执、聊天自身管理保留在原有界面。已保存的模型配置可查询、切换或测试。原有外部连接工具兼容保留；内置模型不获得 `get_ssh_info` / `get_ssh_password`，直接复用后台 SSH。MCP 请求体上限 64 KiB，大文件由客户端通过原传输接口发送。
 
 下载的 `handoff_required` 表示尚未下载。创建上传任务也不代表字节已传到服务器。界面和模型不得把交接描述为成功完成。限定机器范围时，无法证明归属的导入批次/旧下载句柄会拒绝访问。
 

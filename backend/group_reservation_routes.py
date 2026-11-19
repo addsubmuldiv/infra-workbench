@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from .agent_errors import AgentError
+from .mcp_operations import REQUEST_HOST_SCOPE
 
 
 class GroupRule(BaseModel):
@@ -42,7 +43,7 @@ class GroupPatch(GroupEdit):
 
 def register_group_reservation_routes(app,service):
     def call(method,*args,**kwargs):
-        try:return method(*args,**kwargs)
+        try:return method(*args,allowed=REQUEST_HOST_SCOPE.get(),**kwargs)
         except KeyError:raise HTTPException(404,'找不到预约') from None
         except AgentError as exc:raise HTTPException(409 if exc.code=='CONFLICT' else 404 if exc.code=='NOT_FOUND' else 400,exc.message) from None
         except ValueError as exc:raise HTTPException(409 if str(exc).startswith('CONFLICT:') else 400,str(exc)) from None

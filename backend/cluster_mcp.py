@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .agent_errors import response
 from .agent_schema import envelope
 from .cluster_routes import CreateCluster, BatchCommand
-from .cluster_terminals import TerminalBatchArgs
+from .cluster_terminals import BroadcastArgs, TerminalBatchArgs
 
 
 class Empty(BaseModel):
@@ -58,6 +58,12 @@ class ListPage(Empty):
     offset:int=Field(default=0,ge=0)
     limit:int=Field(default=20,ge=1,le=100)
 
+class TerminalBatchID(Empty):
+    key: str = Field(min_length=1, max_length=128)
+
+class TerminalBroadcast(BroadcastArgs):
+    key: str = Field(min_length=1, max_length=128)
+
 class Output(BatchID):
     item_id:str
     stream:Literal['stdout','stderr']='stdout'
@@ -75,12 +81,16 @@ DEFINITIONS={
     'delete_cluster':(Revision,'删除集群并解除成员归类，保留机器及历史任务；导入进行中不可删除。',False),
     'update_cluster_members':(Members,'用期望 revision 替换集群成员集合，可移动机器；必须拥有相关集群全部成员范围。',False),
     'open_cluster_terminals':(TerminalBatchArgs,'创建本次专用的持久终端会话，最多 100 台、并发 5；返回逐机结果和应用工作区入口。返回入口不代表客户端已经打开窗口；不安装依赖。',False),
+    'list_cluster_terminal_batches':(ListPage,'分页列出有全部目标机器权限的集群终端工作区概要。',True),
+    'get_cluster_terminal_batch':(TerminalBatchID,'查看指定集群终端工作区、专用会话和窗口入口。需要全部目标机器权限。',True),
+    'broadcast_cluster_terminal_command':(TerminalBroadcast,'仅在用户明确要求执行指定命令时，向明确选择且可靠确认处于空提示符的专用终端广播。发送不代表执行成功；结果不明时不自动重发。',False),
     'execute_cluster_command':(BatchCommand,'提交用户授权的相同 Shell 命令，固定目标与 revision；request_id 防止重复提交。默认需要整个集群权限，可显式指定授权 host_ids 子集。不会自动重试。命令正文保存在本地历史，请勿包含明文凭据。',False),
     'list_cluster_command_batches':(ListPage,'分页列出批量命令概要和状态计数；逐机详情用 get_cluster_command_batch，不返回命令正文。',True),
     'get_cluster_command_batch':(BatchPage,'分页读取允许范围内的逐机状态与汇总；unknown 不能当作停止或完成。',True),
     'get_cluster_command_output':(Output,'读取指定授权成员的有界 stdout 或 stderr；临时远端输出可能已被清理。',True),
     'cancel_cluster_command_batch':(Cancel,'停止排队项并取消指定运行项；整个批次取消需要全部成员权限。请求取消不代表已停止，不回滚已有副作用。',False),
     'resume_cluster_command_batch':(BatchID,'用户明确要求后继续后端重启时暂停的未启动项；需全部批次目标权限。',False),
+    'delete_cluster_command_batch':(BatchID,'删除已确认终止的批量命令历史。需要全部批次目标权限。',False),
 }
 
 def catalog():
@@ -102,6 +112,16 @@ async def call(app,name,arguments,allowed=None):
     elif name=='delete_cluster':data=service.delete(args['cluster_id'],args['revision'],allowed)
     elif name=='update_cluster_members':data=service.members(args['cluster_id'],args['host_ids'],args['revision'],allowed)
     elif name=='open_cluster_terminals':data=await app.state.cluster_terminals.create(args,allowed)
+    elif name=='list_cluster_terminal_batches':
+        from .mcp_output import page
+        batches = app.state.cluster_terminals.list(allowed)['items']
+        rows = [dict({k: v for k, v in batch.items() if k != 'items'}, target_count=len(batch['items']))
+                for batch in batches]
+        data = page(rows, args['offset'], args['limit'])
+    elif name=='get_cluster_terminal_batch':data=app.state.cluster_terminals.get(args['key'],allowed)
+    elif name=='broadcast_cluster_terminal_command':
+        key = args.pop('key')
+        data = await app.state.cluster_terminals.broadcast(key, args, allowed)
     elif name=='execute_cluster_command':data=await service.submit(args,allowed)
     elif name=='list_cluster_command_batches':
         from .mcp_output import page
@@ -117,5 +137,6 @@ async def call(app,name,arguments,allowed=None):
     elif name=='get_cluster_command_output':data=await service.output(args['batch_id'],args['item_id'],args['stream'],args['offset'],allowed)
     elif name=='cancel_cluster_command_batch':data=await service.cancel(args['batch_id'],args['item_ids'],allowed)
     elif name=='resume_cluster_command_batch':data=await service.resume(args['batch_id'],allowed)
+    elif name=='delete_cluster_command_batch':data=service.delete_batch(args['batch_id'],allowed)
     limited=allowed is not None
     return response(data,partial=limited,warnings=['仅显示或操作当前允许的机器范围。'] if limited else None)

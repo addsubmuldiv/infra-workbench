@@ -49,7 +49,8 @@ class RunPermissions:
             path = local_path(path) if path else None
         elif remote and path:
             path = posixpath.normpath(path) if str(path).startswith('/') else None
-        shell = name in ('local_execute', 'execute_server_command', 'execute_cluster_command')
+        shell = name in ('local_execute', 'execute_server_command', 'execute_cluster_command',
+                         'broadcast_cluster_terminal_command')
         group={'local_read_file':'local_files_read','local_list_files':'local_files_read',
                'local_write_file':'local_files_write','local_edit_file':'local_files_write'}.get(name,name)
         return dict(host_id=host, path=path, shell=shell, sudo=bool(args.get('sudo')), tool=group)
@@ -101,8 +102,9 @@ class RunPermissions:
         if scope['host_id']:
             target=getattr(self,'targets',{}).get(scope['host_id'],scope['host_id'])
         elif name_external(name):target='外部 MCP / External MCP'
-        elif args.get('host_ids') or args.get('cluster_id'):
-            target='服务器批次 / Servers: '+(', '.join(args.get('host_ids') or []) or str(args['cluster_id']))
+        elif args.get('host_ids') or args.get('candidate_host_ids') or args.get('cluster_id'):
+            targets = args.get('host_ids') or args.get('candidate_host_ids') or []
+            target='服务器批次 / Servers: '+(', '.join(targets) or str(args['cluster_id']))
         else:target='本机电脑 / Local computer'
         record = dict(id=uuid.uuid4().hex, run_id=self.turn['id'], tool=name,
                       arguments=self.sanitize(args), target=target,

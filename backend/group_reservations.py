@@ -5,8 +5,19 @@ import threading
 import time
 import uuid
 from .reminder_links import reservation_link
+from .agent_errors import AgentError
 
 TERMINAL = {'ready', 'cancelled'}
+
+
+def in_scope(item, allowed):
+    candidates = item.get('candidate_host_ids')
+    return allowed is None or bool(candidates) and set(candidates) <= allowed
+
+
+def require_scope(item, allowed):
+    if not in_scope(item, allowed):
+        raise AgentError('NOT_FOUND', '预约不存在或不在当前机器范围内')
 
 
 class GroupReservationService:
@@ -62,10 +73,12 @@ class GroupReservationService:
         if possible<data['required_hosts']:raise ValueError('可能满足条件的候选机器不足')
         return data
 
-    def create(self, body, now=None):
+    def create(self, body, now=None, *, allowed=None):
         with self.lock:
+            require_scope(body, allowed)
             for existing in self.items:
                 if existing['request_id']==body.get('request_id'):
+                    require_scope(existing, allowed)
                     if existing['request_payload']!=body:raise ValueError('CONFLICT: request_id 已用于不同预约')
                     return self.get(existing['id'])
             if sum(item['status'] not in TERMINAL for item in self.items)>=100:raise ValueError('最多同时保留 100 条等待中的多机预约')
@@ -81,9 +94,11 @@ class GroupReservationService:
             if item['id']==id:return item
         raise KeyError(id)
 
-    def get(self,id):
+    def get(self,id,*,allowed=None):
         with self.lock:
-            result=copy.deepcopy(self._item(id));result.pop('request_payload',None)
+            item = self._item(id)
+            require_scope(item, allowed)
+            result=copy.deepcopy(item);result.pop('request_payload',None)
             result['counts']={state:sum(h['state']==state for h in result.get('host_states',[])) for state in ('ready','not_ready','unknown')}
             result.update(revision_changed=False,cluster_deleted=False)
             if result.get('cluster_id') and self.clusters:
@@ -95,17 +110,20 @@ class GroupReservationService:
             result['mail_delivery']=dict(zip(('status','error','updated'),delivery)) if delivery else None
             return result
 
-    def list(self):
-        with self.lock:return {'items':[self.get(i['id']) for i in self.items]}
+    def list(self, *, allowed=None):
+        with self.lock:
+            return {'items': [self.get(item['id']) for item in self.items if in_scope(item, allowed)]}
 
-    def update(self,id,body,now=None):
+    def update(self,id,body,now=None,*,allowed=None):
         with self.lock:
             old=self._item(id)
+            require_scope(old, allowed)
             if old['status'] in TERMINAL:raise ValueError('已结束的预约请再次预约')
             if not isinstance(body.get('version'),int) or isinstance(body.get('version'),bool):raise ValueError('编辑预约必须提供 version')
             if body['version']!=old.get('version',1):raise ValueError('CONFLICT: 预约已变化，请刷新后修改')
             body={k:v for k,v in body.items() if k!='version'}
             merged=dict(old['request_payload'],**body);merged['request_id']=old['request_id']
+            require_scope(merged, allowed)
             scope_keys=('mode','candidate_host_ids','cluster_id')
             unchanged=all(merged.get(key)==old['request_payload'].get(key) for key in scope_keys)
             data=self._validate(merged,saved_scope=old if unchanged else None);now=time.time() if now is None else now
@@ -116,23 +134,26 @@ class GroupReservationService:
             self.clocks.pop(id,None)
             return self.get(id)
 
-    def cancel(self,id):
+    def cancel(self,id,*,allowed=None):
         with self.lock:
             item=self._item(id)
+            require_scope(item, allowed)
             if item['status']=='ready':raise ValueError('已提醒的预约不能取消')
             item.update(status='cancelled',idle_since=None,version=item.get('version',1)+1);self.clocks.pop(id,None)
             self.store.save('group_reservations',self.items);return self.get(id)
 
-    def rebook(self,id,body=None,now=None):
+    def rebook(self,id,body=None,now=None,*,allowed=None):
         with self.lock:
             original=self._item(id)
+            require_scope(original, allowed)
             data=dict(original['request_payload'],**(body or {}))
             if data['request_id']==original['request_id']:raise ValueError('再次预约需要新的 request_id')
-            return self.create(data,now)
+            return self.create(data,now,allowed=allowed)
 
-    def delete(self,id):
+    def delete(self,id,*,allowed=None):
         with self.lock:
             item=self._item(id)
+            require_scope(item, allowed)
             if item['status'] not in TERMINAL:raise ValueError('请先取消预约再删除')
             before=self.items[:];self.items.remove(item)
             try:self.store.save('group_reservations',self.items)

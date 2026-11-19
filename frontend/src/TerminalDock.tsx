@@ -6,7 +6,7 @@ import {createTerminalHighlights,readHighlights,HIGHLIGHTS_KEY} from './terminal
 import {captureTerminal,handoffTerminalContext,type TerminalAttachment} from './terminalContext';
 import {useLocale,dateLocale} from './i18n';
 import {toolText as tt} from './toolI18n';
-import {useWorkspaceRestore} from './workspaceHooks';
+import {useWorkspaceRestore,useWorkspaceValue} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
 import {browserId} from './browserId';
 import {TERMINAL_INPUT_EVENT,TERMINAL_TARGETS_EVENT,prepareTerminalInput} from './terminalInput';
@@ -247,7 +247,10 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
 export function TerminalDock({request,hosts,onDirectory}:{request:TerminalRequest|null;hosts:Host[];onDirectory?:(hostId:string,path:string)=>void}){
   useLocale();
   const [tabs,setTabs]=useState<Tab[]>([]),[active,setActive]=useState(''),[collapsed,setCollapsed]=useState(false),[maximized,setMaximized]=useState(false);
-  const [frame,setFrame]=useState(()=>loadTerminalFrame(terminalStorage(),terminalViewport())),[font,setFont]=useState(13),[picker,setPicker]=useState(false),[hint,setHint]=useState('');
+  const [frame,setFrame]=useState(()=>loadTerminalFrame(terminalStorage(),terminalViewport()));
+  const [storedFont,setFont]=useWorkspaceValue('workspace:terminal-font-size',13);
+  const [picker,setPicker]=useState(false),[hint,setHint]=useState('');
+  const font=Number.isInteger(storedFont)&&storedFont>=10&&storedFont<=22?storedFont:13;
   const remoteFrame=useWorkspaceRestore(TERMINAL_FRAME_KEY,()=>loadTerminalFrame(terminalStorage(),terminalViewport()),setFrame);
   const [savedSessions,setSavedSessions]=useState<Record<string,{id:string;created:number}[]>>({}),[sessionBusy,setSessionBusy]=useState(false);
   const [dragging,setDragging]=useState(false);

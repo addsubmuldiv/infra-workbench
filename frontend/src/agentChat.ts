@@ -43,6 +43,28 @@ export function chatReplyTime(created:number,now=new Date()):{label:string;full:
 export const toolNames:Record<string,string>=localizedLabels({create_reservation:'创建预约',update_reservation:'修改预约',cancel_reservation:'取消预约',create_rule:'创建监控',delete_rule:'删除监控',get_workbench_state:'查看机器与预约',preflight:'训练前检查',file_operation:'操作服务器文件',read_training_log:'解析训练日志',compare_training_logs:'对比训练日志',get_log_record:'核对日志记录',save_log_comparison:'保存对比配置',search_hosts:'筛选机器',refresh_host:'刷新采样',search_server_files:'搜索服务器文件',create_upload:'准备上传',get_upload:'查询上传进度',download_server_file:'准备文件下载',download_server_folder:'准备目录下载',list_hosts:'列出机器',search_fleet:'查找资源与进程',get_resources:'查看设备资源',read_directory:'浏览目录',read_file:'读取技能与上下文',read_server_directory:'浏览服务器目录',read_server_file:'读取服务器文件',ls:'浏览技能与上下文',glob:'查找技能文件',grep:'搜索技能内容',compact_conversation:'整理对话上下文',ssh_check:'SSH 只读检查',read_changes:'读取资源变化'});
 export const toolStatus:Record<string,string>=localizedLabels({running:'正在执行',succeeded:'已返回结果',failed:'未完成',cancelled:'已取消',interrupted:'已中断'});
 Object.assign(toolNames,{list_skills:'查询技能',read_skill:'读取技能说明',create_skill_draft:'创建技能草稿',update_skill_draft:'修改技能草稿',validate_skill_draft:'校验技能草稿',install_skill_draft:'安装技能',set_skill_enabled:'启停技能',rollback_skill:'回退技能版本'});
+Object.assign(toolNames,{
+  get_workbench_preferences:'查看工作台偏好',set_workbench_theme:'切换工作台主题',
+  set_workbench_language:'切换工作台语言',update_workbench_preferences:'修改工作台偏好',
+  get_launch_settings:'查看启动设置',update_launch_settings:'修改启动设置',
+  open_floating_monitor:'打开资源浮窗',get_workbench_health:'检查工作台后台',
+  get_workbench_model_settings:'查看模型设置',activate_workbench_model_profile:'切换模型配置',
+  set_workbench_model:'修改助手模型',test_workbench_model:'测试模型连接',
+  set_refresh_interval:'调整采集间隔',set_host_alias:'修改机器别名',set_host_collection:'修改机器采集状态',
+  get_resource_history:'查询资源历史',list_group_reservations:'列出多机预约',
+  get_group_reservation:'查看多机预约',create_group_reservation:'创建多机预约',
+  update_group_reservation:'修改多机预约',cancel_group_reservation:'取消多机预约',
+  rebook_group_reservation:'再次预约多机',delete_group_reservation:'删除多机预约历史',
+  get_ssh_tunnel_status:'查看 SSH 隧道',create_ssh_tunnel:'添加 SSH 隧道',
+  update_ssh_tunnel:'修改 SSH 隧道',start_ssh_tunnel:'连接 SSH 隧道',
+  stop_ssh_tunnel:'断开 SSH 隧道',delete_ssh_tunnel:'删除 SSH 隧道',probe_ssh_tunnel:'检查 SSH 隧道端口',
+  get_ssh_config_aliases:'查看 SSH 候选别名',export_host_ssh_config:'导出 SSH 别名',
+  prepare_vscode_remote:'准备远程 VS Code',open_vscode_remote:'打开远程 VS Code',
+  preview_server_import:'准备导入预览',send_test_email:'发送测试邮件',mark_notifications_read:'将通知标为已读',
+  update_terminal_settings:'修改终端设置',clear_terminal_history:'清除终端历史',
+  list_cluster_terminal_batches:'列出集群终端工作区',get_cluster_terminal_batch:'查看集群终端工作区',
+  broadcast_cluster_terminal_command:'广播终端命令',delete_cluster_command_batch:'删除批量命令历史',
+});
 export function loadChatId(storage:Pick<Storage,'getItem'>=workspaceStorage):string|null{try{const id=storage.getItem('iwb-assistant-chat');return id&&/^[a-f0-9]{32}$/.test(id)?id:null}catch{return null}}
 export function saveChatId(id:string,storage:Pick<Storage,'setItem'>=workspaceStorage){try{storage.setItem('iwb-assistant-chat',id)}catch{}}
 export function chatRequest<T>(path='',method='GET',body?:unknown,signal?:AbortSignal):Promise<T>{return assistantRequest<T>('/chats'+path,method,body,signal)}

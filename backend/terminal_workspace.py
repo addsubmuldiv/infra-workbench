@@ -2,7 +2,17 @@
 import copy
 import time
 import re,secrets,math
+from pydantic import BaseModel, ConfigDict, Field
 from .terminal_shell import safe_command
+
+
+class TerminalSettingsPatch(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    history_enabled: bool | None = None
+    sudo_reuse: bool | None = None
+    notify_enabled: bool | None = None
+    notify_seconds: int | None = Field(default=None, ge=1, le=86400)
+
 
 class TerminalWorkspace:
     def __init__(self,store):

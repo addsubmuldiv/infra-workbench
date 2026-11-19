@@ -65,7 +65,7 @@ GROUPS = {
         'skills skills-settings toolPresentation terminal-assistant-bridge'),
     'mcp': group(
         'test_agent_permission_integration test_agent_permissions test_agent_capabilities test_agent_external_mcp test_agent_tools test_atomic_mcp test_mcp test_mcp_e2e test_unified_mcp '
-        'test_mcp_output_budget test_mcp_query_economy test_skill_integration',
+        'test_mcp_output_budget test_mcp_query_economy test_skill_integration test_workbench_feature_mcp',
         'toolPresentation'),
     'workspace': group(
         'test_workspace_state test_interface_language',
