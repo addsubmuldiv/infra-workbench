@@ -4,6 +4,7 @@ import time
 
 from backend.app import create_app
 from backend.agent_chat import ChatMessageRequest
+from backend.ssh_tunnels import NativeTunnel, TunnelFailure, TunnelRequest
 from test_agent_chat import Model, tool_message
 
 
@@ -32,6 +33,59 @@ def test_sdk_discovers_shared_catalog_and_enforces_scope_before_dispatch(tmp_pat
             forged = await session.call_tool('list_hosts', {'allowed': ['b']})
             assert forged.is_error
         app.state.agent_chat.store.db.close()
+    asyncio.run(run())
+
+
+def test_ssh_tunnel_status_and_history_use_shared_mcp_within_host_scope(tmp_path, monkeypatch):
+    async def run():
+        app = fixture_app(tmp_path)
+        tunnels = app.state.ssh_tunnels
+        rule = tunnels.create('a', TunnelRequest(name='Proxy', local_port=7890, remote_port=18899,
+                                                 auto_reconnect=False))
+        tunnels.create('b', TunnelRequest(name='Other', local_port=7890, remote_port=18899))
+
+        async def reject(*args):
+            raise TunnelFailure('FORWARD_REJECTED', 'Remote forwarding rejected')
+
+        monkeypatch.setattr(NativeTunnel, 'open', reject)
+        await tunnels.start('a', rule['id'])
+        await tunnels.tasks[rule['id']]
+        gateway = app.state.agent_chat.tools
+        try:
+            spec = app.state.mcp_service.catalog()['get_ssh_tunnel_status']
+            assert spec['annotations']['readOnlyHint'] is True
+            async with gateway.session({}, {'a'}) as session:
+                tools = {tool.name: tool for tool in (await session.list_tools()).tools}
+                assert 'get_ssh_tunnel_status' in tools
+                current = await session.call_tool('get_ssh_tunnel_status', {'host_id': 'a'})
+                assert not current.is_error, current.structured_content
+                data = current.structured_content['data']
+                assert data['host_id'] == 'a' and data['section'] == 'current'
+                assert data['items'][0]['remote_port'] == 18899
+                assert data['items'][0]['status'] == 'error'
+                assert data['items'][0]['error_code'] == 'FORWARD_REJECTED'
+
+                await tunnels.update('a', rule['id'], TunnelRequest(
+                    name='New proxy', local_port=7890, remote_port=18900, auto_reconnect=False))
+                updated = (await session.call_tool('get_ssh_tunnel_status', {'host_id': 'a'})).structured_content
+                assert updated['data']['items'][0]['remote_port'] == 18900
+                assert updated['data']['items'][0]['status'] == 'stopped'
+
+                history = await session.call_tool('get_ssh_tunnel_status', {
+                    'host_id': 'a', 'section': 'history', 'limit': 1})
+                assert not history.is_error, history.structured_content
+                event = history.structured_content['data']['items'][0]
+                assert event['tunnel_id'] == rule['id'] and event['remote_port'] == 18899
+                assert event['event'] == 'failed' and event['error_code'] == 'FORWARD_REJECTED'
+                assert event['direction'] == 'remote' and event['error'] == 'Remote forwarding rejected'
+
+                denied = await session.call_tool('get_ssh_tunnel_status', {'host_id': 'b', 'section': 'history'})
+                assert denied.is_error and denied.structured_content['error']['code'] == 'HOST_NOT_FOUND'
+                invalid = await session.call_tool('get_ssh_tunnel_status', {'host_id': 'a', 'limit': 0})
+                assert invalid.is_error
+        finally:
+            await tunnels.close()
+            tunnels.store.db.close()
     asyncio.run(run())
 
 

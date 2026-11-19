@@ -2,52 +2,152 @@ import React,{useCallback,useEffect,useId,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Link2,X} from 'lucide-react';
 import {t,useLocale} from './i18n';
-import {SSHTunnelPanel,tunnelRequest,type TunnelRule} from './SSHTunnelPanel';
+import {UI_TUNNEL_POLL_MS} from './internalDefaults.ts';
+import {SSHTunnelPanel,tunnelError,tunnelRequest,tunnelStatusText,type TunnelRule} from './SSHTunnelPanel';
 import './sshTunnels.css';
-type Host={id:string;target:string;alias?:string;ssh_tunnels?:TunnelRule[]};
+
+type Host={
+ id:string;
+ target:string;
+ alias?:string;
+ auth?:string;
+ ssh_password?:{password_saved:boolean|null};
+ snapshot:{fresh:boolean};
+ ssh_tunnels?:TunnelRule[];
+};
+type TunnelItem={host:Host;rule:TunnelRule};
+type HostRules={rules:TunnelRule[];error?:string};
 const active=(rule:TunnelRule)=>['connected','connecting','reconnecting'].includes(rule.status);
+
+function connectionRank(rules:TunnelRule[]){
+ if(rules.some(rule=>rule.status==='connected'))return 0;
+ // Keep older saved rules with previously connected tunnels until they acquire history.
+ if(rules.some(rule=>rule.has_connected!==false))return 1;
+ return 2;
+}
+
 export function TunnelManagerButton({hosts,disabled=false}:{hosts:Host[];disabled?:boolean}){
  const [open,setOpen]=useState(false);
  const count=hosts.reduce((sum,h)=>sum+(h.ssh_tunnels??[]).filter(active).length,0);
  return <><button className="secondary" disabled={disabled} onClick={()=>setOpen(true)}><Link2 size={16}/>{t('隧道管理','Tunnel manager')} ({count})</button>{open&&<TunnelManager hosts={hosts} close={()=>setOpen(false)}/>}</>;
 }
+
 export function TunnelManager({hosts,close}:{hosts:Host[];close:()=>void}){
- useLocale();const dialog=useRef<HTMLDialogElement>(null),title=useId();
- const [rules,setRules]=useState<Record<string,TunnelRule[]>>({}),[errors,setErrors]=useState<string[]>([]),[busy,setBusy]=useState(false),[all,setAll]=useState(false),[loaded,setLoaded]=useState(false),[detail,setDetail]=useState<Host|null>(null),[now,setNow]=useState(Date.now());
- const mounted=useRef(true),acting=useRef(false),hostRef=useRef(hosts),generation=useRef(0);hostRef.current=hosts;
- useEffect(()=>{if(detail)return;const previous=document.activeElement;dialog.current?.showModal();return()=>{dialog.current?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus()}},[detail]);
- async function refresh(){
+ useLocale();
+ const dialog=useRef<HTMLDialogElement>(null),title=useId();
+ const [results,setResults]=useState<Record<string,HostRules>>({});
+ const [errors,setErrors]=useState<string[]>([]),[busy,setBusy]=useState(false),[loaded,setLoaded]=useState(false);
+ const [detail,setDetail]=useState<{host:Host;ruleId?:string}|null>(null),[now,setNow]=useState(Date.now());
+ const mounted=useRef(true),acting=useRef(false),hostRef=useRef(hosts),generation=useRef(0);
+ hostRef.current=hosts;
+
+ useEffect(()=>{
+  if(detail)return;
+  const previous=document.activeElement,element=dialog.current;
+  element?.showModal();
+  return()=>{element?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus()};
+ },[detail]);
+
+ const refresh=useCallback(async()=>{
+  if(acting.current)return;
   const version=++generation.current,list=hostRef.current;
-  const results=await Promise.allSettled(list.map(h=>tunnelRequest(h.id)));
+  const reads=await Promise.allSettled(list.map(host=>tunnelRequest(host.id)));
   if(!mounted.current||acting.current||version!==generation.current)return;
-  const next:Record<string,TunnelRule[]>={},failures:string[]=[];
-  results.forEach((result,i)=>{if(result.status==='fulfilled')next[list[i].id]=result.value;else failures.push((list[i].alias||list[i].target)+': '+String(result.reason))});
-  setRules(next);setErrors(failures);setLoaded(true);setNow(Date.now());
- }
- useEffect(()=>{mounted.current=true;let timer:ReturnType<typeof setTimeout>;async function poll(){await refresh();if(mounted.current)timer=setTimeout(poll,2000)}void poll();return()=>{mounted.current=false;clearTimeout(timer)}},[]);
- const rows=hosts.flatMap(host=>(rules[host.id]??[]).map(rule=>({host,rule})));
- const running=rows.filter(({rule})=>active(rule));
- async function stop(items:typeof rows){
-  if(acting.current)return;++generation.current;acting.current=true;setBusy(true);
-  const results=await Promise.allSettled(items.map(({host,rule})=>tunnelRequest(host.id,`/${encodeURIComponent(rule.id)}/stop`,'POST')));
+  setResults(old=>Object.fromEntries(reads.map((result,index)=>{
+   const host=list[index];
+   return [host.id,result.status==='fulfilled'
+    ?{rules:result.value}
+    :{rules:old[host.id]?.rules??host.ssh_tunnels??[],error:String(result.reason)}];
+  })));
+  setLoaded(true);
+  setNow(Date.now());
+ },[]);
+
+ useEffect(()=>{
+  mounted.current=true;
+  let cancelled=false,timer:ReturnType<typeof setTimeout>;
+  async function poll(){await refresh();if(!cancelled)timer=setTimeout(poll,UI_TUNNEL_POLL_MS)}
+  void poll();
+  return()=>{cancelled=true;mounted.current=false;clearTimeout(timer)};
+ },[refresh]);
+
+ const machines=hosts.map(host=>{
+  const result=results[host.id];
+  const rules=result?.rules??host.ssh_tunnels??[];
+  return {host,rules,error:result?.error,ready:!!result&&!result.error,rank:connectionRank(rules)};
+ }).filter(({host,rules,error})=>host.snapshot.fresh||rules.length||error)
+   .sort((a,b)=>a.rank-b.rank);
+ const running=machines.flatMap(({host,rules,ready})=>ready?rules.filter(active).map(rule=>({host,rule})):[]);
+
+ async function operate(items:TunnelItem[],action:'start'|'stop'){
+  if(acting.current)return;
+  ++generation.current;
+  acting.current=true;
+  setBusy(true);
+  setErrors([]);
+  const changes=await Promise.allSettled(items.map(({host,rule})=>tunnelRequest(host.id,`/${encodeURIComponent(rule.id)}/${action}`,'POST')));
   acting.current=false;
   if(!mounted.current)return;
-  await refresh();
-  const failures=results.flatMap((r,i)=>r.status==='rejected'?[items[i].host.target+' / '+items[i].rule.name+': '+String(r.reason)]:[]);
-  if(mounted.current){setErrors(old=>[...old,...failures]);setBusy(false)}
+  setResults(old=>{
+   const next={...old};
+   changes.forEach((change,index)=>{
+    if(change.status!=='fulfilled')return;
+    const {host,rule}=items[index];
+    const result=next[host.id];
+     if(result)next[host.id]={...result,rules:result.rules.map(item=>item.id===rule.id?change.value:item)};
+   });
+   return next;
+  });
+  setErrors(changes.flatMap((change,index)=>{
+   if(change.status==='fulfilled')return [];
+   const {host,rule}=items[index];
+   return [`${host.alias||host.target} / ${rule.name} — ${String(change.reason)}`];
+  }));
+  setBusy(false);
+  void refresh();
  }
- const updateDetail=useCallback((items:TunnelRule[])=>{if(detail)setRules(old=>({...old,[detail.id]:items}))},[detail?.id]);
- if(detail)return <SSHTunnelPanel host={detail} close={()=>{setDetail(null);void refresh()}} onRules={updateDetail} onStarted={close}/>;
+
+ const detailHostId=detail?.host.id;
+ const updateDetail=useCallback((rules:TunnelRule[])=>{
+  if(detailHostId)setResults(old=>({...old,[detailHostId]:{rules}}));
+ },[detailHostId]);
+ function closeDetail(){setDetail(null);void refresh()}
+ if(detail)return <SSHTunnelPanel host={detail.host} initialRuleId={detail.ruleId} close={closeDetail} onRules={updateDetail}/>;
+
  return createPortal(<dialog ref={dialog} className="ssh-tunnel-panel tunnel-manager" aria-labelledby={title} onCancel={e=>{e.preventDefault();if(!busy)close()}}>
-  <header className="tunnel-heading"><div><h2 id={title}><Link2 size={21}/>{t('隧道管理','Tunnel manager')}</h2><p>{t('全部机器 · 运行中 ','All machines · Active ')}{running.length}</p></div><button className="icon-button" disabled={busy} aria-label={t('关闭','Close')} onClick={close}><X size={20}/></button></header>
-  <div className="tunnel-body"><div className="tunnel-manager-tools"><label><input type="checkbox" checked={all} onChange={e=>setAll(e.target.checked)}/>{t('显示全部已保存隧道','Show all saved tunnels')}</label><button className="tunnel-disconnect" disabled={busy||!running.length} onClick={()=>void stop(running)}>{t('断开全部运行中隧道','Disconnect all active tunnels')}</button></div>
+  <header className="tunnel-heading">
+   <div><h2 id={title}><Link2 size={19}/>{t('隧道管理','Tunnel manager')}</h2><p>{t(`${machines.length} 台机器 · ${running.length} 条运行中`,`${machines.length} machines · ${running.length} active tunnels`)}</p></div>
+   <div className="tunnel-manager-tools">
+    <button className="tunnel-disconnect" disabled={busy||!running.length} onClick={()=>void operate(running,'stop')}>{t('断开全部运行中隧道','Disconnect all active tunnels')}</button>
+    <button className="icon-button" disabled={busy} aria-label={t('关闭','Close')} onClick={close}><X size={19}/></button>
+   </div>
+  </header>
+  <div className="tunnel-body">
    {errors.map((error,i)=><p key={i} className="tunnel-error" role="alert">{error}</p>)}
    {!loaded&&<p role="status">{t('正在读取隧道状态…','Loading tunnel status…')}</p>}
-   {loaded&&!errors.length&&!(all?rows:running).length&&<p>{all?t('没有已保存的隧道。','No saved tunnels.'):t('当前没有运行中的隧道。','No active tunnels.')}</p>}
-   {(all?rows:running).map(({host,rule})=><article className="tunnel-manager-row" key={host.id+':'+rule.id}>
-    <div><strong>{rule.name}</strong><p>{host.alias||host.target}{host.alias&&' · '+host.target}</p><code>{rule.direction==='remote'?`${t('远端','Remote')} 127.0.0.1:${rule.remote_port} → ${t('本机','Local')} 127.0.0.1:${rule.local_port}`:`${t('本机','Local')} 127.0.0.1:${rule.local_port} → ${t('远端','Remote')} 127.0.0.1:${rule.remote_port}`}</code>
-    <p><i className={'tunnel-dot '+rule.status}/>{rule.status==='connected'?t('已连接','Connected'):rule.status==='connecting'?t('正在连接','Connecting'):rule.status==='reconnecting'?t('正在重连','Reconnecting'):rule.status==='error'?t('连接失败','Connection failed'):t('未连接','Disconnected')}{rule.connected_at&&` · ${Math.max(0,Math.floor(now/1000-rule.connected_at))} ${t('秒','s')}`}</p>{rule.error&&<p className="tunnel-error">{rule.error}</p>}</div>
-    <div className="tunnel-manager-row-actions"><button className="secondary" disabled={busy} onClick={()=>setDetail({...host,ssh_tunnels:rules[host.id]})}>{t('管理','Manage')}</button>{active(rule)&&<button className="tunnel-disconnect" disabled={busy} onClick={()=>void stop([{host,rule}])}>{t('断开','Disconnect')}</button>}</div>
+   {loaded&&!machines.length&&<p>{t('没有在线机器或已保存的隧道。','No online machines or saved tunnels.')}</p>}
+   {machines.map(({host,rules,error,ready})=><article className="tunnel-manager-machine" key={host.id}>
+    <div className="tunnel-manager-machine-heading">
+     <h3>{host.alias||host.target}</h3>{host.alias&&<p>{host.target}</p>}
+    </div>
+    <div className="tunnel-manager-rules">
+     {error&&<p className="tunnel-error" role="alert">{t('无法读取隧道状态','Could not read tunnel status')} · {error}</p>}
+     {ready&&!rules.length&&<div className="tunnel-manager-setup"><p>{t('尚未配置隧道','No tunnel configured')}</p><button className="secondary" disabled={busy} onClick={()=>setDetail({host})}>{t('配置隧道','Set up tunnel')}</button></div>}
+     {rules.map(rule=><div className="tunnel-manager-row" key={rule.id}>
+      <div className="tunnel-manager-rule-name">
+       <strong>{rule.name}</strong>
+       <code>{rule.direction==='remote'?`${t('远端','Remote')} ${rule.remote_port} → ${t('本机','Local')} ${rule.local_port}`:`${t('本机','Local')} ${rule.local_port} → ${t('远端','Remote')} ${rule.remote_port}`}</code>
+      </div>
+      {ready&&<p className="tunnel-manager-status"><i className={'tunnel-dot '+rule.status}/>{tunnelStatusText(rule.status)}{rule.status==='connected'&&rule.connected_at!==null&&` · ${Math.max(0,Math.floor(now/1000-rule.connected_at))} ${t('秒','s')}`}</p>}
+      <div className="tunnel-manager-row-actions">
+       <button className="secondary" disabled={busy} onClick={()=>setDetail({host:{...host,ssh_tunnels:rules},ruleId:rule.id})}>{t('管理','Manage')}</button>
+       {ready&&(active(rule)
+        ?<button className="tunnel-disconnect" disabled={busy} onClick={()=>void operate([{host,rule}],'stop')}>{t('断开','Disconnect')}</button>
+        :<button className="primary" disabled={busy} onClick={()=>void operate([{host,rule}],'start')}>{rule.has_connected?t('重连','Reconnect'):t('连接','Connect')}</button>)}
+      </div>
+      {ready&&rule.error&&<p className="tunnel-error">{tunnelError(rule.error_code,rule.error)}</p>}
+     </div>)}
+    </div>
    </article>)}
    <p className="tunnel-footnote">{t('关闭此窗口后隧道继续在后台运行；从托盘退出后台时会断开全部隧道并停止重连。','Tunnels continue in the background when this window closes. Quitting the backend from the tray disconnects all tunnels and stops reconnecting.')}</p>
   </div>

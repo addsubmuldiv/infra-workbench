@@ -1,6 +1,6 @@
 ---
 name: inspect-processes
-description: 查询占卡进程、推理服务、tmux 会话、端口和系统环境，以及按用户要求停止进程、释放设备。
+description: 查询占卡进程、推理服务、SSH 隧道及断线历史、tmux 会话、端口和系统环境，以及按用户要求停止进程、释放设备。
 ---
 
 # 检查进程与服务
@@ -9,6 +9,8 @@ description: 查询占卡进程、推理服务、tmux 会话、端口和系统�
 
 
 用户尚未给出已验证的机器 ID，且用 IP、型号或卡数指代目标时，先读取 find-hosts 技能确定候选及如何缩小范围。
+
+检查工作台的独立 SSH 隧道（包括远端访问本机的代理）时，用 get_ssh_tunnel_status 读取指定机器的 `section="current"` 和 `section="history"`。历史保留事件发生时的端口，按 `next_offset` 续读。对于 `direction="remote"`，用 ssh_check(check="ports", port=remote_port) 核对相应远端监听。对于 `direction="local"`，监听点在工作台本机，远端端口是目标服务。监听仍存在、进程名是 sshd 或隧道报 FORWARD_REJECTED，都不足以确认旧隧道仍占端口。进程归属不明时只报告检查结果。list_services 用于机器卡片中「服务」面板的本地转发。
 
 1. 全局占卡进程概况直接 search_fleet 的 scope="processes"，tmux 用 scope="sessions"；结果含真实 host_id，无需先 list_hosts 或逐台查。用户要最新数据时首轮 refresh=true；后续按 next_offset 分页，保持条件一致并传 refresh=false。用户用 IP、卡型号或卡数描述机器时先 find_hosts，例如 model="950DT"，可组合 ip、card_count 缩小范围。该工具不要求空闲；不要用默认筛选空闲设备的 search_hosts 定位待停止进程的机器。items 是匹配项，uncertain 是信息不足的候选；多个候选时补充条件或请用户确认，不擅自选择。
 2. “我的”按每台机器当前 SSH 登录账号解释，筛选 owner="__self__"，不猜本机用户名。

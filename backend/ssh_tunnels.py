@@ -8,13 +8,16 @@ import uuid
 from typing import Literal
 
 import asyncssh
-from fastapi import HTTPException
+from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from .agent_errors import AgentError
 from .interface_language import tr
+from .mcp_output import page
 from .ssh_passwords import connection_identity
 from .tunnel_transport import NativeTunnel, PasswordTunnel, TunnelFailure
+
+HISTORY_LIMIT = 100
 
 
 class TunnelRequest(BaseModel):
@@ -52,6 +55,7 @@ class SSHTunnels:
         for rule in self.rules:
             rule.setdefault('before_vscode', False)
         self.states, self.tasks, self.connections = {}, {}, {}
+        self.history_write_failures = set()
         self.lock = asyncio.Lock()
         self.removing = set()
         self.closed = False
@@ -76,12 +80,39 @@ class SSHTunnels:
         self.host(host_id)
         return [self.view(r) for r in self.rules if r['host_id'] == host_id]
 
+    def query(self, host_id, section, offset, limit):
+        if section == 'history':
+            self.host(host_id)
+            items = self.store.load(f'ssh_tunnel_history:{host_id}', [])
+        else:
+            items = self.list(host_id)
+        return dict(host_id=host_id, section=section, observed_at=time.time(),
+                    history_limit=HISTORY_LIMIT,
+                    history_write_failed=host_id in self.history_write_failures,
+                    **page(items, offset, limit, budget=8000))
+
+    def record_event(self, rule, event, *, reason=None, failure=None, occurred_at=None):
+        host_id = rule['host_id']
+        key = f'ssh_tunnel_history:{host_id}'
+        entry = dict(tunnel_id=rule['id'], name=rule['name'], direction=rule['direction'],
+                     local_port=rule['local_port'], remote_port=rule['remote_port'],
+                     occurred_at=time.time() if occurred_at is None else occurred_at,
+                     event=event, reason=reason,
+                     error_code=failure.code if failure else None,
+                     error=str(failure) if failure else '')
+        try:
+            items = self.store.load(key, [])
+            self.store.save(key, [entry, *items[:HISTORY_LIMIT - 1]])
+        except sqlite3.Error:
+            self.history_write_failures.add(host_id)
+            logging.exception('Could not save SSH tunnel event history')
+
     def save(self): self.store.save('ssh_tunnels', self.rules)
 
     def create(self, host_id, request):
         self.host(host_id)
         if sum(r['host_id'] == host_id for r in self.rules) >= 32: raise ValueError('每台机器最多保存 32 条隧道')
-        rule = dict(id=uuid.uuid4().hex, host_id=host_id, **request.model_dump())
+        rule = dict(id=uuid.uuid4().hex, host_id=host_id, has_connected=False, **request.model_dump())
         self.rules.append(rule)
         self.save()
         return self.view(rule)
@@ -90,7 +121,10 @@ class SSHTunnels:
         async with self.lock:
             rule = self.rule(host_id, rule_id)
             if rule_id in self.tasks and not self.tasks[rule_id].done(): raise ValueError('请先断开隧道再修改配置')
-            rule.update(request.model_dump())
+            values = request.model_dump()
+            if any(rule[key] != values[key] for key in ('direction', 'local_port', 'remote_port')):
+                self.states.pop(rule_id, None)
+            rule.update(values)
             self.save()
             return self.view(rule)
 
@@ -121,6 +155,7 @@ class SSHTunnels:
     async def _run(self, rule, notify_result):
         rule_id, attempts = rule['id'], 0
         forward_retries = 0
+        last_retry_failure = None
         while True:
             transport = None
             try:
@@ -130,18 +165,30 @@ class SSHTunnels:
                 else:
                     transport = await NativeTunnel.open(self.ssh, host, rule)
                 self.connections[rule_id] = transport
-                self.states[rule_id] = dict(status='connected', error='', error_code=None,
-                                            connected_at=time.time(), next_retry_at=None)
+                connected_at = time.time()
+                self.state(rule_id, 'connected', connected_at=connected_at)
+                if not rule.get('has_connected'):
+                    rule['has_connected'] = True
+                    try:
+                        self.save()
+                    except sqlite3.Error:
+                        logging.exception('Could not save SSH tunnel connection history')
+                self.record_event(rule, 'connected', occurred_at=connected_at)
                 if notify_result:
                     self._notify_result(rule, 'SSH 隧道已连接', 'SSH tunnel connected')
                     notify_result = False
                 attempts = forward_retries = 0
+                last_retry_failure = None
                 await transport.wait_closed()
                 raise TunnelFailure('CONNECTION_LOST', 'SSH 连接已断开', True)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 failure = classify(exc)
+                failed_at = time.time()
+                if transport:
+                    self.record_event(rule, 'disconnected', reason='connection_lost',
+                                      failure=failure, occurred_at=failed_at)
             finally:
                 self.connections.pop(rule_id, None)
                 if transport: await transport.close()
@@ -149,7 +196,13 @@ class SSHTunnels:
             # remote listener. SSH reports that the same way as policy denial.
             retry_forward = (rule['direction'] == 'remote' and failure.code == 'FORWARD_REJECTED'
                              and forward_retries < len(self.retry_delays))
-            if not rule['auto_reconnect'] or not (failure.retry or retry_forward):
+            will_retry = rule['auto_reconnect'] and (failure.retry or retry_forward)
+            signature = (failure.code, str(failure))
+            if not transport and (not will_retry or signature != last_retry_failure):
+                self.record_event(rule, 'failed', reason='retrying' if will_retry else None,
+                                  failure=failure, occurred_at=failed_at)
+                last_retry_failure = signature
+            if not will_retry:
                 self.state(rule_id, 'error', str(failure), failure.code)
                 if transport:
                     self._notify_result(rule, 'SSH 隧道已意外断开，请在隧道管理中查看原因',
@@ -180,30 +233,39 @@ class SSHTunnels:
                 other_task = self.tasks.get(other['id'])
                 if other['id'] == rule_id or not other_task or other_task.done(): continue
                 if rule['direction'] == other['direction'] == 'local' and rule['local_port'] == other['local_port']:
-                    raise ValueError('本机监听端口已被其他隧道使用')
-                if rule['direction'] == other['direction'] == 'remote' and rule['host_id'] == other['host_id'] and rule['remote_port'] == other['remote_port']:
-                    raise ValueError('这台机器的远端监听端口已被其他隧道使用')
+                    failure = TunnelFailure('LOCAL_PORT_IN_USE', '本机监听端口已被其他隧道使用')
+                elif rule['direction'] == other['direction'] == 'remote' and rule['host_id'] == other['host_id'] and rule['remote_port'] == other['remote_port']:
+                    failure = TunnelFailure('REMOTE_PORT_IN_USE', '这台机器的远端监听端口已被其他隧道使用')
+                else:
+                    continue
+                self.state(rule_id, 'error', str(failure), failure.code)
+                self.record_event(rule, 'failed', failure=failure)
+                raise failure
             self.state(rule_id, 'connecting')
             self.tasks[rule_id] = asyncio.create_task(self._run(rule, notify_result))
             return self.view(rule)
 
-    async def _stop(self, rule_id):
+    async def _stop(self, rule, reason=None):
+        rule_id = rule['id']
+        was_connected = rule_id in self.connections
         task = self.tasks.pop(rule_id, None)
         if task:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         self.state(rule_id, 'stopped')
+        if was_connected and reason:
+            self.record_event(rule, 'disconnected', reason=reason)
 
     async def stop(self, host_id, rule_id):
         async with self.lock:
             rule = self.rule(host_id, rule_id)
-            await self._stop(rule_id)
+            await self._stop(rule, reason='manual_stop')
             return self.view(rule)
 
     async def delete(self, host_id, rule_id):
         async with self.lock:
             rule = self.rule(host_id, rule_id)
-            await self._stop(rule_id)
+            await self._stop(rule, reason='rule_deleted')
             self.rules.remove(rule)
             self.states.pop(rule_id, None)
             self.save()
@@ -233,6 +295,7 @@ class SSHTunnels:
         for rule in list(self.rules):
             if rule.get('auto_start'):
                 try: await self.start(rule['host_id'], rule['id'])
+                except TunnelFailure: pass  # Start already saved the collision and its cause.
                 except ValueError: self.state(rule['id'], 'error', '无法自动连接，请检查机器和端口配置', 'START_FAILED')
 
     async def remove_host(self, host_id):
@@ -240,15 +303,21 @@ class SSHTunnels:
             self.removing.add(host_id)
             for rule in list(self.rules):
                 if rule['host_id'] == host_id:
-                    await self._stop(rule['id'])
+                    await self._stop(rule)
                     self.rules.remove(rule)
                     self.states.pop(rule['id'], None)
             self.save()
+            key = f'ssh_tunnel_history:{host_id}'
+            if self.store.load(key, []):
+                self.store.save(key, [])
+            self.history_write_failures.discard(host_id)
 
     async def close(self):
         async with self.lock:
             self.closed = True
-            for rule_id in list(self.tasks): await self._stop(rule_id)
+            for rule in self.rules:
+                if rule['id'] in self.tasks:
+                    await self._stop(rule, reason='backend_shutdown')
 
 
 def register_ssh_tunnels(app, store, ssh, hosts, passwords, *, on_result):
@@ -262,6 +331,14 @@ def register_ssh_tunnels(app, store, ssh, hosts, passwords, *, on_result):
     async def list_tunnels(host_id: str):
         try: return manager.list(host_id)
         except ValueError as exc: raise HTTPException(404, str(exc)) from None
+
+    @app.get('/api/hosts/{host_id}/tunnels/status')
+    async def tunnel_status(host_id: str, section: Literal['current', 'history'] = 'current',
+                            offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=50)):
+        try:
+            return manager.query(host_id, section, offset, limit)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from None
 
     @app.post('/api/hosts/{host_id}/tunnels')
     async def create_tunnel(host_id: str, body: TunnelRequest):

@@ -59,6 +59,7 @@ def test_roundtrips_ownership_and_cleanup(tmp_path):
                 rule = manager.create('a', TunnelRequest(name='Echo', direction=direction,
                     local_port=destination if direction == 'remote' else port,
                     remote_port=port if direction == 'remote' else destination))
+                assert rule['has_connected'] is False
                 with pytest.raises(ValueError): await manager.start('b', rule['id'])
                 await manager.start('a', rule['id'], notify_result=True)
                 await manager.start('a', rule['id'], notify_result=True)
@@ -71,7 +72,8 @@ def test_roundtrips_ownership_and_cleanup(tmp_path):
                 writer.close(); await writer.wait_closed()
                 probe = await manager.probe('a', rule['id'])
                 assert probe['reachable'] is True
-                await manager.stop('a', rule['id'])
+                stopped = await manager.stop('a', rule['id'])
+                assert stopped['has_connected'] is True and stopped['connected_at'] is None
                 assert connections[-1].is_closed()
                 with pytest.raises(OSError): await asyncio.open_connection('127.0.0.1', port)
             assert len(connections) == 2
@@ -79,7 +81,17 @@ def test_roundtrips_ownership_and_cleanup(tmp_path):
             assert len(events) == 2
             assert all(event['host'] == 'a' and event['notify'] and 'Echo' in event['message']
                        for event in events)
-            assert len(SSHTunnels(store, None, [{'id':'a'}], None).list('a')) == 2
+            reloaded = SSHTunnels(store, None, [{'id':'a'}], None).list('a')
+            assert len(reloaded) == 2
+            assert all(rule['has_connected'] and rule['status'] == 'stopped' for rule in reloaded)
+            restarted = SSHTunnels(store, None, [{'id': 'a'}], None)
+            page = restarted.query('a', 'history', offset=0, limit=2)
+            assert page['total'] == 4 and page['next_offset'] == 2
+            assert [(row['event'], row['reason']) for row in page['items']] == [
+                ('disconnected', 'manual_stop'), ('connected', None)]
+            assert page['items'][0]['direction'] == 'local'
+            older = restarted.query('a', 'history', offset=page['next_offset'], limit=2)
+            assert older['next_offset'] is None and older['items'][0]['direction'] == 'remote'
             await manager.remove_host('a')
             assert manager.rules == []
             with pytest.raises(ValueError): manager.create('a', TunnelRequest(name='Race', local_port=1, remote_port=2))
@@ -131,12 +143,18 @@ def test_unexpected_disconnect_notifies_once(tmp_path, monkeypatch, auto_reconne
             disconnected.set()
             await asyncio.wait_for(wait_until(lambda: bool(published)), 2)
             assert manager.view(rule)['status'] == ('reconnecting' if auto_reconnect else 'error')
+            assert manager.list('a')[0]['has_connected'] is True
             if auto_reconnect:
                 await asyncio.wait_for(wait_until(lambda: attempts >= 3), 2)
             await manager.stop('a', rule['id'])
             assert len(published) == 1
             assert len(store.events()) == 1
             assert published[0][0]['notify'] and 'Loss' in published[0][0]['message']
+            events = manager.query('a', 'history', offset=0, limit=20)['items']
+            assert [event['event'] for event in events] == (
+                ['failed', 'disconnected', 'connected'] if auto_reconnect else ['disconnected', 'connected'])
+            loss = next(event for event in events if event['event'] == 'disconnected')
+            assert loss['error_code'] == 'CONNECTION_LOST' and loss['remote_port'] == 18899
         finally:
             await manager.close()
             store.db.close()
@@ -198,6 +216,7 @@ def test_stop_cancels_connect_and_no_retry_on_bind_failure(tmp_path):
                 await asyncio.sleep(.01)
             assert manager.view(rule)['status'] == 'error'
             assert manager.view(rule)['error_code'] == 'FORWARD_REJECTED'
+            assert manager.view(rule)['has_connected'] is False
         finally: await manager.close(); store.db.close()
     asyncio.run(run())
 

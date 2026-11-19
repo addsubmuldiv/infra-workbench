@@ -19,6 +19,7 @@ REQUEST_ORIGIN = ContextVar('iwb_mcp_origin', default='http://127.0.0.1:8765')
 
 # name: method, route, description, read-only, transport handoff
 OPERATIONS = {
+    'get_ssh_tunnel_status': ('GET', '/api/hosts/{host_id}/tunnels/status', '按机器查询独立 SSH 隧道（含远端代理）的状态、转发方向和端口。section="current" 查看当前配置、状态和错误，section="history" 查看最近连接、断开、失败及当时的端口，按 next_offset 续读。对于 direction="remote"，用 ssh_check(check="ports", port=remote_port) 核对监听；端口相同不能确认是旧隧道。', True, False),
     'list_services': ('GET', '/api/hosts/{host_id}/services', '查看这台机器的本地 SSH 服务转发状态。', True, False),
     'create_service': ('POST', '/api/hosts/{host_id}/services', '保存本地服务转发规则；仅在用户明确要求时使用，不启动远端服务。', False, False),
     'start_service': ('POST', '/api/hosts/{host_id}/services/{forward_id}/start', '启动仅绑定本机回环地址的 SSH 转发；仅在用户明确要求时使用。', False, False),

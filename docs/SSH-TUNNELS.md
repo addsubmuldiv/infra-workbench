@@ -4,9 +4,13 @@
 
 ## 统一管理
 
-页面顶部的“隧道管理”显示所有机器的隧道，不受机器选择、搜索或设备类型筛选影响。入口数字统计正在连接、已连接和正在重连的隧道。窗口默认列出这些运行中的隧道；勾选“显示全部已保存隧道”可查看未连接和失败的配置。
+页面顶部的“隧道管理”列出所有在线机器，以及有已保存隧道的机器，不受机器选择、搜索或设备类型筛选影响。至少有一条隧道已连接的机器排在最前面，曾连接成功的排在后面，从未连过的排在最后。升级前保存的配置缺少连接记录，先随曾连接过的机器一起排在中间，下一次连接成功后会记录下来。
 
-列表每两秒刷新状态，显示机器、隧道名称、转发方向、端口和连接时长。可单条断开，或断开全部已读取到的运行中隧道；“管理”打开原有配置面板。读取或断开失败会显示对应机器的错误。关闭管理窗口不会停止隧道；从托盘退出后台才会断开全部隧道并取消重连。
+列表每两秒刷新状态。可以直接连接或重连已保存的隧道，单条断开，或断开全部运行中的隧道。点击“管理”编辑对应的隧道，或在没有配置的机器上点击“配置隧道”创建第一条。关闭管理窗口不会停止隧道；从托盘退出后台会断开全部隧道并取消重连。
+
+助手可按机器调用只读 MCP 工具 `get_ssh_tunnel_status`。默认读取当前状态，设置 `section="history"` 可查看启用此版本后记录的连接、断开和失败，最新事件在前，每台机器保留最近 100 条。同一次重连过程中连续出现的相同错误合并记录。修改或删除隧道配置后，历史仍保留当时的方向、端口和失败原因。移除机器会清理对应历史。后台被强制结束时可能来不及记录断开事件。
+
+排查远端代理端口时，对照 `direction="remote"` 的 `remote_port`，再用 `ssh_check(check="ports", port=remote_port)` 查看远端监听。工作台记录的是它观察到的连接状态，远端监听是否释放以实时检查为准。端口和进程名相同仍需核对归属。
 
 ## 远端 Codex 使用本机代理
 
@@ -46,7 +50,11 @@ SSH 别名继续由 VS Code 解析，手动机器的账号和端口会带入连�
 
 ## English
 
-The page header's **Tunnel manager** covers all machines regardless of sidebar selection or filters. It defaults to active tunnels (connecting, connected, or reconnecting); enable **Show all saved tunnels** for stopped and failed rules. Status refreshes every two seconds. Inspect routes and connection duration, disconnect individual or all loaded active tunnels, or open the existing configuration panel. Read and stop failures identify the affected machine. Closing the manager keeps tunnels running; quitting the backend disconnects them and cancels reconnects.
+The page header's **Tunnel manager** shows online machines and machines with saved tunnels, regardless of sidebar selection or filters. Machines with a connected tunnel come first, followed by machines with a previous successful connection, then machines that have never connected. Older saved configurations have no connection history and sort with previously connected machines until a successful connection is recorded.
+
+Status refreshes every two seconds. Connect or reconnect saved tunnels directly from the list, disconnect one tunnel or all active tunnels, and open **Manage** to edit a specific tunnel. Choose **Set up tunnel** to create the first tunnel for a machine. Closing the manager keeps tunnels running. Quitting the backend disconnects them and cancels reconnects.
+
+The read-only MCP tool `get_ssh_tunnel_status` lists current tunnels by machine. Set `section="history"` for up to 100 recorded connection, disconnection, and failure events per machine, newest first. Consecutive identical failures during the same reconnect sequence are recorded once. History starts with this version and preserves the forwarding direction and ports at the time of each event. Abrupt backend termination can leave no disconnect event. Inspect the remote listener separately with `ssh_check(check="ports", port=remote_port)` for remote forwarding and verify its process identity before attributing it to a tunnel.
 
 The machine's **VS Code** button launches local VS Code with Remote - SSH. Enable **Connect before opening VS Code** on each required tunnel and save it. All selected tunnels must connect before launch, with a 60-second wait limit. Failure offers retry or an explicit skip; cancelling leaves backend tunnels alone. The launch target is rechecked even when skipping. Install VS Code and Remote - SSH first. Authentication remains in VS Code; saved Workbench passwords, custom private keys and editor settings are not transferred automatically. A successful launch acknowledges CLI dispatch, not remote authentication.
 

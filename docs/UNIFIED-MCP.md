@@ -1,5 +1,7 @@
 # 统一 MCP 与业务技能
 
+`get_ssh_tunnel_status(host_id, section="current")` 查询指定机器的独立 SSH 隧道。返回隧道状态、方向、端口、错误代码和错误说明。`section="history"` 返回该机器最近的连接、断开和失败记录，保留事件发生时的端口，按 `next_offset` 翻页。内置助手和外部 MCP 共用同一入口，机器范围限制照常生效。远端转发可用 `ssh_check(check="ports", port=remote_port)` 核对监听。端口仍被占用时，还需确认监听进程归属。详见 [SSH 隧道](SSH-TUNNELS.md)。
+
 ## 按名称解析目标和集群范围
 
 `resolve_target({"name":"机柜 4","type":"cluster"})` 匹配工作台登记的集群名称，返回 `status` 和 `matches`。默认 `type="auto"` 同时查集群名、机器显示名和 SSH 目标名。比较完整名称时忽略空白、大小写和全半角差异。「四机」与「机柜 4」仍是不同名称。只有 `resolved` 有唯一结果，`ambiguous` 需要确认候选，`not_found` 需要核对名称。
