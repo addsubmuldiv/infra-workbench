@@ -7,7 +7,6 @@ import time
 import uuid
 from typing import Literal
 
-import asyncssh
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,6 +33,8 @@ class TunnelRequest(BaseModel):
 def classify(exc):
     if isinstance(exc, TunnelFailure): return exc
     if isinstance(exc, AgentError): return TunnelFailure(exc.code, exc.message)
+    import asyncssh
+
     if isinstance(exc, asyncssh.PermissionDenied):
         return TunnelFailure('AUTH_REQUIRED', 'SSH 认证失败，请重新保存 SSH 密码或配置免密登录')
     if isinstance(exc, asyncssh.HostKeyNotVerifiable):
@@ -288,7 +289,11 @@ class SSHTunnels:
             writer.close()
             await writer.wait_closed()
             return dict(reachable=True, message='目标 TCP 端口可达；未验证代理协议或外网访问')
-        except (OSError, TimeoutError, asyncssh.Error):
+        except Exception as error:
+            if not isinstance(error, OSError):
+                from asyncssh import Error
+                if not isinstance(error, Error):
+                    raise
             return dict(reachable=False, message='目标 TCP 端口不可达，请确认对应服务正在运行')
 
     async def startup(self):

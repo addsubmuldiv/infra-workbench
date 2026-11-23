@@ -94,6 +94,31 @@ def test_optimizer_steps_aligns_real_style_metrics_without_treating_steps_as_met
     assert result['metrics'][0]['max_abs_error']==pytest.approx(.2)
 
 
+def test_summary_and_page_preserve_statistics_with_sparse_metrics_and_tied_errors():
+    a = parsed([
+        dict(step=step, loss=1) if step != 2 else dict(step=step, grad_norm=1)
+        for step in range(1, 7)
+    ])
+    b = parsed([
+        dict(step=step, loss=3 if step in (3, 5) else 1)
+        if step != 4 else dict(step=step, grad_norm=1)
+        for step in range(1, 7)
+    ])
+    detail = compare_logs(a, b, ['loss'])['metrics'][0]
+    summary = compare_logs(a, b, ['loss'], view='summary')['metrics'][0]
+    page = compare_logs(a, b, ['loss'], view='page', offset=1, limit=2)['metrics'][0]
+    for metric in (summary, page):
+        assert metric['count'] == 4
+        assert metric['missing_metric_steps'] == 2
+        assert metric['mae'] == detail['mae'] == 1
+        assert metric['max_abs_error'] == 2
+        assert metric['max_error_step'] == 3
+    assert [point['step'] for point in summary['points']] == [1, 3, 6]
+    assert page['points'] == detail['points'][1:3]
+    assert page['baseline_series'] == detail['baseline_series'][1:3]
+    assert page['candidate_series'] == detail['candidate_series'][1:3]
+
+
 @pytest.mark.parametrize('value',[True,-1,1.5,'not-a-step',None])
 def test_optimizer_steps_rejects_invalid_step_values(value):
     assert parsed([dict(optimizer_steps=value,mean_recent_loss=.2)])['records']==[]

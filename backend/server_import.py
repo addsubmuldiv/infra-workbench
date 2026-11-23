@@ -5,8 +5,6 @@ import re
 import zipfile
 from dataclasses import dataclass, field
 
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill
 from pydantic import SecretStr
 
 MAX_FILE=IMPORTS_WORKBOOK_MAX_BYTES
@@ -58,6 +56,7 @@ def parse_workbook(data):
             entries=archive.infolist()
             if len(entries)>IMPORTS_ZIP_MAX_ENTRIES or sum(x.file_size for x in entries)>IMPORTS_ZIP_MAX_EXPANDED_BYTES:
                 raise WorkbookError('Excel 解压后过大，请只保留服务器列表')
+        from openpyxl import load_workbook
         book=load_workbook(io.BytesIO(data),read_only=True,data_only=False,keep_links=False)
         sheet=book.worksheets[0]
         if (sheet.max_row or 0)>IMPORTS_SHEET_MAX_ROWS+1 or (sheet.max_column or 0)>IMPORTS_SHEET_MAX_COLUMNS:
@@ -125,6 +124,9 @@ def parse_workbook(data):
 
 
 def import_template():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
     book=Workbook();sheet=book.active;sheet.title='服务器列表'
     sheet.append(['IP','账号','密码','端口'])
     sheet.append(['192.0.2.10','your_user','replace_with_password',22])

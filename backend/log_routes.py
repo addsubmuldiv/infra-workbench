@@ -6,6 +6,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from fastapi import HTTPException,Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel,Field,field_validator
 
 from .log_compare import compare_logs
@@ -127,7 +128,8 @@ def validate_path(value):
         try:
             result=compare_logs(a,b,**body.model_dump(exclude={'baseline','candidate'}))
         except ValueError as exc: raise HTTPException(400,str(exc)) from None
-        return dict(result,baseline=body.baseline,candidate=body.candidate)
+        # Comparison results already contain only JSON primitives and containers.
+        return JSONResponse(dict(result,baseline=body.baseline,candidate=body.candidate))
 
     @app.get('/api/logs/{snapshot_id}/record')
     async def record(snapshot_id:str,group:str,line:int):

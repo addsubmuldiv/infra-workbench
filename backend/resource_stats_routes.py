@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 
 
 def history_time_range(args, zone, now=None):
@@ -66,7 +67,7 @@ def register_resource_history_routes(app, service, hosts):
             for host in result['hosts']:
                 if host['name']==host['host_id']:
                     host['name']=names.get(host['host_id'],host['host_id'])
-            return result
+            return JSONResponse(result)
         except HTTPException: raise
         except sqlite3.Error:
             raise HTTPException(503,'资源历史数据库暂时无法读取') from None

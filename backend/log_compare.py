@@ -1,5 +1,6 @@
 """Compare unmodified values on actual common steps, never positional alignment."""
 import math
+from itertools import islice
 
 
 def selected_rows(data,key,policy,start,end):
@@ -19,6 +20,61 @@ def selected_rows(data,key,policy,start,end):
     return result
 
 
+def _point(step, baseline_row, candidate_row, baseline, candidate, difference, absolute_error):
+    return {
+        'step': step,
+        'baseline': baseline,
+        'candidate': candidate,
+        'difference': difference,
+        'absolute_error': absolute_error,
+        'baseline_line': baseline_row['line'],
+        'candidate_line': candidate_row['line'],
+    }
+
+
+def _compare_metric(name, baseline, candidate, aligned_rows, view, offset, limit):
+    errors = []
+    points = []
+    worst_error = -1
+    worst_step = None
+    first_step = last_step = None
+    detail = view == 'detail'
+    page = view == 'page'
+    point_end = offset + limit
+
+    for step, a, b in aligned_rows:
+        x, y = a['metrics'].get(name), b['metrics'].get(name)
+        if x is None or y is None:
+            continue
+        difference = y - x
+        if not math.isfinite(difference):
+            raise ValueError('指标差值超出数值范围，无法计算误差')
+        absolute_error = abs(difference)
+        if absolute_error > worst_error:
+            worst_error, worst_step = absolute_error, step
+        if not errors:
+            first_step = step
+        last_step = step
+        if detail or (page and offset <= len(errors) < point_end):
+            points.append(_point(step, a, b, x, y, difference, absolute_error))
+        errors.append(absolute_error)
+
+    if view == 'summary' and errors:
+        for step in dict.fromkeys((first_step, worst_step, last_step)):
+            a, b = baseline[step], candidate[step]
+            x, y = a['metrics'][name], b['metrics'][name]
+            difference = y - x
+            points.append(_point(step, a, b, x, y, difference, abs(difference)))
+
+    count = len(errors)
+    # Divide before summing to avoid overflowing a finite mean.
+    mae = math.fsum(error / count for error in errors) if count else None
+    return dict(
+        name=name, count=count, missing_metric_steps=len(aligned_rows) - count, mae=mae,
+        max_abs_error=worst_error if count else None, max_error_step=worst_step, points=points,
+    )
+
+
 def compare_logs(baseline,candidate,metrics,baseline_group=None,candidate_group=None,duplicate_policy='error',start=None,end=None,view='detail',offset=0,limit=10):
     if view not in ('detail','summary','page') or offset<0 or not 1<=limit<=20:
         raise ValueError('无效的输出视图或分页参数')
@@ -30,32 +86,20 @@ def compare_logs(baseline,candidate,metrics,baseline_group=None,candidate_group=
     b=selected_rows(candidate,candidate_group,duplicate_policy,start,end)
     common=sorted(a.keys()&b.keys())
     if not common: raise ValueError('所选范围内没有共同 step，无法计算误差')
+    aligned_rows = [(step, a[step], b[step]) for step in common]
     output=[]
+    series = () if view == 'summary' else (
+        ('baseline_series', a, sorted(a)),
+        ('candidate_series', b, sorted(b)),
+    )
     for name in dict.fromkeys(metrics):
-        points=[]
-        for step in common:
-            x,y=a[step]['metrics'].get(name),b[step]['metrics'].get(name)
-            if x is None or y is None: continue
-            difference=y-x
-            if not math.isfinite(difference): raise ValueError('指标差值超出数值范围，无法计算误差')
-            points.append(dict(step=step,baseline=x,candidate=y,difference=difference,absolute_error=abs(difference),
-                               baseline_line=a[step]['line'],candidate_line=b[step]['line']))
-        count=len(points)
-        worst=max(points,key=lambda p:p['absolute_error']) if points else None
-        # Divide before summing to avoid overflowing a finite mean.
-        mae=math.fsum(p['absolute_error']/count for p in points) if count else None
-        item=dict(name=name,count=count,missing_metric_steps=len(common)-count,mae=mae,
-                           max_abs_error=worst['absolute_error'] if worst else None,
-                           max_error_step=worst['step'] if worst else None)
-        if view=='summary':
-            evidence=([points[0],worst,points[-1]] if points else [])
-            item['points']=list({p['step']:p for p in evidence}.values())
-        else:
-            item['points']=points if view=='detail' else points[offset:offset+limit]
-            for key,rows in (('baseline_series',a),('candidate_series',b)):
-                steps=[s for s in sorted(rows) if name in rows[s]['metrics']]
-                if view=='page':steps=steps[offset:offset+limit]
-                item[key]=[dict(step=s,value=rows[s]['metrics'][name]) for s in steps]
+        item = _compare_metric(name, a, b, aligned_rows, view, offset, limit)
+        for key, rows, sorted_steps in series:
+            steps = (step for step in sorted_steps if name in rows[step]['metrics'])
+            if view == 'page':
+                size = len(sorted_steps)
+                steps = islice(steps, min(offset, size), min(offset + limit, size))
+            item[key] = [{'step': step, 'value': rows[step]['metrics'][name]} for step in steps]
         output.append(item)
     if not any(m['count'] for m in output): raise ValueError('共同 step 中没有双方均可用的所选指标')
     mismatches=[s for s in common if 'learning_rate' in a[s]['metrics'] and 'learning_rate' in b[s]['metrics']

@@ -9,8 +9,6 @@ import time
 import weakref
 from pathlib import Path
 
-import asyncssh
-
 from .core import discover_aliases, install_key_script
 from .ssh_passwords import connection_identity
 from .ssh_proxy import SSHProxyConnector
@@ -21,25 +19,11 @@ class SSHCommandTimeout(TimeoutError):
     error_stage = 'probe'
 
 
-class ConnectionTrace(asyncssh.SSHClient):
-    """Record handshake/auth boundaries without logging credentials."""
-    def __init__(self, host_id, host_keys=None):
-        self.host_id = host_id
-        self.started = time.monotonic()
-        self.auth_started = False
-        self.host_keys = host_keys
+def _load_async_client():
+    import asyncssh
+    from .ssh_client import ConnectionTrace
 
-    def validate_host_public_key(self, host, addr, port, key):
-        return bool(self.host_keys and self.host_keys.validate(host, addr, port, key))
-
-    def begin_auth(self, username):
-        self.auth_started = True
-        logging.info('SSH handshake completed host_id=%s elapsed=%.3fs',
-                     self.host_id, time.monotonic() - self.started)
-
-    def auth_completed(self):
-        logging.info('SSH authentication completed host_id=%s elapsed=%.3fs',
-                     self.host_id, time.monotonic() - self.started)
+    return asyncssh, ConnectionTrace
 
 
 class SSHService:
@@ -54,6 +38,7 @@ class SSHService:
         self.monitor_retry = {}
         self.verified_configs = {}
         self.connection_configs = weakref.WeakKeyDictionary()
+        self._async_client = None
 
     async def command(self, args, source=None, timeout=15):
         proc = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE,
@@ -187,6 +172,10 @@ class SSHService:
         self.check_import_identity(host, cfg)
         if (identity := host.get('_credential_identity')) and identity != connection_identity(cfg):
             raise ValueError('SSH 目标、账号或路由已变化，请重新保存密码。')
+        # The initial monitor connection can overlap the first HTTP requests.
+        if self._async_client is None:
+            self._async_client = await asyncio.to_thread(_load_async_client)
+        asyncssh, ConnectionTrace = self._async_client
         # AsyncSSH connect_timeout covers proxy startup, handshake AND auth.
         # A separate short login timer would cut off that larger budget early.
         configured = cfg.get('connecttimeout', 'none')
@@ -303,7 +292,11 @@ class SSHService:
                 return
             try:
                 session = await self.password_connection(host, None, monitor=True)
-            except (asyncssh.Error, OSError, ValueError):
+            except Exception as error:
+                if not isinstance(error, (OSError, ValueError)):
+                    from asyncssh import Error
+                    if not isinstance(error, Error):
+                        raise
                 # Agent/certificate/provider features may require native OpenSSH.
                 self.monitor_retry[key] = time.monotonic() + 120
                 return
@@ -383,6 +376,8 @@ class SSHService:
         return await self.command(args[:-1]+pinned+[args[-1],command],source)
 
     async def ensure_key(self):
+        import asyncssh
+
         folder = self.data/'keys'
         folder.mkdir(mode=0o700, exist_ok=True)
         if os.name == 'nt':

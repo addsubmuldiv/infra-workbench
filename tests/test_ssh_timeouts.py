@@ -63,7 +63,7 @@ def test_password_connection_budgets_for_proxy_and_honors_config(tmp_path, monke
         assert options['login_timeout'] == expected
         return Connection()
     ssh.effective = effective
-    monkeypatch.setattr('backend.ssh.asyncssh.connect', connect)
+    monkeypatch.setattr('asyncssh.connect', connect)
     asyncio.run(ssh.password_connection(dict(id='a', target='a'), 'test-only'))
 
 
@@ -78,7 +78,7 @@ def test_password_timeout_identifies_stage_without_echoing_secret(tmp_path, monk
             trace.begin_auth('user')
         raise asyncio.TimeoutError()
     ssh.effective = effective
-    monkeypatch.setattr('backend.ssh.asyncssh.connect', connect)
+    monkeypatch.setattr('asyncssh.connect', connect)
     with pytest.raises(TimeoutError, match=stage) as error:
         asyncio.run(ssh.password_connection(dict(id='a', target='a'), 'test-only-secret'))
     assert '40' in str(error.value)

@@ -43,7 +43,7 @@ def alias_app(tmp_path,monkeypatch,*,deny=False,native_login=False):
         connection=Connection();connections.append((kwargs,connection));return connection
     monkeypatch.setattr(SSHService,'command',command)
     monkeypatch.setattr(SSHService,'ensure_key',key)
-    monkeypatch.setattr('backend.ssh.asyncssh.connect',connector)
+    monkeypatch.setattr('asyncssh.connect',connector)
     vault=Vault()
     app=create_app(tmp_path/'data',start_poll=False,credential_store=Vault(),email_credential_store=Vault(),ssh_credential_store=vault)
     return app,vault,commands,connections

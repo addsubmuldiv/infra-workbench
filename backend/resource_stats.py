@@ -6,11 +6,16 @@ import threading
 import time
 import uuid
 import sqlite3
+from collections import defaultdict
 from contextlib import contextmanager
+from functools import lru_cache
+from itertools import pairwise
 from pathlib import Path
 
 RETENTION_SECONDS = HISTORY_RESOURCES_RETENTION_DAYS * 86400
 RULE_VERSION = 1
+_UNKNOWN_STATS = dict(idle_count=0,busy_count=0,unknown_count=None,total_count=None,
+                      inventory_known=False,complete=False,machine_state='unknown')
 
 
 def compact(device):
@@ -30,6 +35,72 @@ def compact(device):
     else:
         value['state'] = 'unknown'
     return value
+
+
+def _inventory(payload, kind):
+    devices = [device for device in json.loads(payload) if device.get('kind') == kind]
+    slots = [device.get('id') for device in devices]
+    signature = [(device['identity'], device['state']) for device in devices]
+    total = len(devices)
+    known = None not in slots and len(set(map(str, slots))) == total
+    # compact() puts the slot first in each identity. Distinct ASCII string
+    # slots then guarantee distinct serialized identities.
+    if known and not all(
+        isinstance(slot, str) and slot.isascii() and isinstance(identity, list)
+        and identity and identity[0] == slot
+        for slot, (identity, _) in zip(slots, signature)
+    ):
+        known = len({json.dumps(identity) for identity, _ in signature}) == total
+    if not known:
+        return _UNKNOWN_STATS, 'inventory_unknown', devices, signature
+
+    idle = sum(device['state'] == 'idle' for device in devices)
+    busy = sum(device['state'] == 'busy' for device in devices)
+    unknown = sum(device['state'] == 'unknown' for device in devices)
+    complete = total > 0 and unknown == 0
+    state = ('whole_idle' if complete and idle == total else
+             'no_idle' if complete and idle == 0 else
+             'partial_idle' if idle > 0 and busy > 0 else 'unknown')
+    reason = 'device_fields_incomplete' if unknown else '' if total else 'no_matching_devices'
+    return (
+        dict(idle_count=idle,busy_count=busy,unknown_count=unknown,total_count=total,
+             inventory_known=True,complete=complete,machine_state=state),
+        reason, devices, signature,
+    )
+
+
+def _aggregate_segments(hosts, end):
+    # Host segments cover the entire query range, so only their starts change the totals.
+    changes = defaultdict(list)
+    for host in hosts:
+        previous = None
+        for segment in host['segments']:
+            changes[segment['start']].append((previous, segment))
+            previous = segment
+    host_count = len(hosts)
+    counts = dict(whole_idle=0,partial_idle=0,no_idle=0,unknown=0)
+    idle = unknown = incomplete_inventory = complete_hosts = 0
+    aggregate = []
+    for start, finish in pairwise([*sorted(changes), end]):
+        for previous, current in changes[start]:
+            if previous is not None:
+                counts[previous['machine_state']] -= 1
+                idle -= previous['idle_count']
+                unknown -= previous['unknown_count'] or 0
+                incomplete_inventory -= previous['unknown_count'] is None
+                complete_hosts -= previous['complete']
+            counts[current['machine_state']] += 1
+            idle += current['idle_count']
+            unknown += current['unknown_count'] or 0
+            incomplete_inventory += current['unknown_count'] is None
+            complete_hosts += current['complete']
+        aggregate.append(dict(
+            start=start,end=finish,**counts,idle_count=idle,
+            unknown_count=None if incomplete_inventory else unknown,
+            complete_hosts=complete_hosts,complete=complete_hosts == host_count,
+            machine_state='whole_idle' if counts['whole_idle'] == host_count else 'unknown',
+        ))
+    return aggregate
 
 
 class ResourceStats:
@@ -158,6 +229,8 @@ class ResourceStats:
         host_ids = list(dict.fromkeys(host_ids))
         elapsed_end = max(start,min(end,now))
         retention = now-RETENTION_SECONDS
+        # One sample payload can cover several intervals and recur across observations.
+        read_inventory = lru_cache(maxsize=256)(_inventory)
         with self._reader() as db:
             run_rows=db.execute('SELECT id,started,ended FROM resource_recording_runs ORDER BY started').fetchall()
             first_row=db.execute("SELECT value FROM resource_stats_metadata WHERE key='recording_started_at'").fetchone()
@@ -189,11 +262,13 @@ class ResourceStats:
                     points.add(pending)
                 segments=[]
                 row_index=-1
-                for a,b in zip(sorted(points), sorted(points)[1:]):
+                previous_signature = None
+                for a,b in pairwise(sorted(points)):
                     while row_index+1<len(rows) and rows[row_index+1][0]<=a:
                         row_index+=1
                     row=rows[row_index] if row_index>=0 else None
-                    reason='not_recorded'; devices=[]; known=False
+                    reason = 'not_recorded'
+                    stats, devices, device_signature = _UNKNOWN_STATS, [], []
                     if a>=now: reason='future'
                     elif a<retention: reason='outside_retention'
                     elif pending is not None and a>=pending: reason='history_write_gap'
@@ -204,42 +279,23 @@ class ResourceStats:
                         elif runs.get(row[6]) is not None and a>=runs[row[6]]: reason='backend_stopped'
                         elif a>=row[1]: reason='sampling_gap'
                         else:
-                            devices=[d for d in json.loads(row[5]) if d.get('kind')==kind]
-                            identities=[json.dumps(d['identity']) for d in devices]
-                            slots=[str(d.get('id')) for d in devices]
-                            known=len(set(identities))==len(identities) and len(set(slots))==len(slots) and all(d.get('id') is not None for d in devices)
-                            reason='' if known else 'inventory_unknown'
-                    idle=sum(d['state']=='idle' for d in devices) if known else 0
-                    busy=sum(d['state']=='busy' for d in devices) if known else 0
-                    unknown=sum(d['state']=='unknown' for d in devices) if known else None
-                    total=len(devices) if known else None
-                    complete=known and total>0 and unknown==0
-                    state='whole_idle' if complete and idle==total else 'no_idle' if complete and idle==0 else 'partial_idle' if idle>0 and busy>0 else 'unknown'
-                    if unknown: reason='device_fields_incomplete'
-                    elif known and total==0: reason='no_matching_devices'
-                    seg=dict(start=a,end=b,idle_count=idle,busy_count=busy,unknown_count=unknown,total_count=total,inventory_known=known,complete=complete,machine_state=state,reason=reason,devices=devices,run_id=row[6] if row else None,first_observed_at=row[0] if row else None,last_observed_at=row[8] if row else None)
-                    def signature(segment):
-                        return ({k:v for k,v in segment.items() if k not in ('start','end','devices','first_observed_at','last_observed_at')},
-                                [(d['identity'],d['state']) for d in segment['devices']])
-                    if segments and signature(segments[-1])==signature(seg):
+                            stats, reason, devices, device_signature = read_inventory(row[5], kind)
+                    run_id = row[6] if row else None
+                    last_observed = row[8] if row else None
+                    signature = (stats, reason, run_id, device_signature)
+                    if signature == previous_signature:
                         segments[-1]['end']=b
-                        segments[-1]['last_observed_at']=seg['last_observed_at']
-                    else: segments.append(seg)
+                        segments[-1]['last_observed_at']=last_observed
+                    else:
+                        segments.append(dict(
+                            start=a,end=b,**stats,reason=reason,devices=devices,run_id=run_id,
+                            first_observed_at=row[0] if row else None,last_observed_at=last_observed,
+                        ))
+                        previous_signature = signature
                 hosts.append(dict(host_id=host_id,name=rows[-1][2] if rows else host_id,segments=segments,summary=_summary(segments,start,elapsed_end)))
         if sum(len(h['segments']) for h in hosts)>20000:
             raise ValueError('资源历史时段过多，请缩短时间范围或减少机器')
-        points=sorted({start,end,*[s['start'] for h in hosts for s in h['segments']],*[s['end'] for h in hosts for s in h['segments']]})
-        if len(points)>20001: raise ValueError('资源历史时段过多，请缩短时间范围或减少机器')
-        aggregate=[]
-        host_indexes=[0]*len(hosts)
-        for a,b in zip(points,points[1:]):
-            current=[]
-            for index,host in enumerate(hosts):
-                while host_indexes[index]+1<len(host['segments']) and host['segments'][host_indexes[index]]['end']<=a:
-                    host_indexes[index]+=1
-                current.append(host['segments'][host_indexes[index]])
-            counts={key:sum(s['machine_state']==key for s in current) for key in ('whole_idle','partial_idle','no_idle','unknown')}
-            aggregate.append(dict(start=a,end=b,**counts,idle_count=sum(s['idle_count'] for s in current),unknown_count=sum(s['unknown_count'] for s in current) if all(s['unknown_count'] is not None for s in current) else None,complete_hosts=sum(s['complete'] for s in current),complete=all(s['complete'] for s in current),machine_state='whole_idle' if counts['whole_idle']==len(hosts) else 'unknown'))
+        aggregate = _aggregate_segments(hosts, end)
         summary=_summary(aggregate,start,elapsed_end)
         summary['whole_idle_host_seconds']=sum(h['summary']['whole_idle_seconds'] for h in hosts)
         return dict(rule_version=RULE_VERSION,kind=kind,timezone=timezone,start=start,end=end,elapsed_end=elapsed_end,recording_started_at=first,retention_started_at=retention,sample_count=count,truncated=False,hosts=hosts,segments=aggregate,summary=summary,error=self.error,limitations=['根据采样估计，时间精度受刷新和采集耗时影响','设备数量按采集设备/逻辑芯片计算'])

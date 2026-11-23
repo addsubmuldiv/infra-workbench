@@ -4,8 +4,6 @@ import hashlib
 import json
 import time
 
-import asyncssh
-
 from .agent_errors import AgentError
 
 
@@ -82,8 +80,11 @@ class SSHPasswords:
             candidate = dict(host, _credential_identity=connection_identity(config))
             try:
                 await self.ssh.connect(candidate, password, False)
-            except asyncssh.PermissionDenied:
+            except Exception as error:
                 if not fallback:
+                    raise
+                from asyncssh import PermissionDenied
+                if not isinstance(error, PermissionDenied):
                     raise
                 self.fallback_retry[host['id']] = time.monotonic() + 120
 

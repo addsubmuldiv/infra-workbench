@@ -59,6 +59,28 @@ def test_machine_categories_exclusive_and_integral(tmp_path):
     assert result['summary']['idle_device_hours']==40/3600
 
 
+def test_aggregate_updates_all_hosts_at_shared_boundaries(tmp_path):
+    stats = ResourceStats(Store(tmp_path/'stats.db'))
+    a, b = {'id': 'a'}, {'id': 'b'}
+    idle, busy = device(), dict(device(), utilization=10)
+    stats.observe(a, sample(idle), now=100)
+    stats.observe(b, sample(device('0'), dict(device('1'), utilization=10)), now=105)
+    stats.observe(a, sample(busy), now=120)
+    stats.observe(b, sample(dict(device(), processes_known=False)), now=120)
+    stats.observe(b, sample(device('0'), device('1')), now=130)
+
+    result = stats.query(['a', 'b'], 100, 140, now=140)
+    fields = ('start','end','whole_idle','partial_idle','no_idle','unknown',
+              'idle_count','unknown_count','complete_hosts')
+    assert [tuple(segment[field] for field in fields) for segment in result['segments']] == [
+        (100, 105, 1, 0, 0, 1, 1, None, 1),
+        (105, 120, 1, 1, 0, 0, 2, 0, 2),
+        (120, 130, 0, 0, 1, 1, 0, 1, 1),
+        (130, 140, 1, 0, 1, 0, 2, 0, 2),
+    ]
+    assert result['summary']['idle_device_hours'] == 55/3600
+
+
 def test_dst_routes_and_threshold_rejection(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -100,6 +122,29 @@ def test_invalid_numbers_identity_and_query_limits(tmp_path):
     assert not stats.query(['a'],120,130,now=130)['hosts'][0]['segments'][0]['inventory_known']
     for ids,start,end in [(['a']*101,100,120),(['a'],0,32*86400),(['a'],float('nan'),120),([],100,120)]:
         with pytest.raises(ValueError): stats.query(ids,start,end,now=130)
+
+
+def test_inventory_identity_shortcut_preserves_legacy_duplicate_detection(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from backend import resource_stats
+
+    serialized = []
+
+    def record_dump(value):
+        serialized.append(value)
+        return json.dumps(value)
+
+    monkeypatch.setattr(resource_stats, 'json', SimpleNamespace(loads=json.loads, dumps=record_dump))
+    a, b = (resource_stats.compact(device(slot)) for slot in ('0', '1'))
+    stats, reason, _, _ = resource_stats._inventory(json.dumps([a, b]), 'GPU')
+    assert stats['inventory_known'] and reason == ''
+    assert serialized == []
+
+    legacy = dict(b, identity=a['identity'])
+    stats, reason, _, _ = resource_stats._inventory(json.dumps([a, legacy]), 'GPU')
+    assert not stats['inventory_known'] and reason == 'inventory_unknown'
+    assert serialized == [a['identity'], a['identity']]
 
 
 def test_identity_change_splits_and_raw_memory_preserved(tmp_path):

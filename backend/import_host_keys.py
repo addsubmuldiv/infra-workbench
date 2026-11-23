@@ -1,9 +1,6 @@
 """Trust on first use for batch imports, preserving existing host-key pins."""
 import threading
 
-import asyncssh
-
-
 _lock = threading.RLock()
 
 
@@ -13,11 +10,13 @@ class ImportHostKeys:
         self.pending = None
 
     def _matches(self, host, addr, port):
+        from asyncssh import match_known_hosts
+
         try:
             data = self.path.read_bytes()
         except FileNotFoundError:
             data = b''
-        return asyncssh.match_known_hosts(data, host, addr, port)
+        return match_known_hosts(data, host, addr, port)
 
     def validate(self, host, addr, port, key):
         with _lock:
@@ -41,7 +40,8 @@ class ImportHostKeys:
         host, addr, port, key = self.pending
         with _lock:
             if not self.validate(host, addr, port, key):
-                raise asyncssh.HostKeyNotVerifiable('Host key changed during import')
+                from asyncssh import HostKeyNotVerifiable
+                raise HostKeyNotVerifiable('Host key changed during import')
             if key in self._matches(host, addr, port)[0]:
                 return
             name = host if port == 22 else f'[{host}]:{port}'
