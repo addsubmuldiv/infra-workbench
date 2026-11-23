@@ -65,7 +65,7 @@ def test_dispatch_opens_exactly_one_selected_interface(tmp_path):
     assert len(calls)==1 and calls[0][0]=='browser'
     calls.clear()
     dispatch_interface('desktop',exe,lambda url:calls.append(('browser',url)),lambda args:calls.append(('desktop',args)))
-    assert calls==[('desktop',[str(exe)])]
+    assert calls==[('desktop',[str(exe), '--show-desktop'])]
     with pytest.raises(RuntimeError):dispatch_interface('desktop',None,lambda _:calls.append('unexpected'),lambda _:calls.append('unexpected'))
 
 
@@ -100,6 +100,30 @@ def test_startup_reuses_healthy_standalone_backend_without_requiring_tray(monkey
     monkeypatch.setattr(launcher.subprocess, 'Popen', lambda *a, **kw: pytest.fail('Must not spawn a duplicate backend'))
     monkeypatch.setattr(launcher.time, 'sleep', lambda _: pytest.fail('A healthy backend must be reused immediately'))
     launcher.ensure_service(timeout=1)
+
+
+@pytest.mark.parametrize('mode', ['desktop', 'browser'])
+def test_source_shortcut_waits_for_backend_only_in_browser_mode(tmp_path, monkeypatch, mode):
+    import ctypes
+    from types import SimpleNamespace
+    import backend.launcher as launcher
+
+    calls = []
+    mutex = SimpleNamespace(CreateMutexW=lambda *_: 1, CloseHandle=lambda *_: None)
+    monkeypatch.setattr(ctypes, 'WinDLL', lambda *a, **kw: mutex, raising=False)
+    monkeypatch.setattr(ctypes, 'get_last_error', lambda: 0, raising=False)
+    monkeypatch.setenv('IWB_DATA', str(tmp_path))
+    monkeypatch.delenv('IWB_SOURCE_ROOT', raising=False)
+    launcher.LaunchSettings(tmp_path).save_mode(mode)
+    desktop = tmp_path / 'desktop.exe'
+    monkeypatch.setattr(launcher, 'find_desktop', lambda: desktop)
+    monkeypatch.setattr(launcher, 'ensure_service', lambda: calls.append('backend'))
+    monkeypatch.setattr(launcher, 'dispatch_interface', lambda selected, binary: calls.append((selected, binary)))
+
+    assert launcher.main() == 0
+    assert calls == ([('desktop', desktop)] if mode == 'desktop' else ['backend', ('browser', desktop)])
+    import os
+    assert os.environ.get('IWB_SOURCE_ROOT') == (str(launcher.ROOT) if mode == 'desktop' else None)
 
 
 def test_startup_waits_for_tray_when_it_starts_the_backend(monkeypatch):
@@ -241,20 +265,25 @@ def test_normal_desktop_activation_creates_main_after_quick_tool_start():
     source = (Path(__file__).resolve().parents[1] / 'desktop/src-tauri/src/main.rs').read_text(encoding='utf-8')
     single_instance = source.split('.plugin(tauri_plugin_single_instance::init(', 1)[1].split('.plugin(tauri_plugin_window_state', 1)[0]
     setup = source.split('.setup(|app| {', 1)[1].split('.build(tauri::generate_context!())', 1)[0]
-    assert 'activate_main(app, true)' in single_instance
-    assert 'show_main_window(app.handle(), false)' in setup
+    assert 'activate_main(app, true, args.iter().any(|arg| arg == "--show-desktop"))' in single_instance
+    assert 'show_main_window(app.handle(), false, desktop_selected)' in setup
     helper = source.split('fn show_main_window(', 1)[1].split('fn main()', 1)[0]
     assert 'get_webview_window("main")' in helper
     assert 'WebviewWindowBuilder::new(app, "main"' in helper
     assert 'WINDOW_GATE.lock()' in helper and 'updater::installing(app)' in helper
 
 
-def test_shortcut_reads_shared_launch_preference_on_cold_and_resident_start():
+def test_direct_shortcut_reads_shared_launch_preference_and_explicit_desktop_restores_without_http():
     source = (Path(__file__).resolve().parents[1] / 'desktop/src-tauri/src/main.rs').read_text(encoding='utf-8')
     connect = source.split('fn connect(', 1)[1].split('#[tauri::command]', 1)[0]
-    assert 'prefers_browser(&client)?' in connect
+    assert 'if !desktop_selected && prefers_browser(&client)?' in connect
     assert 'open::that(SERVICE_URL)' in connect
     activation = source.split('fn activate_main(', 1)[1].split('fn main()', 1)[0]
-    assert 'prefers_browser(&client)' in activation
-    assert 'open::that(SERVICE_URL)' in activation
-    assert 'show_main_window(&handle, focus)' in activation
+    fast_path, direct_launch = activation.split('std::thread::spawn', 1)
+    assert 'if desktop_selected' in fast_path
+    assert 'show_main_window(&handle, focus, true)' in fast_path
+    assert 'return;' in fast_path
+    assert 'prefers_browser' not in fast_path
+    assert 'prefers_browser(&client)' in direct_launch
+    assert 'open::that(SERVICE_URL)' in direct_launch
+    assert 'show_main_window(&handle, focus, false)' in direct_launch

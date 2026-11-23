@@ -79,8 +79,12 @@ fn watch_service(app:tauri::AppHandle){
 fn start_runtime() -> Result<std::process::Child, String> {
     let mut command;
     let data;
-    if cfg!(debug_assertions) {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap().to_path_buf();
+    let source_root = std::env::var_os("IWB_SOURCE_ROOT").map(PathBuf::from).or_else(|| {
+        cfg!(debug_assertions).then(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+        })
+    });
+    if let Some(root) = source_root {
         let python = root.join(if cfg!(windows) {".venv/Scripts/pythonw.exe"} else {".venv/bin/python"});
         if !python.is_file() { return Err("找不到项目 Python 环境，请先运行原有安装入口。".into()); }
         command = Command::new(python);
@@ -109,7 +113,7 @@ fn start_runtime() -> Result<std::process::Child, String> {
     Ok(child)
 }
 
-fn connect(window: WebviewWindow) {
+fn connect(window: WebviewWindow, desktop_selected: bool) {
     let handle = window.app_handle().clone();
     if handle.state::<Connecting>().0.swap(true, Ordering::SeqCst) { return; }
     startup_trace("connecting to 127.0.0.1:8765");
@@ -126,7 +130,13 @@ fn connect(window: WebviewWindow) {
                     Ok(true)=>{startup_trace("backend health ready");break;},
                     Ok(false)=>{
                         let finished=if let Some(process)=child.as_mut(){process.try_wait().map_err(|e|e.to_string())?}else{None};
-                        if let Some(result)=finished {if !result.success(){return Err(format!("后台启动失败（{result}），请查看 desktop.log 和 startup.log"));}}
+                        if let Some(result) = finished {
+                            if !result.success() {
+                                return Err(format!("后台启动失败（{result}），请查看 desktop.log 和 startup.log"));
+                            }
+                            // A duplicate tray can exit cleanly while the old tray is shutting down.
+                            child = None;
+                        }
                         if child.is_none(){startup_trace("no reachable listener; starting bundled runtime");status(&window,"backend",20,None);child=Some(start_runtime()?);}
                     },
                     Err(error)=>{if last_error!=error{startup_trace(&error);}last_error=error;status(&window,"waiting",20,None);}
@@ -135,7 +145,7 @@ fn connect(window: WebviewWindow) {
                 std::thread::sleep(Duration::from_millis(300));
             }
             status(&window,"health",70,None);
-            if prefers_browser(&client)? {
+            if !desktop_selected && prefers_browser(&client)? {
                 open::that(SERVICE_URL).map_err(|error| error.to_string())?;
                 window.state::<DesktopSession>().hide();
                 window.hide().map_err(|error| error.to_string())?;
@@ -222,7 +232,7 @@ const READY_SCRIPT: &str = concat!(include_str!("../../bootstrap/startup.js"), r
 "#);
 
 // Serialize window creation with updater installation, just like quick windows.
-fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
+fn show_main_window(app: &tauri::AppHandle, focus: bool, desktop_selected: bool) -> tauri::Result<()> {
     let _window_gate = updater::WINDOW_GATE.lock().unwrap();
     if updater::installing(app) { return Ok(()); }
     if let Some(window) = app.get_webview_window("main") {
@@ -270,9 +280,9 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
             }
             true
         })
-        .on_page_load(|window, payload| {
+        .on_page_load(move |window, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Finished && bootstrap_url(payload.url()) {
-                connect(window);
+                connect(window, desktop_selected);
             }
         })
         .build()?;
@@ -288,9 +298,18 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool) -> tauri::Result<()> {
     Ok(())
 }
 
-// Re-read the shared backend setting even when a desktop window is resident.
-// Keep that window and its SSH sessions intact when opening the browser.
-fn activate_main(app: &tauri::AppHandle, focus: bool) {
+// The tray and source launcher already chose the interface. Direct launches
+// still consult the shared setting and can open the browser without closing SSH sessions.
+fn activate_main(app: &tauri::AppHandle, focus: bool, desktop_selected: bool) {
+    if desktop_selected {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Err(error) = show_main_window(&handle, focus, true) {
+                startup_trace(&format!("window activation failed: {error}"));
+            }
+        });
+        return;
+    }
     let handle = app.clone();
     std::thread::spawn(move || {
         let browser = reqwest::blocking::Client::builder().no_proxy()
@@ -305,7 +324,7 @@ fn activate_main(app: &tauri::AppHandle, focus: bool) {
         // A failed read returns to the startup UI, which can retry the backend.
         let main_handle = handle.clone();
         let _ = main_handle.run_on_main_thread(move || {
-            if let Err(error) = show_main_window(&handle, focus) {
+            if let Err(error) = show_main_window(&handle, focus, false) {
                 startup_trace(&format!("window activation failed: {error}"));
             }
         });
@@ -322,7 +341,7 @@ fn main() {
             if updater::installing(app) { return; }
             if args.iter().any(|arg|arg=="--quit-desktop") { app.exit(0);return; }
             if let Some((tool,host))=quick_window::request(&args) { let _=quick_window::open(app,&tool,&host);return; }
-            activate_main(app, true);
+            activate_main(app, true, args.iter().any(|arg| arg == "--show-desktop"));
         }))
         .plugin(tauri_plugin_window_state::Builder::default()
             .with_filter(|label|label=="main")
@@ -334,7 +353,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
             if let Some((tool,host))=quick_window::request(&std::env::args().collect::<Vec<_>>()) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
-            show_main_window(app.handle(), false)?;
+            let desktop_selected = std::env::args().any(|arg| arg == "--show-desktop");
+            show_main_window(app.handle(), false, desktop_selected)?;
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -342,7 +362,7 @@ fn main() {
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = &event {
-                activate_main(app, false);
+                activate_main(app, false, false);
             }
             if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
                 api.prevent_exit();

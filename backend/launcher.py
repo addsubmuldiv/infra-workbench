@@ -77,7 +77,7 @@ def dispatch_interface(mode,desktop,open_browser=webbrowser.open,spawn=subproces
     if mode=='browser':
         if open_browser(URL) is False:raise RuntimeError('无法打开默认浏览器')
     elif mode=='desktop' and desktop:
-        spawn([str(desktop)])
+        spawn([str(desktop), '--show-desktop'])
     else:raise RuntimeError('未找到桌面窗口程序，请先安装桌面版本，或在设置中选择浏览器启动。')
 
 
@@ -204,9 +204,15 @@ def main():
         settings=LaunchSettings(data)
         desktop=find_desktop()
         if settings.mode=='desktop' and desktop is None:raise RuntimeError('未找到桌面窗口程序；请安装桌面版或将启动方式设为浏览器。')
-        ensure_service()
+        # The desktop can display startup progress while connecting to the backend.
+        # The browser still needs a listening server before it can navigate.
+        if settings.mode == 'browser':
+            ensure_service()
+        else:
+            # A release executable in a checkout may have no bundled Python runtime.
+            os.environ['IWB_SOURCE_ROOT'] = str(ROOT)
         dispatch_interface(settings.mode,desktop)
-        logging.info('Interface opened mode=%s elapsed=%.3fs',settings.mode,time.monotonic()-launch_started)
+        logging.info('Interface launch dispatched mode=%s elapsed=%.3fs',settings.mode,time.monotonic()-launch_started)
         return 0
     except Exception:
         logging.exception('Unified launch failed')
