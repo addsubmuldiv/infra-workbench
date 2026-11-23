@@ -18,3 +18,19 @@
 .cluster-filter-note{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:4px 8px 8px 28px;color:var(--muted);font-size:11px}
 
 .cluster-menu>div:popover-open{display:grid;gap:4px}
+.cluster-picker .host-picker-row > .host-copy-button {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 30px;
+  padding: 5px;
+  justify-content: center;
+  border-radius: 4px;
+}
+.cluster-picker .host-copy-button:hover,
+.cluster-picker .host-copy-button:focus-visible {
+  background: var(--accent-bg);
+}
+.cluster-picker .host-copy-button:hover svg,
+.cluster-picker .host-copy-button:focus-visible svg {
+  color: var(--accent);
+}

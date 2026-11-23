@@ -409,7 +409,15 @@ function App(){
   const inspect=(host:Host,d:Device)=>{setDetail({host:host.id,device:d.id});setCheck(null)};
   const pageTitle=page==='overview'?ui("算力总览"):page==='precision'?ui("训练精度对比"):page==='history'?tr('资源历史','Resource history'):page==='reservations'?tr('资源预约','Resource alerts'):page==='settings'?ui("设置"):page==='assistant'?ui("AI 助手"):ui("算力总览");
   useEffect(()=>{document.title=pageTitle+' · Infra Workbench'},[pageTitle]);
-  const hostList=<ClusterSidebar hosts={state.hosts} selected={preferences.hostIds} select={selectHosts} search={hostSearch} setSearch={setHostSearch} category={hostCategory} setCategory={setHostCategory} remove={host=>setRemovalHosts([host])} command={cluster=>setClusterPanel({cluster})} terminal={cluster=>setClusterTerminal({cluster})} history={()=>setClusterPanel({cluster:null})} reserve={cluster=>{setGroupDraft({cluster});navigate('reservations')}} resources={cluster=>navigate('history',cluster.host_ids)}/>;
+  const copyMachineName=async(name:string)=>{
+    try{
+      await navigator.clipboard.writeText(name);
+      setNotice(tr(`已复制机器名称 ${name}`,`Copied machine name ${name}`));
+    }catch{
+      setNotice(tr(`无法写入剪贴板，机器名称为 ${name}`,`Could not write to the clipboard. Machine name: ${name}`));
+    }
+  };
+  const hostList=<ClusterSidebar hosts={state.hosts} selected={preferences.hostIds} select={selectHosts} search={hostSearch} setSearch={setHostSearch} category={hostCategory} setCategory={setHostCategory} copyName={copyMachineName} remove={host=>setRemovalHosts([host])} command={cluster=>setClusterPanel({cluster})} terminal={cluster=>setClusterTerminal({cluster})} history={()=>setClusterPanel({cluster:null})} reserve={cluster=>{setGroupDraft({cluster});navigate('reservations')}} resources={cluster=>navigate('history',cluster.host_ids)}/>;
   const desktopTitlebar=useMemo(()=>hasDesktopTitlebar(window),[]);
   const header=<header className={desktopTitlebar?'desktop-titlebar':undefined}>
       {desktopTitlebar&&<div className="brand desktop-brand"><span className="brand-icon"><Cpu size={20}/></span><div>Infra<span>WORKBENCH</span></div></div>}
