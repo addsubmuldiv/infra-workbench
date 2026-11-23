@@ -12,7 +12,7 @@ function harness(t,respond,configured=true){
   const values=[],deps=[],effects=[],cleanups=[],streams=[],writes=[],requests=[];let slot=0,tree;
   const view={scrollTop:0,scrollHeight:1000,clientHeight:400};
   const useEffect=(fn,next)=>{const i=slot++;if(!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}};
-  const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect,useLayoutEffect:useEffect,
+  const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),lazy:()=>Symbol('lazy component'),useEffect,useLayoutEffect:useEffect,
     useState:initial=>{const i=slot++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value}]},
     useRef:initial=>{const i=slot++;if(!(i in values))values[i]={current:initial};return values[i]}};
   const previous={fetch:globalThis.fetch,window:globalThis.window,storage:Object.getOwnPropertyDescriptor(globalThis,'localStorage')};
@@ -43,6 +43,22 @@ test('streamed content remains visible, persists only ID changes and follows onl
   h.view.scrollTop=100;h.find(n=>n.props.className==='chat-transcript').props.onScroll();h.view.scrollHeight=1500;
   await h.publish('真实的第一段，继续输出',4);assert.equal(h.text(),'真实的第一段，继续输出');assert.equal(h.view.scrollTop,100);assert.equal(h.writes.length,1);
   h.view.scrollTop=1100;h.find(n=>n.props.className==='chat-transcript').props.onScroll();h.view.scrollHeight=1600;await h.publish('又一段',5);assert.equal(h.view.scrollTop,1600);
+});
+
+test('resource view sends a read-only request',async t=>{
+  const h=harness(t,url=>url.endsWith('/messages')?Response.json(chat('b',null)):undefined);
+  await h.loaded();
+  await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));
+  h.render();
+  h.find(n=>n.type==='button'&&n.props.children.includes('资源视图')).props.onClick();
+  h.render();
+  const input=()=>h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props);
+  input().props.onChange('比较设备显存');h.render();input().props.onSend();
+  await tick();
+  const request=JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body);
+  assert.equal(request.resource_view,true);
+  assert.equal(request.permission_mode,'read_only');
+  assert.deepEqual(request.external_mcp_servers,[]);
 });
 
 test('switching chats aborts its subscription without cancelling server work and unmount aborts the active read',async t=>{

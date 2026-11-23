@@ -133,6 +133,7 @@ class ChatMessageRequest(BaseModel):
     restrict_to_selected:bool=False
     selected_skill_names:list[str]=Field(default_factory=list)
     permission_mode:Literal['ask','full','read_only']='ask'
+    resource_view:bool=False
     local_roots:list[str]=Field(default_factory=list,max_length=20)
     remote_roots:dict[str,list[str]]=Field(default_factory=dict)
     external_mcp_servers:list[dict[str,str]]=Field(default_factory=list,max_length=3)
@@ -195,6 +196,7 @@ def visible_stream_text(text,secret='',*,final=False):
 class AgentChat:
     def __init__(self,store,provider,tools):
         self.store,self.provider,self.tools=store,provider,tools
+        self.a2ui_prototype=False
         from .skill_service import SkillService
         from .mcp_client import MCPGateway
         self.skills = tools.service.skills if isinstance(tools, MCPGateway) and tools.service.skills is not None else SkillService(store)
@@ -370,6 +372,12 @@ class AgentChat:
 
     def begin(self,chat_id,body):
         chat=self.get(chat_id)
+        if body.resource_view:
+            if body.engine!='deepagents' or self.a2ui_prototype or body.terminal_attachments or body.selected_skill_names:
+                raise HTTPException(400,'资源视图使用内置助手，不接受终端附件或指定技能。 / Resource view uses the built-in assistant without terminal attachments or selected skills.')
+            body=body.model_copy(update=dict(permission_mode='read_only',external_mcp_servers=[],local_roots=[],remote_roots={}))
+        if self.a2ui_prototype and (body.engine!='deepagents' or body.terminal_attachments or body.external_mcp_servers or body.selected_skill_names):
+            raise HTTPException(400,'A2UI prototype supports the built-in model and synthetic data only')
         if body.engine=='deepagents' and body.profile_id is not None and body.profile_id != getattr(self.provider,'active_id',None):
             raise HTTPException(409,'模型接口已在其他窗口切换，请重新选择接口后发送')
         if chat['active_run']:raise HTTPException(409,'这段会话正在处理上一条消息')
@@ -429,6 +437,9 @@ class AgentChat:
             # Visible turns remain an audit trail. Model history belongs to a
             # single engine epoch, including later per-turn CLI continuation.
             chat['messages']=[]
+        if chat.get('resource_view',False)!=body.resource_view:
+            chat.pop('deep_state',None)
+        chat['resource_view']=body.resource_view
         chat['engine']=body.engine
         run_id=uuid.uuid4().hex
         request=body.model_dump(mode='json');request.update(content=text,terminal_attachments=attachments)
@@ -454,8 +465,12 @@ class AgentChat:
 
     async def run(self,chat,allowed,selected,secret,provider):
         turn=chat['turns'][-1];state=chat['state']
+        if self.a2ui_prototype:
+            turn['a2ui_prototype']=True
         from .agent_permissions import RunPermissions,CURRENT_PERMISSIONS
         request=chat['turns'][-2].get('request',{})
+        if request.get('resource_view'):
+            turn['resource_view']=True
         permissions=RunPermissions(chat,turn,request,lambda:self.save(chat),
                                    sanitize=lambda value:json.loads(scrub(value,secret)))
         self.permissions[chat['id']]=permissions
@@ -484,7 +499,33 @@ class AgentChat:
             from .agent_external_mcp import external_tools
             async with external_tools(request.get('external_mcp_servers',[]),permissions) as external:
                 permissions.external=external
-                if chat.get('engine')=='codex':
+                if self.a2ui_prototype:
+                    from .a2ui_prototype import DATASETS,INSTRUCTIONS
+                    from .a2ui_surface import parse_reply
+                    messages=[dict(role=item['role'],content=item['content']) for item in chat['turns'][-11:-1]]
+                    reply=await provider.turn(INSTRUCTIONS,messages,[])
+                    result=parse_reply(visible_stream_text(reply['message']['content'],secret,final=True),turn['id'],DATASETS)
+                    turn.update(result)
+                    chat['messages'].append(dict(role='assistant',content=result['content']))
+                elif request.get('resource_view'):
+                    from .a2ui_resources import instructions as resource_instructions,read_resources
+                    from .a2ui_surface import parse_reply
+                    trace=dict(id=uuid.uuid4().hex,name='get_resources',status='running',started=time.time(),
+                               arguments='{"refresh":false}',output='')
+                    turn['tools'].append(trace)
+                    self.save(chat)
+                    datasets,coverage=await read_resources(self.tools,allowed,secret)
+                    trace.update(status='succeeded',finished=time.time(),output=json.dumps(dict(
+                        data=coverage,partial=coverage.get('fresh_hosts')!=coverage.get('hosts')),ensure_ascii=False))
+                    self.save(chat)
+                    # Model history has already been cleared on machine scope changes.
+                    messages=[dict(role=item['role'],content=item['content']) for item in chat['messages']
+                              if item['role'] in ('user','assistant') and item.get('content')][-9:]
+                    reply=await provider.turn(resource_instructions(datasets,coverage),messages,[])
+                    result=parse_reply(visible_stream_text(reply['message']['content'],secret,final=True),turn['id'],datasets)
+                    turn.update(result)
+                    chat['messages'].append(dict(role='assistant',content=result['content']))
+                elif chat.get('engine')=='codex':
                     from .codex_agent import run_codex_agent
                     # Deep Agents-specific virtual paths/task instructions are not native Codex capabilities.
                     native_instructions=codex_instructions(context)

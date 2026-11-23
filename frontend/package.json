@@ -16,6 +16,8 @@
     "pretest": "node ../scripts/generate-internal-defaults.mjs --check"
   },
   "dependencies": {
+    "@a2ui/react": "0.14.0",
+    "@a2ui/web_core": "0.14.0",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.6",
@@ -35,7 +37,8 @@
     "rehype-highlight": "^7.0.2",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
-    "remark-math-extended": "^6.1.1"
+    "remark-math-extended": "^6.1.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",

@@ -58,6 +58,10 @@ English: Query defaults are bounded summaries. Explicit row/character pages reta
 
 English: Native skill-driven tool disclosure replaces eager schema binding. MCP results use semantic row/character pages and explicit oversized-result errors; summary statistics retain full-data coverage, and detailed records remain available on demand. Live views are not immutable snapshots.
 
+## 助手中的只读资源视图
+
+内置助手的「资源视图」读取当前机器范围内已有的设备和占卡进程采样。启用后，本轮只通过共享 MCP 的 `get_resources` 读取快照。机器范围沿用对话设置，终端附件和技能调用不参与本轮。模型可以选择表格、条形图或纯文字，并决定布局。表格和图表直接引用本轮采样，保留采样时间、未知值及明细覆盖范围。
+
 ## 助手概况查询优化（2026-11-05）
 
 `search_fleet` 新增可选 `view="summary"`：资源按型号汇总，保留真实机器和设备 ID、采样时间、设备数、可确认的物理卡数及空闲显存最小/最大值。未知显存和物理卡数保持 null。默认 `view="detail"` 保留原逐设备结构；`get_resources` 详情接口不变。HTTP 查询和外部 MCP 继续复用原业务校验及机器范围限制。

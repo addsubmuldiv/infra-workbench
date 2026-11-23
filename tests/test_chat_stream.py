@@ -11,6 +11,111 @@ def decode(frame):
     return next(line[7:] for line in lines if line.startswith('event: ')),json.loads(next(line[6:] for line in lines if line.startswith('data: ')))
 
 
+def test_a2ui_prototype_resolves_model_selected_rows_and_rejects_unknown_references():
+    from backend.a2ui_prototype import DATASETS
+    from backend.a2ui_surface import parse_reply
+
+    components = [
+        dict(id='root', component='Row', children=['note', 'comparison']),
+        dict(id='note', component='Text', text='候选设备'),
+        dict(id='comparison', component='DataTable', title='设备', dataset='devices',
+             rows=['npu_a0'], columns=[dict(field='id', label='设备'), dict(field='used_gib', label='已用 GiB')]),
+    ]
+    def answer():
+        return '找到候选设备。<a2ui-json>'+json.dumps(components)+'</a2ui-json>'
+
+    reply = parse_reply(answer(), 'sample_run', DATASETS)
+    surface = reply['a2ui']['createSurface']
+    assert reply['a2ui']['version'] == '1.0'
+    assert surface['components'][0]['children'] == ['note', 'comparison']
+    assert surface['components'][2]['rows'] == [['npu_a0', 0]]
+
+    components[2]['rows'] = ['invented_device']
+    reply = parse_reply(answer(), 'sample_run', DATASETS)
+    assert reply == dict(content='找到候选设备。', a2ui_rejected=True)
+    assert parse_reply('npu-a。', 'sample_run', DATASETS) == dict(content='npu-a。')
+    assert parse_reply('已找到。<a2ui-json>[', 'sample_run', DATASETS) == dict(content='已找到。', a2ui_rejected=True)
+
+
+def test_real_a2ui_projection_uses_fresh_scoped_facts_and_preserves_unknown():
+    from backend.a2ui_resources import build_datasets
+    from backend.a2ui_surface import parse_reply
+
+    gib = 1024**3
+    online = dict(host_id='h1', alias='A', fresh=True, status='online', collected_at=100,
+                  devices=[dict(id='0',kind='GPU',name='A100',memory_total=80*gib,memory_used=19*gib,
+                                memory_free=61*gib,processes_known=True,
+                                processes=[dict(pid=17,name='python',memory_used=19*gib,command='PRIVATE',cwd='/private')]),
+                           dict(id='1',kind='GPU',name='A100',memory_total=80*gib,processes_known=False)])
+    stale = dict(online,host_id='h2',alias='B',fresh=False,status='error')
+    datasets, coverage = build_datasets([online, stale])
+    assert coverage['fresh_hosts'] == 1
+    assert datasets['hosts'][0]['used_gib'] is None
+    assert datasets['hosts'][1]['status'] == 'unknown'
+    assert datasets['hosts'][1]['sampled_at'] is not None
+    assert [device['status'] for device in datasets['devices']] == ['busy','unknown']
+    assert datasets['processes'][0]['used_gib'] == 19
+    assert 'PRIVATE' not in json.dumps(datasets) and '/private' not in json.dumps(datasets)
+    reply = parse_reply('结果<a2ui-json>[{"id":"root","component":"BarChart","title":"显存",'
+                        '"dataset":"hosts","labelField":"host","valueField":"used_gib"}]</a2ui-json>',
+                        'test', datasets)
+    chart = reply['a2ui']['createSurface']['components'][0]
+    assert chart['values'] == [None, None] and chart['unit'] == 'GiB'
+
+
+def test_resource_view_forces_read_only_without_changing_machine_scope(tmp_path):
+    async def run():
+        class ResourceModel(Model):
+            async def turn(self, instructions, messages, tools, **kwargs):
+                assert tools == []
+                return dict(message=dict(content='只读查询完成'))
+
+        harness, _, _ = service(tmp_path)
+        harness.provider = ResourceModel()
+        chat = harness.create()
+        body = ChatMessageRequest(content='展示资源', resource_view=True,
+                                  permission_mode='full', restrict_to_selected=True, selected_host_ids=['a'])
+        from unittest.mock import patch
+        with patch('backend.a2ui_resources.read_resources', return_value=({'hosts': [], 'devices': [], 'processes': []}, {})) as collect:
+            started = harness.begin(chat['id'], body)
+            await harness.runs[started['active_run']]
+            assert collect.await_args.args[1] == {'a'}
+        turn = harness.get(chat['id'])['turns'][-1]
+        assert turn['resource_view'] is True and turn['permission_mode'] == 'read_only'
+        assert turn['status'] == 'completed' and turn['content'] == '只读查询完成'
+        harness.store.db.close()
+
+    asyncio.run(run())
+
+
+def test_resource_view_reads_shared_mcp_snapshot_without_refresh(tmp_path):
+    import time
+    from backend.a2ui_resources import read_resources
+    from backend.app import create_app
+
+    async def run():
+        app = create_app(tmp_path, start_poll=False)
+        app.state.hosts.extend([dict(id='visible',target='allowed',alias='Machine A'),
+                               dict(id='hidden',target='private',alias='Machine B')])
+        now = time.time()
+        for host in app.state.hosts:
+            app.state.agent_service.snapshots[host['id']] = dict(
+                status='online', collected_at=now, devices=[
+                    dict(id='0',kind='GPU',name='A100',processes_known=True,
+                         processes=[dict(pid=44,name='python',command='PRIVATE ARG')])])
+        from unittest.mock import AsyncMock
+        app.state.agent_service.collect = AsyncMock(side_effect=AssertionError('unexpected refresh'))
+        datasets, coverage = await read_resources(app.state.agent_chat.tools, {'visible'}, '')
+        assert coverage['hosts'] == coverage['fresh_hosts'] == 1
+        assert datasets['devices'][0]['host'] == 'Machine A'
+        assert datasets['processes'][0]['pid'] == 44
+        assert 'PRIVATE' not in json.dumps(datasets) and 'Machine B' not in json.dumps(datasets)
+        app.state.agent_service.collect.assert_not_awaited()
+        app.state.agent_chat.store.db.close()
+
+    asyncio.run(run())
+
+
 def test_opt_in_deltas_send_suffixes_and_changed_fields_then_complete_snapshot(tmp_path):
     async def run():
         h, _, _ = service(tmp_path)
