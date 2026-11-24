@@ -36,6 +36,59 @@ def test_sdk_discovers_shared_catalog_and_enforces_scope_before_dispatch(tmp_pat
     asyncio.run(run())
 
 
+def test_fleet_overview_uses_scoped_samples_without_waiting_for_ssh(tmp_path, monkeypatch):
+    async def run():
+        app = fixture_app(tmp_path)
+        service = app.state.agent_service
+        sample = service.snapshots['a']
+        sample.update(ports={'8000': ['LISTEN 0 10 0.0.0.0:8000 0.0.0.0:* users:(("vllm",pid=77,fd=4))']},
+                      devices=[dict(id='0', kind='GPU', name='GPU fixture', memory_free=20 * 1024**3,
+                                    processes_known=True, processes=[]),
+                               dict(id='1', kind='GPU', name='GPU fixture', memory_free=1024**3,
+                                    processes_known=True, processes=[dict(pid=77, name='vllm')])])
+        service.snapshots['b'].update(collected_at=time.time()-90, ports={'9999': []})
+        refreshes = []
+
+        async def refresh(hosts, budget):
+            refreshes.append([host['id'] for host in hosts])
+            return {'a'}
+
+        monkeypatch.setattr(service, 'refresh', refresh)
+        gateway = app.state.agent_chat.tools
+        try:
+            async with gateway.session({}, {'a'}) as session:
+                result = await session.call_tool('get_fleet_overview', {})
+                assert not result.is_error, result.structured_content
+                overview = result.structured_content['data']
+                assert overview['total'] == 1
+                assert overview['coverage']['fresh_hosts'] == 1
+                host, = overview['items']
+                assert host['host_id'] == 'a'
+                assert host['idle_resources'][0]['device_groups'][0]['device_ids'] == ['0']
+                assert host['accelerator_processes']['observed_count'] == 1
+                assert host['tcp_listeners']['examples'] == [{'port': 8000, 'process_names': ['vllm']}]
+                assert refreshes == []
+                denied = await session.call_tool('get_fleet_overview', {'host_id': 'b', 'refresh': True})
+                assert denied.is_error
+                assert refreshes == []
+                refreshed = await session.call_tool('get_fleet_overview', {'refresh': True})
+                assert refreshes == [['a']]
+                timed_out, = refreshed.structured_content['data']['items']
+                assert timed_out['status'] == 'refresh_timeout'
+                assert timed_out['idle_resources'] is None and timed_out['tcp_listeners'] is None
+            async with gateway.session({}, None) as session:
+                first = (await session.call_tool('get_fleet_overview', {'limit': 1})).structured_content
+                assert first['data']['next_offset'] == 1
+                assert first['data']['coverage']['fresh_hosts'] == 1
+                second = (await session.call_tool('get_fleet_overview', {'offset': 1})).structured_content
+                stale, = second['data']['items']
+                assert stale['status'] == 'stale' and stale['collected_at'] == service.snapshots['b']['collected_at']
+                assert stale['idle_resources'] is None and stale['tcp_listeners'] is None
+        finally:
+            app.state.agent_chat.store.db.close()
+    asyncio.run(run())
+
+
 def test_ssh_tunnel_status_and_history_use_shared_mcp_within_host_scope(tmp_path, monkeypatch):
     async def run():
         app = fixture_app(tmp_path)

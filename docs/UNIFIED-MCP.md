@@ -26,7 +26,7 @@ English: The embedded assistant and local MCP clients can change the theme, lang
 
 `resolve_target({"name":"机柜 4","type":"cluster"})` 匹配工作台登记的集群名称，返回 `status` 和 `matches`。默认 `type="auto"` 同时查集群名、机器显示名和 SSH 目标名。比较完整名称时忽略空白、大小写和全半角差异。「四机」与「机柜 4」仍是不同名称。只有 `resolved` 有唯一结果，`ambiguous` 需要确认候选，`not_found` 需要核对名称。
 
-集群匹配返回 `cluster_id`、`revision` 和当前范围内的 `host_ids`。`search_fleet`、`search_hosts` 和 `get_resources` 接收 `cluster_id`，按当前成员与会话权限的交集采样和查询，并在 `data.cluster` 回显名称、版本及可查询成员数。集群不存在时返回错误。内置 `search_fleet` 按查询类型继承集群筛选，传 `cluster_id=null` 清除。外部客户端每次调用都显式传入 ID。批量命令继续使用 `execute_cluster_command` 的成员版本校验。
+集群匹配返回 `cluster_id`、`revision` 和当前范围内的 `host_ids`。`get_fleet_overview`、`search_fleet`、`search_hosts` 和 `get_resources` 接收 `cluster_id`，按当前成员与会话权限的交集采样和查询，并在 `data.cluster` 回显名称、版本及可查询成员数。集群不存在时返回错误。内置 `search_fleet` 按查询类型继承集群筛选，传 `cluster_id=null` 清除。`get_fleet_overview` 和外部 MCP 客户端每次调用都显式传入集群 ID。批量命令继续使用 `execute_cluster_command` 的成员版本校验。
 
 ## 移除自动化流程（2026-11-05）
 
@@ -63,6 +63,8 @@ English: Native skill-driven tool disclosure replaces eager schema binding. MCP 
 内置助手的「资源视图」读取当前机器范围内已有的设备和占卡进程采样。启用后，本轮只通过共享 MCP 的 `get_resources` 读取快照。机器范围沿用对话设置，终端附件和技能调用不参与本轮。模型可以选择表格、条形图或纯文字，并决定布局。表格和图表直接引用本轮采样，保留采样时间、未知值及明细覆盖范围。
 
 ## 助手概况查询优化（2026-11-05）
+
+欢迎页的「检查可用资源和运行中的服务」优先调用 `get_fleet_overview`。该工具一次返回空闲设备、占卡进程计数和 TCP 监听摘要，默认复用后台最近 30 秒内的有效采样。需要立即重新采集时传 `refresh=true`，按 `next_offset` 翻页时传 `refresh=false`。`coverage` 记录设备和端口各自的覆盖范围。失败或过期的采样保留状态和时间，缺失数据为 `null`。监听示例仅涵盖可见的 TCP 套接字，无法判断服务是否健康。
 
 `search_fleet` 新增可选 `view="summary"`：资源按型号汇总，保留真实机器和设备 ID、采样时间、设备数、可确认的物理卡数及空闲显存最小/最大值。未知显存和物理卡数保持 null。默认 `view="detail"` 保留原逐设备结构；`get_resources` 详情接口不变。HTTP 查询和外部 MCP 继续复用原业务校验及机器范围限制。
 

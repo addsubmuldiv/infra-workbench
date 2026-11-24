@@ -397,6 +397,7 @@ const messages:Record<string,string>={
   "准备文件下载": "Prepare file download",
   "准备目录下载": "Prepare folder download",
   "列出机器": "List machines",
+  "查看资源与服务概况": "Check resource and service overview",
   "查找资源与进程": "Find resources and processes",
   "查看设备资源": "View device resources",
   "浏览目录": "Browse directory",

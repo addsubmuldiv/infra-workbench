@@ -2,10 +2,11 @@
 import json
 import re
 import time
+from collections import Counter
 from pathlib import Path
 from pydantic import BaseModel,ConfigDict,Field,field_validator
 from typing import Literal
-from .infra_assistant import SearchPlan,search_inventory
+from .infra_assistant import SearchPlan,fleet_sample_is_fresh,search_inventory
 
 
 class Args(BaseModel):
@@ -34,6 +35,11 @@ class ResourceArgs(HostArgs):
 class InventoryArgs(Args):
     offset:int=Field(default=0,ge=0)
     limit:int=Field(default=20,ge=1,le=50)
+
+
+class FleetOverviewArgs(InventoryArgs):
+    host_id:str|None=Field(default=None,min_length=1,max_length=128,description='机器的完整已验证 ID，省略时查询当前允许范围。')
+    refresh:bool=Field(default=False,description='默认读取最近 30 秒内的有效采样，无需等待 SSH。仅在明确要求立即重采时设 true；翻页传 false。')
 
 
 class PathArgs(HostArgs):
@@ -87,6 +93,7 @@ class ChangeArgs(Args):
 
 REGISTRY={
     'list_hosts':(InventoryArgs,'分页列出允许范围内的机器 ID、别名、采样状态和登录账号；按 next_offset 继续。'),
+    'get_fleet_overview':(FleetOverviewArgs,'一次查看空闲 GPU/NPU、占卡进程和 TCP 监听概况。默认读取后台最近有效采样，不等待 SSH。每台机器带采样时间、状态、监听端口数及少量示例；TCP 监听和占卡进程不代表服务健康。按 next_offset 翻页。'),
     'search_fleet':(FleetArgs,'批量查询允许范围内的占卡进程、空闲资源或 tmux，结果直接含真实 host_id，无需先 list_hosts。概况用 view=summary，按 next_offset 分页。仅传需要修改的条件，继承本会话上次同类查询条件；切换 scope 会重置条件。“我的” owner=__self__。默认使用当前采样，需要最新数据可 refresh=true；新鲜结果无需再逐机刷新。进程仅覆盖 GPU/NPU 占卡进程，全部监听服务需对指定机器查 ports。'),
     'get_resources':(ResourceArgs,'读取指定机器设备、显存和占卡进程。查看采样时间，过期或未知不能判为空闲。'),
     'read_directory':(DirectoryArgs,'通过现有 SSH 只读浏览目录，一页最多 100 项。返回真实路径供后续读取。'),
@@ -187,6 +194,45 @@ def fleet_summaries(rows):
     return result
 
 
+def tcp_listener_summary(ports):
+    if ports is None:
+        return None
+    examples = []
+    for port, lines in ports.items():
+        names = sorted({name[:80] for line in lines for name in re.findall(r'\("([^"\r\n]+)",pid=\d+', line)})
+        examples.append(dict(port=int(port), process_names=names[:3]))
+    examples.sort(key=lambda item: (not item['process_names'], item['port']))
+    return dict(port_count=len(examples), examples=examples[:5])
+
+
+def fleet_overview_row(host, now):
+    from .snapshot_sections import section_views
+
+    snapshot = host['snapshot']
+    fresh = fleet_sample_is_fresh(snapshot, now)
+    status = snapshot.get('status') or 'unknown'
+    row = dict(host_id=host['id'], alias=host.get('alias') or host['target'],
+               status=('stale' if status == 'online' and not fresh else status),
+               collected_at=snapshot.get('collected_at'), idle_resources=None, accelerator_processes=None,
+               tcp_listeners=None)
+    sections = section_views(snapshot, now, 30)
+    devices = sections.get('devices')
+    if fresh and (devices is None or devices['fresh']):
+        resources, _ = search_inventory([host], SearchPlan(scope='resources'), now)
+        processes, coverage = search_inventory([host], SearchPlan(scope='processes'), now)
+        row['devices_collected_at'] = devices['collected_at'] if devices is not None else row['collected_at']
+        names = Counter((proc.get('name') or '')[:80] for proc in processes)
+        row['idle_resources'] = [dict(kind=item['kind'], device_groups=fleet_summary(item)['device_groups']) for item in resources]
+        row['accelerator_processes'] = dict(observed_count=len(processes), warnings=coverage['unknown'],
+                                             name_examples=[dict(name=name, count=count) for name, count in names.most_common(5) if name])
+    ports = sections.get('ports')
+    if status != 'refresh_timeout' and (ports['fresh'] if ports is not None else fresh):
+        listeners = tcp_listener_summary(snapshot.get('ports'))
+        if listeners is not None:
+            row['tcp_listeners'] = dict(listeners, collected_at=ports['collected_at'] if ports is not None else row['collected_at'])
+    return row
+
+
 class ChatTools:
     def __init__(self,assistant,agent_service,ssh):
         self.assistant,self.agent_service,self.ssh=assistant,agent_service,ssh
@@ -207,6 +253,26 @@ class ChatTools:
             from .mcp_output import page
             return page([dict(host_id=h['id'],alias=h.get('alias') or h['target'],user=h['snapshot'].get('login_user') or h.get('user'),
                 status=h['snapshot'].get('status'),collected_at=h['snapshot'].get('collected_at')) for h in self.inventory(allowed)],args.offset,args.limit,budget=8000)
+        if name=='get_fleet_overview':
+            from .agent_errors import response
+            from .mcp_output import page
+
+            if args.host_id is not None:
+                self.host(args.host_id, allowed)
+                allowed = {args.host_id}
+            failed = await self.agent_service.refresh(self.inventory(allowed), 25) if args.refresh else set()
+            now = time.time()
+            inventory = self.inventory(allowed)
+            for host in inventory:
+                if host['id'] in failed:
+                    host['snapshot'] = dict(host['snapshot'], status='refresh_timeout')
+            rows = [fleet_overview_row(host, now) for host in inventory]
+            data = page(rows, args.offset, args.limit, budget=12000)
+            data['coverage'] = dict(fresh_hosts=sum(row['idle_resources'] is not None for row in rows),
+                                    ports_known_hosts=sum(row['tcp_listeners'] is not None for row in rows))
+            return response(data, partial=data['has_more'] or any(
+                row['tcp_listeners'] is None or row['accelerator_processes'] is None
+                or row['accelerator_processes']['warnings'] for row in rows))
         if name=='search_fleet':
             patch=args.model_dump(include=args.model_fields_set,exclude={'refresh','unsupported','view','offset','limit'})
             # Commit inheritance before the first await: completion order must

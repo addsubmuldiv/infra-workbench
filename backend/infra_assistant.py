@@ -136,6 +136,11 @@ class InfraAssistant:
                     message='AI 归纳附有采样记录引用，请以原始事实为准。')
 
 
+def fleet_sample_is_fresh(snapshot, now):
+    stamp = snapshot.get('collected_at')
+    return snapshot.get('status') == 'online' and isinstance(stamp, (int, float)) and -5 <= now-stamp <= 30
+
+
 def search_inventory(inventory, plan, now=None):
     now = time.time() if now is None else now
     rows, unavailable, unknown, self_unknown = [], [], [], []
@@ -147,7 +152,7 @@ def search_inventory(inventory, plan, now=None):
         searched += 1
         snap = host['snapshot']
         stamp = snap.get('collected_at')
-        fresh = snap.get('status') == 'online' and isinstance(stamp,(int,float)) and -5 <= now-stamp <= 30
+        fresh = fleet_sample_is_fresh(snap, now)
         if plan.scope == 'hosts':
             if not plan.keywords or any(word.casefold() in value.casefold() for word in plan.keywords for value in (alias,host['target'])):
                 rows.append(dict(type='host',host_id=host['id'],alias=alias,status=snap.get('status'),fresh=fresh,collected_at=stamp,device_ids=[]))

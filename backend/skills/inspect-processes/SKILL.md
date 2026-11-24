@@ -25,6 +25,6 @@ description: 查询占卡进程、推理服务、SSH 隧道及断线历史、tmu
 
 单机 get_resources 默认概要保留设备及逐卡 PID，不重复长命令。需要用户、命令或目录时使用 get_resources(view="processes")；按 next_offset 翻页，指定 pid 后按 text_next_offset 续读文本。device_memory_used 是逐设备显存，不应相加冒充共享物理卡的总占用。未知或过期的 process_count 为 null，不能当作零进程。
 
-同时查看资源与运行进程时，在同一轮并行调用 search_fleet(scope="resources",view="summary") 和 search_fleet(scope="processes",view="summary")；需要刷新时两次均传 refresh=true，后端会共享正在进行的同机采集。无需等资源结果再发进程查询。进程 summary 按机器、用户和详情状态分组，commands 列出名称及命令前缀，processes 的每个 PID 与设备列表通过 command_index 对应 commands 条目，组内保留用户和采样时间；total/offset 按组计，process_count 是组内进程数。命令仅为带截断标记的前缀，相同前缀不证明完整命令相同；需确认完整启动参数、模型路径或工作目录时，再对相关机器用 view="detail" 或 inspect_server_process 补查，不从前缀推断缺失参数。
+同时查看空闲资源、占卡进程和 TCP 监听概况时，用 get_fleet_overview 一次读取允许范围内的最近有效采样。只有用户明确要求立即重采时才传 refresh=true。检查 coverage 和 next_offset，并说明采样缺失、过期或端口进程名不可见。TCP 监听摘要只提供少量示例，核对指定服务再做必要的专项检查。要分别筛选资源和进程时，用 search_fleet；并行查询可共享同机刷新，翻页 refresh=false。进程 summary 按机器、用户和详情状态分组，commands 列出名称及命令前缀，processes 的每个 PID 与设备列表通过 command_index 对应 commands 条目，组内保留用户和采样时间；total/offset 按组计，process_count 是组内进程数。命令仅为带截断标记的前缀，相同前缀不证明完整命令相同；需确认完整启动参数、模型路径或工作目录时，再对相关机器用 view="detail" 或 inspect_server_process 补查，不从前缀推断缺失参数。
 
 Efficiency: use fleet queries for accelerator-process summaries, reuse fresh results, and paginate without refreshing again. Probe ports or CPU processes only on relevant hosts; accelerator processes do not cover all services.

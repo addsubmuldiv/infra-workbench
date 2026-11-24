@@ -13,7 +13,7 @@ from .command_tools import CommandTools, catalog as command_catalog
 PROBE_NAMES = {'read_file': 'read_server_file', 'read_directory': 'read_server_directory'}
 PROBES = {PROBE_NAMES.get(n, n): n for n in REGISTRY}
 PRIVATE = {'get_ssh_password', 'get_ssh_info'}
-CLUSTER_RESOURCE_TOOLS = {'search_fleet', 'search_hosts', 'get_resources'}
+CLUSTER_RESOURCE_TOOLS = {'get_fleet_overview', 'search_fleet', 'search_hosts', 'get_resources'}
 
 
 class WorkbenchMCPService:
@@ -73,7 +73,7 @@ class WorkbenchMCPService:
                 if name == 'search_fleet' and self.embedded:
                     cluster_id['type'] = ['string', 'null']
                     cluster_id['description'] += '同一 scope 内省略时继承，传 null 清除集群筛选。'
-                if name == 'get_resources':
+                if name in ('get_resources', 'get_fleet_overview'):
                     spec['inputSchema']['properties']['host_id']['description'] += ' 指定 cluster_id 时须使用成员的完整 host_id。'
                 spec['inputSchema']['properties']['cluster_id'] = cluster_id
                 spec['description'] += ' 用户指定机柜或分组时，先用 resolve_target 取得 cluster_id，并传入此工具。结果的 cluster 字段回显实际查询范围。'

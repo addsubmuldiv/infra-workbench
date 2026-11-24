@@ -218,7 +218,8 @@ async def run_deep_agent(chat, provider, tools, allowed, instructions, secret, s
     async with gateway.session(chat['state'], allowed, skill_details) as client:
         mcp_tools = await discover_tools(client, secret, native_offload=True)
         files=skill_tool_files(files,mcp_tools)
-        mcp_tools=[tool.model_copy(update={'extras':dict(tool.extras or {},defer_loading=True)}) for tool in mcp_tools]
+        mcp_tools=[tool.model_copy(update={'extras':dict(tool.extras or {},defer_loading=True)})
+                   if tool.name != 'get_fleet_overview' else tool for tool in mcp_tools]
         capacity = await provider.context_capacity() if hasattr(provider, 'context_capacity') else dict(
             tokens=ASSISTANT_CONTEXT_FALLBACK_TOKENS,source='fallback',
             trigger_tokens=int(ASSISTANT_CONTEXT_FALLBACK_TOKENS*.85))
