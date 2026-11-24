@@ -154,9 +154,10 @@ def test_shared_theme_uses_web_css_tokens_and_updates_after_workspace_save(tmp_p
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     colors=palettes()
-    assert set(colors)=={'daylight','paper','midnight','graphite','frieren',
+    assert set(colors)=={'daylight','paper','midnight','graphite','coast-sunset','frieren',
                          'glass-light','glass-dark','glass-jade','glass-dusk','glass-white','glass-black'}
     assert colors['midnight']['panel']=='#1b2838'
+    assert colors['coast-sunset']['accent']=='#e7a89c'
     assert colors['glass-jade']['panel']!=colors['glass-light']['panel']
     assert colors['glass-dusk']['native-glass-rim']!=colors['glass-dark']['native-glass-rim']
     assert colors['glass-white']['bg']=='#ffffff'

@@ -33,6 +33,17 @@
   --native-glass-rim:#514c64;
   --primary-text:var(--bg);
 }
+[data-theme="coast-sunset"]{
+  color-scheme:dark;
+  --bg:#201527;--panel:#291f30;--panel2:#2d2234;--sidebar:#241b2b;
+  --text:#fcf2f6;--muted:#cebbc9;--line:#5e4765;--accent:#e7a89c;--accent-bg:#48334b;
+  --green:#8bdbc9;--amber:#f3cc95;--warning-bg:#453339;--danger:#f2a4ad;--danger-bg:#482e3e;
+  --input:#261b2d;--hover:#3e2e46;--shadow:0 12px 32px #130b1980;--brand:#fabf8b;
+  --term-bg:#1b1222;--term-fg:#fcf2f6;--term-selection:#57415d;
+  --native-glass-rim:#705976;
+  --primary-text:var(--bg);
+  --sunset-gradient:linear-gradient(115deg,#b38ead,#cb97ab 32%,#e7a89c 58%,#faac87 80%,#fabf8b);
+}
 [data-theme="frieren"]{
   --journey-sunlight:#fff4cf;
   --journey-lavender-light:#e9e3f080;

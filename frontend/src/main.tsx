@@ -36,6 +36,7 @@ import './windowLayers.css';
 import './resourceOverview.css';
 import './rendering.css';
 import './solidGlass.css';
+import './coastSunset.css';
 import {WorkspaceLayout} from './WorkspaceLayout';
 import {DesktopWindowControls,hasDesktopTitlebar} from './DesktopWindowControls';
 import {JourneyArt} from './JourneyArt';

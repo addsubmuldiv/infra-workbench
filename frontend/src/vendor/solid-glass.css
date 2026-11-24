@@ -56,7 +56,7 @@
   --sg-light-3: oklch(0.68 0.13 165 / 4%);
 }
 
-[data-theme="midnight"],[data-theme="graphite"],[data-theme="glass-dark"],[data-theme="glass-dusk"],[data-theme="glass-black"] {
+[data-theme="midnight"],[data-theme="graphite"],[data-theme="coast-sunset"],[data-theme="glass-dark"],[data-theme="glass-dusk"],[data-theme="glass-black"] {
   --sg-background: oklch(0.16 0 0);
   --sg-foreground: oklch(0.985 0 0);
   --sg-panel: oklch(1 0 0 / 4.5%);

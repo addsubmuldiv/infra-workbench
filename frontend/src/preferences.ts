@@ -4,6 +4,7 @@ export const THEMES = [
   {id:'paper',name:'暖纸',mode:'light',description:'米白与暖棕'},
   {id:'midnight',name:'午夜',mode:'dark',description:'深蓝与薄荷绿'},
   {id:'graphite',name:'石墨',mode:'dark',description:'炭灰与浅紫'},
+  {id:'coast-sunset',name:'海岸落日',mode:'dark',description:'GTA VI 风格的紫粉、珊瑚粉与杏金暮光'},
   {id:'frieren',name:'花语旅途',mode:'light',description:'芙莉莲 × 菲伦 · 浅绿与淡紫'},
   {id:'glass-light',name:'玻璃亮色',mode:'light',description:'冷蓝与淡紫光带'},
   {id:'glass-dark',name:'玻璃暗色',mode:'dark',description:'深蓝与烟紫光带'},
