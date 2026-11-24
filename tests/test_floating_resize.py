@@ -1,6 +1,67 @@
 from backend.floating_layout import viewport_layout, clamp_size
 
 
+def test_display_changes_recompute_window_and_font_scale_without_saving(tmp_path, monkeypatch):
+    from queue import Queue
+    from threading import Event
+    from unittest.mock import Mock
+
+    from backend import floating_monitor, floating_position
+
+    app = floating_monitor.FloatingMonitor.__new__(floating_monitor.FloatingMonitor)
+    app.root = Mock()
+    app.root.winfo_ismapped.return_value = True
+    app.root.winfo_width.return_value = 516
+    app.root.winfo_height.return_value = 390
+    app.settings = floating_monitor.MonitorSettings(tmp_path / 'float.json')
+    app.viewport_size = (344, 260)
+    app.dpi_scale = 1.0
+    app.drag = app.resize_drag = None
+    app.render = Mock()
+    app.stop = Event()
+    app.inbox = Queue()
+    app.recover_offscreen = app.sync_language = app.sync_theme = Mock()
+    dpi_scale = Mock(return_value=1.5)
+    monitor = Mock(return_value=(0, 0, 3840, 2160))
+    monkeypatch.setattr(floating_position, 'window_dpi_scale', dpi_scale)
+    monkeypatch.setattr(floating_position, 'monitor_work_area', monitor)
+
+    app.refresh_display()
+    assert app.dpi_scale == 1.5
+    assert app.pixel_size() == (516, 390)
+    assert app.canvas_font(7)[1] == -14
+
+    # A 1080p remote reconnect may change DPI with no Tk Configure event.
+    monitor.return_value = (0, 0, 1920, 1080)
+    dpi_scale.return_value = 1.0
+    app.render.reset_mock()
+    app.consume()
+    app.render.assert_called_once_with(force=True)
+    assert app.pixel_size() == (344, 260)
+    assert app.canvas_font(7)[1] == -9
+    assert not app.settings.path.exists()
+
+    # A subsequent OS geometry update can arrive after the scale has settled.
+    app.refresh_display()
+    app.root.geometry.assert_called_once_with('344x260')
+    app.root.winfo_width.return_value = 344
+    app.root.winfo_height.return_value = 260
+    app.render.reset_mock()
+    app.root.geometry.reset_mock()
+    app.refresh_display()
+    app.render.assert_not_called()
+    app.root.geometry.assert_not_called()
+
+    monitor.return_value = (0, 0, 3840, 2160)
+    app.resize_drag = object()
+    app.refresh_display()
+    app.render.assert_not_called()
+    app.resize_drag = None
+    app.refresh_display()
+    assert app.dpi_scale == 1.25
+    assert app.pixel_size() == (430, 325)
+
+
 def test_resolution_scale_preserves_2k_and_enlarges_4k_in_both_orientations():
     from backend.floating_layout import resolution_scale
     for size in [(1920,1080),(2560,1440),(1440,2560),(3440,1440)]:

@@ -1,4 +1,29 @@
-"""Position floating dialogs beside their owner, within its monitor work area."""
+"""Read native display metrics and keep floating windows on screen."""
+
+import ctypes
+from ctypes import wintypes as w
+
+
+def native_window_handle(user, window):
+    user.GetAncestor.argtypes = [w.HWND, w.UINT]
+    user.GetAncestor.restype = w.HWND
+    hwnd = window.winfo_id()
+    return user.GetAncestor(hwnd, 2) or hwnd  # GA_ROOT, Tk's outer wrapper
+
+
+def window_dpi_scale(window):
+    """Return the current DPI in the same coordinate space as Tk geometry."""
+    try:
+        user = ctypes.WinDLL('user32')
+        user.GetDpiForWindow.argtypes = [w.HWND]
+        user.GetDpiForWindow.restype = w.UINT
+        dpi = user.GetDpiForWindow(native_window_handle(user, window))
+        if dpi:
+            return dpi / 96
+    except (OSError, AttributeError):
+        pass
+    return 1.0
+
 
 def recover_position(frame, work_area):
     """Move a completely invisible window into the nearest monitor's work area."""
@@ -23,15 +48,12 @@ def dialog_position(anchor, size, work_area, gap=12):
 
 def monitor_work_area(window, *, full=False):
     try:
-        import ctypes
-        from ctypes import wintypes as w
         class MonitorInfo(ctypes.Structure):
             _fields_=[('cbSize',w.DWORD),('rcMonitor',w.RECT),('rcWork',w.RECT),('flags',w.DWORD)]
         user=ctypes.WinDLL('user32')
-        user.GetAncestor.argtypes=[w.HWND,w.UINT];user.GetAncestor.restype=w.HWND
         user.MonitorFromWindow.argtypes=[w.HWND,w.DWORD];user.MonitorFromWindow.restype=w.HANDLE
         user.GetMonitorInfoW.argtypes=[w.HANDLE,ctypes.POINTER(MonitorInfo)]
-        hwnd=user.GetAncestor(window.winfo_id(),2)
+        hwnd=native_window_handle(user, window)
         info=MonitorInfo();info.cbSize=ctypes.sizeof(info)
         if user.GetMonitorInfoW(user.MonitorFromWindow(hwnd,2),ctypes.byref(info)):
             rect=info.rcMonitor if full else info.rcWork

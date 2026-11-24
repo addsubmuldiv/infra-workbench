@@ -27,10 +27,9 @@ def style_native_window(window, radius=18):
         return
     import ctypes
     from ctypes import wintypes as w
+    from backend.floating_position import native_window_handle
     user, gdi = ctypes.WinDLL('user32', use_last_error=True), ctypes.WinDLL('gdi32')
-    user.GetAncestor.argtypes = [w.HWND, w.UINT]
-    user.GetAncestor.restype = w.HWND
-    hwnd = user.GetAncestor(window.winfo_id(), 2)
+    hwnd = native_window_handle(user, window)
     get_style = user.GetWindowLongPtrW if ctypes.sizeof(ctypes.c_void_p) == 8 else user.GetWindowLongW
     set_style = user.SetWindowLongPtrW if ctypes.sizeof(ctypes.c_void_p) == 8 else user.SetWindowLongW
     get_style.argtypes = [w.HWND, ctypes.c_int]; get_style.restype = ctypes.c_ssize_t
@@ -270,9 +269,7 @@ class FloatingMonitor:
         self.sprite_cache = {}
         self.sprite_refs = []
         self.rounded_items = {}
-        self.dpi_scale = max(1.,root.winfo_fpixels('1i')/96.) if sys.platform=='win32' and self._dpi_aware() else 1.
-        self.native_dpi_scale = self.dpi_scale
-        self.resolution_scale = 1.
+        self.dpi_scale = 1.0
         self._display_job = None
         self.drag = None
         self.resize_drag = None
@@ -298,7 +295,8 @@ class FloatingMonitor:
         x, y = settings.values['x'], settings.values['y']
         # Saved positions can be on a disconnected monitor; clamp to virtual desktop.
         left, top, width, height = self.desktop_bounds()
-        window_width,window_height=(round(value*self.dpi_scale) for value in self.viewport_size)
+        self.update_display_scale()
+        window_width, window_height = self.pixel_size()
         x = max(left, min(x if x is not None else root.winfo_screenwidth()-window_width-24, left+width-window_width))
         y = max(top, min(y if y is not None else top+80, top+height-window_height))
         root.geometry(f'+{x}+{y}' if x >= 0 and y >= 0 else f'{x:+d}{y:+d}')
@@ -317,34 +315,41 @@ class FloatingMonitor:
         root.after(250, self.consume)
 
     def update_display_scale(self):
-        from backend.floating_position import monitor_work_area
+        from backend.floating_position import monitor_work_area, window_dpi_scale
         left, top, right, bottom = monitor_work_area(self.root, full=True)
-        factor = resolution_scale(right-left, bottom-top)
-        changed = factor != self.resolution_scale
-        self.resolution_scale = factor
-        self.dpi_scale = self.native_dpi_scale * factor
+        # Treat the 4K enlargement as a minimum, so it doesn't compound Windows scaling.
+        scale = max(window_dpi_scale(self.root), resolution_scale(right-left, bottom-top))
+        changed = scale != self.dpi_scale
+        self.dpi_scale = scale
         return changed
+
+    def pixel_size(self):
+        width, height = self.viewport_size
+        return round(width*self.dpi_scale), round(height*self.dpi_scale)
+
+    def canvas_font(self, points, bold=False):
+        # Pixel sizes keep Canvas text and geometry on the same live scale.
+        pixels = round(points * 96 / 72 * self.dpi_scale)
+        return ('Microsoft YaHei UI', -pixels, 'bold' if bold else 'normal')
+
+    def refresh_display(self):
+        if self.drag or self.resize_drag or not self.root.winfo_ismapped():
+            return
+        if self.update_display_scale():
+            self.render(force=True)
+            return
+        width, height = self.pixel_size()
+        if (self.root.winfo_width(), self.root.winfo_height()) != (width, height):
+            self.root.geometry(f'{width}x{height}')
+            self.root.after_idle(self.round_corners)
 
     def display_changed(self, event):
         if event.widget is not self.root or self._display_job is not None:
             return
         def refresh():
             self._display_job = None
-            if self.resize_drag:
-                self._display_job = self.root.after(150, refresh)
-            elif self.update_display_scale():
-                self.render(force=True)
+            self.refresh_display()
         self._display_job = self.root.after(150, refresh)
-
-    @staticmethod
-    def _dpi_aware():
-        try:
-            import ctypes
-            user=ctypes.WinDLL('user32')
-            user.GetThreadDpiAwarenessContext.restype=ctypes.c_void_p
-            user.GetAwarenessFromDpiAwarenessContext.argtypes=[ctypes.c_void_p]
-            return user.GetAwarenessFromDpiAwarenessContext(user.GetThreadDpiAwarenessContext())>0
-        except (OSError,AttributeError):return False
 
     def hide_tooltip(self, event=None):
         if self._tooltip_after is not None:
@@ -492,6 +497,7 @@ class FloatingMonitor:
     def consume(self):
         if self.stop.is_set():
             return
+        self.refresh_display()
         self.recover_offscreen()
         self.sync_language()
         self.sync_theme()
@@ -689,7 +695,6 @@ class FloatingMonitor:
         return tr(f'{idle}/{len(devices)} 空闲', f'{idle}/{len(devices)} Idle')
 
     def render(self, force=False):
-        self.update_display_scale()
         layout=viewport_layout(*self.viewport_size,host_count=len(self.visible_hosts()) if self.hosts else None)
         self.viewport_size=(layout['width'],layout['height'])
         minimal=layout['minimal']
@@ -751,7 +756,7 @@ class FloatingMonitor:
         def text(x, y, value, size=10, color=self.INK, bold=False, anchor='w', **kw):
             # Width is a single-line limit, never permission to wrap into the next label.
             from tkinter import font as tkfont
-            font=('Microsoft YaHei UI',max(1,round(max(7,round(size*scale))*self.resolution_scale)),'bold' if bold else 'normal')
+            font=self.canvas_font(max(7,round(size*scale)),bold)
             limit=kw.pop('width',None)
             if limit is not None:
                 measure=tkfont.Font(root=self.root,font=font)
@@ -897,7 +902,7 @@ class FloatingMonitor:
                 c.create_line(194,y+13,194,y+rh-13,fill='#dce4ed')
                 from tkinter import font as tkfont
                 numeric=self.summary(h).split(' ')[0] if h.get('snapshot',{}).get('fresh') and not self.error else tr('未知', 'Unknown')
-                count_font=tkfont.Font(root=self.root,font=('Microsoft YaHei UI',max(1,round(max(7,round(9*scale))*self.resolution_scale))))
+                count_font=tkfont.Font(root=self.root,font=self.canvas_font(max(7,round(9*scale))))
                 count_width=count_font.measure(numeric)/(scale*self.dpi_scale)+8
                 if h.get('snapshot',{}).get('fresh') and not self.error:
                     text(203,y+rh/2-9,numeric,9,'#16815c',tags='host-count-'+h['id'])
@@ -976,7 +981,7 @@ class FloatingMonitor:
             c.configure(width=width,height=height)
         if self.dpi_scale != 1.:
             c.scale('all',0,0,self.dpi_scale,self.dpi_scale)
-            width,height=round(width*self.dpi_scale),round(height*self.dpi_scale)
+            width,height=self.pixel_size()
             c.configure(width=width,height=height)
         c.bind('<Button-3>',self.machine_context_at_pointer)
         self.root.geometry(f'{width}x{height}')
