@@ -12,7 +12,7 @@ INSTRUCTIONS='''你正在使用 Infra Workbench，查询用户电脑中已添加
 若 tools/list 提供 resolve_target，按名称指定目标时把原名称交给该工具；机柜或分组传 type="cluster"，不改搜相近的机器别名。集群资源查询传返回的 cluster_id。find_hosts 的 name 用于按子串筛选机器，不查询分组。
 用户用 IP、卡型号或卡数描述目标（例如“kill 950DT 那台机器的进程”）时先读取 find-hosts 技能，再 find_hosts；它不要求空闲或新鲜采样。多个候选时继续缩小范围或请用户确认，不自动选择第一台。uncertain 是信息不足的候选，不能当作已排除；旧采样只用于定位，操作前重新核对机器和进程。
 工作流程：不清楚有哪些机器时先 list_hosts；需要空闲训练设备时用 search_hosts，例如
-{"kind":"NPU","count":6,"min_free_gib":40,"idle":true,"refresh":true}。
+{"kind":"NPU","count":6,"min_free_gib":40,"idle":true}。
 使用结果里的完整 host_id；get_host 读机器概况，get_resources(host_id) 读单机详细设备和占卡进程。
 search_hosts 的 count 是同一机器同一种类任意多少个设备，不是指定卡号，不跨机器或 GPU/NPU 合并。
 min_free_gib 是每个设备剩余显存，1 GiB=1024^3 字节。多 die NPU 必须查看 count_unit、card_id/chip_id，设备数不一定是物理卡数。
@@ -47,7 +47,7 @@ def field(kind,description,default=None,minimum=None,maximum=None,enum=None):
 
 HOST_ID=field('string','优先使用 list_hosts/search_hosts 返回的完整 host_id；也接受精确唯一别名，绝不模糊自动选目标。')
 NAME=field('string','机器别名子串，不区分大小写；省略时不过滤。')
-REFRESH=field('boolean','是否请求更新采样，默认 false；合并同机采集，最多等待 25 秒，保留逐机失败信息。',False)
+REFRESH=field('boolean','默认 false，读取已有采样。明确要求更新且本次查询尚未成功采集时传 true。合并同机采集，最多等待 25 秒，保留逐机失败信息。',False)
 
 
 def definition(name,title,description,properties,required,output,examples,recovery):
@@ -86,9 +86,9 @@ TOOLS={tool['name']:tool for tool in [
              idle=field('boolean','要求确认无可见计算进程；默认 true。只看硬件/显存条件可传 false。',True),
              refresh=REFRESH,max_age=field('number','可接受的采样最大年龄秒数；只限制年龄，不等待空闲或自动刷新。',30,.01,86400)),
         [],s.obj(dict(items=s.array(s.MATCH),excluded=s.array(s.EXCLUSION))),
-        [dict(arguments=dict(kind='NPU',count=6,min_free_gib=40,idle=True,refresh=True),purpose='任意6个空闲NPU，每个至少40GiB'),
+        [dict(arguments=dict(kind='NPU',count=6,min_free_gib=40,idle=True),purpose='任意6个空闲NPU，每个至少40GiB'),
          dict(arguments=dict(kind='GPU',model='H200',count=2,min_free_gib=60),purpose='找两个空闲H200设备')],
-        [dict(when='STALE_SNAPSHOT',tool='search_hosts',arguments=dict(refresh=True),note='重试时保留原始筛选参数。'),
+        [dict(when='STALE_SNAPSHOT',tool='search_hosts',arguments=dict(refresh=True),note='先说明采样覆盖；确需重采时保留原始筛选条件，并尽量缩小机器范围。'),
          dict(when='INSUFFICIENT_DEVICES',action='报告 required_count/eligible_count/missing_count，不擅自降低需求。')]),
     definition('get_host','查看机器概况',
         '使用完整 host_id 查看一台机器的配置概况、CPU/内存摘要和设备分组，包括最后采样时间、新鲜度和每组空闲/占用/未知数量；不返回进程命令全文，不包含密码，不主动刷新。精确唯一别名也可使用，同名时先 list_hosts 取得 ID。要看详细设备和占卡用户/PID/路径，调用 get_resources(host_id)；要连接服务器，调用 get_ssh_info(host_id)。未知或过期状态不能解释为资源空闲。',
@@ -98,8 +98,8 @@ TOOLS={tool['name']:tool for tool in [
     definition('get_resources','查看系统与加速设备资源',
         '提供 CPU 百分比、逻辑核数、内存字节数、GPU/NPU 显存/利用率/温度与状态。指定 host_id 返回详细设备和已采集占卡进程（用户、PID、路径、可执行文件及命令），不是全部系统进程列表；不指定则返回全部机器的紧凑分组概况，不塞入所有进程。默认读现有快照，refresh=true 请求更新。每机带独立采样时间，权限不足字段为 null，partial保留有效项。不会执行任务、检查/占用端口或预留设备；需要操作请使用自己的 SSH 工具。',
         dict(host_id=HOST_ID,refresh=REFRESH),[],dict(anyOf=[s.obj(dict(resource=s.RESOURCE),('resource',)),s.obj(dict(items=s.array(s.SUMMARY)),('items',))]),
-        [dict(arguments={},purpose='全部机器资源概况'),dict(arguments=dict(host_id='HOST_ID_FROM_LIST',refresh=True),purpose='更新并查看单机设备/进程')],
-        [dict(when='STALE_SNAPSHOT',tool='get_resources',arguments=dict(refresh=True),note='只需要一台时保留其 host_id，查看失败机器状态。')]),
+        [dict(arguments={},purpose='全部机器资源概况'),dict(arguments=dict(host_id='HOST_ID_FROM_LIST'),purpose='查看单机已有设备/进程采样')],
+        [dict(when='STALE_SNAPSHOT',tool='get_resources',arguments=dict(refresh=True),note='先报告采样状态；确需重采时保留所需机器的 host_id。')]),
     definition('get_ssh_info','取得 SSH 连接描述',
         '读取地址、账号、端口、ProxyJump/ProxyCommand、密钥/证书路径、known_hosts设置和可执行 ssh_argv，不主动连接，不返回密码。resolved_on/dependencies 标明配置在哪台电脑有效，Windows 路径/SSH agent socket/本机 helper不能直接放进远端容器。ssh_argv是本机非交互密钥/agent模式，BatchMode=yes不等待密码；密码认证使用结构化属性及支持密码的 SSH 库/工具。跳板可能需独立账号/密钥/密码。GUI在线不表示独立SSH成功，external_ssh_status=not_tested。需要密码时仅在必要情况下显式 get_ssh_password(host_id)；后续由agent自己SSH，不经Workbench转发。',
         dict(host_id=HOST_ID),['host_id'],s.CONNECTION,

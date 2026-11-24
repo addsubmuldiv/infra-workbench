@@ -8,7 +8,7 @@ metadata:
 # 预约和监控
 
 1. 分清用户是查询资源还是要求预约。只有明确要求写入时才创建/修改/取消；不因为找到了空闲卡就自动预约。
-2. 复用已核实的 host_id，或用 find_hosts 按别名定位；型号/IP 先读 find-hosts 技能。等待空闲的预约目标不要求当前已经空闲，不能用空闲筛选排除忙碌机器。固定设备预约需 get_resources(refresh=true) 核对设备 ID；数量预约只在型号、设备种类或数量不明时补查。用户要求多机预约时走下方流程。
+2. 复用已核实的 host_id，或用 find_hosts 按别名定位；型号/IP 先读 find-hosts 技能。等待空闲的预约目标不要求当前已经空闲，不能用空闲筛选排除忙碌机器。固定设备预约先用 get_resources(refresh=false) 核对设备 ID，并按需翻页。数量预约只在设备种类、数量或采样有效性不明时查已有采样。已有采样缺失、失败或过期，且创建或修改设备预约需要有效采样时，只对目标机器补采一次再核对；仍无法确认就说明原因。用户要求多机预约时走下方流程。
 3. 创建前用 get_workbench_state(section="reservations") 查看已有预约，按 next_offset 翻页并核对是否重复；默认 overview 不包含预约记录。已知目标时，这个只读检查可与必要的机器定位/设备查询并行。按数量预约传 create_reservation(host_id, mode="count", kind="GPU" 或 "NPU", required_count=数量, minimum_gib=每卡显存 GiB, wait_seconds=持续空闲秒数)。固定卡传 mode="fixed", devices=[真实设备 ID]，不混传数量字段。
 4. 用户未指定持续空闲时长可采用工具默认 120 秒，并在结果中说明。email_notify 默认 false；用户要求邮件提醒时先看 get_mail_settings，未配置则引导软件设置，不能索要邮箱授权码。
 5. create_reservation 成功后报告真实预约 ID、机器、数量/设备、显存、时长和提醒方式。预约只监测并提醒，不锁卡、不预留硬件、不自动启动训练。

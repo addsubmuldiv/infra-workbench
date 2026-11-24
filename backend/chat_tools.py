@@ -39,7 +39,7 @@ class InventoryArgs(Args):
 
 class FleetOverviewArgs(InventoryArgs):
     host_id:str|None=Field(default=None,min_length=1,max_length=128,description='机器的完整已验证 ID，省略时查询当前允许范围。')
-    refresh:bool=Field(default=False,description='默认读取最近 30 秒内的有效采样，无需等待 SSH。仅在明确要求立即重采时设 true；翻页传 false。')
+    refresh:bool=Field(default=False,description='默认读取最近 30 秒内的有效采样，无需等待 SSH。仅在明确要求立即重采且本次查询还未成功采集时设 true；汇总已采集数据或翻页传 false。')
 
 
 class PathArgs(HostArgs):

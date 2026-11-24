@@ -9,7 +9,7 @@ metadata:
 
 1. 确认需要的机器范围和时间段。统计空闲时长、覆盖率或连续空闲时段时，用 get_resource_history，传入机器 ID 和当地日期及 IANA 时区，或给定带时区的起止时刻。默认概要按机器分页；查时段用 view="segments"，指定 segment_host_id 查看单机。沿用响应的时间范围，不把 unknown 算作空闲。查询事件用 read_changes，hours 只接受 1、6、24、168。
 2. read_changes 返回受本轮机器范围约束的历史记录。引用真实记录编号、机器和采集时间。
-3. 用 get_resources(refresh=true) 或 search_fleet(refresh=true) 区分历史变化与当前状态。
+3. 只问历史时直接用历史记录。需要对照当前状态时，用 get_resources 或 search_fleet 读取后台最新有效采样，省略 refresh 或传 refresh=false。报告采样时间和缺失情况；用户明确要求立即重采时才刷新涉及的机器。
 4. 采样间隔中的变化时间只能限定在相邻观测之间，不能捏造精确退出时间。
 5. 进程消失只说明后续观测没有看到，可能是完成、失败或被停止；需要 read_server_file 读取日志补证据。采集失败不代表资源释放。
 
