@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#142d3b"/>
+      <stop offset="100%" stop-color="#08141d"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8ef3d7" stop-opacity="0.48"/>
+      <stop offset="100%" stop-color="#359c88" stop-opacity="0.24"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="32" cy="32" r="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#69f5ce" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#69f5ce" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="chip" x1="16" y1="15" x2="48" y2="49" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#25495c"/>
+      <stop offset="100%" stop-color="#112330"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="22" y1="21" x2="42" y2="43" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#cafff0"/>
+      <stop offset="100%" stop-color="#28c79e"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)" stroke="url(#rim)" stroke-width="1.5"/>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#glow)"/>
+  <g stroke="#68c9b4" stroke-opacity="0.58" stroke-width="2.4" stroke-linecap="round">
+    <path d="M25 10v3.8M39 10v3.8M25 50.2V54M39 50.2V54M10 25h3.8M10 39h3.8M50.2 25H54M50.2 39H54"/>
+  </g>
+  <rect x="16" y="16" width="32" height="32" rx="8.5" fill="url(#chip)" stroke="#86edd0" stroke-opacity="0.7" stroke-width="1.5"/>
+  <path d="M22 17.5 h20" stroke="#d0fff2" stroke-opacity="0.45" stroke-width="1" stroke-linecap="round"/>
+  <path d="M32 21 C32.9 27.5 36.5 31.1 43 32 C36.5 32.9 32.9 36.5 32 43 C31.1 36.5 27.5 32.9 21 32 C27.5 31.1 31.1 27.5 32 21 Z" fill="url(#spark)"/>
+</svg>
