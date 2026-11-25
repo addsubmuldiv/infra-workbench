@@ -20,12 +20,15 @@
 </p>
 
 <p align="center">
+  <a href="README.md">简体中文</a> | <strong>English</strong>
+</p>
+
+<p align="center">
   <a href="https://github.com/addsubmuldiv/infra-workbench/releases/latest"><strong>Download</strong></a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#browser-demo-no-server-required">Browser demo</a> ·
   <a href="docs/GUIDE.en.md">User guide</a> ·
-  <a href="docs/README.md">Docs index</a> ·
-  <a href="README.md">简体中文</a>
+  <a href="docs/README.md">Docs index</a>
 </p>
 
 <p align="center">
