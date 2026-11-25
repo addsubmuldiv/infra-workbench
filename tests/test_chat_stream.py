@@ -157,6 +157,26 @@ def test_opt_in_deltas_send_suffixes_and_changed_fields_then_complete_snapshot(t
     asyncio.run(run())
 
 
+def test_coalesced_turn_change_resends_full_history(tmp_path):
+    async def run():
+        harness,_,_=service(tmp_path)
+        chat=harness.create()
+        chat.update(active_run='first',turns=[dict(id='first',role='assistant',content='running')])
+        harness.live[chat['id']]=chat
+        stream=harness.events(chat['id'],interval=0,deltas=True)
+        await anext(stream)
+        chat['turns'][0].update(status='completed',content='finished')
+        chat['turns'].extend([dict(id='prompt',role='user',content='next'),dict(id='second',role='assistant',content='new reply')])
+        chat['active_run']=None
+        harness.save(chat)
+        name,snapshot=decode(await anext(stream))
+        assert name=='snapshot' and snapshot['active_run'] is None
+        assert [turn['content'] for turn in snapshot['turns']]==['finished','next','new reply']
+        await stream.aclose()
+        harness.store.db.close()
+    asyncio.run(run())
+
+
 class StreamingModel(Model):
     supports_streaming=True
 
@@ -196,7 +216,7 @@ def test_disconnect_does_not_cancel_generation_and_reconnect_gets_current_text(t
         await stream.aclose();assert not harness.listeners and not harness.runs[begin['active_run']].done()
         stream=harness.events(chat['id'],interval=0)
         _,snapshot=decode(await anext(stream));assert snapshot['turns'][-1]['content']=='第一段'
-        cancelled=await harness.cancel(chat['id']);_,update=decode(await anext(stream))
+        cancelled=await harness.cancel(chat['id'],begin['active_run']);_,update=decode(await anext(stream))
         assert cancelled['active_run'] is None and update['turn']['status']=='cancelled'
         assert update['turn']['content'].startswith('第一段')
         await stream.aclose();assert not harness.listeners

@@ -416,35 +416,47 @@ async def run_codex_agent(chat,tools,allowed,instructions,save,start_text,on_tex
             if effort:turn_params['effort']=effort
             if options.get('collaboration_mode')=='plan':
                 turn_params['collaborationMode']={'mode':'plan','settings':{'model':model,'reasoning_effort':effort,'developer_instructions':None}}
-            turn=await connection.request('turn/start',turn_params)
-            chat['turns'][-1]['codex_turn_id']=turn['turn']['id'];save()
+            turn_id=(await connection.request('turn/start',turn_params))['turn']['id']
+            chat['turns'][-1]['codex_turn_id']=turn_id;save()
             if controls is not None:
-                controls[chat['id']]=dict(connection=connection,thread_id=thread_id,turn_id=turn['turn']['id'],run_id=chat['active_run'],interactions=interactions)
+                controls[chat['id']]=dict(connection=connection,thread_id=thread_id,turn_id=turn_id,run_id=chat['active_run'],interactions=interactions)
             native_items=NativeItems(chat['turns'][-1],thread_id,save,chat_id=chat.get('id'),run_id=chat.get('active_run',chat['turns'][-1].get('id')))
+            message_parts={}
+            completed_messages=set()
             content='';start_text()
             async with asyncio.timeout(7200):
                 while True:
                     from .codex_host import next_native_event
                     event=await next_native_event(connection.events,interactions);method=event.get('method');p=event.get('params',{})
+                    root_event=native_items.root(p)
+                    if root_event and p.get('turnId',turn_id)!=turn_id:continue
                     native_items.record(method or '',p)
-                    if not native_items.root(p):continue
-                    if method=='turn/completed' and p.get('turn',{}).get('id',turn['turn']['id'])!=turn['turn']['id']:continue
-                    if method=='item/agentMessage/delta':content+=p.get('delta','');on_text(content)
+                    if not root_event:continue
+                    if method=='item/agentMessage/delta':
+                        key=('message',p.get('itemId'))
+                        if key in completed_messages:continue
+                        message_parts[key]=message_parts.get(key,'')+p.get('delta','')
                     elif method=='item/completed' and p.get('item',{}).get('type')=='agentMessage':
-                        text=p['item'].get('text','')
-                        if text and not content.endswith(text):content+=('\n\n' if content else '')+text;on_text(content)
+                        key=('message',p['item'].get('id'))
+                        message_parts[key]=p['item'].get('text',message_parts.get(key,''))
+                        completed_messages.add(key)
                     elif method=='workbench/question':
                         questions='\n'.join(str(q.get('question','')) for q in p['questions'])
-                        if questions:content+='\n\n'+questions;on_text(content)
+                        if questions:message_parts[('question',len(message_parts))]=questions
                     elif method=='workbench/error':raise ValueError(p['message'])
                     elif method=='error':
                         chat['turns'][-1]['provider_status']=scrub((p.get('error') or {}).get('message','Codex 连接重试中'))[:300];save()
+                        continue
                     elif method=='turn/completed':
-                        if controls is not None:controls.pop(chat['id'],None)
                         state=p.get('turn',{});status=state.get('status')
+                        if state.get('id',turn_id)!=turn_id:continue
+                        if controls is not None:controls.pop(chat['id'],None)
                         if status=='failed':raise ValueError((state.get('error') or {}).get('message','Codex 本轮未完成'))
                         if status=='interrupted':raise asyncio.CancelledError()
                         break
+                    else:continue
+                    content='\n\n'.join(part for part in message_parts.values() if part)
+                    on_text(content)
             if not content.strip() and (chat['turns'][-1].get('codex_items') or chat['turns'][-1].get('tools')):
                 content='Codex 本轮已结束，请查看工具执行记录。'
             on_text(content,final=True)

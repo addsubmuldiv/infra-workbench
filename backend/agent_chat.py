@@ -54,6 +54,11 @@ class SteerRequest(BaseModel):
     content:str=Field(min_length=1,max_length=4000)
 
 
+class CancelRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    run_id:str=Field(min_length=1,max_length=128)
+
+
 def codex_instructions(context):
     """Keep business rules, leave execution/context/skills orchestration to Codex."""
     business=RULES[RULES.index('概况查询优先'):]
@@ -276,7 +281,9 @@ class AgentChat:
                 running=bool(chat['active_run'])
                 turn = chat['turns'][-1]
                 update = dict(chat_id=chat_id,title=chat['title'],updated=chat['updated'],active_run=chat['active_run'])
-                if deltas and running and previous and previous['id'] == turn['id']:
+                if not previous or previous['id'] != turn['id']:
+                    event = frame('snapshot',self.view(chat))
+                elif deltas and running:
                     changes = {key:value for key,value in turn.items() if key not in previous or value != previous[key]}
                     if 'content' in changes and changes['content'].startswith(previous.get('content', '')):
                         changes['content_append'] = changes.pop('content')[len(previous.get('content', '')):]
@@ -585,19 +592,24 @@ class AgentChat:
         except ValueError as exc:raise HTTPException(409,str(exc)) from None
         return self.view(self.current(chat_id))
 
-    async def cancel(self,chat_id):
-        self.controls.pop(chat_id,None)
-        chat=self.get(chat_id);task=self.runs.get(chat['active_run'])
-        if task and not task.done():
-            task.cancel();await asyncio.gather(task,return_exceptions=True)
+    async def cancel(self,chat_id,run_id):
         chat=self.get(chat_id)
-        if chat['active_run']:
+        if not chat['active_run']:return self.view(chat)
+        if chat['active_run']!=run_id:
+            raise HTTPException(409,'本轮已结束，当前正在处理另一轮')
+        self.controls.pop(chat_id,None)
+        task=self.runs.get(run_id)
+        if task and not task.done():
+            if not task.cancelling():task.cancel()
+            await asyncio.shield(asyncio.gather(task,return_exceptions=True))
+        chat=self.get(chat_id)
+        if chat['active_run']==run_id:
             note='本轮处理已取消，未执行未开始的检查。'
             chat['turns'][-1].update(status='cancelled',content=note)
             chat['messages'].append(dict(role='assistant',content=note));chat['active_run']=None
             chat.pop('deep_state',None)
             self.save(chat)
-        return self.view(self.get(chat_id))
+        return self.view(chat)
 
     async def close(self):
         tasks=[task for task in self.runs.values() if not task.done()]
@@ -648,9 +660,13 @@ def register_chat_routes(app,service):
 
     @app.delete('/api/assistant/chats/{chat_id}')
     async def delete(chat_id:str):
-        service.get(chat_id);await service.cancel(chat_id)
+        chat=service.get(chat_id)
+        if chat['active_run']:
+            await service.cancel(chat_id,chat['active_run'])
+            chat=service.get(chat_id)
+            if chat['active_run']:raise HTTPException(409,'这段会话正在处理另一轮')
         from .codex_host import delete_chat_outputs
-        delete_chat_outputs(service.get(chat_id))
+        delete_chat_outputs(chat)
         with service.store.db:service.store.db.execute('DELETE FROM assistant_chats WHERE id=?',(chat_id,))
         return dict(ok=True)
 
@@ -668,7 +684,7 @@ def register_chat_routes(app,service):
         return service.decide_approval(chat_id,approval_id,body.run_id,body.decision)
 
     @app.post('/api/assistant/chats/{chat_id}/cancel')
-    async def cancel(chat_id:str):return await service.cancel(chat_id)
+    async def cancel(chat_id:str,body:CancelRequest):return await service.cancel(chat_id,body.run_id)
 
     @app.post('/api/assistant/chats/{chat_id}/codex-requests/{request_id}')
     async def answer_codex(chat_id:str,request_id:str,body:CodexAnswerRequest):

@@ -28,7 +28,8 @@ export function parseExternalMcpServers(value:string):ExternalMcpServer[]{
 }
 export function permissionScope(mode:PermissionMode,local:string,remote:string,hosts:string[],external=''):PermissionScope{return {permission_mode:mode,local_roots:permissionRoots(local),remote_roots:Object.fromEntries(hosts.map(id=>[id,permissionRoots(remote)])),external_mcp_servers:parseExternalMcpServers(external)}}
 export type ChatTurn={resource_view?:boolean;a2ui?:AssistantSurface;a2ui_prototype?:boolean;a2ui_rejected?:boolean;codex_options?:CodexOptions;codex_items?:CodexItem[];codex_questions?:CodexQuestionRequest[];external_mcp_servers?:ExternalMcpServer[];approvals?:ChatApproval[];permission_mode?:PermissionMode;local_roots?:string[];remote_roots?:Record<string,string[]>;supplemental_instructions?:{content:string;created:number}[];terminal_attachments?:TerminalAttachment[];provider_status?:string;error_code?:string;model?:string;profile_name?:string;context_usage?:ContextUsage;context_compaction?:{status:'running'|'completed'|'failed';started:number;finished?:number};id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
-export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:AssistantEngine};
+export type ChatDraft=Partial<PermissionScope>&{resource_view?:boolean;content:string;terminal_attachments?:TerminalAttachment[];selected_skill_names?:string[];engine?:AssistantEngine;selected_host_ids?:string[];restrict_to_selected?:boolean;codex_options?:CodexOptions};
+export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:AssistantEngine;draft?:ChatDraft|null};
 export type ChatItem=Pick<Chat,'id'|'title'|'created'|'updated'|'active_run'>;
 export function chatReplyTime(created:number,now=new Date()):{label:string;full:string;iso:string}|null{
   const date=new Date(created*1000);
@@ -91,10 +92,14 @@ export function applyChatEvent(chat:Chat,event:ChatEvent):Chat|null{
     return {...chat,title:patch.title,updated:patch.updated,active_run:patch.active_run,turns:[...chat.turns.slice(0,-1),turn]};
   }
   const update=event.data;
-  if(update.updated<chat.updated||chat.active_run&&update.active_run&&chat.active_run!==update.active_run)return chat;
+  if(update.updated<chat.updated)return chat;
   const latest=chat.turns[chat.turns.length-1];
   // A final event from an older run must not replace a newer assistant turn.
-  if(latest?.role!=='assistant'||latest.id!==update.turn.id)return chat;
+  if(latest?.role!=='assistant'||latest.id!==update.turn.id){
+    if(update.updated===chat.updated||chat.turns.some(turn=>turn.id===update.turn.id))return chat;
+    throw new Error(ui("对话更新格式不正确，正在重新连接。"));
+  }
+  if(chat.active_run&&update.active_run&&chat.active_run!==update.active_run)return chat;
   return {...chat,title:update.title,updated:update.updated,active_run:update.active_run,turns:[...chat.turns.slice(0,-1),update.turn]};
 }
 
@@ -111,7 +116,7 @@ function retryChatStream(delay:number,signal:AbortSignal):Promise<void>{
 }
 
 /** Fetch SSE rather than EventSource so the local API's request header is preserved. */
-export async function watchChat(id:string,{signal,onEvent,onError,request=fetch,retryMs=1000}:{signal:AbortSignal;onEvent:(event:ChatEvent)=>void;onError?:(error:Error)=>void;request?:typeof fetch;retryMs?:number}):Promise<void>{
+export async function watchChat(id:string,{signal,onEvent,onError,request=fetch,retryMs=1000}:{signal:AbortSignal;onEvent:(event:ChatEvent)=>boolean|void;onError?:(error:Error)=>void;request?:typeof fetch;retryMs?:number}):Promise<void>{
   while(!signal.aborted){
     let reader:ReadableStreamDefaultReader<Uint8Array>|undefined;
     const cancel=()=>{void reader?.cancel().catch(()=>{})};
@@ -146,8 +151,8 @@ export async function watchChat(id:string,{signal,onEvent,onError,request=fetch,
               if(type==='snapshot'&&!Array.isArray(payload.turns)||type==='turn'&&(!payload.turn||typeof payload.turn.content!=='string'))throw new Error(ui("对话更新格式不正确，正在重新连接。"));
               if(type==='patch'&&(!payload.changes||typeof payload.changes!=='object'||Array.isArray(payload.changes)||typeof payload.turn_id!=='string'||!Number.isFinite(payload.base_updated)||!Number.isFinite(payload.updated)||
                 payload.changes.content_append!==undefined&&typeof payload.changes.content_append!=='string'||payload.changes.content!==undefined&&typeof payload.changes.content!=='string'))throw new Error(ui("对话更新格式不正确，正在重新连接。"));
-              if(!signal.aborted)onEvent({type,data:payload} as ChatEvent);
-              if(type==='deleted'||(type==='snapshot'||type==='turn')&&payload.active_run===null)finished=true;
+              const accepted=!signal.aborted&&onEvent({type,data:payload} as ChatEvent)!==false;
+              if(accepted&&(type==='deleted'||(type==='snapshot'||type==='turn')&&payload.active_run===null))finished=true;
             }
           }
           type='';data=[];return;
@@ -193,7 +198,8 @@ export type CodexModel={id:string;displayName?:string;isDefault?:boolean;default
 export type CodexItem={output_total?:number;output_next_offset?:number|null;id:string;type:string;status?:string;thread_id?:string;data:Record<string,unknown>;output?:string;output_truncated?:boolean};
 export type CodexQuestion={id:string;header?:string;question:string;options?:{label:string;description?:string}[];isOther?:boolean;isSecret?:boolean};
 export type CodexQuestionRequest={id:string;run_id:string;status:string;questions:CodexQuestion[]};
-export function codexVisibleItems(items:CodexItem[]):CodexItem[]{return items.filter(item=>!/reasoning|analysis/i.test(item.type)).map(item=>({...item,output:item.output===undefined?undefined:Array.from(item.output).slice(0,32000).join(''),output_truncated:item.output_truncated||!!item.output&&Array.from(item.output).length>32000}))}
+export const isVisibleCodexItem=(item:CodexItem)=>!/reasoning|analysis/i.test(item.type);
+export function codexVisibleItems(items:CodexItem[]):CodexItem[]{return items.filter(isVisibleCodexItem).map(item=>({...item,output:item.output===undefined?undefined:Array.from(item.output).slice(0,32000).join(''),output_truncated:item.output_truncated||!!item.output&&Array.from(item.output).length>32000}))}
 export function codexQuestionAnswers(questions:CodexQuestion[],values:Record<string,string>):Record<string,{answers:string[]}>{return Object.fromEntries(questions.map(question=>{const answer=(values[question.id]||'').trim();if(!answer)throw new Error(t('请回答所有问题。','Answer every question.'));return [question.id,{answers:[answer]}]}))}
 export function codexModelOptions(models:CodexModel[],id:string,effort:string):{model:string;effort:string}{const model=models.find(item=>item.id===id)??models.find(item=>item.isDefault)??models[0];return {model:model?.id??'',effort:model?.supportedReasoningEfforts.some(item=>item.reasoningEffort===effort)?effort:model?.defaultReasoningEffort??''}}
 

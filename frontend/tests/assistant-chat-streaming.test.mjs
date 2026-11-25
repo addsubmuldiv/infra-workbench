@@ -8,8 +8,9 @@ import * as api from '../src/agentChat.ts';
 import * as skills from '../src/skills.ts';
 const chat=(id,run='run1')=>({id:id.repeat(32),title:id,created:1,updated:2,active_run:run,turns:[{id:'t-'+id,role:'assistant',content:'开始',created:2,status:run?'running':'completed'}]});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(t,respond,configured=true){
+function harness(t,respond,configured=true,preferences={}){
   const values=[],deps=[],effects=[],cleanups=[],streams=[],writes=[],requests=[];let slot=0,tree;
+  let savedChatId=null,onSelection;
   const view={scrollTop:0,scrollHeight:1000,clientHeight:400};
   const useEffect=(fn,next)=>{const i=slot++;if(!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}};
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),lazy:()=>Symbol('lazy component'),useEffect,useLayoutEffect:useEffect,
@@ -27,14 +28,16 @@ function harness(t,respond,configured=true){
     return Response.json(chat(url.endsWith('b'.repeat(32))?'b':'a',url.endsWith('b'.repeat(32))?null:'run1'));
   };
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/AssistantChat.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='./terminalContext'?terminalContext:name==='react'?react:name==='./workspaceState'?{workspaceStorage:{subscribe:()=>()=>{}}}:name==='./workspaceHooks'?{useWorkspaceValue:(_key,value)=>react.useState(value)}:name==='./agentChat'?{...api,loadChatId:()=>null,saveChatId:id=>writes.push(['iwb-assistant-chat',id])}:name==='./skills'?skills:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{}),exports);
+  const workspaceStorage={getItem:()=>null,subscribe:(_key,listener)=>{onSelection=listener;return ()=>{}}};
+  const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='./terminalContext'?terminalContext:name==='react'?react:name==='./workspaceState'?{workspaceStorage}:name==='./workspaceHooks'?{useWorkspaceValue:(key,value)=>react.useState(preferences[key]??value)}:name==='./agentChat'?{...api,loadChatId:()=>savedChatId,saveChatId:id=>{savedChatId=id;writes.push(['iwb-assistant-chat',id])}}:name==='./skills'?skills:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=predicate=>nodes(tree).find(predicate);
   const render=()=>{slot=0;tree=exports.AssistantChat({configured,selectedHostIds:[]});const node=find(n=>n.props.className==='chat-transcript');node.props.ref.current=view;for(const effect of effects.splice(0))effect();return tree};
   const unmount=()=>cleanups.splice(0).forEach(fn=>fn?.());
   t.after(()=>{unmount();globalThis.fetch=previous.fetch;globalThis.window=previous.window;if(previous.storage)Object.defineProperty(globalThis,'localStorage',previous.storage);else delete globalThis.localStorage});
   const publish=async(content,updated)=>{const data={chat_id:'a'.repeat(32),title:'a',updated,active_run:'run1',turn:{id:'t-a',role:'assistant',content,created:2,status:'running'}};streams[0].source.enqueue(new TextEncoder().encode(`event: turn\ndata: ${JSON.stringify(data)}\n\n`));await tick();render()};
-  return {render,find,view,streams,writes,requests,publish,unmount,async loaded(){render();await tick();render();await tick();render()},text:()=>nodes(tree).filter(n=>n.props.className?.startsWith('chat-message-text')).flatMap(n=>nodes(n).flatMap(child=>child.props?.children||[])).filter(value=>typeof value==='string').join('')};
+  const input=()=>find(n=>typeof n.props.onChange==='function'&&'text' in n.props);
+  return {render,find,input,view,streams,writes,requests,publish,unmount,get selected(){return savedChatId},async remoteSelect(id){savedChatId=id;onSelection();await tick();render()},async loaded(){render();await tick();render();await tick();render()},text:()=>nodes(tree).filter(n=>n.props.className?.startsWith('chat-message-text')).flatMap(n=>nodes(n).flatMap(child=>child.props?.children||[])).filter(value=>typeof value==='string').join('')};
 }
 
 test('streamed content remains visible, persists only ID changes and follows only a near-bottom transcript',async t=>{
@@ -45,16 +48,16 @@ test('streamed content remains visible, persists only ID changes and follows onl
   h.view.scrollTop=1100;h.find(n=>n.props.className==='chat-transcript').props.onScroll();h.view.scrollHeight=1600;await h.publish('又一段',5);assert.equal(h.view.scrollTop,1600);
 });
 
-test('resource view sends a read-only request',async t=>{
-  const h=harness(t,url=>url.endsWith('/messages')?Response.json(chat('b',null)):undefined);
+test('resource view submits the read-only mode and omits external capabilities',async t=>{
+  const h=harness(t,url=>url.endsWith('/messages')?Response.json(chat('b',null)):undefined,true,{
+    'workspace:chat-permission-mode':'full','workspace:chat-external-mcp':'test=https://example.test/mcp',
+  });
   await h.loaded();
   await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));
   h.render();
   h.find(n=>n.type==='button'&&n.props.children.includes('资源视图')).props.onClick();
   h.render();
-  const input=()=>h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props);
-  input().props.onChange('比较设备显存');h.render();input().props.onSend();
-  await tick();
+  h.input().props.onChange('比较设备显存');h.render();await h.input().props.onSend();
   const request=JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body);
   assert.equal(request.resource_view,true);
   assert.equal(request.permission_mode,'read_only');
@@ -85,8 +88,8 @@ test('terminal handoff preserves draft, previews removable text, and sends no re
 });
 
 
-test('branch restores the previous message draft and selected skills',async t=>{
-  const draft={content:'revise this request',terminal_attachments:[],selected_skill_names:['review'],engine:'codex',restrict_to_selected:true,selected_host_ids:['original-host']};
+test('branch restores the previous draft, skills and permission scope',async t=>{
+  const draft={content:'revise this request',terminal_attachments:[],selected_skill_names:['review'],engine:'codex',restrict_to_selected:true,selected_host_ids:['original-host'],permission_mode:'read_only',local_roots:['C:/original']};
   const h=harness(t,url=>url.endsWith('/branch')?Response.json({chat:chat('c',null),draft}):undefined);await h.loaded();
   await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));h.render();await tick();h.render();
   await h.find(n=>n.type==='button'&&n.props.children.includes('从上一轮之前分支')).props.onClick();h.render();
@@ -94,32 +97,93 @@ test('branch restores the previous message draft and selected skills',async t=>{
   assert.equal(input.props.text,draft.content);assert.deepEqual(input.props.selected,['review']);assert.equal(h.writes.at(-1)[1],'c'.repeat(32));
   assert.ok(h.requests.some(r=>r.url.endsWith('/'+ 'b'.repeat(32)+'/branch')&&r.method==='POST'));
   assert.ok(h.find(n=>n.props.role==='status'&&n.props.children.some(c=>typeof c==='string'&&c.includes('original-host'))));
+  const permissions=h.find(n=>typeof n.props.onMode==='function').props;
+  assert.equal(permissions.restoredScope.permission_mode,'read_only');
   h.find(n=>n.props.className==='chat-composer').props.onSubmit({preventDefault(){}});await tick();h.render();
-  const sent=h.requests.find(r=>r.url.endsWith('/messages'));assert.ok(sent);assert.equal(JSON.parse(sent.body).restrict_to_selected,true);assert.deepEqual(JSON.parse(sent.body).selected_host_ids,['original-host']);
+  const body=JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body);
+  assert.equal(body.restrict_to_selected,true);
+  assert.deepEqual(body.selected_host_ids,['original-host']);
+  assert.equal(body.permission_mode,'read_only');
+  assert.deepEqual(body.local_roots,['C:/original']);
+});
+
+test('reopening a saved branch restores its original settings and keeps the edited text',async t=>{
+  const draft={content:'saved original',engine:'codex',permission_mode:'read_only',local_roots:['C:/project'],
+    selected_host_ids:['fixture-host'],restrict_to_selected:true,codex_options:{cwd:'C:/project'}};
+  const h=harness(t,url=>url.endsWith('/'+'a'.repeat(32))?Response.json({...chat('a',null),draft}):undefined,true,{
+    'workspace:chat-composer:v1':{chatId:'a'.repeat(32),text:'edited branch',skills:[]},'workspace:chat-permission-mode':'full',
+  });
+  await h.loaded();
+  assert.equal(h.input().props.text,'edited branch');
+  await h.input().props.onSend();
+  const body=JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body);
+  assert.equal(body.content,'edited branch');
+  assert.equal(body.engine,'codex');
+  assert.equal(body.permission_mode,'read_only');
+  assert.deepEqual(body.local_roots,['C:/project']);
+  assert.deepEqual(body.selected_host_ids,['fixture-host']);
+  assert.equal(body.restrict_to_selected,true);
+  assert.equal(body.codex_options.cwd,'C:/project');
+});
+
+test('a late send acknowledgment cannot select the previous chat or clear the current draft',async t=>{
+  let finish;
+  const h=harness(t,url=>url.endsWith('/messages')?new Promise(resolve=>{finish=resolve}):url.endsWith('/'+'a'.repeat(32))?
+    Response.json(chat('a',null)):undefined);
+  await h.loaded();
+  h.input().props.onChange('message in A');h.render();
+  const pending=h.input().props.onSend();await tick();
+  await h.remoteSelect('b'.repeat(32));
+  assert.equal(h.input().props.text,'');
+  h.input().props.onChange('draft in B');h.render();
+  finish(Response.json({...chat('a'),updated:4}));await pending;h.render();
+  assert.equal(h.selected,'b'.repeat(32));
+  assert.equal(h.input().props.text,'draft in B');
+  assert.equal(h.writes.length,1);
+});
+
+test('cancel carries the run rendered by the composer',async t=>{
+  const h=harness(t);await h.loaded();
+  await h.find(n=>n.type==='button'&&n.props.children.includes('取消本轮')).props.onClick();
+  assert.deepEqual(JSON.parse(h.requests.find(r=>r.url.endsWith('/cancel')).body),{run_id:'run1'});
 });
 
 test('Codex supplemental instructions retain draft after conflict and clear after acceptance',async t=>{
   let fail=true;
   const h=harness(t,url=>url.endsWith('/steer')?(fail?Response.json({detail:'run changed'},{status:409}):Response.json({...chat('a'),engine:'codex',updated:3})):url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a'),engine:'codex'}):undefined);await h.loaded();
-  const field=()=>h.find(n=>n.type==='textarea'&&n.props.maxLength===4000);
-  field().props.onChange({target:{value:'please check tests'}});h.render();
-  const submit=()=>h.find(n=>n.props.className==='chat-steer').props.onSubmit({preventDefault(){}});
-  submit();await tick();h.render();assert.equal(field().props.value,'please check tests');
-  fail=false;submit();await tick();h.render();assert.equal(field().props.value,'');
+  assert.equal(h.input().props.supplemental,true);
+  assert.equal(h.input().props.disabled,false);
+  h.input().props.onChange('please check tests');h.render();
+  const submit=()=>h.find(n=>n.props.className==='chat-composer').props.onSubmit({preventDefault(){}});
+  await submit();h.render();assert.equal(h.input().props.text,'please check tests');
+  fail=false;await h.input().props.onSend();h.render();assert.equal(h.input().props.text,'');
   const sent=h.requests.filter(r=>r.url.endsWith('/steer'));assert.equal(sent.length,2);assert.deepEqual(JSON.parse(sent[0].body),{content:'please check tests',run_id:'run1'});
+  assert.equal(h.requests.some(r=>r.url.endsWith('/messages')),false);
 });
 
 
 test('switching chat ignores a late supplemental response and aborts its request',async t=>{
   let finish,steerSignal;
   const h=harness(t,(url,options)=>url.endsWith('/steer')?(steerSignal=options.signal,new Promise(resolve=>{finish=resolve})):url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a'),engine:'codex'}):undefined);await h.loaded();
-  h.find(n=>n.type==='textarea'&&n.props.maxLength===4000).props.onChange({target:{value:'pending'}});h.render();
-  const pending=h.find(n=>n.props.className==='chat-steer').props.onSubmit({preventDefault(){}});h.render();
-  assert.equal(h.find(n=>n.type==='textarea'&&n.props.maxLength===4000).props.disabled,true);
+  h.input().props.onChange('pending');h.render();
+  const pending=h.input().props.onSend();h.render();
+  assert.equal(h.input().props.readOnly,true);
   await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));h.render();await tick();h.render();
   assert.equal(steerSignal.aborted,true);
   finish(Response.json({...chat('a'),engine:'codex',updated:8}));await pending;h.render();
-  assert.equal(h.writes.at(-1)[1],'b'.repeat(32));assert.equal(h.find(n=>n.props.className==='chat-steer'),undefined);
+  assert.equal(h.writes.at(-1)[1],'b'.repeat(32));assert.equal(h.input().props.supplemental,false);
+  assert.equal(h.input().props.readOnly,false);
+});
+
+test('a run ending before the composer rerenders does not send the supplemental draft as a new message',async t=>{
+  const h=harness(t,url=>url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a'),engine:'codex'}):undefined);await h.loaded();
+  h.input().props.onChange('pending');h.render();
+  const data={chat_id:'a'.repeat(32),title:'a',updated:3,active_run:null,turn:{id:'t-a',role:'assistant',content:'done',created:2,status:'completed'}};
+  h.streams[0].source.enqueue(new TextEncoder().encode(`event: turn\ndata: ${JSON.stringify(data)}\n\n`));await tick();
+  await h.input().props.onSend();h.render();
+  assert.equal(h.input().props.supplemental,false);
+  assert.equal(h.input().props.text,'pending');
+  assert.equal(h.requests.some(r=>r.method==='POST'),false);
 });
 
 for(const engine of ['claude','opencode'])test(`${engine} sends without model API setup and does not advertise steering`,async t=>{
@@ -133,8 +197,9 @@ for(const engine of ['claude','opencode'])test(`${engine} sends without model AP
 });
 for(const engine of ['claude','opencode'])test(`${engine} active runs explain unsupported steering accurately`,async t=>{
   const h=harness(t,url=>url.endsWith('/'+ 'a'.repeat(32))?Response.json({...chat('a'),engine}):undefined);await h.loaded();
-  assert.equal(h.find(n=>n.props.className==='chat-steer'),undefined);
-  const text=h.find(n=>n.props.className==='chat-steer-unavailable').props.children.join('');
+  assert.equal(h.input().props.supplemental,false);
+  assert.equal(h.input().props.disabled,true);
+  const text=h.find(n=>n.props.className?.includes('chat-steer-unavailable')).props.children.join('');
   assert.ok(text.includes(engine==='claude'?'Claude Code':'OpenCode'));assert.ok(!text.includes('Deep Agents'));
 });
 

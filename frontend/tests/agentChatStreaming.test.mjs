@@ -92,6 +92,18 @@ test('idle snapshot and final turn close the subscription without idle polling',
   }
 });
 
+test('a terminal event for a missed turn reloads the full conversation',async()=>{
+  const newTurn={id:'new-turn',role:'assistant',content:'最新回复',created:6,status:'completed'};
+  const snapshot={...base,updated:7,active_run:null,turns:[...base.turns,{id:'u2',role:'user',content:'追问',created:5},newTurn]};
+  const missed=frame('turn',{chat_id:base.id,title:base.title,updated:7,active_run:null,turn:newTurn});
+  let current=base,calls=0;
+  await chatAPI.watchChat(base.id,{signal:new AbortController().signal,retryMs:1,
+    onEvent:value=>{current=chatAPI.applyChatEvent(current,value)},
+    request:async()=>new Response(++calls===1?missed:frame('snapshot',snapshot),{headers:{'Content-Type':'text/event-stream'}})});
+  assert.equal(calls,2);
+  assert.deepEqual(current,snapshot);
+});
+
 test('network failures recover through a snapshot and abort interrupts a blocked read',async()=>{
   const abort=new AbortController();const errors=[];const received=[];let calls=0;
   const done=chatAPI.watchChat(base.id,{signal:abort.signal,retryMs:1,onError:error=>errors.push(error),onEvent:value=>{received.push(value);abort.abort()},request:async()=>{if(++calls===1)throw new Error('offline');return new Response(frame('snapshot',base),{headers:{'Content-Type':'text/event-stream'}})}});
