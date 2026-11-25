@@ -1,45 +1,131 @@
 <p align="center">
-  <img src="backend/assets/workbench.svg" alt="Infra Workbench Logo" width="96" height="96">
+  <img src="backend/assets/workbench.svg" alt="Infra Workbench Logo" width="84" height="84">
 </p>
+
 <h1 align="center">Infra Workbench</h1>
 
 <p align="center">
-  <a href="README.md">简体中文</a> | <a href="README.en.md">English</a>
+  <strong>An AI-native server workbench for AI engineers</strong><br>
+  Unify GPU / Ascend NPU discovery, process inspection, terminals, files, and training logs across Linux servers over SSH
 </p>
 
-**An AI-native server workbench for AI engineers.** Connect to multiple Linux servers over SSH and bring GPU / Ascend NPU discovery, process inspection, training logs, terminals, and file management into one workspace. Use the interface directly, ask the built-in AI assistant to call workbench tools, or connect your own agent through MCP.
+<p align="center">
+  <a href="https://github.com/addsubmuldiv/infra-workbench/releases/latest">
+    <img src="https://img.shields.io/github/v/release/addsubmuldiv/infra-workbench?display_name=tag&style=flat-square" alt="Latest Release">
+  </a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20macOS%20(experimental)-blue?style=flat-square" alt="Platform">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License">
+  </a>
+</p>
 
-Built for engineers training, fine-tuning, deploying, and debugging models across multiple machines: find enough free accelerators, identify the processes using them, open the right directory and terminal, get notified when resources become available, and compare training metrics across experiments. Windows is the primary platform; macOS support is available but has not been verified on physical Mac hardware.
+<p align="center">
+  <a href="https://github.com/addsubmuldiv/infra-workbench/releases/latest"><strong>Download</strong></a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#browser-demo-no-server-required">Browser demo</a> ·
+  <a href="docs/GUIDE.en.md">User guide</a> ·
+  <a href="docs/README.md">Docs index</a> ·
+  <a href="README.md">简体中文</a>
+</p>
 
-![Resource overview with demonstration data](docs/images/overview-en.png)
+<p align="center">
+  <img src="docs/images/readme-overview-en.jpg" width="100%" alt="Resource overview showing GPU and NPU models, machine status, and training resource filters">
+</p>
 
-*Screenshots use fictional machines and sample data. See the [illustrated user guide](docs/GUIDE.en.md). The interface supports Simplified Chinese and English. Switch under Settings → General → Interface language. The screenshots below show the English interface.*
+<p align="center">
+  <sub>The screenshot uses fictional machines and sample data. See the <a href="docs/GUIDE.en.md">illustrated user guide</a>. Switch UI language under <b>Settings → General → Interface language</b>.</sub>
+</p>
 
-## Desktop installation on Windows
+---
 
-Download the Windows x64 installer from the [latest Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest), then follow its setup wizard. The installer bundles the Python backend and frontend assets; Python and Node.js do not need to be installed separately. Check download integrity using the attached `SHA256SUMS.txt`. This document describes the current repository; consult the relevant Release notes for features included in a published installer.
+## What you get
 
-The Windows installer has no Authenticode code signature; updater packages carry a separate update signature. Clean Windows install, upgrade and uninstall acceptance is still pending. macOS packages must be built on a Mac; experimental Apple Silicon packages are included only when explicitly listed on the relevant Release. See [macOS installation and limitations](docs/MACOS.md), currently in Chinese; native Mac acceptance is still pending.
+- **Multi-host GPU / Ascend NPU visibility.** Aggregate accelerator models, free memory, utilization, and occupying processes across Linux servers over SSH. Failed, missing, or stale samples stay explicitly unknown instead of appearing idle.
+- **Terminals, files, and remote services in one place.** Open web terminals (with tmux support), edit and transfer files, forward TensorBoard / Jupyter, or configure SSH tunnels and VS Code connections.
+- **Availability alerts and usage history.** Wait for a target count or specific devices to stay free before triggering desktop or email alerts, review historical samples, and compare training metrics across experiments.
+- **AI-native workflows.** The built-in assistant calls the workbench's real host, resource, process, file, and alert tools with full execution records. Supports Responses / tool-calling APIs as well as locally installed [Codex](docs/CODEX.md), [Claude Code, and OpenCode](docs/EXTERNAL-AGENTS.md).
+- **MCP for external agents.** Expose the same server-validated workbench capabilities over [MCP](docs/MCP.md) so your existing agent can discover capacity and operate on authorized hosts.
+- **Reusable Skills.** Turn verified inspection or troubleshooting steps into Markdown / ZIP skills with `@` selection, on-demand discovery, drafts, enable/disable controls, and version rollback (scripts in skills do not run automatically).
+- **Local-first, no remote daemon required.** Desktop windows, the system tray, and the floating monitor share a single local backend; host scope checks and credential protections are enforced server-side.
 
-Developers can also extract the complete repository and run **`安装.cmd`** from source. This prepares Python and dependencies over the internet and requires keeping the whole project directory. See [Windows instructions](docs/WINDOWS.md).
+---
 
-A new empty workspace shows a six-step getting-started guide after its first successful load: connect hosts, inspect resources, use terminals and files, configure AI, plan availability, and find settings. Completing or skipping it is remembered. Upgrading a workspace with existing hosts does not force the guide open; replay it under **Settings → About and help → Replay getting-started guide**. See [first use](docs/GUIDE.en.md#first-use-and-getting-started-guide).
+## Why AI-native
 
-Desktop windows, the tray, and the floating monitor share the local backend. Use the tray menu to exit the backend.
+When training, fine-tuning, or debugging across multiple machines, the model interprets goals and chooses tools while the backend provides live server state and enforces scope and argument validation.
 
-Windows installers support startup update checks and user-initiated download/installation from v0.1.1. Existing v0.1.0 users must manually install this bootstrap version once; save work and exit the old tray/backend first. See [updater operation and limits](docs/UPDATES.md).
+**Use case: let your agent switch servers when all devices are busy**
 
-## First use
+1. Your agent has prepared the code and environment on server A, only to find every accelerator occupied when starting training.
+2. In the same conversation, ask it to query MCP for an accessible host matching the required device model, count, and free memory.
+3. Once it finds server B, the agent uses authorized SSH and file tools to sync code, configs, and checkpoints, recreate the environment, verify dependencies and devices, and launch training.
 
-Choose **Add machine**, connect with your local SSH alias or address and account, then check sample time and devices before opening a terminal or files. Follow [Connect your first server](docs/GUIDE.en.md#connect-your-first-server) for expected results and recovery steps. Manual resource views, terminals and files require no model key; configure AI later using the [selection guide](docs/GUIDE.en.md#choose-how-to-use-ai).
+The execution host changes, while the agent stays in the same thread with your goals, troubleshooting history, and decisions intact. See the [unified MCP notes](docs/UNIFIED-MCP.md) (in Chinese).
 
-## Browser demo
+> [!NOTE]
+> - MCP provides discovery and server tools; the agent handles the move. The workbench does not automatically migrate jobs, lock devices, or schedule training.
+> - The built-in assistant can access all added hosts by default. Enable **Only allow operations on selected machines** in the composer context settings to restrict scope (sidebar selection alone does not restrict it). Completed remote changes are not undone by cancellation.
 
-After starting the frontend or workbench locally, append `?demo=1` to its address, for example `http://127.0.0.1:8765/?demo=1`. Explore sample resources, terminals, files, and a highlighted walkthrough. The demo uses browser-only simulated data and isolates requests to the real backend. It does not connect to servers or model providers, and does not validate SSH, credentials, notifications, or installation. Simulated actions do not change the real workbench.
+---
 
-For a frontend-only demo, run `npm ci` and `npm run demo` in `frontend`; `npm run build:demo` creates a static artifact. See [demo isolation and limitations](docs/DEMO.md).
+## Install
 
-## Find documentation by task
+| Option | Best for | Details |
+| --- | --- | --- |
+| **Windows installer (recommended)** | Daily use | Bundles the Python backend and frontend assets; no separate Python or Node.js required |
+| **Run from source** | Developers / custom setups | Clone or extract the repo and run `安装.cmd` to prepare Python and dependencies |
+| **Browser demo** | Quick exploration | Browser-only simulated data; no servers or model API keys required |
+
+### Windows installer (recommended)
+
+Download the Windows x64 installer from the [latest Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest) and follow the setup wizard. Verify download integrity with `SHA256SUMS.txt` on the same page.
+
+- Desktop windows, the system tray, and the floating monitor share one local backend. **Closing the window or browser does not stop the backend**—use the tray menu to exit.
+- This README describes the current repository; check the Release notes for features included in a specific installer.
+
+### Run from source
+
+Extract or clone the full repository and run `安装.cmd`. First-time setup requires internet access to prepare Python (via WinGet for Python 3.12 if missing) and dependencies, and requires keeping the entire project directory. See [Windows instructions](docs/WINDOWS.md).
+
+### Browser demo (no server required)
+
+After starting the workbench locally, append `?demo=1` to its URL (for example `http://127.0.0.1:8765/?demo=1`) to explore sample hosts, resource filters, terminals, files, and a highlighted walkthrough. You can also run a standalone frontend demo:
+
+```bash
+cd frontend
+npm ci
+npm run demo        # Start local demo server
+npm run build:demo  # Build static demo bundle
+```
+
+The demo isolates all requests to the real backend—it never connects to servers, calls model providers, or modifies your real workspace. See [demo isolation and limitations](docs/DEMO.md).
+
+<details>
+<summary>Signing, updates, and macOS limitations</summary>
+
+- **Code signing & acceptance**: The Windows installer has no Authenticode signature (updater packages carry a separate update signature). Clean Windows install, upgrade, and uninstall acceptance is still pending.
+- **In-app updates**: Windows installers support startup update checks and user-initiated download/install starting from `v0.1.1`. Existing `v0.1.0` users must manually install once; save work, close active terminals, and exit the old tray backend first. See [updater operation and limits](docs/UPDATES.md).
+- **Source updates**: Exit from the tray menu, pull the latest code, and re-run `安装.cmd`; existing machine configurations are preserved.
+- **macOS**: Must be built on a Mac; experimental Apple Silicon packages are included only when explicitly listed on a Release, and physical Mac verification is still pending. See [macOS notes](docs/MACOS.md) (in Chinese).
+
+</details>
+
+---
+
+## Quick start
+
+Manual resource views, terminals, and files **require no model key**. Follow these 3 steps (see [Connect your first server](docs/GUIDE.en.md#connect-your-first-server) for expected results and recovery steps):
+
+1. **Add a server**: Click **Add machine** to pick an alias from `~/.ssh/config` or enter address, port, and account manually—with existing keys, password login, or automatic passwordless setup. For many hosts, use [Excel batch import](docs/IMPORT.md).
+2. **Inspect resources & processes**: Select hosts on the left, click any device for memory, utilization, and occupying processes, or select devices to run pre-flight checks, add monitoring rules, or create availability alerts.
+3. **Open terminals, files, or enable AI**: Launch terminals and file browsers directly; when ready for AI workflows or skills, follow [Choose how to use AI](docs/GUIDE.en.md#choose-how-to-use-ai) to configure a model API, local CLI engine, or MCP.
+
+> [!TIP]
+> A new empty workspace opens a six-step getting-started guide on first load. Upgrading an existing workspace will not interrupt you; replay it anytime under **Settings → About and help → Replay getting-started guide**.
+
+---
+
+## Documentation
 
 | Task | Guide |
 | --- | --- |
@@ -57,30 +143,22 @@ For a frontend-only demo, run `npm ci` and `npm run demo` in `frontend`; `npm ru
 
 The [full index](docs/README.md) and some detailed guides are currently in Chinese.
 
-## Requirements, updates, and data
+---
 
-The local machine needs **Windows 10 / 11 and the OpenSSH client**. For source installation, if Python is missing, `安装.cmd` attempts to install Python 3.12 with WinGet; without WinGet, [install Python manually](https://www.python.org/downloads/windows/). Remote machines need Linux, Python 3, and `nvidia-smi` or `npu-smi`.
+## Requirements & security
 
-Jump hosts may run Windows or Linux and only need an SSH service which permits TCP forwarding. The app uses `ProxyJump` / `ProxyCommand` from the local SSH configuration without detecting the jump host's OS or running collection scripts there. The Linux and Python 3 requirements apply to the final monitored machine. Programs specified in a custom `ProxyCommand` run locally and must be available on the local machine.
+| Component | Requirement |
+| --- | --- |
+| **Local machine** | Windows 10 / 11 + OpenSSH client (for source installs without Python or WinGet, [install Python manually](https://www.python.org/downloads/windows/)) |
+| **Monitored hosts** | Linux + Python 3 + `nvidia-smi` or `npu-smi` |
+| **Jump hosts (optional)** | Windows or Linux with SSH TCP forwarding enabled; uses local `ProxyJump` / `ProxyCommand` directly without running collectors on the jump host |
 
-Before updating, save edited files, handle terminal tasks, and exit through the tray menu. Pull the latest code and run `安装.cmd` again; existing machine configuration is retained and shortcuts are regenerated. Refreshing a page does not restart the backend.
+> [!IMPORTANT]
+> The backend runs locally. **Do not share the `data` directory, SSH private keys, or logs containing secrets.** Optional saved SSH / sudo passwords are stored in Windows Credential Manager and can be removed anytime. Assistant conversations and server content actually read by tools are sent to your configured model provider; do not ask it to read confidential files. See [data and credentials](SECURITY.md) (in Chinese).
 
-The backend runs locally. **Do not share the `data` directory or SSH private keys.** Optional saved sudo passwords use Windows Credential Manager and can be removed. The assistant can write server files, execute authorized remote Shell commands, manage processes, and explicitly request sudo subject to server policy. It has no independent per-operation approval layer. Assistant conversations and server content actually read by its tools are sent to the configured model provider; do not ask it to read confidential files. Machine scope and credential protections remain enforced by the backend. See [data and credentials](SECURITY.md) in Chinese.
+---
 
-## What makes it AI-native
+## Development & license
 
-The assistant works with the workbench's actual machine, resource, process, file, and reservation tools. It can carry out multi-step tasks and expose tool results for review: find free devices, inspect processes, read a specified log, or create an availability alert using the conditions you confirmed. External agents can also access workbench capabilities through MCP.
-
-Turn repeatable workflows into **Skills**. Create a skill in Settings, import Markdown or ZIP, or ask the assistant: “Turn the inspection workflow we just confirmed into a skill and install it.” Select skills with `@` in the composer, or let the assistant discover them as needed. Skills support persistent drafts, enable/disable controls, copying, export, and version rollback. Changes take effect on the next turn; scripts stored in skills do not run automatically.
-
-The model interprets goals, selects tools, and explains results. The backend validates machine scope, arguments, and permissions. Execution records show target machines, parameters, results, and failures; uncertain resource states remain unknown. Resource searches and availability alerts do not lock devices or schedule training jobs.
-
-Model APIs must support Responses and tool calls; local CLI engines require separate installation and authentication. The assistant can access all added hosts by default. Enable **Only allow operations on selected machines** in the composer context settings to restrict scope; sidebar selection alone does not restrict it. Cancellation does not undo completed changes.
-
-## Development
-
-See [CONTRIBUTING](CONTRIBUTING.md) and the [developer guide](docs/DEVELOPERS.en.md).
-
-## License
-
-This project is licensed under the [MIT License](LICENSE), which permits use, modification, distribution, and commercial and closed-source use, provided the copyright and license notices are retained when distributing the software. The software is provided as is, without warranty. Third-party dependencies remain subject to their own licenses.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) and the [developer guide](docs/DEVELOPERS.en.md) to build, test, and contribute.
+- Licensed under the [MIT License](LICENSE), which permits use, modification, distribution, and commercial or closed-source use provided copyright and license notices are retained. Software is provided as is, without warranty; third-party dependencies remain subject to their own licenses.

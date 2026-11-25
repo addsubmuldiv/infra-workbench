@@ -1,53 +1,129 @@
 <p align="center">
-  <img src="backend/assets/workbench.svg" alt="Infra Workbench Logo" width="96" height="96">
+  <img src="backend/assets/workbench.svg" alt="Infra Workbench Logo" width="84" height="84">
 </p>
+
 <h1 align="center">Infra Workbench</h1>
 
 <p align="center">
-  <a href="README.md">简体中文</a> | <a href="README.en.md">English</a>
+  <strong>面向 AI 工程师的 AI 原生服务器工作台</strong><br>
+  通过 SSH 统一管理多台 Linux 服务器的 GPU / Ascend NPU、进程、终端、文件与训练日志
 </p>
 
-**面向 AI 工程师的 AI 原生服务器工作台。** 通过 SSH 连接多台 Linux 服务器，把 GPU / Ascend NPU 资源查找、进程排查、训练日志、终端和文件管理放在一起。既可以直接操作界面，也可以用自然语言让内置 AI 助手调用工作台工具，或通过 MCP 接入自己的 Agent。
+<p align="center">
+  <a href="https://github.com/addsubmuldiv/infra-workbench/releases/latest">
+    <img src="https://img.shields.io/github/v/release/addsubmuldiv/infra-workbench?display_name=tag&style=flat-square" alt="Latest Release">
+  </a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20macOS%20(experimental)-blue?style=flat-square" alt="Platform">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License">
+  </a>
+</p>
 
-适合需要在多台机器之间训练、微调、部署和调试模型的工程师：找够用的空闲卡，确认谁在占用资源，打开对应目录和终端，等设备空闲时收到提醒，再核对不同实验的训练指标。提供 Windows 启动入口和 macOS 适配入口，Mac 尚待实机验证。
+<p align="center">
+  <a href="https://github.com/addsubmuldiv/infra-workbench/releases/latest"><strong>下载安装包</strong></a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#浏览器演示无需服务器">浏览器演示</a> ·
+  <a href="docs/GUIDE.md">图文指南</a> ·
+  <a href="docs/README.md">文档目录</a> ·
+  <a href="README.en.md">English</a>
+</p>
 
-![资源总览示例](docs/images/overview.jpg)
+<p align="center">
+  <img src="docs/images/readme-overview-zh.jpg" width="100%" alt="算力总览：GPU 和 NPU 型号、机器状态与训练资源筛选">
+</p>
 
-*图中为演示数据。完整操作见[图文使用指南](docs/GUIDE.md)。*
+<p align="center">
+  <sub>图中为演示数据。完整界面与操作见 <a href="docs/GUIDE.md">图文使用指南</a>。</sub>
+</p>
 
-## 桌面安装（Windows）
+---
 
-从 [最新 Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest) 下载 Windows x64 安装包，双击后按向导安装。安装包包含 Python 后台与前端资源，不需要另外准备 Python 或 Node.js；校验值见同一页面的 `SHA256SUMS.txt`。本文描述当前仓库的功能，已发布安装包支持哪些功能以对应 Release 说明为准。
+## 核心能力
 
-Windows 安装包尚未做 Authenticode 代码签名；更新包另有更新签名。干净 Windows 系统的安装、升级和卸载仍待验收。macOS 需要在 Mac 上构建；只有对应 Release 明确提供时，才包含 Apple Silicon 实验性安装包，限制见 [Mac 说明](docs/MACOS.md)。
+- **多机 GPU / Ascend NPU 一屏看清。** 通过 SSH 聚合多台 Linux 服务器的卡型、显存、利用率与占卡进程；采样失败、缺失或过期时保持未知状态，不拿旧数据冒充空闲。
+- **终端、文件与远程服务一体。** 在目标机器上直接打开网页终端（支持 tmux）、编辑和传输文件、转发 TensorBoard / Jupyter，或配置 SSH 隧道与 VS Code 连接。
+- **空闲预约与资源历史。** 按数量或指定卡号等待连续空闲并触发桌面/邮件提醒，也可回看资源历史采样，或对比不同实验的训练日志精度。
+- **AI 原生工作流。** 内置助手直接调用机器、资源、进程、文件与预约工具并展示执行记录；支持 Responses / 工具调用接口，以及已安装登录的 [Codex](docs/CODEX.md)、[Claude Code 与 OpenCode](docs/EXTERNAL-AGENTS.md)。
+- **MCP 接入外部 Agent。** 通过统一 [MCP](docs/MCP.md) 暴露工作台能力，让外部 Agent 在同一套服务端校验下发现算力并操作授权机器。
+- **可复用的 Skill（技能）。** 将确认过的巡检、排障流程沉淀为 Markdown / ZIP 技能，支持 `@` 指定、按需发现、草稿、启停与版本回退（脚本不会自动执行）。
+- **本地运行，无需远端常驻 Agent。** 桌面端、系统托盘与资源浮窗共用本机后台；机器范围校验与凭据保护由服务端统一执行。
 
-开发者也可完整解压仓库后双击 `安装.cmd` 从源码运行。源码方式首次需要联网准备 Python 和依赖，必须保留整个项目目录，详见 [Windows 安装与排障](docs/WINDOWS.md)。
+---
 
-全新工作空间在首次成功加载后显示六步新手引导：连接机器、查看资源、使用终端与文件、配置 AI 助手、资源预约与历史、设置入口。完成或跳过后记住状态；已有机器的工作空间升级时不强制弹出，可在「设置 → 关于与帮助 → 重播新手引导」重新打开。详见[首次使用](docs/GUIDE.md#首次使用与新手引导)。
+## 为什么是 AI 原生工作台
 
-独立桌面窗口、系统托盘和资源浮窗共用本机后台；关闭主窗口不等于停止后台，退出请使用托盘菜单。
+在多机训练、微调与调试中，模型负责理解目标、选择工具与整理结果，工作台负责提供真实的服务器状态与服务端权限校验。
 
-Windows 安装版从 v0.1.1 起支持启动检查及手动下载、安装更新。已有 v0.1.0 用户需先手动安装一次；安装前请保存文件、关闭活动终端，并退出旧托盘后台。更新机制及限制见 [应用更新](docs/UPDATES.md)。
+**典型场景：卡被占满，让 Agent 换台机器继续干**
 
-## 第一次使用
+1. 你让 Agent 在服务器 A 上配好代码和环境，准备启动训练时发现卡全被占了。
+2. 在原对话里让它通过 MCP 按卡型、数量和剩余显存，在有权限的机器中查找替代服务器。
+3. 找到服务器 B 后，Agent 调用获授权的 SSH 与文件工具同步代码、配置和所需检查点，复现环境并校验设备后启动训练。
 
-按「添加机器 → 查看采样 → 打开终端或文件」完成第一次操作，见 [连接第一台服务器](docs/GUIDE.md#连接第一台服务器)。每一步都列有预期结果及失败后的检查入口。手工使用资源视图、终端和文件不需要模型密钥；需要 AI 时再看 [使用方式选择](docs/GUIDE.md#选择-ai-使用方式)。
+换的是执行任务的服务器，Agent 仍在原对话里，完整保留既有目标、排查记录和配置决定。详见 [统一 MCP 说明](docs/UNIFIED-MCP.md)。
 
-点击「添加机器」，从本机 SSH 配置选择，或手动填写地址和账号。已有免密配置可直接连接，也可输入密码，并勾选自动配置免密。
+> [!NOTE]
+> - MCP 提供机器发现与操作入口，迁移由 Agent 执行；工作台不会自动搬迁任务、锁定设备或调度训练。
+> - 内置助手默认可操作全部已添加机器；如需限定范围，请在输入区上下文设置中勾选「仅允许操作所选的机器」（左侧选中机器本身不限制范围）。远端命令与文件修改不会因取消而回滚。
 
-多台机器可用「Excel 批量导入」，查看实时进度和失败原因，并在后台配置免密。密码验证成功后自动保存；详细步骤见 [批量导入图文说明](docs/IMPORT.md)。
+---
 
-Excel 中也可填写本机 SSH 别名，沿用地址和跳板配置；账号以表格为准，端口留空时沿用别名配置，填写数字则覆盖配置。
+## 安装与运行
 
-连接后在左侧选择要查看的机器，点击设备查看进程详情。勾选设备后可预约空闲提醒、添加监控或执行训练前检查；预约可在左侧「卡预约」中管理。
+| 方式 | 适用人群 | 说明 |
+| --- | --- | --- |
+| **Windows 安装包（推荐）** | 日常使用 | 内置 Python 后台与前端资源，无需额外安装 Python 或 Node.js |
+| **源码运行** | 开发者 / 自定义环境 | 拉取仓库后双击 `安装.cmd`，自动准备 Python 与依赖 |
+| **浏览器演示** | 快速体验 | 纯前端模拟数据，无需真实服务器与模型密钥 |
 
-软件仅在本机运行。**不要分享 `data` 文件夹或 SSH 私钥**；sudo 密码可选保存在 Windows 凭据管理器，并可随时删除。资源筛选和检查不会预留设备。
+### Windows 安装包（推荐）
 
-## 浏览器演示
+从 [最新 Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest) 下载 Windows x64 安装包并按向导安装；校验值见同页 `SHA256SUMS.txt`。
 
-启动本地前端或工作台后，在地址后添加 `?demo=1`（例如 `http://127.0.0.1:8765/?demo=1`），体验示例机器、资源、终端和文件流程，以及高亮操作导览。演示在浏览器内使用模拟数据并隔离真实后台网络请求，不连接服务器，不调用模型，也不会验证真实 SSH、凭据、通知或安装流程。刷新或退出演示后，模拟操作不会写入真实工作台。
+- 独立桌面窗口、系统托盘与资源浮窗共用本机后台；**关闭主窗口或浏览器不会停止后台**，完整退出请使用托盘右键菜单。
+- 本文描述当前仓库功能，已发布安装包支持范围以对应 Release 说明为准。
 
-前端独立运行：在 `frontend` 中执行 `npm ci`、`npm run demo`；静态演示包使用 `npm run build:demo` 构建。具体入口、隔离范围和限制见 [演示说明](docs/DEMO.md)。
+### 源码运行
+
+完整下载或克隆仓库后，双击根目录的 `安装.cmd`。首次运行需联网准备 Python（缺失时尝试通过 WinGet 安装 Python 3.12）和依赖，并需保留整个项目目录。详见 [Windows 安装、更新与排障](docs/WINDOWS.md)。
+
+### 浏览器演示（无需服务器）
+
+本地启动工作台后，在地址后追加 `?demo=1`（例如 `http://127.0.0.1:8765/?demo=1`），即可体验示例机器、资源筛选、终端、文件与高亮导览。也可仅启动前端体验：
+
+```bash
+cd frontend
+npm ci
+npm run demo        # 启动本地演示服务
+npm run build:demo  # 构建静态演示包
+```
+
+演示模式在浏览器内隔离所有真实后台请求，不连接服务器、不调用模型，也不会写入真实工作台数据。详见 [演示说明](docs/DEMO.md)。
+
+<details>
+<summary>安装签名、版本更新与 macOS 限制说明</summary>
+
+- **签名与验收状态**：Windows 安装包尚未做 Authenticode 代码签名（更新包另有独立更新签名）；干净 Windows 系统的安装、升级和卸载仍待验收。
+- **应用内更新**：Windows 安装版从 `v0.1.1` 起支持启动检查及手动下载安装更新。`v0.1.0` 用户需先手动安装一次；更新前请保存文件、关闭活动终端，并从托盘菜单退出旧后台。详见 [应用更新](docs/UPDATES.md)。
+- **源码更新**：托盘退出后拉取新代码并重新运行 `安装.cmd`，已有机器配置会保留。详见 [更新与修复](docs/WINDOWS.md#更新与修复)。
+- **macOS**：需要在 Mac 上自行构建；仅当对应 Release 明确提供时才包含 Apple Silicon 实验性安装包，且 Mac 尚待实机验证。详见 [Mac 说明](docs/MACOS.md)。
+
+</details>
+
+---
+
+## 快速开始
+
+手工使用资源视图、终端和文件**不需要模型密钥**，按以下 3 步即可开始（完整预期结果与排障见 [连接第一台服务器](docs/GUIDE.md#连接第一台服务器)）：
+
+1. **添加机器**：点击「添加机器」，从本机 `~/.ssh/config` 选择别名，或手动填写地址、端口与账号；支持已有免密、密码登录及自动配置免密。多台机器可用 [Excel 批量导入](docs/IMPORT.md)（支持填写 SSH 别名与端口覆盖）。
+2. **查看资源与进程**：在左侧选择机器，点击设备查看显存、利用率与占卡进程；勾选设备后可执行训练前检查、添加监控或创建空闲提醒（在左侧「卡预约」中管理）。
+3. **打开终端、文件或启用 AI**：直接进入对应机器的终端与文件窗口；需要自然语言操作或沉淀技能时，再按 [AI 使用方式选择](docs/GUIDE.md#选择-ai-使用方式) 配置模型接口、本机 CLI 或 MCP。
+
+> [!TIP]
+> 全新空工作空间首次加载会自动弹出六步新手引导；已有机器升级时不会打断，可随时在「设置 → 关于与帮助 → 重播新手引导」重新打开。
+
+---
 
 ## 按任务查找文档
 
@@ -68,32 +144,22 @@ Excel 中也可填写本机 SSH 别名，沿用地址和跳板配置；账号以
 
 完整分类见 [文档目录](docs/README.md)。
 
-## 运行要求与更新
+---
 
-本机需要 **Windows 10 / 11 和 OpenSSH 客户端**。源码安装缺少 Python 时，`安装.cmd` 会尝试通过 WinGet 安装 Python 3.12；没有 WinGet 时需先[手动安装 Python](https://www.python.org/downloads/windows/)。远端机器需要 Linux、Python 3，以及 `nvidia-smi` 或 `npu-smi`。Mac 适配尚未实机验证。
+## 运行要求与安全
 
-跳板机可以使用 Windows 或 Linux，只需提供允许 TCP 转发的 SSH 服务。软件沿用本机 SSH 配置中的 `ProxyJump` / `ProxyCommand`，无需选择跳板系统，也不会在跳板上运行采集脚本；上述 Linux 和 Python 3 要求针对最终被监控的机器。自定义 `ProxyCommand` 中的程序在本机运行，需能在本机执行。
+| 角色 | 要求 |
+| --- | --- |
+| **本机** | Windows 10 / 11 + OpenSSH 客户端（源码安装缺失 Python 且无 WinGet 时需[手动安装 Python](https://www.python.org/downloads/windows/)） |
+| **被监控远端** | Linux + Python 3 + `nvidia-smi` 或 `npu-smi` |
+| **跳板机（可选）** | Windows 或 Linux 均可，只需 SSH 允许 TCP 转发；直接沿用本机 `ProxyJump` / `ProxyCommand`，不在跳板机运行采集脚本 |
 
-更新前保存文件、处理好终端任务，并从托盘右键菜单退出软件。源码用户拉取新代码后，再双击 `安装.cmd`；已有机器配置会保留，桌面快捷方式也会重新生成。ZIP 更新及修复步骤见 [更新说明](docs/WINDOWS.md#更新与修复)。
+> [!IMPORTANT]
+> 软件仅在本机运行。**请勿分享 `data` 目录、SSH 私钥或包含凭据的日志。** 可选保存的 SSH / sudo 密码存放在 Windows 凭据管理器中并可随时清除。使用 AI 时，对话内容及工具实际读取的服务器信息会发送到所选模型服务，详见 [数据与凭据说明](SECURITY.md)。
 
-关闭浏览器后后台监控仍会继续；退出软件请使用托盘右键菜单。只刷新网页不会重启后台。
+---
 
-## 为什么是 AI 原生工作台
+## 开发与开源许可证
 
-AI 助手直接使用工作台的机器、资源、进程、文件和预约工具，能围绕实际服务器状态完成多步任务，并展示工具返回供你核对。比如先查找空闲设备，再查看占卡进程、读取指定日志，或按确认的条件创建空闲提醒。外部 Agent 也可通过 MCP 使用工作台能力。
-
-重复流程可以沉淀为 **Skill（技能）**。在设置中创建技能或导入 Markdown / ZIP，也可以对助手说「把刚才确认的巡检流程生成并安装成一个技能」。之后在输入框用 `@` 指定技能，或由助手按需发现，让常用检查步骤和报告要求可以复用。技能支持草稿、启停、复制、导出和历史版本回退；更新从下一轮生效，技能中的脚本不会自动执行。
-
-模型负责理解目标、选择工具和整理结果，后台负责校验机器范围、参数和权限。执行记录会展示目标机器、调用参数、返回结果及失败信息；无法确认的资源状态仍保留为未知。资源筛选和预约提醒不会锁定设备，也不会自动调度训练。
-
-模型接口要求服务支持 Responses 和工具调用；也可选择单独安装并登录的 [Codex](docs/CODEX.md)、[Claude Code 或 OpenCode](docs/EXTERNAL-AGENTS.md)。助手默认可操作全部已添加机器；需要限定时，在输入区上下文设置勾选「仅允许操作所选的机器」，左侧选中机器本身不会限制范围。远端命令和文件工具可产生实际修改，取消不会撤销已完成的操作。
-
-## 数据与开发
-
-不要分享 `data`、SSH 私钥或包含秘密的日志。使用 AI 时，问题及实际读取的服务器内容会发送到所选模型服务；详见 [数据与凭据](SECURITY.md)。
-
-参与开发见 [贡献指南](CONTRIBUTING.md) 和 [开发者导览](docs/DEVELOPERS.md)。
-
-## 开源许可证
-
-本项目采用 [MIT 许可证](LICENSE)，允许使用、修改、分发和商用，也允许闭源使用；分发时须保留版权声明和许可声明。软件按原样提供，不提供担保。第三方依赖仍遵循各自的许可证。
+- 参与开发、目录结构与测试方式见 [贡献指南](CONTRIBUTING.md) 和 [开发者导览](docs/DEVELOPERS.md)。
+- 本项目采用 [MIT 许可证](LICENSE)，允许使用、修改、分发、商用及闭源使用，分发时须保留版权声明与许可声明。软件按原样提供，不提供担保；第三方依赖遵循各自许可证。
