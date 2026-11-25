@@ -435,12 +435,12 @@ function App(){
   const hostList=<ClusterSidebar hosts={state.hosts} selected={preferences.hostIds} select={selectHosts} search={hostSearch} setSearch={setHostSearch} category={hostCategory} setCategory={setHostCategory} copyName={copyMachineName} remove={host=>setRemovalHosts([host])} command={cluster=>setClusterPanel({cluster})} terminal={cluster=>setClusterTerminal({cluster})} history={()=>setClusterPanel({cluster:null})} reserve={cluster=>{setGroupDraft({cluster});navigate('reservations')}} resources={cluster=>navigate('history',cluster.host_ids)}/>;
   const desktopTitlebar=useMemo(()=>hasDesktopTitlebar(window),[]);
   const BrandMark=({size}:{size:number})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M9.5 2.5v2.2M14.5 2.5v2.2M9.5 19.3v2.2M14.5 19.3v2.2M2.5 9.5h2.2M2.5 14.5h2.2M19.3 9.5h2.2M19.3 14.5h2.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeOpacity="0.72"/>
-    <rect x="5" y="5" width="14" height="14" rx="3.8" stroke="currentColor" strokeWidth="1.8"/>
-    <path d="M12 7.8c.35 2.45 1.75 3.85 4.2 4.2-2.45.35-3.85 1.75-4.2 4.2-.35-2.45-1.75-3.85-4.2-4.2 2.45-.35 3.85-1.75 4.2-4.2Z" fill="currentColor"/>
+    <path d="M9 1v2.5M15 1v2.5M9 20.5V23M15 20.5V23M1 9h2.5M1 15h2.5M20.5 9H23M20.5 15H23" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeOpacity="0.78"/>
+    <rect x="3.6" y="3.6" width="16.8" height="16.8" rx="4.4" stroke="currentColor" strokeWidth="1.9"/>
+    <path d="M12 6.6c.48 3.1 2.3 4.92 5.4 5.4-3.1.48-4.92 2.3-5.4 5.4-.48-3.1-2.3-4.92-5.4-5.4 3.1-.48 4.92-2.3 5.4-5.4Z" fill="currentColor"/>
   </svg>;
   const header=<header className={desktopTitlebar?'desktop-titlebar':undefined}>
-      {desktopTitlebar&&<div className="brand desktop-brand"><span className="brand-icon"><BrandMark size={20}/></span><div>Infra<span>WORKBENCH</span></div></div>}
+      {desktopTitlebar&&<div className="brand desktop-brand"><span className="brand-icon"><BrandMark size={24}/></span><div>Infra<span>WORKBENCH</span></div></div>}
       <div className="breadcrumb">{ui("工作空间 ")}<ChevronRight size={13}/>{pageTitle}</div>
       {desktopTitlebar&&<div className="desktop-titlebar-space" onMouseDown={event=>{
         if(event.button!==0)return;
@@ -456,7 +456,7 @@ function App(){
     if(deviceOverview&&event.target instanceof Element&&!event.target.closest('#device-overview,[aria-controls="device-overview"]'))setDeviceOverview(false);
   }}>
     {desktopTitlebar&&header}
-    <aside className="sidebar"><div className="brand"><span className="brand-icon"><BrandMark size={23}/></span><div>Infra<span>WORKBENCH</span></div></div>
+    <aside className="sidebar"><div className="brand"><span className="brand-icon"><BrandMark size={28}/></span><div>Infra<span>WORKBENCH</span></div></div>
       <div className="nav-label">{ui("工作台")}</div><nav>{[["overview",ui("算力总览"),LayoutGrid],["reservations",tr("资源预约","Resource alerts"),CalendarClock],["history",tr("资源历史","Resource history"),History],["precision",ui("精度对比"),ChartLine],["settings",ui("设置"),Settings]].map(([key,label,Icon])=><button data-tour={key==='settings'?'settings':undefined} key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&pendingReservations>0&&<span className="nav-count">{pendingReservations}</span>}</button>)}</nav>
       <div className="sidebar-hosts" data-tour="hosts">{hostList}</div>
       <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title={ui("机器选择保存在本机后台，其他窗口会同步更新。通过 SSH 连接远端机器，无需远端常驻 Agent。")}><i aria-hidden="true"/>{isDemo?tr("演示数据","Demo data"):ui("本地服务")}{error?ui("未连接"):ui("已连接")}</div></div>

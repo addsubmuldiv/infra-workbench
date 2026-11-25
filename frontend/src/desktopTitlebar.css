@@ -1,5 +1,5 @@
 .desktop-shell{
-  --desktop-titlebar-height:62px;
+  --desktop-titlebar-height:48px;
   padding-top:var(--desktop-titlebar-height);
 }
 .desktop-shell>.desktop-titlebar{
@@ -26,7 +26,9 @@
     pointer-events:none;
   }
 }
-.desktop-titlebar .desktop-brand{margin:0;flex:none;pointer-events:none}
+.desktop-titlebar .desktop-brand{margin:0;flex:none;pointer-events:none;font-size:20px}
+.desktop-titlebar .brand-icon{padding:4px}
+.desktop-titlebar .desktop-brand span:not(.brand-icon){margin-top:4px}
 .desktop-titlebar-space{flex:1;min-width:12px;align-self:stretch;user-select:none}
 .desktop-window-controls{display:flex;flex:none;align-self:stretch;border-left:1px solid var(--line)}
 .desktop-window-controls>button{
@@ -43,7 +45,16 @@
 .desktop-window-controls>.desktop-window-close:hover{background:#c42b1c;color:#fff}
 .desktop-window-controls>button:focus-visible{outline-offset:-3px}
 .desktop-shell>.sidebar,.desktop-shell>.sidebar-resizer{top:var(--desktop-titlebar-height)}
+.desktop-shell>.sidebar{padding-top:12px}
 .desktop-shell>.sidebar>.brand{display:none}
+.desktop-shell>.sidebar>.nav-label{margin-top:0}
+.desktop-shell>main>.content{padding-top:14px}
+@media(min-width:801px){
+  .desktop-shell>main>.content>.page-heading>.page-heading-actions{
+    align-self:flex-start;
+    margin-top:8px;
+  }
+}
 .desktop-shell .terminal-dock.maximized .terminal-tabbar{position:relative}
 .desktop-shell .terminal-dock.maximized .terminal-add{position:static}
 .desktop-shell .terminal-dock.maximized .terminal-picker{
@@ -61,4 +72,5 @@
   .desktop-titlebar .desktop-brand>div,.desktop-titlebar .breadcrumb{display:none}
   .desktop-titlebar .header-tools{gap:6px}
   .desktop-window-controls>button{width:36px}
+  .desktop-shell>.sidebar>nav{margin-top:0}
 }

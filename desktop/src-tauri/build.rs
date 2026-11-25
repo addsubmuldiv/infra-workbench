@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rerun-if-changed=../../backend/assets/workbench.ico");
+    println!("cargo:rerun-if-changed=../../backend/assets/workbench.png");
     tauri_build::build();
     // Standalone integration tests link Tauri's Windows dialog symbols too.
     // Unlike the application binary, they do not receive its generated manifest.
