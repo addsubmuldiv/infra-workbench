@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .ssh_accounts import ssh_account_key
 from .agent_errors import AgentError
 
 
@@ -58,7 +59,7 @@ async def describe_connection(ssh,passwords,host):
     agent=cfg.get('identityagent')
     if agent and agent!='none':dependencies.append(dict(type='ssh_agent',path=agent,scope='resolved_computer'))
     saved=passwords.view(host)
-    session=ssh.sessions.get(host['id'])
+    session=ssh.sessions.get(ssh_account_key(host))
     opened=bool(session and not session.is_closed())
     if saved.get('error'):warnings.append(saved['error'])
     flags={'publickey':'pubkeyauthentication','password':'passwordauthentication','keyboard-interactive':'kbdinteractiveauthentication'}

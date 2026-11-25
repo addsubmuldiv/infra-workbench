@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 import * as frames from '../src/terminalWindow.ts';
+import * as sshLogins from '../src/sshLogins.ts';
 
 function harness(t,{titlebarBottom=0}={}){
   const state=[],effects=[],deps=[],cleanups=[],disk=new Map();let slot=0,tree;
@@ -18,7 +19,7 @@ function harness(t,{titlebarBottom=0}={}){
   t.after(()=>cleanups.forEach(fn=>fn?.()));
   for(const [key,value] of Object.entries(globals)){const original=Object.getOwnPropertyDescriptor(globalThis,key);Object.defineProperty(globalThis,key,{configurable:true,value,writable:true});t.after(()=>{if(original)Object.defineProperty(globalThis,key,original);else delete globalThis[key]})}
   const js=ts.transpileModule(fs.readFileSync(new URL('../src/TerminalDock.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>workspaceMock(name,react)??(name==='react'?react:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>false,confirmation:null})}:name==='./terminalWindow'?frames:{}),exports);
+  const exports={};new Function('require','exports',js)(name=>workspaceMock(name,react)??(name==='react'?react:name==='./AppConfirm'?{useAppConfirm:()=>({confirm:async()=>false,confirmation:null})}:name==='./terminalWindow'?frames:name==='./sshLogins'?sshLogins:{}),exports);
   const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const render=()=>{slot=0;tree=exports.TerminalDock({request:null,hosts:[host]});effects.splice(0).forEach(fn=>cleanups.push(fn()));return tree};
   const find=predicate=>nodes(tree).find(predicate);

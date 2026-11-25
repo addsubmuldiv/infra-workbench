@@ -282,24 +282,23 @@ test('device overview closes on outside clicks and navigation but preserves clic
 });
 
 
-test('SSH password button highlights only confirmed saved credentials and updates when removed',t=>{
+test('SSH accounts button highlights confirmed default credentials and updates when removed',t=>{
   const items=hosts.map((host,index)=>({...host,ssh_password:{password_saved:[true,false,null][index],can_remember:true}}));
   const h=harness(t,'#overview',[],items);h.render();
-  assert.ok(h.button('alpha SSH 密码设置').props.className.includes('enabled'));
-  assert.equal(h.button('alpha SSH 密码设置').props.title,'SSH 密码已保存，点击管理');
-  assert.ok(!h.button('beta SSH 密码设置').props.className.includes('enabled'));
-  assert.ok(!h.button('offline SSH 密码设置').props.className.includes('enabled'));
+  assert.ok(h.button('alpha SSH 账号').props.className.includes('enabled'));
+  assert.ok(!h.button('beta SSH 账号').props.className.includes('enabled'));
+  assert.ok(!h.button('offline SSH 账号').props.className.includes('enabled'));
   items[0]={...items[0],ssh_password:{...items[0].ssh_password,password_saved:false}};h.render();
-  assert.ok(!h.button('alpha SSH 密码设置').props.className.includes('enabled'));
-  h.button('alpha SSH 密码设置').props.onClick();h.render();
-  assert.ok(h.find(n=>n.type==='SSHPasswordDialog'));
+  assert.ok(!h.button('alpha SSH 账号').props.className.includes('enabled'));
+  h.button('alpha SSH 账号').props.onClick();h.render();
+  assert.ok(h.find(n=>n.type==='SSHAccountsDialog'));
 });
 
 
 test('demo prevents entering real SSH credentials while leaving resource browsing usable',t=>{
  const h=harness(t,'#overview',[],hosts,true);h.render();
- h.button('alpha SSH 密码设置').props.onClick();h.render();
- assert.equal(h.find(n=>n.type==='SSHPasswordDialog'),undefined);
+ h.button('alpha SSH 账号').props.onClick();h.render();
+ assert.equal(h.find(n=>n.type==='SSHAccountsDialog'),undefined);
  h.button('alpha sudo 设置').props.onClick();h.render();
  assert.equal(h.find(n=>n.type==='SudoModal'),undefined);
  h.button('添加机器').props.onClick();h.render();

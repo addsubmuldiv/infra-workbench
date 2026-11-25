@@ -5,6 +5,7 @@ import subprocess
 import uuid
 from pydantic import BaseModel, ConfigDict, Field
 from fastapi import HTTPException
+from .ssh_accounts import ssh_account_key
 
 
 class ForwardRequest(BaseModel):
@@ -73,8 +74,11 @@ class PortForwarding:
             rule=self.rule(host_id,rule_id)
             if self.view(rule)['status']=='active':return self.view(rule)
             await self._stop(rule_id)
-            session=self.ssh.sessions.get(host_id)
             try:
+                host = self.host(host_id)
+                if restore := getattr(self.ssh, 'restore_session', None):
+                    await restore(host)
+                session = self.ssh.sessions.get(ssh_account_key(host))
                 port=rule['local_port']
                 if port:
                     if any(v['port']==port for v in self.running.values()):raise ValueError('本地端口已被其他服务转发占用')
@@ -83,7 +87,7 @@ class PortForwarding:
                         if os.name=='nt':probe.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE,1)
                         probe.bind(('127.0.0.1',port))
                 if session and not session.is_closed():
-                    current=await self.ssh.effective(self.host(host_id))
+                    current=await self.ssh.effective(host)
                     original=self.ssh.connection_configs.get(session)
                     fields=('hostname','port','user','proxyjump','proxycommand','hostkeyalias')
                     if original is None or any(current.get(k)!=original.get(k) for k in fields):
@@ -91,7 +95,7 @@ class PortForwarding:
                     listener=await session.forward_local_port('127.0.0.1',rule['local_port'],'127.0.0.1',rule['remote_port'])
                     self.running[rule_id]=dict(listener=listener,session=session,port=listener.get_port())
                 else:
-                    await self._native(rule)
+                    await self._native(rule, host)
                 return self.view(rule)
             except BaseException as exc:
                 await self._stop(rule_id)
@@ -100,7 +104,7 @@ class PortForwarding:
                 if isinstance(exc,asyncio.CancelledError):raise
                 raise ValueError(self.errors[rule_id]) from None
 
-    async def _native(self, rule):
+    async def _native(self, rule, host):
         # OpenSSH cannot auto-allocate local ports. Reserve then release a loopback
         # port; ExitOnForwardFailure handles the unavoidable allocation race.
         import socket
@@ -108,7 +112,6 @@ class PortForwarding:
         if not port:
             with socket.socket() as sock:
                 sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
-        host=self.host(rule['host_id'])
         cfg=await self.ssh.effective_details(host)
         # Resolve the alias once, then disable config loading: inherited
         # LocalForward/RemoteForward rules must never open unrelated listeners.

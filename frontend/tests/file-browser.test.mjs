@@ -9,10 +9,12 @@ import {fitFileWindow,moveFileWindow,resizeFileWindow} from '../src/fileWindow.t
 import * as folderUploads from '../src/folderUpload.ts';
 import * as fileTransfers from '../src/fileTransfers.ts';
 import * as ids from '../src/browserId.ts';
+import * as sshLogins from '../src/sshLogins.ts';
 
 function harness(t,component='BrowserBody',fetchDownload,folderSupported=true,folderSender){
   const values=[],deps=[],effects=[],cleanups=[];let slot=0,tree;
   const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),
+    useMemo:factory=>factory(),
     useState:initial=>{const i=slot++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value}]},
     useRef:initial=>{const i=slot++;if(!(i in values))values[i]={current:initial};return values[i]},
     useEffect:(fn,next)=>{const i=slot++;if(!next||!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}}};
@@ -27,7 +29,7 @@ function harness(t,component='BrowserBody',fetchDownload,folderSupported=true,fo
   const source=ts.transpileModule(fs.readFileSync(new URL('../src/FileBrowser.tsx',import.meta.url),'utf8')+'\nexport {BrowserBody};',
     {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   function FileEditor(){}
-  new Function('require','exports',source)(name=>i18nMock(name)??((name==='./toolI18n'||name==='./toolI18n.ts')?toolTranslations:undefined)??(name==='react'?react:name==='./browserId'?ids:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./folderUpload'?folderUploads:name==='./fileTransfers'?{...fileTransfers,uploadPayload:folderSender??fileTransfers.uploadPayload}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key})),exports);
+  new Function('require','exports',source)(name=>i18nMock(name)??((name==='./toolI18n'||name==='./toolI18n.ts')?toolTranslations:undefined)??(name==='react'?react:name==='./sshLogins'?sshLogins:name==='./browserId'?ids:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./folderUpload'?folderUploads:name==='./fileTransfers'?{...fileTransfers,uploadPayload:folderSender??fileTransfers.uploadPayload}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key})),exports);
   const guard={current:null},hosts=[{id:'A',target:'A'},{id:'B',target:'B'}];
   let props=component==='BrowserBody'?{host:hosts[0],onBusy(){},editorClose:guard}:{host:hosts[0],hosts,close(){},requestId:'first'};
   const render=updates=>{props={...props,...updates};slot=0;tree=exports[component](props);for(const effect of effects.splice(0))effect();return tree};

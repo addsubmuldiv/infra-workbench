@@ -10,6 +10,7 @@ from pydantic import Field,field_validator,model_validator
 from .log_routes import LogLocation
 from .log_download import original_log_response
 from .file_transfers import FileTransfers,MAX_UPLOAD
+from .ssh_accounts import resolve_ssh_account
 
 
 class DirectoryRequest(LogLocation):
@@ -71,8 +72,8 @@ def register_file_routes(app,ssh,find):
                     operations=['read','save','copy','move','mkdir','create'],text_limit=FILES_TEXT_EDIT_MAX_BYTES,copy_limit=FILES_COPY_MAX_BYTES,upload_limit=MAX_UPLOAD)
 
     @app.post('/api/files/search')
-    async def search(body:SearchRequest):
-        host=find(body.host_id)
+    async def search(body:SearchRequest, ssh_account_id: str | None = None):
+        host=resolve_ssh_account(find(body.host_id), ssh_account_id)
         payload=json.dumps(body.model_dump(exclude={'host_id'}),ensure_ascii=True)
         try:
             async with listings:
@@ -86,8 +87,9 @@ def register_file_routes(app,ssh,find):
         except Exception: raise HTTPException(400,'搜索超时或连接失败，请选择更具体的目录后重试') from None
 
     @app.post('/api/files/uploads')
-    async def upload_create(body:UploadRequest):
-        return transfers.create(find(body.host_id),body.path,body.name,body.size,body.kind)
+    async def upload_create(body:UploadRequest, ssh_account_id: str | None = None):
+        host = resolve_ssh_account(find(body.host_id), ssh_account_id)
+        return transfers.create(host,body.path,body.name,body.size,body.kind)
 
     @app.put('/api/files/uploads/{upload_id}')
     async def upload_body(upload_id:str,request:Request):
@@ -116,8 +118,8 @@ def register_file_routes(app,ssh,find):
         return {'ok':True}
 
     @app.post('/api/files/operation')
-    async def operation(body:FileOperation,request:Request=None):
-        host=find(body.host_id)
+    async def operation(body:FileOperation,request:Request=None, ssh_account_id: str | None = None):
+        host=resolve_ssh_account(find(body.host_id), ssh_account_id)
         if body.op=='save' and (body.content is None or body.revision is None):
             raise HTTPException(422,'保存文本需要内容及原始文件版本')
         if body.op in ('copy','move') and not body.destination:
@@ -151,8 +153,8 @@ def perform(request):
         except Exception: raise HTTPException(400,'文件操作未能确认完成，请刷新目录检查结果，再决定是否重试') from None
 
     @app.post('/api/files/browse')
-    async def browse(body:DirectoryRequest):
-        host=find(body.host_id)
+    async def browse(body:DirectoryRequest, ssh_account_id: str | None = None):
+        host=resolve_ssh_account(find(body.host_id), ssh_account_id)
         payload=json.dumps(dict(path=body.path,offset=body.offset),ensure_ascii=True)
         script=source+'\nmain(json.loads('+repr(payload)+'))\n'
         try:
@@ -166,8 +168,8 @@ def perform(request):
         except Exception: raise HTTPException(400,'文件浏览失败，请检查 SSH 连接和远端 Python3') from None
 
     @app.post('/api/files/download')
-    async def download(body:DownloadRequest,request:Request):
-        host=find(body.host_id)
+    async def download(body:DownloadRequest,request:Request, ssh_account_id: str | None = None):
+        host=resolve_ssh_account(find(body.host_id), ssh_account_id)
         async with downloads:
             key=getattr(body,'transfer_id',None)
             if not key: return await original_log_response(ssh,host,body.path,request,label='文件')
@@ -181,8 +183,8 @@ def perform(request):
                 raise
 
     @app.post('/api/files/download-folder')
-    async def download_folder(body:DownloadRequest,request:Request):
-        host=find(body.host_id)
+    async def download_folder(body:DownloadRequest,request:Request, ssh_account_id: str | None = None):
+        host=resolve_ssh_account(find(body.host_id), ssh_account_id)
         async with downloads:
             job=None
             try:

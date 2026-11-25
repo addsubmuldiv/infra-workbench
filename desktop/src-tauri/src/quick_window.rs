@@ -60,16 +60,17 @@ pub fn request(args: &[String]) -> Option<(String,String)> {
 }
 
 pub fn open(app: &tauri::AppHandle, tool: &str, host: &str) -> tauri::Result<()> {
-    open_with_path(app,tool,host,None,None,None)
+    open_with_path(app,tool,host,None,None,None,None)
 }
 
-fn open_with_path(app: &tauri::AppHandle, tool: &str, host: &str, path: Option<&str>, companion: Option<&tauri::WebviewWindow>, channel: Option<&str>) -> tauri::Result<()> {
+fn open_with_path(app: &tauri::AppHandle, tool: &str, host: &str, path: Option<&str>, companion: Option<&tauri::WebviewWindow>, channel: Option<&str>, ssh_account_id: Option<&str>) -> tauri::Result<()> {
     let _window_gate=super::updater::WINDOW_GATE.lock().unwrap();
     if super::updater::installing(app) { return Err(tauri::Error::Io(std::io::Error::new(std::io::ErrorKind::WouldBlock,"更新安装期间不能打开新窗口"))); }
     let mut url=reqwest::Url::parse(infra_workbench_desktop::SERVICE_URL).unwrap();
     url.query_pairs_mut().append_pair("tool",tool).append_pair("host",host);
     if let Some(path)=path { url.query_pairs_mut().append_pair("cwd",path); }
     if let Some(channel)=channel {url.query_pairs_mut().append_pair("channel",channel);}
+    if let Some(account)=ssh_account_id {url.query_pairs_mut().append_pair("ssh_account_id",account);}
     let label=companion.map(|source|format!("quick-assistant-{}",source.label())).unwrap_or_else(||format!("quick-{}",NEXT.fetch_add(1,Ordering::Relaxed)));
     if let (Some(_source),Some(existing))=(companion,app.get_webview_window(&label)) {
         // Reusing the companion must preserve the user's size and position.
@@ -214,7 +215,7 @@ mod tests {
 }
 
 #[tauri::command]
-pub async fn open_quick_tool(window: tauri::WebviewWindow, tool: String, host: String, path: Option<String>, channel: Option<String>, attachments:Option<Vec<serde_json::Value>>) -> Result<(),String> {
+pub async fn open_quick_tool(window: tauri::WebviewWindow, tool: String, host: String, path: Option<String>, channel: Option<String>, attachments:Option<Vec<serde_json::Value>>, ssh_account_id: Option<String>) -> Result<(),String> {
     // WebView2 window creation must run outside the UI thread to avoid deadlock.
     if !window.label().starts_with("quick-") || !window.url().map(|u|infra_workbench_desktop::is_service_url(&u)).unwrap_or(false) {
         return Err("不允许的窗口".into());
@@ -225,19 +226,24 @@ pub async fn open_quick_tool(window: tauri::WebviewWindow, tool: String, host: S
     if let Some(ref value)=path {
         if !value.starts_with('/') || value.len()>4096 || value.chars().any(|c|c.is_control()) {return Err("无效的目录".into());}
     }
+    if let Some(account)=ssh_account_id.as_deref() {
+        if account != "original" && (account.len()!=32 || !account.bytes().all(|byte|byte.is_ascii_hexdigit())) {
+            return Err("无效的 SSH 账号".into());
+        }
+    }
     if tool=="assistant" {
         let items=attachments.unwrap_or_default();check_context(&items)?;
         let source=window.url().map_err(|e|e.to_string())?;
         if !source.query_pairs().any(|(key,value)|key=="tool"&&value=="terminal") {return Err("只允许从独立终端打开助手".into());}
         let value=channel.as_deref().ok_or("缺少窗口传递通道")?;
         if !(16..=80).contains(&value.len()) || !value.bytes().all(|byte|byte.is_ascii_alphanumeric()||byte==b'-') {return Err("无效的窗口传递通道".into());}
-        open_with_path(window.app_handle(),&tool,&host,None,Some(&window),Some(value)).map_err(|e|e.to_string())?;
+        open_with_path(window.app_handle(),&tool,&host,None,Some(&window),Some(value),None).map_err(|e|e.to_string())?;
         let mut contexts=CONTEXTS.lock().map_err(|_|"无法传递终端附件")?;
         let queue=contexts.entry(format!("quick-assistant-{}",window.label())).or_default();
         queue.extend(items);if queue.len()>3 {queue.drain(..queue.len()-3);}
         return Ok(());
     }
-    open_with_path(window.app_handle(),&tool,&host,path.as_deref(),None,None).map_err(|e|e.to_string())
+    open_with_path(window.app_handle(),&tool,&host,path.as_deref(),None,None,ssh_account_id.as_deref()).map_err(|e|e.to_string())
 }
 
 fn place_companion(source:&tauri::WebviewWindow,assistant:&tauri::WebviewWindow)->Result<(),String>{

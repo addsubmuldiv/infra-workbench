@@ -12,6 +12,77 @@ class Vault:
     def put(self,key,value):self.values[key]=value
     def delete(self,key):self.values.pop(key,None)
 
+
+def test_machine_keeps_independent_ssh_accounts_and_login_preferences(tmp_path):
+    vault = Vault()
+    app = create_app(tmp_path, start_poll=False, ssh_credential_store=vault)
+    app.state.hosts.append(dict(id='machine', target='compute', manual=True, user='root', port=22, auth='key'))
+    ssh = app.state.ssh
+
+    async def details(host):
+        return dict(hostname='compute.example', user=host['user'], port='22')
+
+    class Connection:
+        def close(self): pass
+        async def wait_closed(self): pass
+
+    async def authenticate(host, password):
+        assert password == host['user'] + '-example-password'
+        connection = Connection()
+        ssh.connection_configs[connection] = await details(host)
+        return connection
+
+    ssh.effective_details = details
+    ssh.password_connection = authenticate
+    file_accounts = []
+
+    async def browse_as(host, command, source):
+        file_accounts.append(host['user'])
+        page = dict(path='/home/' + host['user'], parent='/home', entries=[], total=0, next_offset=None)
+        return 0, 'IWB_FILES:' + json.dumps(dict(ok=True, result=page)), ''
+
+    ssh.run = browse_as
+
+    async def inspect_terminal(websocket, host):
+        await websocket.send_json(dict(user=host['user']))
+        await websocket.close()
+
+    app.state.terminals.serve = inspect_terminal
+    headers = {'X-IWB': '1'}
+    path = '/api/hosts/machine/ssh-accounts'
+    with TestClient(app) as client:
+        client.post('/api/hosts/machine/ssh-password', headers=headers, json={'password': 'root-example-password'}).raise_for_status()
+        personal = client.post(path, headers=headers, json={'user': 'alice', 'password': 'alice-example-password'}).raise_for_status().json()
+        deploy = client.post(path, headers=headers, json={'user': 'deploy', 'password': 'deploy-example-password'}).raise_for_status().json()
+        preferences = client.put(path + '/preferences', headers=headers, json={
+            'default_account_id': personal['id'], 'interactive_account_id': deploy['id'],
+        }).raise_for_status().json()
+        assert preferences['default_account_id'] == personal['id']
+        assert preferences['interactive_account_id'] == deploy['id']
+        host = client.get('/api/state').json()['hosts'][0]
+        assert (host['id'], host['user']) == ('machine', 'alice')
+        assert len(vault.values) == 3
+        assert vault.values['machine']['password'] == 'root-example-password'
+        assert 'example-password' not in client.get(path).text
+        browse = '/api/files/browse'
+        params = {'host_id': 'machine', 'path': '~'}
+        client.post(browse, headers=headers, json=params).raise_for_status()
+        client.post(browse, headers=headers, json=params, params={'ssh_account_id': 'original'}).raise_for_status()
+        assert file_accounts == ['alice', 'root']
+        assert client.post(browse, headers=headers, json=params, params={'ssh_account_id': 'unknown'}).status_code == 404
+        ticket = client.post('/api/hosts/machine/terminal-ticket', headers=headers,
+                             params={'ssh_account_id': deploy['id']}).raise_for_status().json()['ticket']
+        with client.websocket_connect('/api/terminal/machine', headers={'Origin': 'http://testserver'},
+                                      subprotocols=['iwb-terminal', ticket]) as terminal:
+            assert terminal.receive_json() == {'user': 'deploy'}
+        client.delete(path + '/' + deploy['id'], headers=headers).raise_for_status()
+        assert client.get(path).json()['interactive_account_id'] == deploy['id']
+    restarted = create_app(tmp_path, start_poll=False, ssh_credential_store=vault)
+    with TestClient(restarted) as client:
+        reloaded = client.get(path).raise_for_status().json()
+        assert reloaded['default_account_id'] == personal['id']
+        assert reloaded['interactive_account_id'] == deploy['id']
+
 def test_password_save_get_delete_no_echo_and_identity_mismatch(tmp_path):
     app=create_app(tmp_path,start_poll=False,ssh_credential_store=Vault())
     host=dict(id='alphaid',target='alpha',manual=True,user='user',port=22)

@@ -15,6 +15,8 @@ from fastapi import HTTPException,Request
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
+from .ssh_accounts import ssh_account_key
+
 MAX_DOWNLOAD=LOGS_DOWNLOAD_MAX_BYTES
 
 
@@ -59,7 +61,7 @@ async def receive_file(reader,target,disconnected=None,on_progress=None,max_byte
 async def open_download(ssh,host,source):
     if restore := getattr(ssh,'restore_session',None):
         await restore(host)
-    session=ssh.sessions.get(host['id'])
+    session=ssh.sessions.get(ssh_account_key(host))
     cached=bool(session and not session.is_closed())
     process=None;error_task=None
     async def discard(reader):

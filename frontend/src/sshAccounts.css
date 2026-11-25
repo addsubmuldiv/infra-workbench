@@ -1,0 +1,12 @@
+.ssh-accounts-modal { width: min(660px, calc(100vw - 32px)); }
+.ssh-account-preferences { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 16px; }
+.ssh-account-preferences select { width: 100%; min-width: 0; }
+.ssh-account-preferences small, .ssh-account-list small { display: block; color: var(--muted); }
+.ssh-account-list { list-style: none; padding: 0; margin: 8px 0; }
+.ssh-account-list-heading, .ssh-account-list li { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ssh-account-list li { padding: 8px 0; border-top: 1px solid var(--line); }
+.ssh-account-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ssh-account-editor { display: grid; gap: 4px; }
+.ssh-account-tool { display: inline-flex; align-items: center; }
+.ssh-account-tool button:first-child:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ssh-account-tool button + button { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }

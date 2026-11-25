@@ -11,7 +11,9 @@ import {TerminalBoundary} from './TerminalBoundary';
 import {browserId} from './browserId';
 import './quickWindow.css';
 import {TERMINAL_INPUT_EVENT,localTerminalTargets} from './terminalInput';
-type Host={id:string;target:string;user:string|null};
+import {pinSSHLogin, type SSHLoginHost} from './sshLogins';
+import {SSHAccountPicker} from './SSHAccountPicker';
+type Host=SSHLoginHost;
 const nativeInvoke=(window as any).__TAURI_INTERNALS__?.invoke;
 const nativeAction=(action:string)=>{if(nativeInvoke)void nativeInvoke('quick_window_action',{action}).catch(console.error)};
 export function QuickWindow(){return new URLSearchParams(location.search).get('tool')==='assistant'?<StandaloneAssistant/>:<QuickToolWindow/>}
@@ -22,6 +24,16 @@ function QuickToolWindow(){
  const [hosts,setHosts]=useState<Host[]>([]),[error,setError]=useState(''),[ready,setReady]=useState(false);
  const [terminal,setTerminal]=useState<TerminalRequest|null>(null);
  const [files,setFiles]=useState<{host:Host;path?:string;requestId:string}|null>(null);
+ const [choice,setChoice]=useState<Host|null>(null);
+ function showLogin(host:Host, accountId?:string, cwd?:string){
+  const login=pinSSHLogin(host,accountId);
+  if(login.ssh_account_id&&!host.ssh_logins?.accounts.some(account=>account.id===login.ssh_account_id)){
+   setChoice(host);
+   return;
+  }
+  if(kind==='terminal')setTerminal({host:login,id:browserId(),cwd});
+  else setFiles({host:login,path:cwd,requestId:browserId()});
+ }
  useEffect(()=>{
   if(kind!=='terminal')return;
   const receive=(input:unknown)=>window.dispatchEvent(new CustomEvent(TERMINAL_INPUT_EVENT,{detail:input}));
@@ -61,7 +73,7 @@ function QuickToolWindow(){
   fetch('/api/state',{signal:controller.signal}).then(async response=>{if(!response.ok)throw Error(tt("无法读取机器列表。"));return response.json()}).then(state=>{
    const host=state.hosts.find((h:Host)=>h.id===hostId);if(!host)throw Error(tt("这台机器已不在列表中。"));
    setHosts(state.hosts);document.title=host.target+' · '+(kind==='terminal'?tt("终端"):tt("文件"));
-   if(kind==='terminal')setTerminal({host,id:browserId(),cwd:params.get('cwd')??undefined});else setFiles({host,path:params.get('cwd')??undefined,requestId:browserId()});setReady(true);
+   showLogin(host,params.get('ssh_account_id')??undefined,params.get('cwd')??undefined);setReady(true);
   }).catch(e=>{if(!controller.signal.aborted)setError(e.message)});
   return()=>controller.abort();
  },[]);
@@ -73,12 +85,23 @@ function QuickToolWindow(){
   return()=>observer.disconnect();
  },[ready]);
  useEffect(()=>{const host=hosts.find(h=>h.id===hostId);if(host)document.title=host.target+' · '+(kind==='terminal'?tt("终端"):tt("文件"))},[locale,hosts,hostId,kind]);
- const openTool=(tool:'terminal'|'files',host:string,path?:string)=>{
-  if(nativeInvoke){void nativeInvoke('open_quick_tool',{tool,host,path:path??null}).catch((e:unknown)=>setError(tt("无法打开独立窗口：")+String(e)));return}
+ const openTool=(tool:'terminal'|'files',host:string,path?:string,accountId?:string)=>{
+  if(nativeInvoke){void nativeInvoke('open_quick_tool',{tool,host,path:path??null,sshAccountId:accountId??null}).catch((e:unknown)=>setError(tt("无法打开独立窗口：")+String(e)));return}
   const query=new URLSearchParams({tool,host});if(path)query.set('cwd',path);
+  if(accountId)query.set('ssh_account_id',accountId);
   window.open('/?'+query.toString(),'_blank','popup,width=760,height=480');
  };
- const directory=(id:string,path:string)=>openTool('files',id,path);
+ const directory=(id:string,path:string,accountId?:string)=>openTool('files',id,path,accountId);
+ async function reopen(){
+  try{
+   const response=await fetch('/api/state');
+   if(!response.ok)throw Error(tt("无法读取机器列表。"));
+   const state=await response.json();
+   const host=state.hosts.find((item:Host)=>item.id===hostId);
+   if(!host)throw Error(tt("这台机器已不在列表中。"));
+   setError('');setHosts(state.hosts);showLogin(host,params.get('ssh_account_id')??undefined);
+  }catch(e){setError(e instanceof Error?e.message:String(e))}
+ }
  const clickControl=(event:React.MouseEvent)=>{
   if(!nativeInvoke)return;
   const button=(event.target as HTMLElement).closest('button');
@@ -96,8 +119,14 @@ function QuickToolWindow(){
   if(nativeInvoke&&(event.target as HTMLElement).closest('.terminal-topbar,.file-header')&&!(event.target as HTMLElement).closest('button,select,input')){event.stopPropagation();nativeAction('maximize')}
  }}>
   {error?<p role="alert">{error}<button onClick={()=>location.reload()}>{tt("重试")}</button></p>:!ready?<p role="status">{tt("正在打开机器窗口…")}</p>:null}
-  {ready&&<button className="quick-reopen" onClick={()=>{const host=hosts.find(h=>h.id===hostId)!;if(kind==='terminal')setTerminal({host,id:browserId()});else setFiles({host,requestId:browserId()})}}>{tt("重新打开")}{kind==='terminal'?tt("终端"):tt("文件")}</button>}
+  {ready&&<button className="quick-reopen" onClick={()=>void reopen()}>{tt("重新打开")}{kind==='terminal'?tt("终端"):tt("文件")}</button>}
   <TerminalBoundary close={()=>setTerminal(null)}>{terminal&&<TerminalDock request={terminal} hosts={hosts} onDirectory={directory}/>}</TerminalBoundary>
-  {files&&<FileBrowser host={files.host} hosts={hosts} initialPath={files.path} requestId={files.requestId} close={()=>setFiles(null)} onTerminal={(id,cwd)=>openTool('terminal',id,cwd)}/>}
+  {files&&<FileBrowser host={files.host} hosts={hosts} initialPath={files.path} requestId={files.requestId} close={()=>setFiles(null)} onTerminal={(id,cwd,accountId)=>openTool('terminal',id,cwd,accountId)}/>}
+  {choice?.ssh_logins&&<SSHAccountPicker host={{...choice,ssh_logins:choice.ssh_logins}} tool={kind==='terminal'?'terminal':'files'}
+    close={()=>setChoice(null)} open={(accountId,saved)=>{
+      const host=saved?{...choice,ssh_logins:saved}:choice;
+      if(saved)setHosts(old=>old.map(item=>item.id===host.id?host:item));
+      setChoice(null);showLogin(host,accountId,params.get('cwd')??undefined);
+    }}/>}
  </main>;
 }

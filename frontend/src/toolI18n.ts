@@ -2,6 +2,13 @@ import {t} from './i18n.ts';
 
 // App-owned tool UI copy. Remote output, paths and file content are never passed here.
 const english:Record<string,string>={
+  "SSH 账号":"SSH account",
+  "选择 SSH 账号":"Choose SSH account",
+  "找不到该 SSH 账号，请重新选择。":"This SSH account no longer exists. Choose another account.",
+  "该 SSH 用户名已存在，请在账号列表中修改密码。":"This SSH username already exists. Update its password in the account list.",
+  "该账号解析出的 SSH 地址或跳板与这台机器不同。":"This account resolves to a different SSH address or jump host.",
+  "请先选择并保存其他机器默认账号。":"Choose and save a different machine default account first.",
+  "SSH 密码验证失败，未保存；请检查账号、密码和目标机器。":"SSH password verification failed. Check the account, password, and target machine.",
   "图片显示暂不可用，终端可继续使用":"Image display unavailable; terminal remains usable",
   "无法确定压缩包路径，请先确认当前目录":"Cannot resolve archive path; confirm the working directory first",
   "解压命令已填入，请检查后按 Enter 执行":"Extraction command filled; review and press Enter to run",

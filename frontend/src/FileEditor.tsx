@@ -10,7 +10,7 @@ import {fitFileWindow,moveFileWindow,resizeFileWindow,type WindowFrame} from './
 import {activateFloatingWindow,registerFloatingWindow} from './windowLayers';
 const TextEditor=React.lazy(()=>import('./TextEditor').then(module=>({default:module.TextEditor})));
 
-export function FileEditor({host,path,close,saved,changed,busyChanged,closeRequest}:{host:string;path:string;close:()=>void;saved:()=>void;changed:(dirty:boolean)=>void;busyChanged:(busy:boolean)=>void;closeRequest:React.RefObject<((after?:()=>void)=>void)|null>}){
+export function FileEditor({host,path,fetcher=fetch,close,saved,changed,busyChanged,closeRequest}:{host:string;path:string;fetcher?:typeof fetch;close:()=>void;saved:()=>void;changed:(dirty:boolean)=>void;busyChanged:(busy:boolean)=>void;closeRequest:React.RefObject<((after?:()=>void)=>void)|null>}){
   useLocale();
   const [doc,setDoc]=useState<TextDocument|null>(null),[text,setText]=useState(''),[busy,setBusy]=useState(true),[error,setError]=useState(''),[message,setMessage]=useState('');
   const [pendingClose,setPendingClose]=useState<{after:()=>void}|null>(null);
@@ -33,7 +33,7 @@ export function FileEditor({host,path,close,saved,changed,busyChanged,closeReque
   const endGesture=(event:React.PointerEvent)=>{if(gesture.current?.pointer===event.pointerId)gesture.current=null};
   const toggleMinimized=()=>{if(minimized)setFrame(old=>fitFileWindow(old,viewport()));setMinimized(!minimized)};
   const dirty=doc!==null&&text!==doc.content;
-  useEffect(()=>{let active=true;void fileOperation<TextDocument>(host,{op:'read',path}).then(value=>{if(active){setDoc(value);setText(value.content)}}).catch(e=>{if(active)setError(e instanceof Error?e.message:String(e))}).finally(()=>{if(active)setBusy(false)});return()=>{active=false}},[host,path]);
+  useEffect(()=>{let active=true;void fileOperation<TextDocument>(host,{op:'read',path},fetcher).then(value=>{if(active){setDoc(value);setText(value.content)}}).catch(e=>{if(active)setError(e instanceof Error?e.message:String(e))}).finally(()=>{if(active)setBusy(false)});return()=>{active=false}},[host,path,fetcher]);
   useEffect(()=>{changed(dirty);return()=>changed(false)},[dirty]);
   useEffect(()=>{busyChanged(busy);return()=>busyChanged(false)},[busy]);
   useEffect(()=>{if(!dirty)return;const guard=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=''};window.addEventListener('beforeunload',guard);return()=>window.removeEventListener('beforeunload',guard)},[dirty]);
@@ -42,7 +42,7 @@ export function FileEditor({host,path,close,saved,changed,busyChanged,closeReque
   const save=async()=>{
     if(!doc||busy)return false;if(!dirty)return true;
     setBusy(true);setError('');setMessage('');
-    try{const next=await fileOperation<TextDocument>(host,{op:'save',path,content:text,revision:doc.revision});setDoc(next);setText(next.content);setMessage(tt("已保存到服务器"));saved();return true}
+    try{const next=await fileOperation<TextDocument>(host,{op:'save',path,content:text,revision:doc.revision},fetcher);setDoc(next);setText(next.content);setMessage(tt("已保存到服务器"));saved();return true}
     catch(e){setError(e instanceof Error?e.message:String(e));return false}finally{setBusy(false)}
   };
   return createPortal(<section data-floating-window="editor" ref={registerFloatingWindow} onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow} className={'file-editor floating '+(minimized?'minimized':'')} role="dialog" aria-modal="false" aria-label={tt("编辑文件 ")+path} style={{left:frame.x,top:frame.y,width:minimized?'min(320px, calc(100vw - 16px))':frame.width,height:minimized?56:frame.height}} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture} onKeyDown={event=>{if(event.defaultPrevented)return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();void save()}else if(event.key==='Escape'){event.stopPropagation();if(pendingClose)setPendingClose(null);else leave()}}}>

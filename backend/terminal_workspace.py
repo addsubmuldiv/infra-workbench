@@ -18,11 +18,19 @@ class TerminalWorkspace:
     def __init__(self,store):
         self.store=store;self.profiles=store.load('terminal_workspace',{})
 
+    def find_profile(self, host_id, identity):
+        value = self.profiles.get(host_id)
+        if isinstance(value, dict) and value.get('identity') == identity:
+            return value
+        value = self.profiles.get(f'{host_id}/{identity}')
+        return value if isinstance(value, dict) and value.get('identity') == identity else None
+
     def profile(self,host_id,identity):
-        value=self.profiles.get(host_id)
-        if not isinstance(value,dict) or value.get('identity')!=identity:
+        value=self.find_profile(host_id, identity)
+        if value is None:
             value=dict(identity=identity,history=[],settings=dict(history_enabled=True),snippets=[],sessions=[])
-            self.profiles[host_id]=value
+            key = f'{host_id}/{identity}' if host_id in self.profiles else host_id
+            self.profiles[key]=value
         return value
 
     def mark_interactive(self,session):

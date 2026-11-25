@@ -56,7 +56,8 @@ Click **Add machine (添加机器)** to select an entry from `~/.ssh/config` and
 To select a machine directly from VS Code Remote - SSH, click **Add to SSH config** at the bottom of its machine card. Workbench uses the displayed alias as the `Host` name and generates one when there is no alias. An existing entry with the same name and connection settings is reused. Jump hosts and key paths are included when configured. SSH passwords are handled when you connect.
 
 - Existing key authentication reuses local keys, SSH agent, and jump-host settings.
-- Passwords can be used for the current run or explicitly remembered in the system credential store. Per-machine **SSH 密码** controls let you verify, save, or remove them.
+- Passwords can be used for the current run or explicitly remembered in the system credential store. Use **SSH accounts** on the machine card to add accounts and verify, save, or forget each saved password.
+- Set the machine default and the account used by terminal and file windows in **SSH accounts**, then click **Save**. The assistant, resource collection, and new tunnels use the machine default. Terminal and file windows follow it unless you choose another account from the menu next to **Terminal** or **Files** and choose to remember it.
 - Optional automatic key setup creates a dedicated key, appends its public key remotely, and verifies key authentication.
 - Verify and trust the server fingerprint before connecting to an unknown host.
 

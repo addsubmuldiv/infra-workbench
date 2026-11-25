@@ -32,7 +32,12 @@ const terminalViewport=()=>({
 });
 function terminalStorage(){try{return workspaceStorage??null}catch{return null}}
 
-type Host={id:string;target:string;user:string|null};
+import {pinSSHLogin, sshAccountUrl, sshWindowLabel, type SSHLoginHost} from './sshLogins';
+
+type Host=SSHLoginHost;
+const loginKey = (host: Host) => host.id + '/' + (host.ssh_account_id ?? '');
+const terminalApi = (host: Host, route: string) =>
+  sshAccountUrl('/api/hosts/' + encodeURIComponent(host.id) + '/' + route, host.ssh_account_id);
 export type TerminalRequest={id:string;host:Host;cwd?:string};
 type Phase='connecting'|'running'|'closed'|'error';
 type Tab={id:string;host:Host;phase:Phase;generation:number;cwd?:string;session?:string};
@@ -51,7 +56,7 @@ function palette(){
     brightBlack:'#8090a4',brightRed:'#ef8c8c',brightGreen:'#7bcea7',brightYellow:'#e6c488',brightBlue:'#8bb5ef',brightMagenta:'#c5a3ea',brightCyan:'#89d3d6',brightWhite:'#f0f4fa'};
 }
 
-export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase:(phase:Phase)=>void;onDirectory?:(hostId:string,path:string)=>void}>(function TerminalView({tab,active,font,onPhase,onDirectory},ref){
+export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;onPhase:(phase:Phase)=>void;onDirectory?:(hostId:string,path:string,accountId?:string)=>void}>(function TerminalView({tab,active,font,onPhase,onDirectory},ref){
   useLocale();
   const [suggestion,setSuggestion]=useState(''),[shellStatus,setShellStatus]=useState(tt("正在检测增强功能"));
   const [workspace,setWorkspace]=useState<any>(null),[tools,setTools]=useState(false);
@@ -66,7 +71,7 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
   const rendererRef=useRef<ReturnType<typeof terminalRenderer>|null>(null);
   const cwdRef=useRef<string|undefined>(tab.cwd),reconnectRef=useRef<(()=>void)|null>(null);
   const directoryRef=useRef(onDirectory);directoryRef.current=onDirectory;
-  useImperativeHandle(ref,()=>({insert:text=>{const term=terminal.current;if(!term||!pasteRef.current||socketRef.current?.readyState!==WebSocket.OPEN)return false;if(/[\r\n]/.test(text)&&!term.modes.bracketedPasteMode)return false;pasteRef.current(text);term.focus();return true},capture:source=>terminal.current?captureTerminal(terminal.current,{host_id:tab.host.id,label:tab.host.target,terminal_id:tab.id,session_id:tab.session,cwd:cwdRef.current},source):null,cwd:()=>cwdRef.current,reconnect:()=>reconnectRef.current?.(),search:()=>setSearchOpen(true),clear:()=>terminal.current?.clear(),focus:()=>terminal.current?.focus(),scrollToBottom:()=>terminal.current?.scrollToBottom(),copy:()=>{
+  useImperativeHandle(ref,()=>({insert:text=>{const term=terminal.current;if(!term||!pasteRef.current||socketRef.current?.readyState!==WebSocket.OPEN)return false;if(/[\r\n]/.test(text)&&!term.modes.bracketedPasteMode)return false;pasteRef.current(text);term.focus();return true},capture:source=>terminal.current?captureTerminal(terminal.current,{host_id:tab.host.id,label:sshWindowLabel(tab.host),terminal_id:tab.id,session_id:tab.session,cwd:cwdRef.current},source):null,cwd:()=>cwdRef.current,reconnect:()=>reconnectRef.current?.(),search:()=>setSearchOpen(true),clear:()=>terminal.current?.clear(),focus:()=>terminal.current?.focus(),scrollToBottom:()=>terminal.current?.scrollToBottom(),copy:()=>{
     const text=terminal.current?.getSelection();if(text)navigator.clipboard.writeText(text).catch(()=>{});
   }}),[]);
   useEffect(()=>{
@@ -92,7 +97,7 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
     const search=new SearchAddon({highlightLimit:1000});term.loadAddon(search);searchRef.current=search;
     const searchResults=search.onDidChangeResults(result=>setSearchResult(result.resultIndex<0&&result.resultCount?tt("超过 1000 个匹配"):`${result.resultIndex+1} / ${result.resultCount}`));
     const pathLinks=directoryLinkProvider(term,path=>{
-      if(!isArchivePath(path)){directoryRef.current?.(tab.host.id,path);return}
+      if(!isArchivePath(path)){directoryRef.current?.(tab.host.id,path,tab.host.ssh_account_id);return}
       const command=archiveCommand(path,cwdRef.current);
       if(!command){setShellStatus(tt('无法确定压缩包路径，请先确认当前目录'));return}
       if(!connected||!canFillArchive(atPrompt.current,commandLine.current)){setShellStatus(tt('请先回到空命令行，再填入命令'));return}
@@ -183,7 +188,7 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
       }
       phase('connecting');resize();
       try{
-        const response=await fetch('/api/hosts/'+tab.host.id+'/terminal-ticket',{method:'POST',headers:{'X-IWB':'1'}});
+        const response=await fetch(terminalApi(tab.host,'terminal-ticket'),{method:'POST',headers:{'X-IWB':'1'}});
         const data=await response.json();if(!response.ok)throw new Error(data.detail||tt("无法创建终端会话"));
         if(disposed||currentAttempt!==attempt)return;
         const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/api/terminal/'+tab.host.id,['iwb-terminal',data.ticket]);
@@ -236,7 +241,7 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
     window.addEventListener('keydown',escape,true);return()=>window.removeEventListener('keydown',escape,true);
   },[searchOpen,active]);
   const workspaceAction=(message:object)=>{if(socketRef.current?.readyState===WebSocket.OPEN)socketRef.current.send(JSON.stringify({type:'workspace',...message}))};
-  return <><div ref={element} className={'terminal-screen '+(active?'active':'')} aria-label={tab.host.target+tt(" SSH 交互终端")}/>{active&&<>{searchOpen&&<div className="terminal-search" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();setSearchOpen(false);terminal.current?.focus()}if(event.key==='Enter'&&event.target===searchInput.current&&!event.nativeEvent.isComposing&&event.nativeEvent.keyCode!==229){
+  return <><div ref={element} className={'terminal-screen '+(active?'active':'')} aria-label={sshWindowLabel(tab.host)+tt(" SSH 交互终端")}/>{active&&<>{searchOpen&&<div className="terminal-search" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();setSearchOpen(false);terminal.current?.focus()}if(event.key==='Enter'&&event.target===searchInput.current&&!event.nativeEvent.isComposing&&event.nativeEvent.keyCode!==229){
       event.preventDefault();searchOutput(event.shiftKey);
     }}}><input ref={searchInput} aria-label={tt("查找终端输出")} placeholder={tt("查找终端输出")} value={query} onChange={event=>setQuery(event.target.value)}/><label><input type="checkbox" checked={caseSensitive} onChange={event=>setCaseSensitive(event.target.checked)}/>Aa</label><label><input type="checkbox" checked={regex} onChange={event=>setRegex(event.target.checked)}/>.*</label><span>{searchResult}</span><button onClick={()=>searchOutput(true)}>{tt("上一个")}</button><button onClick={()=>searchOutput()}>{tt("下一个")}</button><button onClick={()=>{setSearchOpen(false);terminal.current?.focus()}}>{tt("关闭")}</button></div>}<div className="terminal-assist"><span>{suggestion?<><b>{tt("→ 补全")}</b> <code>{suggestion}</code></>:tt(shellStatus)}{lastResult&&<small> · {lastResult}</small>}</span>{sudoAvailable&&<button onClick={()=>socketRef.current?.send(JSON.stringify({type:"sudo"}))}>{tt("填入 sudo 密码 · Alt+Enter")}</button>}{workspace&&<button onClick={()=>setTools(!tools)}>{tt("命令与设置")}</button>}</div>{tools&&workspace&&<TerminalCommands host={tab.host.target} workspace={workspace} action={workspaceAction} close={()=>setTools(false)} insert={text=>{
     if(!atPrompt.current||!commandLine.current.valid||commandLine.current.text){setShellStatus(tt("请先回到空命令行，再填入命令"));return false}
@@ -244,12 +249,17 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
   }}/> }</>}</>;
 });
 
-export function TerminalDock({request,hosts,onDirectory}:{request:TerminalRequest|null;hosts:Host[];onDirectory?:(hostId:string,path:string)=>void}){
+export function TerminalDock({request,hosts,onDirectory}:{request:TerminalRequest|null;hosts:Host[];onDirectory?:(hostId:string,path:string,accountId?:string)=>void}){
   useLocale();
   const [tabs,setTabs]=useState<Tab[]>([]),[active,setActive]=useState(''),[collapsed,setCollapsed]=useState(false),[maximized,setMaximized]=useState(false);
   const [frame,setFrame]=useState(()=>loadTerminalFrame(terminalStorage(),terminalViewport()));
   const [storedFont,setFont]=useWorkspaceValue('workspace:terminal-font-size',13);
   const [picker,setPicker]=useState(false),[hint,setHint]=useState('');
+  const [pickerAccounts,setPickerAccounts]=useState<Record<string,string>>({});
+  const pickerHosts=hosts.map(host=>pinSSHLogin(host,pickerAccounts[host.id]));
+  const pickerScope=pickerHosts.map(loginKey).join(',');
+  const isAvailable=(host:Host)=>!host.ssh_account_id||!!host.ssh_logins?.accounts.some(account=>account.id===host.ssh_account_id);
+
   const font=Number.isInteger(storedFont)&&storedFont>=10&&storedFont<=22?storedFont:13;
   const remoteFrame=useWorkspaceRestore(TERMINAL_FRAME_KEY,()=>loadTerminalFrame(terminalStorage(),terminalViewport()),setFrame);
   const [savedSessions,setSavedSessions]=useState<Record<string,{id:string;created:number}[]>>({}),[sessionBusy,setSessionBusy]=useState(false);
@@ -260,11 +270,11 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   const bindDock=useRef((element:HTMLElement|null)=>{dock.current=element;registerFloatingWindow(element)});
   const current=tabs.find(tab=>tab.id===active);
   const hasLiveSessions=tabs.some(tab=>!tab.session&&(tab.phase==='connecting'||tab.phase==='running'));
-  const add=(host:Host,cwd?:string,session?:string)=>{if(session){const existing=tabs.find(t=>t.host.id===host.id&&t.session===session);if(existing){if(['closed','error'].includes(existing.phase))setTabs(old=>old.map(t=>t.id===existing.id?{...t,generation:t.generation+1,phase:'connecting'}:t));setActive(existing.id);setCollapsed(false);setPicker(false);return}}if(tabs.length>=12){setHint(tt("最多同时打开 12 个终端"));return}const id=browserId();setTabs(old=>[...old,{id,host,phase:'connecting',generation:0,cwd,session}]);setActive(id);setCollapsed(false);setPicker(false)};
-  useEffect(()=>{if(request){const existing=request.cwd===undefined?tabs.find(tab=>tab.host.id===request.host.id):undefined;if(existing){setActive(existing.id);setCollapsed(false)}else add(request.host,request.cwd)}},[request]);
+  const add=(host:Host,cwd?:string,session?:string)=>{if(session){const existing=tabs.find(t=>loginKey(t.host)===loginKey(host)&&t.session===session);if(existing){if(['closed','error'].includes(existing.phase))setTabs(old=>old.map(t=>t.id===existing.id?{...t,generation:t.generation+1,phase:'connecting'}:t));setActive(existing.id);setCollapsed(false);setPicker(false);return}}if(tabs.length>=12){setHint(tt("最多同时打开 12 个终端"));return}const id=browserId();setTabs(old=>[...old,{id,host,phase:'connecting',generation:0,cwd,session}]);setActive(id);setCollapsed(false);setPicker(false)};
+  useEffect(()=>{if(request){const login=pinSSHLogin(request.host);const existing=request.cwd===undefined?tabs.find(tab=>loginKey(tab.host)===loginKey(login)):undefined;if(existing){setActive(existing.id);setCollapsed(false)}else add(login,request.cwd)}},[request]);
   useEffect(()=>{setTabs(old=>old.filter(tab=>hosts.some(host=>host.id===tab.host.id)))},[hosts.map(host=>host.id).join(',')]);
   useEffect(()=>{
-    const targets=(event:Event)=>(event as CustomEvent).detail(tabs.map((tab,index)=>({terminal_id:tab.id,label:tab.host.target,number:String(index+1).padStart(2,'0'),cwd:handles.current[tab.id]?.cwd(),phase:tab.phase})));
+    const targets=(event:Event)=>(event as CustomEvent).detail(tabs.map((tab,index)=>({terminal_id:tab.id,label:sshWindowLabel(tab.host),number:String(index+1).padStart(2,'0'),cwd:handles.current[tab.id]?.cwd(),phase:tab.phase})));
     window.addEventListener(TERMINAL_TARGETS_EVENT,targets);
     const receive=(event:Event)=>{
       const input=(event as CustomEvent).detail;
@@ -290,12 +300,12 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   },[hasLiveSessions]);
   useEffect(()=>{
     if(!picker)return;let cancelled=false;
-    Promise.all(hosts.map(async host=>{try{const response=await fetch('/api/hosts/'+host.id+'/terminal-workspace');if(response.ok)return [host.id,(await response.json()).sessions||[]] as const}catch{}return [host.id,[]] as const})).then(items=>{if(!cancelled)setSavedSessions(Object.fromEntries(items))});
+    Promise.all(pickerHosts.filter(isAvailable).map(async host=>{try{const response=await fetch(terminalApi(host,'terminal-workspace'));if(response.ok)return [loginKey(host),(await response.json()).sessions||[]] as const}catch{}return [loginKey(host),[]] as const})).then(items=>{if(!cancelled)setSavedSessions(Object.fromEntries(items))});
     return()=>{cancelled=true};
-  },[picker]);
+  },[picker,pickerScope]);
   const persistent=async(host:Host,cwd?:string)=>{
     if(sessionBusy)return;setSessionBusy(true);
-    try{const response=await fetch('/api/hosts/'+host.id+'/terminal-sessions',{method:'POST',headers:{'X-IWB':'1','Content-Type':'application/json'},body:JSON.stringify(cwd?{cwd}:{})});const value=await response.json();if(!response.ok)throw new Error(value.detail||tt("无法创建持久会话"));add(host,cwd,value.id)}catch(error){setHint(error instanceof Error?error.message:tt("无法创建持久会话"))}finally{setSessionBusy(false)}
+    try{const response=await fetch(terminalApi(host,'terminal-sessions'),{method:'POST',headers:{'X-IWB':'1','Content-Type':'application/json'},body:JSON.stringify(cwd?{cwd}:{})});const value=await response.json();if(!response.ok)throw new Error(value.detail||tt("无法创建持久会话"));add(host,cwd,value.id)}catch(error){setHint(error instanceof Error?error.message:tt("无法创建持久会话"))}finally{setSessionBusy(false)}
   };
   const duplicate=()=>{
     if(!current)return;
@@ -306,7 +316,7 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
   };
   const endPersistent=async()=>{
     if(!current?.session||!await confirm(tt("结束此持久会话？会话中的任务也会停止，此操作无法撤销。")))return;
-    try{const response=await fetch('/api/hosts/'+current.host.id+'/terminal-sessions/'+current.session,{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail||tt("无法结束会话"));setTabs(old=>old.filter(t=>t.id!==current.id))}catch(error){setHint(error instanceof Error?error.message:tt("无法结束会话"))}
+    try{const response=await fetch(terminalApi(current.host,'terminal-sessions/'+current.session),{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail||tt("无法结束会话"));setTabs(old=>old.filter(t=>t.id!==current.id))}catch(error){setHint(error instanceof Error?error.message:tt("无法结束会话"))}
   };
   const close=async(id:string)=>{
     const tab=tabs.find(tab=>tab.id===id);
@@ -341,7 +351,14 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
       <div className="terminal-window-actions"><button data-window-action="minimize" aria-label={tt("最小化终端")} title={tt("收到右下角，保持所有连接")} onClick={()=>{setCollapsed(true);setPicker(false)}}><ChevronDown size={16}/></button><button data-window-action="maximize" aria-label={maximized?tt("还原终端"):tt("最大化终端")} onClick={()=>{setMaximized(!maximized);setCollapsed(false)}}>{maximized?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label={tt("关闭所有终端")} title={tt("关闭所有终端连接")} onClick={async()=>{if(!hasLiveSessions||await confirm(tt("关闭所有 SSH 会话？普通会话的前台任务可能结束；持久会话只断开显示连接。")))setTabs([])}}><X size={17}/></button></div>
     </div>
     <div className="terminal-body" style={{display:collapsed?'none':undefined}}>
-      <div className="terminal-tabbar" role="tablist" aria-label={tt("SSH 会话")}><div className="terminal-tabs">{tabs.map((tab,index)=><div key={tab.id} className={'terminal-tab '+(tab.id===active?'selected':'')}><button role="tab" aria-selected={tab.id===active} onClick={()=>setActive(tab.id)}><i className={'session-dot '+tab.phase}/><span>{tab.host.target}</span><small>{tab.session?tt("持久 ")+tab.session.slice(0,4):String(index+1).padStart(2,'0')}</small></button><button className="terminal-tab-close" aria-label={tt("关闭 ")+tab.host.target+tt(" 终端")} onClick={()=>close(tab.id)}><X size={12}/></button></div>)}</div><div className="terminal-add"><button aria-label={tt("新建 SSH 终端")} title={tt("新建会话")} onClick={()=>setPicker(!picker)}><Plus size={17}/></button>{picker&&<div className="terminal-picker"><strong>{tt("连接到机器")}</strong>{hosts.map(host=><div key={host.id} className="terminal-picker-host"><button onClick={()=>add(host)}><Terminal size={14}/><span>{host.target}<small>{host.user||tt("使用 SSH 配置账号")}</small></span><Plus size={14}/></button><button disabled={sessionBusy} onClick={()=>persistent(host)}>{tt("新建持久会话")}</button>{(savedSessions[host.id]||[]).map(session=><div key={session.id} className="terminal-saved-session"><button onClick={()=>add(host,undefined,session.id)}>{tt("恢复 ")}{session.id.slice(0,6)} · {new Date(session.created*1000).toLocaleString(dateLocale())}</button><button title={tt("结束远端任务并移除记录")} onClick={async()=>{if(!await confirm(tt("结束此持久会话及其中的任务？")))return;try{const response=await fetch('/api/hosts/'+host.id+'/terminal-sessions/'+session.id,{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail);setSavedSessions(old=>({...old,[host.id]:(old[host.id]||[]).filter(s=>s.id!==session.id)}))}catch(error){setHint(String(error))}}}>{tt("结束")}</button></div>)}</div>)}</div>}</div></div>
+      <div className="terminal-tabbar" role="tablist" aria-label={tt("SSH 会话")}><div className="terminal-tabs">{tabs.map((tab,index)=><div key={tab.id} className={'terminal-tab '+(tab.id===active?'selected':'')}><button role="tab" aria-selected={tab.id===active} onClick={()=>setActive(tab.id)}><i className={'session-dot '+tab.phase}/><span>{sshWindowLabel(tab.host)}</span><small>{tab.session?tt("持久 ")+tab.session.slice(0,4):String(index+1).padStart(2,'0')}</small></button><button className="terminal-tab-close" aria-label={tt("关闭 ")+sshWindowLabel(tab.host)+tt(" 终端")} onClick={()=>close(tab.id)}><X size={12}/></button></div>)}</div><div className="terminal-add"><button aria-label={tt("新建 SSH 终端")} title={tt("新建会话")} onClick={()=>setPicker(!picker)}><Plus size={17}/></button>{picker&&<div className="terminal-picker"><strong>{tt("连接到机器")}</strong>{pickerHosts.map(host=><div key={host.id} className="terminal-picker-host">
+        {(host.ssh_logins?.accounts.length ?? 0)>1 || !isAvailable(host) ? <select
+          aria-label={tt('SSH 账号')+' · '+host.target} value={isAvailable(host)?host.ssh_account_id??'':''}
+          onChange={event=>setPickerAccounts(old=>({...old,[host.id]:event.target.value}))}>
+          {!isAvailable(host)&&<option value="" disabled>{tt('选择 SSH 账号')}</option>}
+          {host.ssh_logins?.accounts.map(account=><option key={account.id} value={account.id}>{account.user||tt("使用 SSH 配置账号")}</option>)}
+        </select> : null}
+        <button disabled={!isAvailable(host)} onClick={()=>add(host)}><Terminal size={14}/><span>{host.target}<small>{host.user||tt("使用 SSH 配置账号")}</small></span><Plus size={14}/></button><button disabled={sessionBusy||!isAvailable(host)} onClick={()=>persistent(host)}>{tt("新建持久会话")}</button>{(savedSessions[loginKey(host)]||[]).map(session=><div key={session.id} className="terminal-saved-session"><button onClick={()=>add(host,undefined,session.id)}>{tt("恢复 ")}{session.id.slice(0,6)} · {new Date(session.created*1000).toLocaleString(dateLocale())}</button><button title={tt("结束远端任务并移除记录")} onClick={async()=>{if(!await confirm(tt("结束此持久会话及其中的任务？")))return;try{const response=await fetch(terminalApi(host,'terminal-sessions/'+session.id),{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail);setSavedSessions(old=>({...old,[loginKey(host)]:(old[loginKey(host)]||[]).filter(s=>s.id!==session.id)}))}catch(error){setHint(String(error))}}}>{tt("结束")}</button></div>)}</div>)}</div>}</div></div>
       <div className="terminal-toolbar"><div><span className="terminal-path">{current?.host.user||'SSH'}<b>@</b>{current?.host.target}</span><span className={'terminal-phase '+current?.phase}><i className={'session-dot '+current?.phase}/>{current&&labels()[current.phase]}</span></div><div><TerminalDisplaySettings font={font} setFont={setFont}/>{current?.session&&<button onClick={endPersistent} aria-label={tt("结束会话")} title={tt("结束此持久会话及其中的任务")}><Power size={15}/></button>}<span className="terminal-divider"/><button className="terminal-duplicate" aria-label={tt("复制当前终端")} title={tt("在同一目录新建独立会话，沿用命令历史")} disabled={!current||current.phase==='connecting'||sessionBusy} onClick={duplicate}><CopyPlus size={14}/></button>{(['selection','screen'] as const).map(source=><button key={source} className="terminal-ai-action" aria-label={source==='selection'?tt('将选区附加到 AI 助手'):tt('将当前屏幕附加到 AI 助手')} title={source==='selection'?tt('将选中文字附加到 AI 草稿，预览后发送'):tt('将当前可见屏幕附加到 AI 草稿，预览后发送')} onClick={()=>{const value=handles.current[active]?.capture(source);if(!value?.content.trim()){setHint(tt('没有可附加的终端内容'));return}handoffTerminalContext(value);setHint(tt('已附加到 AI 草稿，请预览后发送'))}}>{source==='selection'?<TextSelect size={15}/>:<Sparkles size={15}/>}</button>)}<button aria-label={tt("复制终端所选内容")} title={tt("复制所选内容 · Ctrl/⌘+C")} onClick={()=>{handles.current[active]?.copy();setHint(tt("选中文字后 Ctrl/⌘+C 复制；Ctrl/⌘+V 粘贴"))}}><Copy size={14}/></button><button title={tt("查找输出 · Ctrl/⌘+F")} aria-label={tt("查找终端输出")} onClick={()=>handles.current[active]?.search()}><Search size={15}/></button><button aria-label={tt("清空终端显示")} title={tt("仅清空显示，不中断命令")} onClick={()=>handles.current[active]?.clear()}><Trash2 size={14}/></button><button aria-label={tt("回到底部")} title={tt("回到底部 · 查看最新输出")} onClick={()=>{handles.current[active]?.scrollToBottom()}}><ChevronsDown size={16}/></button><button aria-label={tt("重新连接当前终端")} title={current?.session?tt("重新接入持久会话"):tt("结束当前会话并重新连接")} onClick={async()=>{if(current&&(current.session||['closed','error'].includes(current.phase)||await confirm(tt("重新连接将结束当前 SSH 会话，是否继续？"))))handles.current[active]?.reconnect()}}><RefreshCw size={14}/></button></div></div>
       <div className="terminal-viewport">{tabs.map(tab=><TerminalView key={tab.id} ref={handle=>{handles.current[tab.id]=handle}} tab={tab} active={tab.id===active&&!collapsed} font={font} onDirectory={onDirectory} onPhase={phase=>setTabs(old=>old.map(item=>item.id===tab.id?{...item,phase}:item))}/>)}</div>
       <div className="terminal-statusbar"><span><ShieldCheck size={12}/>{current?.session?tt("tmux 持久会话 · 关闭标签仅断开显示"):tt("本机 SSH · 独立交互会话")}</span><span>{hint||tt("Ctrl/⌘+C 复制选中 · Ctrl/⌘+V 粘贴 · Ctrl/⌘+点击 pwd 路径打开目录")}</span><span>UTF-8 <i/>xterm-256color</span></div>

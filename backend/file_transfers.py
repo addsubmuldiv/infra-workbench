@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from fastapi import HTTPException
+from .ssh_accounts import ssh_account_key
 
 MAX_UPLOAD=FILES_UPLOAD_MAX_BYTES
 
@@ -93,7 +94,7 @@ class FileTransfers:
                 command='python3 -u -c '+shlex.quote(source)
                 if restore := getattr(self.ssh,'restore_session',None):
                     await restore(job['host'])
-                session=self.ssh.sessions.get(job['host']['id'])
+                session=self.ssh.sessions.get(ssh_account_key(job['host']))
                 cached=bool(session and not session.is_closed())
                 if cached:
                     current=await self.ssh.effective(job['host']);original=self.ssh.connection_configs.get(session)

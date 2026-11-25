@@ -47,6 +47,10 @@ from .agent_chat import AgentChat, register_chat_routes
 from .chat_tools import ChatTools
 from .desktop_notifications import register_desktop_notification_routes
 from .ssh_passwords import SSHPasswords, connection_identity
+from .ssh_accounts import (
+    account_records, default_account_id, register_ssh_account_routes,
+    resolve_ssh_account, ssh_account_key, ssh_account_summary,
+)
 from .agent_service import AgentService
 from .mcp_server import register_mcp
 from .mcp_client import MCPGateway
@@ -216,6 +220,23 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             raise HTTPException(404, '找不到机器')
         return host
 
+    async def replace_ssh_host(old, updated):
+        host_id = old['id']
+        default_changed = default_account_id(old) != default_account_id(updated)
+        lock = locks.setdefault(host_id, asyncio.Lock()) if default_changed else contextlib.nullcontext()
+        async with lock:
+            position = hosts.index(old)
+            replacement = list(hosts)
+            replacement[position] = updated
+            store.save('hosts', replacement)
+            hosts[position] = updated
+            if default_changed:
+                snapshots.pop(host_id, None)
+                probe.slow.pop(host_id, None)
+                probe.details.pop(host_id, None)
+                probe.stats.pop(host_id, None)
+        state_changes.publish()
+
     def observe_groups(host_id):
         try:
             app.state.group_reservations.observe(host_id)
@@ -229,6 +250,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         metric.update(status='queued', requested_at=time.time())
         state_changes.publish()
         async with locks.setdefault(host_id, asyncio.Lock()), semaphore:
+            host = next((item for item in hosts if item['id'] == host_id), host)
             if host_id in paused_collections:
                 metric.update(status="idle")
                 raise HTTPException(409, "采集已暂停，请先恢复采集。 / Collection is paused; resume collection first.")
@@ -601,7 +623,9 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                                   snapshot=dict(status=snap.get('status','connecting'),collected_at=snap.get('collected_at'),fresh=fresh)))
             else:
                 sections = section_views(snap, now, reservations.max_sample_gap)
-                items.append(dict(**host, collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
+                public_host = {key: value for key, value in host.items()
+                               if key not in ('ssh_accounts', 'ssh_default_account_id', 'ssh_interactive_account_id')}
+                items.append(dict(**public_host, ssh_logins=ssh_account_summary(host), collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})
@@ -641,7 +665,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         host['auth'] = result['auth']
         if body.remember_password and not result.get('password_not_verified'):
             try:
-                saved=await ssh_passwords.save(host,body.password.get_secret_value(),ssh.verified_configs.get(host['id']))
+                saved=await ssh_passwords.save(host,body.password.get_secret_value(),ssh.verified_configs.get(ssh_account_key(host)))
                 if saved.get('password_saved') is not True:raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','SSH 密码保存状态无法确认')
                 result['password_saved']=True
             except AgentError:
@@ -716,32 +740,40 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     async def prepare_import(rows):await prepare_existing(rows,hosts,ssh)
     register_import_routes(app,hosts,import_connection,import_key,prepare_import)
 
-    @app.get('/api/hosts/{host_id}/ssh-password')
-    async def ssh_password_status(host_id:str):
-        return JSONResponse(ssh_passwords.view(find(host_id)),headers={'Cache-Control':'no-store'})
-
-    @app.post('/api/hosts/{host_id}/ssh-password')
-    @serialize_connections
-    async def save_ssh_password(host_id:str,body:SSHPasswordRequest):
-        host=find(host_id)
+    async def verify_ssh_password(host, password):
         try:
-            connection=await ssh.password_connection(host,body.password.get_secret_value())
+            connection=await ssh.password_connection(host,password)
             try:
                 verified=ssh.connection_configs.get(connection)
-                value=await ssh_passwords.save(host,body.password.get_secret_value(),verified)
+                return await ssh_passwords.save(host,password,verified)
             finally:
                 connection.close();await connection.wait_closed()
-            return JSONResponse(value,headers={'Cache-Control':'no-store'})
         except AgentError as exc:
             raise HTTPException(400,exc.message) from None
         except Exception:
             raise HTTPException(400,'SSH 密码验证失败，未保存；请检查账号、密码和目标机器。') from None
 
+    register_ssh_account_routes(app, ssh_passwords, find, serialize_connections,
+                                replace_ssh_host, verify_ssh_password)
+
+    @app.get('/api/hosts/{host_id}/ssh-password')
+    async def ssh_password_status(host_id: str, ssh_account_id: str | None = None):
+        host = resolve_ssh_account(find(host_id), ssh_account_id)
+        return JSONResponse(ssh_passwords.view(host), headers={'Cache-Control': 'no-store'})
+
+    @app.post('/api/hosts/{host_id}/ssh-password')
+    @serialize_connections
+    async def save_ssh_password(host_id: str, body: SSHPasswordRequest, ssh_account_id: str | None = None):
+        host = resolve_ssh_account(find(host_id), ssh_account_id)
+        value = await verify_ssh_password(host, body.password.get_secret_value())
+        return JSONResponse(value, headers={'Cache-Control': 'no-store'})
+
     @app.delete('/api/hosts/{host_id}/ssh-password')
     @serialize_connections
-    async def delete_ssh_password(host_id:str):
+    async def delete_ssh_password(host_id: str, ssh_account_id: str | None = None):
         try:
-            return JSONResponse(ssh_passwords.forget(find(host_id)),headers={'Cache-Control':'no-store'})
+            host = resolve_ssh_account(find(host_id), ssh_account_id)
+            return JSONResponse(ssh_passwords.forget(host),headers={'Cache-Control':'no-store'})
         except AgentError as exc:
             raise HTTPException(400,exc.message) from None
 
@@ -772,7 +804,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         async with locks.setdefault(host_id, asyncio.Lock()):
             try:
                 await sudo.forget(host)
-                ssh_passwords.forget(host)
+                for account in account_records(host):
+                    ssh_passwords.forget(resolve_ssh_account(host, account['id']))
             except AgentError as exc:
                 raise HTTPException(400,exc.message) from None
             except ValueError as exc:
@@ -783,19 +816,13 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             app.state.clusters.remove_host(host_id)
         rules[:] = [r for r in rules if r['host_id'] != host_id]
         reservations.remove_host(host_id)
-        conn = ssh.sessions.pop(host_id, None)
-        ssh.verified_configs.pop(host_id,None)
-        ssh.monitor_sessions.discard(host_id)
-        ssh.monitor_retry.pop(host_id, None)
-        ssh.monitor_locks.pop(host_id, None)
+        ssh.close_machine_sessions(host_id)
         probe.slow.pop(host_id, None)
         probe.details.pop(host_id, None)
         probe.stats.pop(host_id, None)
         collection_metrics.pop(host_id, None)
         collect_tasks.pop(host_id, None)
         paused_collections.discard(host_id)
-        if conn:
-            conn.close()
         store.save('hosts', hosts)
         store.save('rules', rules)
         snapshots.pop(host_id, None)

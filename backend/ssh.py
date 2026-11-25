@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .core import discover_aliases, install_key_script
 from .ssh_passwords import connection_identity
+from .ssh_accounts import ssh_account_key
 from .ssh_proxy import SSHProxyConnector
 from .import_host_keys import ImportHostKeys
 
@@ -273,7 +274,7 @@ class SSHService:
             return
         if restore := getattr(self, 'restore_session', None):
             await restore(host)
-        key = host['id']
+        key = ssh_account_key(host)
         async with self.monitor_locks.setdefault(key, asyncio.Lock()):
             session = self.sessions.get(key)
             if session and not session.is_closed():
@@ -311,7 +312,7 @@ class SSHService:
         restore = getattr(self, 'restore_session', None)
         if restore and not monitor:
             await restore(host)
-        session = self.sessions.get(host['id'])
+        session = self.sessions.get(ssh_account_key(host))
         if not session or session.is_closed():
             # Native OpenSSH can still handle keys and providers unavailable to
             # the persistent AsyncSSH monitor. Try it before using a password.
@@ -325,7 +326,7 @@ class SSHService:
             if denied.groups() != (current.get('user'), current.get('hostname')):
                 return result
             await restore(host, fallback=True)
-            session = self.sessions.get(host['id'])
+            session = self.sessions.get(ssh_account_key(host))
             if not session or session.is_closed():
                 return result
         current = await self.effective(host)
@@ -345,7 +346,7 @@ class SSHService:
     async def run_bound(self, host, command, source, config, *, native=False):
         """Pin secret-bearing commands to the endpoint resolved before validation."""
         fields = ('hostname', 'port', 'user', 'proxyjump', 'proxycommand', 'hostkeyalias')
-        session = None if native else self.sessions.get(host['id'])
+        session = None if native else self.sessions.get(ssh_account_key(host))
         if session and not session.is_closed():
             original = self.connection_configs.get(session)
             if original is None or any(config.get(key)!=original.get(key) for key in fields):
@@ -412,7 +413,7 @@ class SSHService:
                 code, out, err = await self.run(host, 'printf iwb-connected')
             if code != 0 or 'iwb-connected' not in out:
                 raise RuntimeError(err[-1000:] or 'SSH 连接失败')
-            return dict(auth='password_session' if host['id'] in self.sessions and host['id'] not in self.monitor_sessions else 'key', message='连接成功')
+            return dict(auth='password_session' if ssh_account_key(host) in self.sessions and ssh_account_key(host) not in self.monitor_sessions else 'key', message='连接成功')
         if host.get('_import_identity') and not provision:
             # Honor existing OpenSSH keys/certificates/agent before trying a
             # spreadsheet password. A key login does not validate that password.
@@ -423,12 +424,12 @@ class SSHService:
             else:
                 return dict(result, password_not_verified=True)
         conn = await self.password_connection(host, password)
-        self.verified_configs[host['id']] = dict(self.connection_configs.get(conn) or await self.effective(host))
-        old = self.sessions.pop(host['id'], None)
+        self.verified_configs[ssh_account_key(host)] = dict(self.connection_configs.get(conn) or await self.effective(host))
+        old = self.sessions.pop(ssh_account_key(host), None)
         if old:
             old.close()
-        self.monitor_sessions.discard(host['id'])
-        self.sessions[host['id']] = conn
+        self.monitor_sessions.discard(ssh_account_key(host))
+        self.sessions[ssh_account_key(host)] = conn
         if not provision:
             return dict(auth='password_session', message='密码登录成功；仅本次服务运行期间保持会话，不保存密码')
         try:
@@ -448,13 +449,25 @@ class SSHService:
             if code != 0 or 'iwb-connected' not in out:
                 raise RuntimeError('公钥已追加，但 OpenSSH 免密验证失败：'+err[-500:])
             host['key_path'] = path
-            self.sessions.pop(host['id'], None)
+            self.sessions.pop(ssh_account_key(host), None)
             conn.close()
             await conn.wait_closed()
             return dict(auth='key', message='公钥已追加，已通过不带密码的独立连接验证')
         except Exception as exc:
             # Login is still valid, but never claim key setup succeeded.
             return dict(auth='password_session', message='密码登录成功，但免密配置未完成：'+str(exc)[:400], provision_error=True)
+
+    def close_machine_sessions(self, host_id):
+        keys = (key for key in set(self.sessions) | self.monitor_locks.keys() | self.verified_configs.keys()
+                if key == host_id or key.startswith(host_id + '/'))
+        for key in keys:
+            connection = self.sessions.pop(key, None)
+            if connection:
+                connection.close()
+            self.verified_configs.pop(key, None)
+            self.monitor_sessions.discard(key)
+            self.monitor_locks.pop(key, None)
+            self.monitor_retry.pop(key, None)
 
     async def close(self):
         for conn in self.sessions.values():

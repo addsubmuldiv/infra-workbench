@@ -11,6 +11,7 @@ import shlex
 import time
 from .terminal_tmux import tmux_command,tmux_response
 from .terminal_workspace import TerminalSettingsPatch, TerminalWorkspace
+from .ssh_accounts import default_account_id, resolve_ssh_account, ssh_account_key
 from ctypes import wintypes
 
 from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -20,18 +21,22 @@ class TerminalTickets:
     def __init__(self, clock=time.monotonic):
         self.clock, self.values = clock, {}
 
-    def issue(self, host_id, origin):
+    def issue(self, host_id, origin, account_id=None):
         now = self.clock()
         self.values = {k:v for k,v in self.values.items() if v[2]>now}
         if len(self.values)>=64:
             raise ValueError('终端连接请求过多，请稍后重试')
         token = secrets.token_urlsafe(32)
-        self.values[token] = (host_id, origin, now+30)
+        self.values[token] = (host_id, origin, now+30, account_id)
         return token
 
     def consume(self, token, host_id, origin):
+        return self.take(token, host_id, origin) is not None
+
+    def take(self, token, host_id, origin):
         value = self.values.pop(token, None)
-        return bool(value and value[0]==host_id and value[1]==origin and value[2]>self.clock())
+        if value and value[0] == host_id and value[1] == origin and value[2] > self.clock():
+            return value
 
 
 def directory_command(cwd):
@@ -155,11 +160,15 @@ class TerminalManager:
         await asyncio.gather(*(socket.send_json(message) for socket in targets),return_exceptions=True)
 
     async def check_persistent(self,host):
-        profile=self.workspace.profiles.get(host['id'])
-        if not profile or not profile.get('sessions'):return
+        host_id = host['id']
+        if not any(value.get('sessions') for key, value in self.workspace.profiles.items()
+                   if (key == host_id or key.startswith(host_id + '/')) and isinstance(value, dict)):
+            return
         try:
             identity=self.sudo.identity(await self.ssh.effective(host))
-            if profile.get('identity')!=identity:return
+            profile = self.workspace.find_profile(host_id, identity)
+            if not profile or not profile.get('sessions'):
+                return
             sessions=profile['sessions'][:]
             states=tmux_response(*await self.ssh.run(host,tmux_command('status',ids=[s['id'] for s in sessions])))
             for item in states:
@@ -177,7 +186,9 @@ class TerminalManager:
 
     async def open_channel(self,host,cols,rows,cwd=None,command=None,config=None):
         command=command if command is not None else directory_command(cwd) if cwd is not None else None
-        conn=self.ssh.sessions.get(host['id'])
+        if restore := getattr(self.ssh, 'restore_session', None):
+            await restore(host)
+        conn=self.ssh.sessions.get(ssh_account_key(host))
         if conn and not conn.is_closed():
             current=config or await self.ssh.effective(host)
             original=self.ssh.connection_configs.get(conn)
@@ -365,15 +376,16 @@ def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
         from .cluster_terminals import register_cluster_terminal_routes
         register_cluster_terminal_routes(app,hosts,ssh,workspace,sudo)
 
-    async def resolve(host_id):
+    async def resolve(host_id, account_id=None):
         host=next((h for h in hosts if h['id']==host_id),None)
         if host is None:raise HTTPException(404,'找不到机器')
+        host = resolve_ssh_account(host, account_id)
         identity=sudo.identity(await ssh.effective(host))
         return host,identity
 
     @app.get('/api/hosts/{host_id}/terminal-workspace')
-    async def get_workspace(host_id:str):
-        host,identity=await resolve(host_id)
+    async def get_workspace(host_id:str, ssh_account_id: str | None = None):
+        host,identity=await resolve(host_id, ssh_account_id)
         from fastapi.responses import JSONResponse
         return JSONResponse(workspace.view(host_id,identity),headers={'Cache-Control':'no-store'})
 
@@ -401,8 +413,8 @@ def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
         return {'host_id': host_id, 'cleared': count}
 
     @app.post('/api/hosts/{host_id}/terminal-sessions')
-    async def create_session(host_id:str,request:Request):
-        host,identity=await resolve(host_id);body=await request.json()
+    async def create_session(host_id:str,request:Request, ssh_account_id: str | None = None):
+        host,identity=await resolve(host_id, ssh_account_id);body=await request.json()
         if not isinstance(body,dict):raise HTTPException(400,'会话设置无效')
         profile=workspace.profile(host_id,identity)
         if len(profile['sessions'])>=12:raise HTTPException(400,'每台机器最多保留 12 个持久会话，请先结束不用的会话')
@@ -416,8 +428,8 @@ def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
         return dict(id=session['id'],created=session['created'])
 
     @app.delete('/api/hosts/{host_id}/terminal-sessions/{session_id}')
-    async def end_session(host_id:str,session_id:str):
-        host,identity=await resolve(host_id);profile=workspace.profile(host_id,identity)
+    async def end_session(host_id:str,session_id:str, ssh_account_id: str | None = None):
+        host,identity=await resolve(host_id, ssh_account_id);profile=workspace.profile(host_id,identity)
         session=next((s for s in profile['sessions'] if s['id']==session_id),None)
         if not session:raise HTTPException(404,'找不到持久会话')
         try:tmux_response(*await ssh.run(host,tmux_command('end',session=session)))
@@ -426,10 +438,13 @@ def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
         return dict(ok=True)
 
     @app.post('/api/hosts/{host_id}/terminal-ticket')
-    async def ticket(host_id:str,request:Request):
-        if not any(host['id']==host_id for host in hosts): raise HTTPException(404,'找不到机器')
+    async def ticket(host_id:str,request:Request, ssh_account_id: str | None = None):
+        host = next((item for item in hosts if item['id'] == host_id), None)
+        if host is None:
+            raise HTTPException(404,'找不到机器')
+        host = resolve_ssh_account(host, ssh_account_id)
         try:
-            token=manager.tickets.issue(host_id,str(request.base_url).rstrip('/'))
+            token=manager.tickets.issue(host_id,str(request.base_url).rstrip('/'),default_account_id(host))
         except ValueError as exc:
             raise HTTPException(429,str(exc)) from None
         from fastapi.responses import JSONResponse
@@ -442,8 +457,16 @@ def register_terminal_routes(app,hosts,ssh,store=None,sudo=None):
         expected=scheme+'://'+websocket.headers.get('host','')
         protocols=websocket.scope.get('subprotocols',[])
         host=next((h for h in hosts if h['id']==host_id),None)
-        if (not host or origin!=expected or len(protocols)!=2 or protocols[0]!='iwb-terminal'
-                or not manager.tickets.consume(protocols[1],host_id,origin)):
+        if not host or origin!=expected or len(protocols)!=2 or protocols[0]!='iwb-terminal':
+            await websocket.close(code=1008)
+            return
+        ticket = manager.tickets.take(protocols[1], host_id, origin)
+        if ticket is None:
+            await websocket.close(code=1008)
+            return
+        try:
+            host = resolve_ssh_account(host, ticket[3])
+        except HTTPException:
             await websocket.close(code=1008)
             return
         if len(manager.active)>=12 or sum(v['host_id']==host_id for v in manager.active.values())>=4:

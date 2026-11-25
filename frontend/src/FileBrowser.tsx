@@ -3,7 +3,7 @@ import {capacityError,formatBytes} from './internalPolicy';
 import {useLocale,dateLocale} from './i18n';
 import {toolText as tt} from './toolI18n';
 import {browserId} from './browserId';
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowUp,Upload,Search,Terminal,ClipboardPaste,Copy,Scissors,FilePlus,FolderPlus,MoreHorizontal,ChevronDown,ChevronRight,Download,File,Folder,FolderOpen,Home,LoaderCircle,RefreshCw,Minus,PanelTopOpen,Maximize2,Minimize2,X} from 'lucide-react';
 import {listDirectory,fileOperation,searchFiles,type DirectoryPage,type RemoteEntry} from './files';
 import {downloadOriginalLog} from './logDownload';
@@ -14,13 +14,14 @@ import {folderFromFiles,readFolder,folderPayload,type FolderHandle,type FolderSe
 import {FileActionDialog,type FileAction} from './FileActionDialog';
 import {fitFileWindow,moveFileWindow,resizeFileWindow,type WindowFrame} from './fileWindow';
 import {activateFloatingWindow,registerFloatingWindow} from './windowLayers';
+import {pinSSHLogin, sshAccountFetch, sshWindowLabel, type SSHLoginHost} from './sshLogins';
 
-type Host={id:string;target:string};
+type Host=SSHLoginHost;
 const parentDirectory=(path:string)=>path.slice(0,path.lastIndexOf('/'))||'/';
 const size=(n:number|null)=>n==null?'—':n<1024?n+' B':n<1024**2?(n/1024).toFixed(1)+' KiB':n<1024**3?(n/1024**2).toFixed(1)+' MiB':(n/1024**3).toFixed(1)+' GiB';
-export function FileBrowser({host,hosts,close,requestId=host.id,initialPath,onTerminal}:{host:Host;hosts:Host[];close:()=>void;requestId?:string;initialPath?:string;onTerminal?:(hostId:string,path:string)=>void}){
+export function FileBrowser({host,hosts,close,requestId=host.id,initialPath,onTerminal}:{host:Host;hosts:Host[];close:()=>void;requestId?:string;initialPath?:string;onTerminal?:(hostId:string,path:string,accountId?:string)=>void}){
   useLocale();
-  const [selected,setSelected]=useState(host.id);
+  const [current,setCurrent]=useState(()=>pinSSHLogin(host));
   const [navigation,setNavigation]=useState({host:host.id,id:requestId,path:initialPath??'~'});
   const [locked,setLocked]=useState(false);
   const [minimized,setMinimized]=useState(false);
@@ -48,19 +49,22 @@ export function FileBrowser({host,hosts,close,requestId=host.id,initialPath,onTe
   useEffect(()=>{
     if(handledRequest.current===requestId||locked)return;
     handledRequest.current=requestId;
-    if(host.id!==selected||initialPath)leave(()=>{setSelected(host.id);setNavigation({host:host.id,id:requestId,path:initialPath??'~'});setMinimized(false)});
+    const login = pinSSHLogin(host);
+    if(login.id!==current.id||login.ssh_account_id!==current.ssh_account_id||initialPath)leave(()=>{
+      setCurrent(login);setNavigation({host:host.id,id:requestId,path:initialPath??'~'});setMinimized(false);
+    });
     else setMinimized(false);
   },[requestId,locked]);
-  const current=hosts.find(item=>item.id===selected)||host;
   const dimensions=minimized?{left:frame.x,top:frame.y,width:'min(320px, calc(100vw - 16px))',height:56}:maximized?{left:8,top:8,width:window.innerWidth-16,height:window.innerHeight-16}:{left:frame.x,top:frame.y,width:frame.width,height:frame.height};
   return <div className="file-workspace" data-floating-window="files" ref={registerFloatingWindow} onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow}><section role="dialog" aria-modal="false" aria-labelledby="file-title" className={'file-browser floating '+(minimized?'minimized':'')} style={dimensions} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}>
-    <header className="file-header" onPointerDown={event=>startGesture(event,'move')}><div tabIndex={0} aria-label={tt("移动文件窗口，方向键调整位置")} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>moveFileWindow(old,...offset,viewport(),minimized))}}}><h2 id="file-title"><FolderOpen size={19}/>{tt("服务器文件")}{minimized&&<small>{current.target}</small>}</h2>{!minimized&&<p>{tt("拖动标题栏移动；四边或四角缩放，点击窗口切换前后。")}</p>}</div>{!minimized&&<select aria-label={tt("文件浏览目标机器")} value={current.id} disabled={locked} onChange={e=>leave(()=>setSelected(e.target.value))}>{hosts.map(item=><option key={item.id} value={item.id}>{item.target}</option>)}</select>}<button data-window-action="minimize" className="icon-button" aria-label={minimized?tt("恢复文件窗口"):tt("最小化文件窗口")} title={minimized?tt("恢复文件窗口"):tt("最小化（保留目录和编辑状态）")} onClick={toggleMinimized}>{minimized?<PanelTopOpen size={18}/>:<Minus size={18}/>}</button>{!minimized&&<button data-window-action="maximize" className="icon-button" aria-label={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} title={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} onClick={()=>setMaximized(!maximized)}>{maximized?<Minimize2 size={17}/>:<Maximize2 size={17}/>}</button>}<button className="icon-button" aria-label={tt("关闭文件浏览")} title={tt("关闭文件窗口")} disabled={locked} onClick={()=>leave(close)}><X size={20}/></button></header>
-    <div className="file-window-body" hidden={minimized}><BrowserBody key={current.id} host={current} onTerminal={path=>onTerminal?.(current.id,path)} navigation={navigation.host===current.id?navigation:undefined} onBusy={setLocked} editorClose={editorClose}/></div>
+    <header className="file-header" onPointerDown={event=>startGesture(event,'move')}><div tabIndex={0} aria-label={tt("移动文件窗口，方向键调整位置")} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>moveFileWindow(old,...offset,viewport(),minimized))}}}><h2 id="file-title"><FolderOpen size={19}/>{tt("服务器文件")}{minimized&&<small>{sshWindowLabel(current)}</small>}</h2>{!minimized&&<p>{sshWindowLabel(current)}</p>}</div>{!minimized&&<select aria-label={tt("文件浏览目标机器")} value={current.id} disabled={locked} onChange={e=>{const next=hosts.find(item=>item.id===e.target.value);if(next)leave(()=>{setCurrent(pinSSHLogin(next));setNavigation({host:next.id,id:browserId(),path:'~'})})}}>{hosts.map(item=><option key={item.id} value={item.id}>{item.target}</option>)}</select>}<button data-window-action="minimize" className="icon-button" aria-label={minimized?tt("恢复文件窗口"):tt("最小化文件窗口")} title={minimized?tt("恢复文件窗口"):tt("最小化（保留目录和编辑状态）")} onClick={toggleMinimized}>{minimized?<PanelTopOpen size={18}/>:<Minus size={18}/>}</button>{!minimized&&<button data-window-action="maximize" className="icon-button" aria-label={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} title={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} onClick={()=>setMaximized(!maximized)}>{maximized?<Minimize2 size={17}/>:<Maximize2 size={17}/>}</button>}<button className="icon-button" aria-label={tt("关闭文件浏览")} title={tt("关闭文件窗口")} disabled={locked} onClick={()=>leave(close)}><X size={20}/></button></header>
+    <div className="file-window-body" hidden={minimized}><BrowserBody key={current.id+'/'+(current.ssh_account_id??'')} host={current} onTerminal={path=>onTerminal?.(current.id,path,current.ssh_account_id)} navigation={navigation.host===current.id?navigation:undefined} onBusy={setLocked} editorClose={editorClose}/></div>
     {!minimized&&!maximized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'file-edge-resize edge-'+edge+(edge==='se'?' file-window-resize':'')} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?tt("调整文件窗口大小"):undefined} tabIndex={edge==='se'?0:undefined} onPointerDown={event=>startGesture(event,edge)} onKeyDown={event=>{const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>resizeFileWindow(old,'se',...offset,viewport()))}}}/>)}
   </section></div>;
 }
 function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;onTerminal?:(path:string)=>void;onBusy:(busy:boolean)=>void;editorClose:React.RefObject<((after?:()=>void)=>void)|null>;navigation?:{id:string;path:string}}){
   useLocale();
+  const fetchForAccount=useMemo(()=>sshAccountFetch(host.ssh_account_id),[host.ssh_account_id]);
   const [root,setRoot]=useState<DirectoryPage|null>(null),[path,setPath]=useState('~');
   const [pages,setPages]=useState<Record<string,DirectoryPage>>({}),[opened,setOpened]=useState<Set<string>>(new Set());
   const [loading,setLoading]=useState<Set<string>>(new Set()),[errors,setErrors]=useState<Record<string,string>>({});
@@ -81,7 +85,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
   const mounted=useRef(true),epoch=useRef(0),menuRef=useRef<HTMLDivElement>(null),downloadRequest=useRef<AbortController|null>(null);
   const openRoot=async(value:string)=>{
     const request=++epoch.current;setLoading(new Set(['root']));setError('');setMenu(null);setSearchResult(null);setQuery('');
-    try{const data=await listDirectory(host.id,value);if(mounted.current&&request===epoch.current){setRoot(data);setSelected(null);setPath(data.path);setPages({[data.path]:data});setOpened(new Set([data.path]));setErrors({})}}
+    try{const data=await listDirectory(host.id,value,0,fetchForAccount);if(mounted.current&&request===epoch.current){setRoot(data);setSelected(null);setPath(data.path);setPages({[data.path]:data});setOpened(new Set([data.path]));setErrors({})}}
     catch(e){if(mounted.current&&request===epoch.current)setError(e instanceof Error?e.message:String(e))}
     finally{if(mounted.current&&request===epoch.current)setLoading(new Set())}
   };
@@ -97,7 +101,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
   const load=async(directory:string,offset=0)=>{
     if(loading.has(directory))return;const request=epoch.current;
     setLoading(old=>new Set(old).add(directory));setErrors(old=>({...old,[directory]:''}));
-    try{const data=await listDirectory(host.id,directory,offset);if(!mounted.current||request!==epoch.current)return;
+    try{const data=await listDirectory(host.id,directory,offset,fetchForAccount);if(!mounted.current||request!==epoch.current)return;
       setPages(old=>({...old,[directory]:{...data,entries:offset?[...new Map([...(old[directory]?.entries||[]),...data.entries].map(item=>[item.path,item])).values()]:data.entries}}));
     }catch(e){if(mounted.current&&request===epoch.current)setErrors(old=>({...old,[directory]:e instanceof Error?e.message:String(e)}))}
     finally{if(mounted.current&&request===epoch.current)setLoading(old=>{const next=new Set(old);next.delete(directory);return next})}
@@ -111,7 +115,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
     const cancelRemote=()=>{if(features.progress)void fetch('/api/files/downloads/'+id,{method:'DELETE',headers:{'X-IWB':'1'}}).catch(()=>{})};
     controller.signal.addEventListener('abort',cancelRemote,{once:true});
     if(features.progress)void watchDownload(id,watcher.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer(old=>old?.id===id&&old.stage!=='download_browser'?{id,direction:'download',name:entry.name,...value,stage:entry.kind==='directory'&&value.total===null?'packing':value.stage}:old)}).catch(()=>{});
-    try{const data=await downloadOriginalLog({host_id:host.id,path:entry.path,...(features.progress?{transfer_id:id}:{})},fetch,entry.kind==='directory'?'/api/files/download-folder':'/api/files/download',controller.signal,
+    try{const data=await downloadOriginalLog({host_id:host.id,path:entry.path,...(features.progress?{transfer_id:id}:{})},fetchForAccount,entry.kind==='directory'?'/api/files/download-folder':'/api/files/download',controller.signal,
         (loaded,total)=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'download',name:entry.name,stage:'download_browser',loaded,total})});
       if(!mounted.current)return;
       const url=URL.createObjectURL(data.blob),link=document.createElement('a');link.href=url;link.download=data.filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
@@ -126,7 +130,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
       for(let index=0;index<files.length;index++){
         if(controller.signal.aborted)throw new DOMException(tt("上传已取消"),'AbortError');
         const file=files[index],id=browserId(),name=(files.length>1?'['+(index+1)+'/'+files.length+'] ':'')+file.name;
-        await uploadFile(host.id,directory,file,controller.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'upload',name,...value})});
+        await uploadFile(host.id,directory,file,controller.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'upload',name,...value})},fetchForAccount);
       }
       if(mounted.current){setMessage(tt("已上传 ")+files.length+tt(" 个文件到 ")+directory);if(directoryRef.current===directory)await openRoot(directory)}
     }catch(e){if(mounted.current){setTransfer(null);if(controller.signal.aborted)setMessage(tt("已请求取消上传，请刷新目标目录确认结果"));else setError(e instanceof Error?e.message:String(e))}}
@@ -140,7 +144,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
       const selection=await pick(controller.signal);
       if(controller.signal.aborted||!mounted.current)throw new DOMException(tt("上传已取消"),'AbortError');
       const body=folderPayload(selection),name=selection.name+'（'+selection.files.length+tt(" 个文件）");
-      await uploadPayload(host.id,directory,selection.name,body,'folder',controller.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'upload',name,...value})});
+      await uploadPayload(host.id,directory,selection.name,body,'folder',controller.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'upload',name,...value})},fetchForAccount);
       if(mounted.current){setMessage(tt("已上传文件夹 ")+selection.name+'：'+selection.files.length+tt(" 个文件")+(selection.preservesEmpty?tt("，包含空目录"):tt("；兼容选择器不包含空目录")));if(directoryRef.current===directory)await openRoot(directory)}
     }catch(e){if(mounted.current){setTransfer(null);if(controller.signal.aborted||(e instanceof DOMException&&e.name==='AbortError'))setMessage(tt("已取消文件夹上传；若刚好完成，请刷新目标目录确认"));else setError(e instanceof Error?e.message:String(e))}}
     finally{if(uploadRequest.current===controller)uploadRequest.current=null}
@@ -157,7 +161,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
   const search=async()=>{
     if(!currentDirectory)return;if(!query.trim()){await openRoot(currentDirectory);return}
     const request=++epoch.current;setLoading(new Set(['root']));setError('');setMenu(null);
-    try{const data=await searchFiles(host.id,currentDirectory,query,recursive,realtime);if(mounted.current&&request===epoch.current){setRoot(data);setSelected(null);setPath(data.path);setSearchResult(data);setPages({[data.path]:data});setOpened(new Set([data.path]));setErrors({})}}
+    try{const data=await searchFiles(host.id,currentDirectory,query,recursive,realtime,fetchForAccount);if(mounted.current&&request===epoch.current){setRoot(data);setSelected(null);setPath(data.path);setSearchResult(data);setPages({[data.path]:data});setOpened(new Set([data.path]));setErrors({})}}
     catch(e){if(mounted.current&&request===epoch.current)setError(e instanceof Error?e.message:String(e))}
     finally{if(mounted.current&&request===epoch.current)setLoading(new Set())}
   };
@@ -169,7 +173,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
   const perform=async(destination:string)=>{
     if(!action)return;setOperationBusy(true);setError('');
     try{const command=action.op==='create'||action.op==='mkdir'?{op:action.op,path:destination}:{op:action.op==='rename'?'move' as const:action.op,path:action.source!.path,destination};
-      await fileOperation(host.id,command);setMessage(tt("操作完成：")+destination);if(action.op==='move')setClipboard(null);setSelected(null);
+      await fileOperation(host.id,command,fetchForAccount);setMessage(tt("操作完成：")+destination);if(action.op==='move')setClipboard(null);setSelected(null);
       const refreshDirectory=action.source?.kind==='directory'&&(action.op==='move'||action.op==='rename')&&currentDirectory===action.source.path?parentDirectory(action.source.path):currentDirectory;
       if(refreshDirectory)await openRoot(refreshDirectory);if(action.op==='create')switchEditor(destination);
     }finally{setOperationBusy(false)}
@@ -214,7 +218,7 @@ function BrowserBody({host,onBusy,editorClose,navigation,onTerminal}:{host:Host;
       <button role="menuitem" onClick={()=>copyPath(menu.entry)}>{tt("复制路径")}</button>
     </div>}
     {action&&<FileActionDialog action={action} close={()=>setAction(null)} submit={perform}/>}
-    {editor&&<FileEditor key={editor} host={host.id} path={editor} close={()=>setEditor(null)} saved={()=>{if(root)void load(root.path)}} changed={()=>{}} busyChanged={setEditorBusy} closeRequest={editorClose}/>}
+    {editor&&<FileEditor key={editor} host={host.id} fetcher={fetchForAccount} path={editor} close={()=>setEditor(null)} saved={()=>{if(root)void load(root.path)}} changed={()=>{}} busyChanged={setEditorBusy} closeRequest={editorClose}/>}
 
   </>;
 }

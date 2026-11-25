@@ -2,6 +2,7 @@ import * as terminalImages from '../src/terminalImages.ts';
 import * as terminalArchives from '../src/terminalArchives.ts';
 import * as terminalHighlights from '../src/terminalHighlights.ts';
 import * as terminalContext from '../src/terminalContext.ts';
+import * as sshLogins from '../src/sshLogins.ts';
 import {i18nMock} from './i18n-mock.mjs';
 import * as toolTranslations from '../src/toolI18n.ts';
 import {workspaceMock} from './workspace-mock.mjs';
@@ -77,6 +78,7 @@ function harness(t,{tabs=null,initialStates={}}={}){
     if(name==='./SafeImageAddon')return {SafeImageAddon:class {dispose(){}}};
     if(name==='./TerminalImageSettings')return ()=>null;
     if(name==='./terminalContext')return terminalContext;
+    if(name==='./sshLogins')return sshLogins;
     if(name==='./toolI18n'||name==='./toolI18n.ts')return toolTranslations;
     const translation=i18nMock(name);if(translation)return translation;
     const mock=workspaceMock(name,react);if(mock)return mock;
