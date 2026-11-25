@@ -8,6 +8,7 @@ import uuid
 import sqlite3
 from collections import defaultdict
 from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
 from itertools import pairwise
 from pathlib import Path
@@ -221,6 +222,39 @@ class ResourceStats:
         if len(host_ids)>100: raise ValueError('最多查询100台机器')
         with self._reader() as db:
             return {host_id for host_id in host_ids if db.execute('SELECT 1 FROM resource_observations WHERE host_id=? LIMIT 1',(host_id,)).fetchone()}
+
+    def has_two_sample_dates(self, host_ids, zone, now=None):
+        now = time.time() if now is None else now
+        cutoff = now - RETENTION_SECONDS
+        first_date = None
+        # Use actual evidence: a compressed observation can span midnight without
+        # a sample on the next day, or contain independent samples on both days.
+        sample_query = """
+            SELECT e.observed_at
+            FROM resource_observation_evidence AS e
+            JOIN resource_observations AS o ON o.id=e.observation_id
+            WHERE e.host_id=? AND e.observed_at>=? AND e.observed_at<=?
+              AND o.status='online' AND o.devices<>'[]' AND e.fresh_until>e.observed_at
+              AND NOT EXISTS (
+                SELECT 1 FROM resource_clock_gaps AS g
+                WHERE g.host_id=e.host_id AND g.start<=e.observed_at AND g.end>e.observed_at
+              )
+        """
+        with self._reader() as db:
+            for host_id in host_ids:
+                params = (host_id, cutoff, now)
+                first = db.execute(sample_query + ' ORDER BY e.observed_at LIMIT 1', params).fetchone()
+                if first is None:
+                    continue
+                day = datetime.fromtimestamp(first[0], zone).date()
+                if first_date is None:
+                    first_date = day
+                elif day != first_date:
+                    return True
+                last = db.execute(sample_query + ' ORDER BY e.observed_at DESC LIMIT 1', params).fetchone()
+                if last is not None and datetime.fromtimestamp(last[0], zone).date() != first_date:
+                    return True
+        return False
 
     def query(self, host_ids, start, end, kind='GPU', timezone='UTC', now=None):
         now = time.time() if now is None else float(now)

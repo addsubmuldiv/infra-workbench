@@ -1,0 +1,62 @@
+.github-star-prompt {
+  position: relative;
+  width: min(352px, calc(100% - 32px));
+  margin-block-start: 12px;
+  margin-inline: auto 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.github-star-prompt h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline-end: 28px;
+  font-size: 14px;
+}
+
+.github-star-prompt h2 svg {
+  flex: none;
+  color: var(--amber);
+}
+
+.github-star-prompt p {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.github-star-prompt .github-star-close {
+  position: absolute;
+  inset-block-start: 7px;
+  inset-inline-end: 7px;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.github-star-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.github-star-actions .primary {
+  text-decoration: none;
+}
+
+.github-star-actions .text-button {
+  min-height: 28px;
+  padding-inline: 6px;
+  font-size: 12px;
+}
+
+.github-star-actions a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

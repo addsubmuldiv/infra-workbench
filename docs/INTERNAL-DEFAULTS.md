@@ -66,6 +66,8 @@ HTTP、内置助手、外部 MCP 复用原服务校验；前端只是提前提�
 | `ui.import_poll_ms` | 1000 |
 | `ui.import_retry_ms` | 2500 |
 | `ui.notice_duration_ms` | 7000 |
+| `ui.github_star_idle_ms` | 30000 |
+| `ui.github_star_history_poll_ms` | 300000 |
 | `ui.render_coalesce_ms` | 100 |
 
 资源新鲜度、预约判断、更新器退出/恢复、跨平台启动链、布局与协议常量保留在原模块。整改设计见 [实施方案](superpowers/plans/2026-11-05-internal-defaults.md)。

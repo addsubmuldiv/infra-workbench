@@ -118,6 +118,10 @@
     "import_retry_ms": 2500,
     // 主界面短提示显示时间，单位：毫秒。
     "notice_duration_ms": 7000,
+    // 加星提示显示前，前台必须连续无操作的时间，单位：毫秒。
+    "github_star_idle_ms": 30000,
+    // 未达到加星提示门槛时，重新检查资源历史的间隔，单位：毫秒。
+    "github_star_history_poll_ms": 300000,
     // 高频渲染更新合并延迟，单位：毫秒；不改变采样频率。
     "render_coalesce_ms": 100
   }

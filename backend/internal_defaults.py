@@ -83,6 +83,10 @@ TRANSFERS_IDLE_EXPIRY_SECONDS = 600
 TRANSFERS_MAX_JOBS = 32
 # 上传发送与远端验证阶段预算，单位：秒。
 TRANSFERS_SEND_TIMEOUT_SECONDS = 600
+# 未达到加星提示门槛时，重新检查资源历史的间隔，单位：毫秒。
+UI_GITHUB_STAR_HISTORY_POLL_MS = 300000
+# 加星提示显示前，前台必须连续无操作的时间，单位：毫秒。
+UI_GITHUB_STAR_IDLE_MS = 30000
 # 导入任务正常状态查询间隔，单位：毫秒。
 UI_IMPORT_POLL_MS = 1000
 # 导入任务查询异常后的重试间隔，单位：毫秒。

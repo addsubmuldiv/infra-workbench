@@ -33,6 +33,23 @@ def history_time_range(args, zone, now=None):
 
 
 def register_resource_history_routes(app, service, hosts):
+    def current_hosts():
+        current = hosts() if callable(hosts) else hosts
+        return list(current.values() if isinstance(current, dict) else current)
+
+    @app.get('/api/resource-history/availability')
+    async def resource_history_availability(timezone: str = 'UTC'):
+        try:
+            zone = ZoneInfo(timezone)
+        except (ValueError, ZoneInfoNotFoundError):
+            raise HTTPException(400, '无效的资源历史时区') from None
+        try:
+            host_ids = [host['id'] for host in current_hosts()]
+            has_two_days = await asyncio.to_thread(service.has_two_sample_dates, host_ids, zone)
+        except (sqlite3.Error, ValueError):
+            raise HTTPException(503, '资源历史数据库暂时无法读取') from None
+        return JSONResponse({'has_two_days': has_two_days}, headers={'Cache-Control': 'no-store'})
+
     @app.get('/api/resource-history')
     async def resource_history(request: Request):
         args=request.query_params
@@ -54,9 +71,7 @@ def register_resource_history_routes(app, service, hosts):
                         return parsed.timestamp()
                 start,end=timestamp(args['from']),timestamp(args['to'])
             ids=list(dict.fromkeys(x for x in args.get('host_ids','').split(',') if x))
-            current=hosts() if callable(hosts) else hosts
-            if isinstance(current,dict): current=current.values()
-            current=list(current)
+            current=current_hosts()
             available={h['id'] for h in current}
             # Archived hosts remain available through their durable sample identity.
             archived=await asyncio.to_thread(service.archived_host_ids,ids)

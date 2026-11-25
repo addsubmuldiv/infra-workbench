@@ -18,6 +18,7 @@ import {LanguageSettings} from './LanguageSettings';
 import {DesktopUpdateNotification} from './DesktopUpdatePanel';
 import {DemoGuide} from './DemoGuide';
 import {FirstRunGuide} from './FirstRunGuide';
+import {GitHubStarPrompt} from './GitHubStarPrompt';
 import {DemoTerminal} from './DemoPanels';
 import {ui,themeText} from './mainI18n';
 import {t as tr,useLocale,initializeLocale,dateLocale} from './i18n';
@@ -456,6 +457,7 @@ function App(){
       <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title={ui("机器选择保存在本机后台，其他窗口会同步更新。通过 SSH 连接远端机器，无需远端常驻 Agent。")}><i aria-hidden="true"/>{isDemo?tr("演示数据","Demo data"):ui("本地服务")}{error?ui("未连接"):ui("已连接")}</div></div>
     </aside>
     <main onClick={clearDeviceSelection}><DesktopUpdateNotification openSettings={()=>navigate('settings')}/>{workspaceError&&<div role="alert" className="assistant-error">{ui("工作空间状态同步失败，正在重试；未保存时请勿关闭页面。")}</div>}{!desktopTitlebar&&header}
+    {!isDemo&&page==='overview'&&state.hosts.length>0&&!notice&&(!assistantOpen||assistantWidth>0)&&<GitHubStarPrompt key={state.hosts.map(host=>host.id).join(',')}/>}
     {preferences.theme==='frieren'&&<JourneyArt/>}
     <div className="content" data-tour-panel={page==='settings'?'settings':undefined}><div className="page-heading" hidden={page==='history'}><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='history'?'RESOURCE HISTORY':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':page==='assistant'?'AI ASSISTANT':'OVERVIEW'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?ui("跨机器读取训练日志，自动提取指标并按真实步数对齐。"):page==='history'?tr("查看各时段空闲设备和机器数量，未知数据单独标记。","View idle devices and machines over time, with missing data shown separately."):page==='reservations'?tr("单台、指定多台或集群任意几台连续空闲后提醒。","Receive an alert when a machine or group stays available."):page==='settings'?ui("管理模型接口、外部 Agent 接入和邮件通知。"):page==='assistant'?ui("查找多台机器上的任务与会话，了解资源发生了哪些变化。"):tr(`全部 ${state.hosts.length} 台机器的资源概况 · 左侧勾选用于查看详情和批量删除`,`Resources across ${state.hosts.length} machines · Select in the sidebar for details or removal`)}</p></div><div className="page-heading-actions"><TunnelManagerButton hosts={state.hosts} disabled={isDemo}/><button className="primary" onClick={()=>isDemo?setNotice(tr("演示模式不接入真实机器或凭据，请退出演示后配置。","The demo does not accept real machines or credentials. Exit demo to configure them.")):setAdding(true)}><Plus size={17}/>{ui("添加机器")}</button><button className="secondary machine-delete-action" aria-label={ui("删除机器")} title={scope.length?tr(`删除选中的 ${scope.length} 台机器`,`Delete ${scope.length} selected machines`):ui("请先在左侧勾选机器")} disabled={scope.length===0} onClick={()=>setRemovalHosts([...scope])}><Trash2 size={15}/>{ui("删除机器")}{scope.length>0&&<span className="machine-delete-count">{scope.length}</span>}</button></div></div>
     <details data-tour="hosts" className="mobile-hosts" ref={mobileHosts}><summary><Server size={15}/>{ui("选择机器 · ")}{scope.length} / {state.hosts.length}</summary>{hostList}</details>

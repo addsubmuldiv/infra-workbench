@@ -70,7 +70,7 @@ GROUPS = {
     'workspace': group(
         'test_workspace_state test_interface_language',
         'workspace-state preferences browser-id navigation settings-navigation sidebar-layout '
-        'window-layers assistant-window app-confirm locale first-run-guide demo-runtime demo-workspace'),
+        'window-layers assistant-window app-confirm locale first-run-guide github-star-prompt demo-runtime demo-workspace'),
     'desktop': group(
         'test_desktop test_desktop_macos test_desktop_runtime test_desktop_startup test_desktop_update '
         'test_launcher test_quick_window test_floating_monitor test_floating_position '

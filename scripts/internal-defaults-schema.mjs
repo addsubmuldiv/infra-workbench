@@ -307,6 +307,18 @@ export const SCHEMA = {
       "frontend": true,
       "description": "主界面短提示显示时间，单位：毫秒。"
     },
+    "github_star_idle_ms": {
+      "min": 1000,
+      "max": 600000,
+      "frontend": true,
+      "description": "加星提示显示前，前台必须连续无操作的时间，单位：毫秒。"
+    },
+    "github_star_history_poll_ms": {
+      "min": 60000,
+      "max": 3600000,
+      "frontend": true,
+      "description": "未达到加星提示门槛时，重新检查资源历史的间隔，单位：毫秒。"
+    },
     "render_coalesce_ms": {
       "min": 1,
       "max": 60000,

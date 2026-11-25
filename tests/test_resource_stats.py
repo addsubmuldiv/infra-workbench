@@ -10,6 +10,52 @@ def device(id='0', **kw):
     return dict(id=id,kind='GPU',uuid=id,utilization=0,processes_known=True,processes=[],health='unknown',memory_free=0,**kw)
 
 
+def test_history_availability_counts_actual_samples_on_distinct_local_dates(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from backend.resource_stats import RETENTION_SECONDS
+
+    stats = ResourceStats(Store(tmp_path/'stats.db'))
+    host = {'id': 'a'}
+    zone = ZoneInfo('Asia/Hong_Kong')
+    midnight = datetime(2026, 11, 25, tzinfo=zone).timestamp()
+    stats.observe(host, sample(device()), now=midnight-10)
+    assert not stats.has_two_sample_dates(['a'], zone, now=midnight+5)
+
+    # Identical consecutive samples share one observation but have separate evidence.
+    stats.observe(host, sample(device()), now=midnight+10)
+    assert stats.store.db.execute('SELECT COUNT(*) FROM resource_observations').fetchone()[0] == 1
+    assert stats.has_two_sample_dates(['a'], zone, now=midnight+15)
+    assert not stats.has_two_sample_dates(['a'], ZoneInfo('UTC'), now=midnight+15)
+    assert not stats.has_two_sample_dates(['a'], zone, now=midnight+RETENTION_SECONDS)
+
+
+def test_history_availability_route_ignores_failed_and_removed_host_records(tmp_path):
+    import time
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.resource_stats_routes import register_resource_history_routes
+
+    stats = ResourceStats(Store(tmp_path/'stats.db'))
+    host = {'id': 'a'}
+    now = time.time()
+    stats.observe(host, sample(device()), now=now-86410)
+    stats.observe(host, {'status': 'error'}, now=now-9)
+    stats.observe(host, sample(), now=now-8)
+    stats.observe(host, sample(device()), now=now-7, collection_started_at=now-60)
+    stats.observe({'id': 'removed'}, sample(device()), now=now-6)
+    app = FastAPI()
+    register_resource_history_routes(app, stats, [host])
+    client = TestClient(app)
+    url = '/api/resource-history/availability'
+    response = client.get(url, params={'timezone': 'UTC'})
+    assert response.status_code == 200
+    assert response.json() == {'has_two_days': False}
+    assert client.get(url, params={'timezone': 'bad/zone'}).status_code == 400
+    stats.observe(host, sample(device()), now=now-5)
+    assert client.get(url, params={'timezone': 'UTC'}).json() == {'has_two_days': True}
+
+
 def test_expiry_failure_and_time_weighting(tmp_path):
     stats = ResourceStats(Store(tmp_path/'stats.db'))
     stats.observe({'id':'a'}, sample(device()), now=100, collection_started_at=90)

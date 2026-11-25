@@ -45,6 +45,10 @@ export const SKILLS_MAX_FILES = 128;
 export const SKILLS_TOTAL_MAX_BYTES = 8388608;
 // 导入技能包大小上限，单位：字节。
 export const SKILLS_UPLOAD_MAX_BYTES = 2097152;
+// 未达到加星提示门槛时，重新检查资源历史的间隔，单位：毫秒。
+export const UI_GITHUB_STAR_HISTORY_POLL_MS = 300000;
+// 加星提示显示前，前台必须连续无操作的时间，单位：毫秒。
+export const UI_GITHUB_STAR_IDLE_MS = 30000;
 // 导入任务正常状态查询间隔，单位：毫秒。
 export const UI_IMPORT_POLL_MS = 1000;
 // 导入任务查询异常后的重试间隔，单位：毫秒。
