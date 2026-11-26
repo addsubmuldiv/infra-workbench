@@ -8,7 +8,7 @@ import sys
 import pytest
 from httpx import ASGITransport,AsyncClient
 
-from backend.probes.folder_upload_probe import receive,publish_directory
+from backend.probes.folder_upload_probe import receive,publish_directory,validate_manifest
 from backend.app import create_app
 
 
@@ -16,6 +16,15 @@ def bundle(files=None,directories=None):
     files=files or []
     manifest=dict(version=1,files=[dict(path=path,size=len(raw)) for path,raw in files],directories=directories or [])
     return b'IWB_FOLDER:1\n'+json.dumps(manifest,ensure_ascii=True).encode()+b'\n'+b''.join(raw for _,raw in files)
+
+
+def test_upload_accepts_more_than_10000_entries_and_a_manifest_over_one_mib(tmp_path):
+    directories=[f'{index:05d}-'+('d'*100) for index in range(10001)]
+    assert len(validate_manifest(dict(version=1,files=[],directories=directories))[1])==len(directories)
+    raw=bundle(directories=directories)
+    assert len(raw)>1024**2
+    result=receive(request(tmp_path,raw))
+    assert result['directories']==len(directories)
 
 
 def request(parent,raw,**updates):
@@ -93,12 +102,11 @@ def test_folder_upload_api_uses_existing_progress_and_cancel_transport(tmp_path)
     asyncio.run(scenario())
 
 
-def test_cancelled_stream_cleans_staging_and_limits_are_checked(tmp_path):
+def test_cancelled_stream_cleans_staging_and_invalid_manifests_are_rejected(tmp_path):
     raw=bundle([('nested/a',b'x'*200000)])
     with pytest.raises(ValueError):receive(request(tmp_path,raw[:-100],size=len(raw),sha256=hashlib.sha256(raw).hexdigest()))
     assert list(tmp_path.iterdir())==[]
     for manifest in [dict(version=1,files=[dict(path='a',size=512*1024*1024+1)],directories=[]),
-                     dict(version=1,files=[],directories=['d'+str(i) for i in range(10001)]),
                      dict(version=1,files=[],directories=['/'.join(['d']*65)])]:
         bad=b'IWB_FOLDER:1\n'+json.dumps(manifest).encode()+b'\n'
         with pytest.raises(ValueError):receive(request(tmp_path,bad))

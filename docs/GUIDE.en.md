@@ -137,7 +137,7 @@ In the file window:
 - Use the upload buttons to send files or folders to the current directory. Follow progress through remote confirmation and cancel when needed. You can also drop local files or folders onto a directory row or elsewhere in the file window. The drop hint shows the destination before you release. Folder uploads preserve the tree, including empty directories when the browser exposes them. Uploads require a new folder name at the destination.
 - Download individual files, or use the folder's three-dot menu → **Download folder** for a ZIP. Folder downloads skip symbolic links and special files and report skipped items.
 
-File tools use the current SSH account. Uploads and downloads have no fixed size cap and require enough disk space for temporary and destination files. The text editor supports up to 1 MiB, a copy operation up to 64 MiB and 1000 items, and a folder transfer up to 10000 items and 64 directory levels. See the [file guide in Chinese](FILES.md) for transfer details.
+File tools use the current SSH account. Text editing, copying, uploads, and downloads have no fixed size cap. Copies and folder transfers have no fixed entry limit. Transfers require enough disk space for temporary and destination files. See the [file guide in Chinese](FILES.md) for details.
 
 ## AI assistant and Skills
 

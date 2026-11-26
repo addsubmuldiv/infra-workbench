@@ -1,4 +1,3 @@
-from backend.internal_defaults import FILES_TEXT_EDIT_MAX_BYTES, FILES_COPY_MAX_BYTES
 import asyncio
 import json
 from backend.paths import PROBES_DIR
@@ -49,7 +48,7 @@ class DownloadRequest(LogLocation):
 class FileOperation(LogLocation):
     op:Literal['read','save','copy','move','mkdir','create']
     destination:str|None=Field(default=None,min_length=1,max_length=4096)
-    content:str|None=Field(default=None,max_length=FILES_TEXT_EDIT_MAX_BYTES)
+    content:str|None=None
     revision:str|None=Field(default=None,min_length=64,max_length=64,pattern=r'^[a-f0-9]{64}$')
     read_offset:int=Field(default=0,ge=0)
     read_limit:int|None=Field(default=None,ge=1,le=6000)
@@ -69,7 +68,7 @@ def register_file_routes(app,ssh,find):
     @app.get('/api/files/capabilities')
     async def capabilities():
         return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,folder_download=True,folder_upload=True,browser_download=True,
-                    operations=['read','save','copy','move','mkdir','create'],text_limit=FILES_TEXT_EDIT_MAX_BYTES,copy_limit=FILES_COPY_MAX_BYTES,upload_limit=None)
+                    operations=['read','save','copy','move','mkdir','create'],text_limit=None,copy_limit=None,upload_limit=None)
 
     @app.post('/api/files/search')
     async def search(body:SearchRequest, ssh_account_id: str | None = None):
@@ -129,7 +128,8 @@ def register_file_routes(app,ssh,find):
             raise HTTPException(422,'请提供目标路径')
         payload=json.dumps(body.model_dump(exclude={'host_id'}),ensure_ascii=True)
         script=operation_source
-        if request is not None and request.headers.get('x-iwb-mcp')=='1':
+        via_mcp=request is not None and request.headers.get('x-iwb-mcp')=='1'
+        if via_mcp:
             script+='\n'+(PROBES_DIR/'model_paths.py').read_text(encoding='utf-8')
             script+='''
 _application_perform = perform
@@ -144,7 +144,9 @@ def perform(request):
         script+='\nmain(json.loads('+repr(payload)+'))\n'
         try:
             async with host_locks.setdefault(body.host_id,asyncio.Lock()),operations:
-                code,out,_=await ssh.run(host,'python3 -',script)
+                # Interactive file operations can outlast the SSH probe deadline.
+                options={'timeout':None} if not via_mcp and body.op in ('read','save','copy') else {}
+                code,out,_=await ssh.run(host,'python3 -',script,**options)
             if code: raise ValueError('远端文件操作未成功结束，请刷新目录确认状态')
             line=next(line for line in out.splitlines() if line.startswith('IWB_FILE_OP:'))
             result=json.loads(line[len('IWB_FILE_OP:'):])

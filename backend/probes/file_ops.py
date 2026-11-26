@@ -1,4 +1,4 @@
-"""Bounded file operations executed as the existing SSH user, without a shell."""
+"""File operations executed as the existing SSH user, without a shell."""
 import ctypes
 import errno
 import hashlib
@@ -9,23 +9,6 @@ import stat
 import sys
 import tempfile
 
-
-
-# BEGIN GENERATED INTERNAL DEFAULTS
-# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
-# 在线文本编辑和保存上限，单位：字节；超过后使用下载或终端。
-TEXT_LIMIT = 1048576
-# 单次复制内容大小上限，单位：字节。
-COPY_LIMIT = 67108864
-# 单次复制最多包含的文件和目录数。
-ENTRY_LIMIT = 1000
-
-def format_bytes(value):
-    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
-        if value >= size and value % size == 0: return str(value // size) + " " + unit
-    return str(value) + " B"
-
-# END GENERATED INTERNAL DEFAULTS
 
 class Conflict(ValueError):
     pass
@@ -45,19 +28,16 @@ def text_file(path):
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise ValueError('仅支持打开普通文本文件')
-        if info.st_size>TEXT_LIMIT:
-            raise ValueError(f'文本编辑上限为 {format_bytes(TEXT_LIMIT)}，请下载后编辑')
-        raw = stream.read(TEXT_LIMIT+1)
-        if len(raw)>TEXT_LIMIT:
-            raise ValueError(f'文本编辑上限为 {format_bytes(TEXT_LIMIT)}，请下载后编辑')
+        raw = stream.read()
     try:
         content = raw.decode('utf-8-sig')
     except UnicodeDecodeError:
         raise ValueError('此文件不是 UTF-8 文本，请下载后使用本地编辑器打开') from None
     if any(ord(char)<32 and char not in '\t\r\n' for char in content):
         raise ValueError('此文件包含二进制内容，不支持文本编辑')
-    revision = hashlib.sha256(raw+repr((info.st_dev,info.st_ino,info.st_mtime_ns,info.st_mode)).encode()).hexdigest()
-    return content, raw, info, revision
+    revision = hashlib.sha256(raw)
+    revision.update(repr((info.st_dev,info.st_ino,info.st_mtime_ns,info.st_mode)).encode())
+    return content, raw, info, revision.hexdigest()
 
 
 def no_replace(source, destination):
@@ -87,27 +67,6 @@ def no_replace(source, destination):
         raise OSError(code,os.strerror(code))
 
 
-def copy_budget(path):
-    total, count = 0, 0
-    pending = [path]
-    while pending:
-        current = pending.pop()
-        info = os.lstat(current)
-        count += 1
-        if stat.S_ISDIR(info.st_mode):
-            with os.scandir(current) as entries:
-                for entry in entries:
-                    pending.append(entry.path)
-                    if count+len(pending)>ENTRY_LIMIT:
-                        raise ValueError('目录复制最多 1000 项，请使用终端复制大型目录')
-        elif stat.S_ISREG(info.st_mode):
-            total += info.st_size
-        elif not stat.S_ISLNK(info.st_mode):
-            raise ValueError('不能复制设备、管道或套接字等特殊文件')
-        if total>COPY_LIMIT or count>ENTRY_LIMIT:
-            raise ValueError(f'单次复制上限为 {format_bytes(COPY_LIMIT)}、{ENTRY_LIMIT} 项，请使用终端复制大型文件')
-
-
 def perform(request):
     op, path = request['op'], path_value(request['path'])
     if op == 'read':
@@ -130,8 +89,6 @@ def perform(request):
         if b'\r\n' in original and b'\n' not in original.replace(b'\r\n',b''):
             content = content.replace('\r\n','\n').replace('\n','\r\n')
         raw = (b'\xef\xbb\xbf' if original.startswith(b'\xef\xbb\xbf') else b'')+content.encode('utf-8')
-        if len(raw)>TEXT_LIMIT:
-            raise ValueError(f'保存内容不能超过 {format_bytes(TEXT_LIMIT)}')
         # Replacing somebody else's file would silently change its ownership.
         if hasattr(os,'getuid') and info.st_uid != os.getuid():
             raise ValueError('只能在网页中保存当前 SSH 用户拥有的文件')
@@ -169,15 +126,11 @@ def perform(request):
     if op == 'move':
         no_replace(path,destination)
         return dict(path=destination)
-    copy_budget(path)
     # Work in an app-owned staging directory; only a complete copy is published.
     staging = tempfile.mkdtemp(prefix='.iwb-copy-',dir=os.path.dirname(destination))
     temporary = os.path.join(staging,'content')
-    budget = [0,0]
     def copy_entry(source,target,depth=0):
         if depth>64: raise ValueError('目录层级超过 64 层，请使用终端复制')
-        budget[1] += 1
-        if budget[1]>ENTRY_LIMIT: raise ValueError('复制项数量发生变化，已取消复制')
         info = os.lstat(source)
         if stat.S_ISLNK(info.st_mode): os.symlink(os.readlink(source),target)
         elif stat.S_ISDIR(info.st_mode):
@@ -189,14 +142,9 @@ def perform(request):
             flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0)
             with os.fdopen(os.open(source,flags),'rb') as incoming, open(target,'xb') as outgoing:
                 if not stat.S_ISREG(os.fstat(incoming.fileno()).st_mode): raise ValueError('源文件类型已变化')
-                while True:
-                    block=incoming.read(1024*1024)
-                    if not block: break
-                    budget[0]+=len(block)
-                    if budget[0]>COPY_LIMIT: raise ValueError(f'复制内容超过 {format_bytes(COPY_LIMIT)}，已取消复制')
-                    outgoing.write(block)
+                shutil.copyfileobj(incoming,outgoing,length=1024*1024)
             shutil.copystat(source,target,follow_symlinks=False)
-        else: raise ValueError('源文件类型已变化，不能复制特殊文件')
+        else: raise ValueError('不能复制设备、管道或套接字等特殊文件')
     try:
         copy_entry(path,temporary)
         no_replace(temporary,destination)

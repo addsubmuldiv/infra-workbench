@@ -5,20 +5,6 @@
     // 后台采集、页面、浮窗及演示模式的默认刷新间隔，单位：秒；已保存的用户设置优先。
     "refresh_interval_seconds": 30
   },
-  "files": {
-    // 文件夹上传最多包含的文件和目录数，隐式父目录也计数。
-    "folder_upload_max_entries": 10000,
-    // 文件夹清单的 UTF-8 大小上限，单位：字节。
-    "folder_manifest_max_bytes": 1048576,
-    // 文件夹下载最多扫描/归档的条目数。
-    "folder_download_max_entries": 10000,
-    // 在线文本编辑和保存上限，单位：字节；超过后使用下载或终端。
-    "text_edit_max_bytes": 1048576,
-    // 单次复制内容大小上限，单位：字节。
-    "copy_max_bytes": 67108864,
-    // 单次复制最多包含的文件和目录数。
-    "copy_max_entries": 1000
-  },
   "logs": {
     // 原始训练日志下载上限，单位：字节。
     "download_max_bytes": 536870912,

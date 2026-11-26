@@ -9,21 +9,6 @@ import sys
 import tempfile
 
 
-
-# BEGIN GENERATED INTERNAL DEFAULTS
-# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
-# 文件夹清单的 UTF-8 大小上限，单位：字节。
-MAX_MANIFEST = 1048576
-# 文件夹上传最多包含的文件和目录数，隐式父目录也计数。
-MAX_ENTRIES = 10000
-
-def format_bytes(value):
-    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
-        if value >= size and value % size == 0: return str(value // size) + " " + unit
-    return str(value) + " B"
-
-# END GENERATED INTERNAL DEFAULTS
-
 def publish_directory(source,destination):
     if os.name=='nt':
         # Windows rename refuses even an existing empty directory.
@@ -55,8 +40,8 @@ def relative_path(value):
 def validate_manifest(value):
     if not isinstance(value,dict) or value.get('version')!=1:raise ValueError('文件夹清单格式无效')
     files,folders=value.get('files'),value.get('directories')
-    if not isinstance(files,list) or not isinstance(folders,list) or len(files)+len(folders)>MAX_ENTRIES:
-        raise ValueError(f'文件夹最多支持 {MAX_ENTRIES} 项')
+    if not isinstance(files,list) or not isinstance(folders,list):
+        raise ValueError('文件夹清单格式无效')
     file_paths=set();directories=set()
     for file in files:
         if not isinstance(file,dict) or type(file.get('size')) is not int or file['size']<0:
@@ -68,13 +53,11 @@ def validate_manifest(value):
         path=relative_path(folder)
         if path in directories:raise ValueError('文件夹清单包含重复目录')
         directories.add(path)
-    # Include implicit parents when checking limits and file/directory conflicts.
+    # Include implicit parents when checking file/directory conflicts.
     for path in file_paths|directories.copy():
         parts=path.split('/')
         directories.update('/'.join(parts[:i]) for i in range(1,len(parts)))
-        if len(file_paths)+len(directories)>MAX_ENTRIES:raise ValueError(f'文件夹最多支持 {MAX_ENTRIES} 项')
     if file_paths&directories:raise ValueError('文件与目录路径冲突')
-    if len(file_paths)+len(directories)>MAX_ENTRIES:raise ValueError(f'文件夹最多支持 {MAX_ENTRIES} 项')
     return files,sorted(directories,key=lambda path:(path.count('/'),path))
 
 
@@ -91,13 +74,13 @@ def receive(stream,ready=None):
     if os.path.lexists(destination):raise FileExistsError(destination)
     if ready:ready()
     hasher=hashlib.sha256();received=0
-    def read_line(limit):
+    def read_line(limit=sys.maxsize):
         nonlocal received
         value=stream.readline(min(limit,size-received+1));received+=len(value);hasher.update(value)
-        if received>size or len(value)>=limit or not value.endswith(b'\n'):raise ValueError('文件夹清单过大或上传中断')
+        if received>size or not value.endswith(b'\n'):raise ValueError('文件夹清单无效或上传中断')
         return value
     if read_line(32)!=b'IWB_FOLDER:1\n':raise ValueError('文件夹上传格式无效')
-    manifest=json.loads(read_line(MAX_MANIFEST+1));files,folders=validate_manifest(manifest)
+    manifest=json.loads(read_line());files,folders=validate_manifest(manifest)
     if sum(file['size'] for file in files)!=size-received:raise ValueError('文件夹长度与清单不匹配')
     staging=tempfile.mkdtemp(prefix='.iwb-folder-upload-',dir=directory)
     try:

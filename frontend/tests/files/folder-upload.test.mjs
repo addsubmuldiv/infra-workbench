@@ -40,6 +40,16 @@ test('the folder manifest describes files larger than the previous size cap',asy
   assert.equal(JSON.parse(payload.split('\n')[1]).files[0].size,bytes);
 });
 
+test('folder selection and upload payload accept more than 10000 entries and a manifest over one MiB',async()=>{
+  const names=Array.from({length:10001},(_,index)=>`${index}-${'d'.repeat(100)}`);
+  const input=folderFromFiles(names.map(name=>file(`project/${name}`,'')));
+  assert.equal(input.files.length,names.length);
+  const selection=await readFolder(directory('project',names.map(name=>directory(name))),new AbortController().signal);
+  const payload=folderPayload(selection);
+  assert.ok(payload.size>1024**2);
+  assert.deepEqual(JSON.parse((await payload.text()).split('\n')[1]).directories,names.sort());
+});
+
 test('folder upload shares progress, verifies remote completion and cancels the whole batch',async()=>{
   const selection=folderFromFiles([file('project/sub/a','bytes')]);const stages=[];let metadata,body;
   const fetcher=async(url,options)=>{

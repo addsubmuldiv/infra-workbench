@@ -8,20 +8,7 @@ import time
 import zipfile
 
 
-
-# BEGIN GENERATED INTERNAL DEFAULTS
-# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
-# 文件夹下载最多扫描/归档的条目数。
-MAX_ENTRIES = 10000
-
-def format_bytes(value):
-    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
-        if value >= size and value % size == 0: return str(value // size) + " " + unit
-    return str(value) + " B"
-
-# END GENERATED INTERNAL DEFAULTS
-
-def build_archive(path,target,max_entries=MAX_ENTRIES,on_progress=None):
+def build_archive(path,target,on_progress=None):
     path=os.path.abspath(os.path.expanduser(path))
     if os.path.islink(path):raise ValueError('不支持下载符号链接目录，请选择实际目录')
     # Linux uses directory descriptors and O_NOFOLLOW throughout the walk. A
@@ -29,7 +16,7 @@ def build_archive(path,target,max_entries=MAX_ENTRIES,on_progress=None):
     anchored=os.open in os.supports_dir_fd and os.scandir in os.supports_fd
     flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0)
     root_fd=os.open(path,flags|getattr(os,'O_DIRECTORY',0)) if anchored else None
-    count=0;seen=1;skipped=0
+    skipped=0
     def safe_name(name):
         if name in ('.','..') or any(c in name for c in '\\/:\0\r\n'):
             raise ValueError('目录包含无法安全打包的文件名，请重命名后重试')
@@ -45,24 +32,17 @@ def build_archive(path,target,max_entries=MAX_ENTRIES,on_progress=None):
         root=safe_name(os.path.basename(path) or 'root')
         with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_STORED,allowZip64=True) as archive:
             def visit(directory,fd,arcpath,depth):
-                nonlocal count,seen,skipped
+                nonlocal skipped
                 if depth>64:raise ValueError('目录层级超过 64 层，请选择更具体的子目录')
                 before_dir=directory_info(directory,fd)
-                count+=1
-                if count>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
                 archive.writestr(arcpath+'/',b'')
-                # Bound listing memory even for a single exceptionally wide directory.
-                entries=[]
                 with os.scandir(fd if anchored else directory) as iterator:
-                    for entry in iterator:
-                        seen+=1
-                        if seen>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
-                        entries.append(entry)
-                for entry in sorted(entries,key=lambda item:item.name):
+                    entries=sorted(iterator,key=lambda item:item.name)
+                for entry in entries:
                     if on_progress:on_progress()
                     info=entry.stat(follow_symlinks=False) if anchored else os.stat(entry.path,follow_symlinks=False)
                     if stat.S_ISLNK(info.st_mode) or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
-                        count+=1;skipped+=1;continue
+                        skipped+=1;continue
                     name=safe_name(entry.name);is_dir=stat.S_ISDIR(info.st_mode)
                     child=child_open(directory,fd,name,is_dir)
                     try:
@@ -72,8 +52,6 @@ def build_archive(path,target,max_entries=MAX_ENTRIES,on_progress=None):
                             if not stat.S_ISDIR(before.st_mode):raise ValueError('打包期间目录发生变化，请重试')
                             visit(os.path.join(directory,name),child,arcpath+'/'+name,depth+1)
                         else:
-                            count+=1
-                            if count>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
                             if not stat.S_ISREG(before.st_mode):raise ValueError('只能打包普通文件')
                             remaining=before.st_size
                             member=zipfile.ZipInfo(arcpath+'/'+name);member.file_size=remaining

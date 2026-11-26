@@ -30,11 +30,19 @@ def test_folder_archive_preserves_tree_hidden_empty_unicode_and_binary(tmp_path)
     assert sorted(p.name for p in tmp_path.iterdir())==[folder.name]
 
 
-def test_folder_archive_bounds_and_invalid_paths_fail_without_success(tmp_path):
+def test_folder_archive_invalid_paths_fail_without_success(tmp_path):
     folder=tmp_path/'data';folder.mkdir();(folder/'a').write_bytes(b'x'*32)
-    with pytest.raises(ValueError,match='项'):build_archive(str(folder),io.BytesIO(),max_entries=1)
     with pytest.raises((NotADirectoryError,ValueError)):build_archive(str(folder/'a'),io.BytesIO())
     with pytest.raises(FileNotFoundError):build_archive(str(folder/'missing'),io.BytesIO())
+
+
+def test_folder_archive_includes_more_than_10000_entries(tmp_path):
+    for index in range(10001):
+        (tmp_path/f'entry-{index}').touch()
+    target=io.BytesIO()
+    build_archive(str(tmp_path),target)
+    with zipfile.ZipFile(target) as archive:
+        assert len(archive.namelist())==10002
 
 
 def test_zip64_is_selected_from_the_member_size_before_writing(tmp_path,monkeypatch):

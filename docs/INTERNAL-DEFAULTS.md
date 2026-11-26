@@ -17,16 +17,10 @@ HTTP、内置助手、外部 MCP 复用原服务校验；前端只是提前提�
 
 ## 参数表
 
-键名带 `_bytes` 为字节，`_seconds` 为秒，`_ms` 为毫秒，`_days` 为天，其余为计数或 token 数。分组对应文件容量、日志、导入、技能、SSH、传输、历史、助手、通知、界面；不同业务即使当前值相同也分别维护。
+键名带 `_bytes` 为字节，`_seconds` 为秒，`_ms` 为毫秒，`_days` 为天，其余为计数或 token 数。分组对应日志、导入、技能、SSH、传输、历史、助手、通知和界面。不同业务即使当前值相同也分别维护。
 
 | 键 | 当前值 |
 |---|---|
-| `files.folder_upload_max_entries` | 10000 |
-| `files.folder_manifest_max_bytes` | 1048576 |
-| `files.folder_download_max_entries` | 10000 |
-| `files.text_edit_max_bytes` | 1048576 |
-| `files.copy_max_bytes` | 67108864 |
-| `files.copy_max_entries` | 1000 |
 | `logs.download_max_bytes` | 536870912 |
 | `logs.read_max_bytes` | 67108864 |
 | `logs.read_max_records` | 10000 |

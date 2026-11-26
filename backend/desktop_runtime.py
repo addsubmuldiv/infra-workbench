@@ -50,9 +50,6 @@ def check_internal_defaults(directory):
     """Check bundled standalone probes against the compiled application policy, offline."""
     from backend import internal_defaults as defaults
     probes = {
-        'file_ops.py': {'TEXT_LIMIT':'FILES_TEXT_EDIT_MAX_BYTES','COPY_LIMIT':'FILES_COPY_MAX_BYTES','ENTRY_LIMIT':'FILES_COPY_MAX_ENTRIES'},
-        'folder_upload_probe.py': {'MAX_MANIFEST':'FILES_FOLDER_MANIFEST_MAX_BYTES','MAX_ENTRIES':'FILES_FOLDER_UPLOAD_MAX_ENTRIES'},
-        'folder_download_probe.py': {'MAX_ENTRIES':'FILES_FOLDER_DOWNLOAD_MAX_ENTRIES'},
         'log_reader.py': {'MAX_BYTES':'LOGS_READ_MAX_BYTES','MAX_RECORDS':'LOGS_READ_MAX_RECORDS','MAX_LINE':'LOGS_LINE_MAX_BYTES'},
         'log_download_probe.py': {'MAX_DOWNLOAD':'LOGS_DOWNLOAD_MAX_BYTES'},
     }

@@ -305,7 +305,7 @@ class SSHService:
             self.monitor_sessions.add(key)
             self.monitor_retry.pop(key, None)
 
-    async def run(self, host, command, source=None):
+    async def run(self, host, command, source=None, *, timeout=SSH_COLLECTION_TIMEOUT_SECONDS):
         monitor = command.endswith('# IWB_MONITOR')
         if monitor:
             await self.ensure_monitor_session(host)
@@ -316,7 +316,7 @@ class SSHService:
         if not session or session.is_closed():
             # Native OpenSSH can still handle keys and providers unavailable to
             # the persistent AsyncSSH monitor. Try it before using a password.
-            result = await self.command(self.arguments(host)+[command], source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
+            result = await self.command(self.arguments(host)+[command], source, timeout=timeout)
             code, out, err = result
             lines = err.rstrip().splitlines()
             denied = re.fullmatch(r'(\S+)@(\S+): Permission denied \([^)]*\)\.', lines[-1]) if lines else None
@@ -336,11 +336,11 @@ class SSHService:
             raise ValueError('SSH 配置已变化，请重新连接这台机器后再配置 sudo')
         started = time.monotonic()
         try:
-            done = await session.run(command, input=source, timeout=SSH_COLLECTION_TIMEOUT_SECONDS)
+            done = await session.run(command, input=source, timeout=timeout)
         except asyncio.TimeoutError:
             logging.warning('SSH command timeout host_id=%s elapsed=%.3fs session_closed=%s',
                             host['id'], time.monotonic() - started, session.is_closed())
-            raise SSHCommandTimeout('远端命令等待结果超时（35 秒）；请检查远端负载及跳板链路') from None
+            raise SSHCommandTimeout(f'远端命令等待结果超时（{timeout} 秒）；请检查远端负载及跳板链路') from None
         return done.exit_status, done.stdout, done.stderr
 
     async def run_bound(self, host, command, source, config, *, native=False):

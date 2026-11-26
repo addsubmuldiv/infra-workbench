@@ -1,16 +1,4 @@
 // Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
-// 单次复制内容大小上限，单位：字节。
-export const FILES_COPY_MAX_BYTES = 67108864;
-// 单次复制最多包含的文件和目录数。
-export const FILES_COPY_MAX_ENTRIES = 1000;
-// 文件夹下载最多扫描/归档的条目数。
-export const FILES_FOLDER_DOWNLOAD_MAX_ENTRIES = 10000;
-// 文件夹清单的 UTF-8 大小上限，单位：字节。
-export const FILES_FOLDER_MANIFEST_MAX_BYTES = 1048576;
-// 文件夹上传最多包含的文件和目录数，隐式父目录也计数。
-export const FILES_FOLDER_UPLOAD_MAX_ENTRIES = 10000;
-// 在线文本编辑和保存上限，单位：字节；超过后使用下载或终端。
-export const FILES_TEXT_EDIT_MAX_BYTES = 1048576;
 // 一次最多导入的服务器行数，不包含表头。
 export const IMPORTS_MAX_ROWS = 100;
 // 导入 Excel 文件上限，单位：字节。

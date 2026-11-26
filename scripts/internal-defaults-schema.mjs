@@ -6,44 +6,6 @@ export const SCHEMA = {
       "description": "默认资源刷新间隔，单位：秒；已保存的用户设置优先。"
     }
   },
-  "files": {
-    "folder_upload_max_entries": {
-      "min": 1,
-      "max": 10000,
-      "frontend": true,
-      "description": "文件夹上传最多包含的文件和目录数，隐式父目录也计数。"
-    },
-    "folder_manifest_max_bytes": {
-      "min": 1,
-      "max": 1048576,
-      "frontend": true,
-      "description": "文件夹清单的 UTF-8 大小上限，单位：字节。"
-    },
-    "folder_download_max_entries": {
-      "min": 1,
-      "max": 10000,
-      "frontend": true,
-      "description": "文件夹下载最多扫描/归档的条目数。"
-    },
-    "text_edit_max_bytes": {
-      "min": 1,
-      "max": 1048576,
-      "frontend": true,
-      "description": "在线文本编辑和保存上限，单位：字节；超过后使用下载或终端。"
-    },
-    "copy_max_bytes": {
-      "min": 1,
-      "max": 67108864,
-      "frontend": true,
-      "description": "单次复制内容大小上限，单位：字节。"
-    },
-    "copy_max_entries": {
-      "min": 1,
-      "max": 1000,
-      "frontend": true,
-      "description": "单次复制最多包含的文件和目录数。"
-    }
-  },
   "logs": {
     "download_max_bytes": {
       "min": 1,
@@ -306,18 +268,6 @@ export const SCHEMA = {
 
 // Independent SSH scripts receive generated constants without importing the local backend.
 export const PROBES = {
-  "backend/probes/file_ops.py": {
-    "TEXT_LIMIT": "FILES_TEXT_EDIT_MAX_BYTES",
-    "COPY_LIMIT": "FILES_COPY_MAX_BYTES",
-    "ENTRY_LIMIT": "FILES_COPY_MAX_ENTRIES"
-  },
-  "backend/probes/folder_upload_probe.py": {
-    "MAX_MANIFEST": "FILES_FOLDER_MANIFEST_MAX_BYTES",
-    "MAX_ENTRIES": "FILES_FOLDER_UPLOAD_MAX_ENTRIES"
-  },
-  "backend/probes/folder_download_probe.py": {
-    "MAX_ENTRIES": "FILES_FOLDER_DOWNLOAD_MAX_ENTRIES"
-  },
   "backend/probes/log_reader.py": {
     "MAX_BYTES": "LOGS_READ_MAX_BYTES",
     "MAX_RECORDS": "LOGS_READ_MAX_RECORDS",

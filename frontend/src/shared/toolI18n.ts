@@ -308,7 +308,8 @@ const english:Record<string,string>={
   "大小": "Size",
   "修改时间": "Modified",
   "正在下载，请稍候…": "Downloading, please wait…",
-  "使用当前 SSH 账号 · 文本编辑 ≤ 1 MiB · 复制 ≤ 64 MiB / 1000 项 · 上传 / 下载 ≤ 512 MiB · 文件夹 ≤ 10000 项": "Current SSH account · Text editing ≤ 1 MiB · Copy ≤ 64 MiB / 1,000 items · Upload / download ≤ 512 MiB · Folders ≤ 10,000 items",
+  "文件夹清单格式无效": "Invalid folder manifest",
+  "文件夹清单无效或上传中断": "The folder manifest is invalid or the upload was interrupted",
   "打开并编辑": "Open and edit",
   "进入目录": "Open directory",
   "重启本地服务以启用文件夹下载": "Restart local service to enable folder downloads",
@@ -332,7 +333,6 @@ const english:Record<string,string>={
   "正在加载编辑工具…": "Loading editor…",
   "正在打开文本文件…": "Opening text file…",
   "可关闭此窗口，使用下载功能在本地打开文件。": "You can close this window and download the file to open it locally.",
-  " 行 · 文本上限 1 MiB": " lines · Text limit 1 MiB",
   "尚未保存": "Unsaved",
   "Ctrl/⌘+S 保存": "Ctrl/⌘+S Save",
   "调整文本编辑器大小": "Resize text editor",
@@ -462,13 +462,11 @@ const english:Record<string,string>={
   "文件夹包含重复目录": "Folder contains duplicate directories",
   "文件夹包含重复文件": "Folder contains duplicate files",
   "文件夹总大小不能超过 512 MiB": "Folder size must not exceed 512 MiB",
-  "文件夹最多支持 10000 项": "Folders support up to 10,000 items",
   "文件与目录路径冲突": "Conflicting file and directory paths",
   "未读取到文件；上传空文件夹需要浏览器支持目录选择器": "No files found; uploading empty folders requires browser support for the directory picker",
   "请每次选择一个完整文件夹": "Select one complete folder at a time",
   "目录层级超过 64 层": "Directory depth exceeds 64 levels",
   "文件夹包含无效名称": "Folder contains an invalid name",
-  "文件夹清单过大，请选择更具体的子目录": "Folder manifest too large. Select a smaller subdirectory",
   "文件夹及清单总大小不能超过 512 MiB": "Folder and manifest must not exceed 512 MiB"
 };
 const chinese=Object.fromEntries(Object.entries(english).map(([zh,en])=>[en,zh]));
