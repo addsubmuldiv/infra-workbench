@@ -31,6 +31,16 @@ function ClusterMenu({children}:{children:React.ReactNode}){
  }}><MoreHorizontal size={16}/></button><div ref={menu} popover="manual" onClick={event=>{if((event.target as HTMLElement).closest('button'))menu.current?.hidePopover()}}>{children}</div></div>;
 }
 function Check({ids,selected,toggle,label}:{ids:string[];selected:Set<string>;toggle:()=>void;label:string}){const state=selectionState(ids,selected);return <input type="checkbox" aria-label={label} checked={state.checked} ref={node=>{if(node)node.indeterminate=state.partial}} onChange={toggle}/>}
+function hostStatus({fresh,status}:ClusterHost['snapshot']){
+ if(fresh)return t('在线','Online');
+ switch(status){
+  case 'error':return t('采集失败','Collection failed');
+  case 'connecting':return t('连接中','Connecting');
+  case 'offline':return t('离线','Offline');
+  case 'ok':case 'stale':return t('数据过期','Data stale');
+  default:return status;
+ }
+}
 export function ClusterSidebar<T extends ClusterHost>({hosts,selected,select,search,setSearch,category,setCategory,copyName,remove,command,terminal,history,reserve,resources}:{hosts:T[];selected:string[]|null;select:(ids:string[]|null,direct?:boolean)=>void;search:string;setSearch:(s:string)=>void;category:HostCategory;setCategory:(s:HostCategory)=>void;copyName:(name:string)=>void;remove:(h:T)=>void;command:(c:Cluster)=>void;terminal:(c:Cluster)=>void;history:()=>void;reserve?:(c:Cluster)=>void;resources?:(c:Cluster)=>void}){
  useLocale();const [clusters,setClusters]=useState<Cluster[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[edit,setEdit]=useState<{kind:'create'|'rename'|'members'|'delete';cluster?:Cluster}|null>(null),[name,setName]=useState(''),[members,setMembers]=useState<string[]>([]),[move,setMove]=useState('');
  const [collapsed,setCollapsed]=useState<Record<string,boolean>>(()=>{try{return JSON.parse(workspaceStorage?.getItem('cluster-collapse')||'{}')}catch{return {}}});
@@ -51,7 +61,27 @@ export function ClusterSidebar<T extends ClusterHost>({hosts,selected,select,sea
  <div className="host-picker-items">{groups.filter(g=>!search.trim()||g.matching.length||g.name.toLowerCase().includes(search.trim().toLowerCase())).map(g=><section className="cluster-group" key={g.id}><div className="cluster-heading"><button className="icon-button" aria-label={t('展开或折叠','Expand or collapse')} aria-expanded={!collapsed[g.id]} onClick={()=>toggleGroup(g.id)}><ChevronRight size={13} style={{transform:!collapsed[g.id]?'rotate(90deg)':undefined}}/></button><Check ids={g.matching.map(h=>h.id)} selected={chosen} toggle={()=>toggle(g.matching.map(h=>h.id))} label={t('选择匹配成员','Select matching members')}/><button className="cluster-name" aria-expanded={!collapsed[g.id]} onClick={()=>toggleGroup(g.id)}><Folder size={14}/><strong>{g.name||t('未分组','Ungrouped')}</strong><small>{t('匹配 ','Matching ')}{g.matching.length}/{g.all.length} · {g.all.filter(h=>h.snapshot.fresh).length} {t('在线','online')}</small></button>{g.cluster&&<ClusterMenu>{(['rename','members','delete'] as const).map(kind=><button key={kind} onClick={()=>open(kind,g.cluster!)}>{kind==='rename'?t('重命名','Rename'):kind==='members'?t('管理成员','Manage members'):t('删除集群','Delete cluster')}</button>)}<button onClick={()=>reserve?.(g.cluster!)}>{t('预约资源','Reserve resources')}</button><button onClick={()=>resources?.(g.cluster!)}>{t('查看资源历史','Resource history')}</button><button onClick={()=>terminal(g.cluster!)}>{t('打开全部终端','Open all terminals')}</button><button onClick={()=>command(g.cluster!)}>{t('执行命令','Run command')}</button></ClusterMenu>}</div>
  {!collapsed[g.id]&&g.matching.length<g.all.length&&<div className="cluster-filter-note"><span>{t('部分成员被筛选隐藏','Some members are hidden by filters')}</span><button onClick={()=>{setCategory('全部');setSearch('')}}>{t('显示全部成员','Show all members')}</button></div>}
  {!collapsed[g.id]&&!g.matching.length&&<p className="cluster-empty">{g.all.length?t('没有符合当前筛选条件的机器。','No machines match the current filters.'):t('此集群暂无机器。','This cluster has no machines.')}</p>}
- {(!collapsed[g.id])&&g.matching.map(h=>{const name=h.alias||h.target;const copyLabel=t(`复制机器名称 ${name}`,`Copy machine name ${name}`);return <div key={h.id} className={'host-picker-row '+(chosen.has(h.id)?'selected':'')}><input type="checkbox" aria-label={t('显示机器 ','Show machine ')+h.target} checked={chosen.has(h.id)} onChange={()=>toggle([h.id])}/><button aria-label={t('只看机器 ','Show only machine ')+h.target} onClick={()=>select([h.id],true)}><span className={'host-dot '+(h.snapshot.fresh?'online':'')}/><span><strong>{name}</strong>{h.alias&&<small>{h.target}</small>}<small>{h.snapshot.devices.length} {t('设备','devices')} · {h.snapshot.fresh?t('在线','Online'):h.snapshot.status}</small><small className="host-usage">{(()=>{const u=deviceUsage(h.snapshot as unknown as Parameters<typeof deviceUsage>[0]);return <><span className="occupied">{t('占用 ','In use ')}<b>{u.occupied}</b></span><span className="idle">{t('空闲 ','Idle ')}<b>{u.idle}</b></span>{u.unknown>0&&<span>{t('未知 ','Unknown ')}<b>{u.unknown}</b></span>}{u.abnormal>0&&<span className="abnormal">{t('异常 ','Abnormal ')}<b>{u.abnormal}</b></span>}</>})()}</small></span></button><button type="button" className="icon-button host-copy-button" aria-label={copyLabel} title={copyLabel} onClick={()=>copyName(name)}><Copy size={13}/></button><button className="host-remove-button" aria-label={t('移除机器 ','Remove machine ')+h.target} onClick={()=>remove(h)}><Trash2 size={13}/></button></div>})}</section>)}</div>
+ {!collapsed[g.id]&&g.matching.map(h=>{
+  const name=h.alias||h.target;
+  const copyLabel=t(`复制机器名称 ${name}`,`Copy machine name ${name}`);
+  const status=hostStatus(h.snapshot);
+  const hasDeviceSample=h.snapshot.fresh||h.snapshot.devices.length>0;
+  const details=hasDeviceSample?`${h.snapshot.devices.length} ${t('设备','devices')} · ${status}`:status;
+  const title=[name,name!==h.target?h.target:null,details].filter(Boolean).join('\n');
+  const usage=deviceUsage(h.snapshot as unknown as Parameters<typeof deviceUsage>[0]);
+  return <div key={h.id} className={'host-picker-row '+(chosen.has(h.id)?'selected':'')}>
+   <input type="checkbox" aria-label={t('显示机器 ','Show machine ')+h.target} checked={chosen.has(h.id)} onChange={()=>toggle([h.id])}/>
+   <button className="host-row-main" title={title} aria-label={t('只看机器 ','Show only machine ')+h.target} onClick={()=>select([h.id],true)}>
+    <span className={'host-dot '+(h.snapshot.fresh?'online':'')}/>
+    <span><strong>{name}</strong>{h.alias&&<small className="host-row-address">{h.target}</small>}
+     <small className="host-row-status" data-fresh={h.snapshot.fresh}>{hasDeviceSample&&<span className="host-row-device-count">{h.snapshot.devices.length} {t('设备','devices')} · </span>}{status}</small>
+     {hasDeviceSample&&<small className="host-usage"><span className="occupied">{t('占用 ','In use ')}<b>{usage.occupied}</b></span><span className="idle">{t('空闲 ','Idle ')}<b>{usage.idle}</b></span>{usage.unknown>0&&<span>{t('未知 ','Unknown ')}<b>{usage.unknown}</b></span>}{usage.abnormal>0&&<span className="abnormal">{t('异常 ','Abnormal ')}<b>{usage.abnormal}</b></span>}</small>}
+    </span>
+   </button>
+   <button type="button" className="icon-button host-copy-button" aria-label={copyLabel} title={copyLabel} onClick={()=>copyName(name)}><Copy size={13}/></button>
+   <button className="host-remove-button" aria-label={t('移除机器 ','Remove machine ')+h.target} onClick={()=>remove(h)}><Trash2 size={13}/></button>
+  </div>;
+ })}</section>)}</div>
  {edit&&createPortal(<div className="modal-shade"><section className="modal cluster-dialog" role="dialog" aria-modal="true" aria-label={t('管理集群','Manage cluster')}><h2>{edit.kind==='create'?t('新建集群','New cluster'):edit.cluster?.name}</h2>{['create','rename'].includes(edit.kind)&&<label>{t('集群名称','Cluster name')}<input autoFocus required maxLength={80} value={name} onChange={e=>setName(e.target.value)}/></label>}{edit.kind==='members'&&<div className="cluster-member-list">{hosts.map(h=><label key={h.id}><input type="checkbox" checked={members.includes(h.id)} onChange={e=>setMembers(old=>e.target.checked?[...old,h.id]:old.filter(id=>id!==h.id))}/>{h.alias||h.target}</label>)}<p>{t('选中的机器会从原集群移动到这里。','Selected machines move here from their current cluster.')}</p></div>}{edit.kind==='delete'&&<p>{t('删除集群后，机器将变为未分组。已有任务不受影响。','Machines become ungrouped. Existing tasks are retained.')}</p>}{error&&<p role="alert">{error}</p>}<div className="modal-footer"><button disabled={busy} onClick={()=>setEdit(null)}>{t('取消','Cancel')}</button><button className="primary" disabled={busy||(['create','rename'].includes(edit.kind)&&!name.trim())} onClick={()=>void run(()=>edit.kind==='create'?clusterApi('/clusters','POST',{name}):edit.kind==='rename'?clusterApi('/clusters/'+edit.cluster!.id,'PATCH',{name,revision:edit.cluster!.revision}):edit.kind==='members'?clusterApi('/clusters/'+edit.cluster!.id+'/members','PUT',{host_ids:members,revision:edit.cluster!.revision}):clusterApi('/clusters/'+edit.cluster!.id+'?revision='+edit.cluster!.revision,'DELETE'))}>{t('保存','Save')}</button></div></section></div>,document.body)}
  </div>;
 }

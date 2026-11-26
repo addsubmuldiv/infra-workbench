@@ -2,7 +2,8 @@
 
 .cluster-connect-prompt{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:20px;padding:30px;color:var(--term-fg,#e2e8f0);line-height:1.8;text-align:center}
 
-:is(.cluster-panel,.cluster-dialog,.cluster-terminal-workspace,.cluster-picker) button:not(.primary):not(.icon-button):not(.cluster-name):not(.host-remove-button){background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font:inherit}
+:is(.cluster-panel,.cluster-dialog,.cluster-terminal-workspace,.cluster-picker) button:not(.primary):not(.icon-button):not(.cluster-name):not(.host-remove-button):where(:not(.host-row-main)),
+.cluster-picker .host-picker-row > .host-row-main{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font:inherit}
 :is(.cluster-panel,.cluster-dialog,.cluster-terminal-workspace,.cluster-picker) button:not(.primary):not(:disabled):hover{background:var(--hover);color:var(--text)}
 :is(.cluster-panel,.cluster-dialog,.cluster-terminal-workspace,.cluster-picker) button.selected{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
 :is(.cluster-panel,.cluster-dialog,.cluster-terminal-workspace,.cluster-picker) :is(select,textarea){background:var(--input,var(--panel));color:var(--text);border:1px solid var(--line);border-radius:6px;padding:9px 11px;font:inherit}

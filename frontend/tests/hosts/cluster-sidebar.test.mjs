@@ -27,6 +27,17 @@ test('copy button uses the full displayed name without selecting a machine',()=>
   assert.equal(h.selectionCalls,0);
  }
 });
+test('machine details stay available when the compact layout truncates the name',()=>{
+ const alias='训练机器 A / Long display name';
+ const h=harness('全部',alias);
+ const machine=nodes(h.render()).find(n=>n.type==='button'&&n.props['aria-label']==='只看机器 machine');
+ assert.equal(machine.props.title,`${alias}\nmachine\n离线`);
+ assert.ok(nodes(machine).some(n=>n.props.className==='host-row-address'&&n.props.children.includes('machine')));
+ assert.ok(nodes(machine).some(n=>n.props.className==='host-row-status'&&n.props.children.includes('离线')));
+ assert.ok(!nodes(machine).some(n=>n.props.className==='host-usage'));
+ machine.props.onClick();
+ assert.equal(h.selectionCalls,1);
+});
 test('group name toggles members without changing machine selection',()=>{
  const h=harness();let tree=h.render();
  assert.equal(nodes(tree).filter(n=>n.props?.className?.startsWith('host-picker-row')).length,1);

@@ -24,7 +24,7 @@
   .host-picker-row>input{flex-shrink:0}
   .host-picker-row>button:not(.host-remove-button){align-items:center;padding:6px 0;overflow:hidden}
   .host-picker-row>button>span:nth-child(2){display:block!important;min-width:0}
-  .host-picker-row>button small{display:none!important}
+  .host-picker .host-picker-row>button small{display:none}
   .host-picker-row strong{font-size:11px;line-height:20px}
   .host-picker-row .host-compact-status{display:flex;align-items:center;gap:5px;flex-shrink:0;margin:0;font-size:10px;white-space:nowrap;color:var(--muted)}
   .host-compact-status .abnormal{color:var(--danger)}
@@ -55,6 +55,40 @@
   .sidebar .sidebar-bottom{flex-shrink:0;margin:0}
   .sidebar .agent{padding:7px 8px;font-size:10px;white-space:nowrap}
   .sidebar .agent small,.sidebar .version{display:none}
+}
+
+.sidebar-hosts{container:sidebar-hosts / inline-size}
+
+/* The separator changes the sidebar width without changing the viewport. */
+@container sidebar-hosts (max-width: 268px){
+  .sidebar-hosts > .cluster-picker{display:flex;gap:6px}
+  .cluster-picker .host-picker-heading{align-items:center;padding:0 2px 2px}
+  .cluster-picker .host-picker-heading>button,.cluster-picker .host-search>svg{flex-shrink:0}
+  .cluster-picker .host-search input{min-width:0}
+  .cluster-picker .host-category-filter,.cluster-picker .host-picker-actions{margin:0}
+  .cluster-picker .host-picker-actions{flex-wrap:wrap;gap:4px}
+  .cluster-picker .cluster-move{padding:0}
+  .cluster-picker .cluster-move button{flex-shrink:0;white-space:nowrap}
+  .cluster-picker .host-picker-items{flex:1;overscroll-behavior-y:contain}
+
+  .cluster-picker .cluster-heading{padding:6px 2px}
+  .cluster-picker .cluster-name{display:grid;grid-template-columns:14px minmax(0,1fr);gap:2px 5px}
+  .cluster-picker .cluster-name small{grid-column:2;padding-left:0;line-height:1.3}
+  .cluster-picker .cluster-name strong{overflow-wrap:normal}
+
+  .cluster-picker .cluster-group .host-picker-row{gap:2px;padding:0 3px 0 7px;margin:2px 0;min-height:38px}
+  .cluster-picker .host-picker-row>input{flex:none;margin:0 3px 0 0}
+  .cluster-picker .host-picker-row > .host-row-main{align-self:stretch;align-items:flex-start;gap:5px;border:0;background:transparent;padding:5px 1px}
+  .cluster-picker .host-picker-row > .host-row-main:hover{background:transparent}
+  .cluster-picker .host-row-main:focus-visible{outline-offset:-2px}
+  .cluster-picker .host-row-main .host-dot{margin-top:6px}
+  .cluster-picker .host-row-main strong,.cluster-picker .cluster-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cluster-picker .host-row-main strong{font-size:12px;font-weight:600;line-height:17px}
+  .cluster-picker .host-row-main .host-row-address,
+  .cluster-picker .host-row-main .host-row-device-count,
+  .cluster-picker .host-row-main .host-row-status[data-fresh="true"]{display:none}
+  .cluster-picker .host-row-main .host-row-status{display:block;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cluster-picker .host-row-main .host-usage{display:flex;gap:0 7px;margin:0;font-size:10px}
 }
 
 .reservation-stat{position:relative}
