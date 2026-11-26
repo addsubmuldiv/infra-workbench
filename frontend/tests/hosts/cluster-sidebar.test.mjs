@@ -6,17 +6,25 @@ import {clusterGroups,selectionState} from '../../src/features/hosts/clusterApi.
 import {HOST_CATEGORIES,filterHosts} from '../../src/features/hosts/hostList.ts';
 function harness(category='全部',alias){
  const values=[];let cursor=0;
- const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect(){},useState:initial=>{const i=cursor++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],next=>{values[i]=typeof next==='function'?next(values[i]):next}]}};
+ const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect(){},useRef:current=>({current}),useState:initial=>{const i=cursor++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],next=>{values[i]=typeof next==='function'?next(values[i]):next}]}};
  const source=fs.readFileSync(new URL('../../src/features/hosts/ClusterSidebar.tsx',import.meta.url),'utf8');
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
  const exports={};
- new Function('require','exports',js)(name=>({'react':react,'react-dom':{},'../../shared/i18n':{t:zh=>zh,useLocale(){}},'./hostList':{HOST_CATEGORIES,filterHosts},'./clusterApi':{clusterGroups,selectionState},'../monitoring/hostUsage':{deviceUsage:()=>({occupied:0,idle:0,unknown:0,abnormal:0})},'../onboarding/demoBootstrap':{isDemo:true},'../../workspace/workspaceState':{workspaceStorage:{getItem:()=>null,setItem(){}}}}[name]??{}),exports);
+ new Function('require','exports',js)(name=>({'react':react,'react-dom':{},'../../shared/i18n':{t:zh=>zh,useLocale(){}},'../../shared/OverlayScrollbar':{OverlayScrollbar:'OverlayScrollbar'},'./hostList':{HOST_CATEGORIES,filterHosts},'./clusterApi':{clusterGroups,selectionState},'../monitoring/hostUsage':{deviceUsage:()=>({occupied:0,idle:0,unknown:0,abnormal:0})},'../onboarding/demoBootstrap':{isDemo:true},'../../workspace/workspaceState':{workspaceStorage:{getItem:()=>null,setItem(){}}}}[name]??{}),exports);
  let selectionCalls=0;const copied=[];
  const props={hosts:[{id:'a',target:'machine',alias,snapshot:{fresh:false,status:'offline',devices:[]}}],selected:null,category,search:'',select(){selectionCalls++},copyName:name=>copied.push(name),setSearch:s=>{props.search=s},setCategory:c=>{props.category=c}};
  const render=()=>{cursor=0;return exports.ClusterSidebar(props)};
  return {render,copied,get selectionCalls(){return selectionCalls}};
 }
 const nodes=n=>!n||typeof n!=='object'?[]:[n,...(n.props?.children??[]).flat(Infinity).flatMap(nodes)];
+test('the overlay scrollbar follows the machine list scroller',()=>{
+ const list=nodes(harness().render()).find(n=>n.props.className==='cluster-list-scroll');
+ const [scroller,scrollbar]=list.props.children;
+ assert.equal(scroller.props.className,'host-picker-items');
+ assert.equal(scrollbar.type,'OverlayScrollbar');
+ assert.ok(scroller.props.ref);
+ assert.equal(scrollbar.props.scrollRef,scroller.props.ref);
+});
 test('copy button uses the full displayed name without selecting a machine',()=>{
  for(const [alias,expected] of [[undefined,'machine'],['训练机器 A','训练机器 A']]){
   const h=harness('全部',alias);

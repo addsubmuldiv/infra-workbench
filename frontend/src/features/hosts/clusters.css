@@ -18,6 +18,39 @@
 .cluster-filter-note{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:4px 8px 8px 28px;color:var(--muted);font-size:11px}
 
 .cluster-menu>div:popover-open{display:grid;gap:4px}
+
+.cluster-picker-body,
+.cluster-list-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.cluster-picker-body {
+  grid-column: 1 / -1;
+}
+.cluster-picker-body > :not(.cluster-list-scroll) {
+  flex-shrink: 0;
+}
+.cluster-list-scroll {
+  position: relative;
+}
+.cluster-list-scroll > .host-picker-items {
+  flex: 1;
+}
+.cluster-list-scroll > .cluster-list-scrollbar {
+  inset-inline-end: 0;
+}
+@media (forced-colors: none) {
+  .cluster-list-scroll > .host-picker-items {
+    scrollbar-width: none;
+    padding-inline-end: 10px;
+  }
+  .cluster-list-scroll > .host-picker-items::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* One card includes the machine controls and both actions. */
 .cluster-picker .host-picker-row {
   background: var(--panel2);
