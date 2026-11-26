@@ -11,6 +11,10 @@ class TunnelFailure(ValueError):
         self.code, self.retry = code, retry
 
 
+class TargetAuthenticationFailure(TunnelFailure):
+    """OpenSSH specifically reported that the target rejected authentication."""
+
+
 class NativeTunnel:
     def __init__(self):
         self.process = None
@@ -54,15 +58,21 @@ class NativeTunnel:
         args += [ssh.destination(host)]
         ready = asyncio.get_running_loop().create_future()
         self.failure = None
+        target_auth_error = f"{cfg['user']}@{cfg['hostname']}: permission denied (".encode().lower()
 
         async def drain():
             bound = entered = False
+            auth_failure = None
             while line := await self.process.stderr.readline():
                 lower = line.lower()
                 if b'bind [' in lower and (b'permission denied' in lower or b'address already in use' in lower):
                     self.failure = TunnelFailure('FORWARD_REJECTED', '监听端口被占用或服务器拒绝转发，请检查端口和 SSH 转发权限')
+                elif lower.startswith(target_auth_error) and lower.rstrip().endswith(b').'):
+                    self.failure = TargetAuthenticationFailure('AUTH_REQUIRED', 'SSH 认证失败，请配置免密登录或保存 SSH 密码')
                 elif b'permission denied' in lower or b'no more authentication methods' in lower:
-                    self.failure = TunnelFailure('AUTH_REQUIRED', 'SSH 认证失败，请配置免密登录或保存 SSH 密码')
+                    # OpenSSH can log a key access error before trying other keys,
+                    # or log exhausted methods just before the target's final error.
+                    auth_failure = TunnelFailure('AUTH_REQUIRED', 'SSH 认证失败，请配置免密登录或保存 SSH 密码')
                 elif b'host key verification failed' in lower or b'remote host identification has changed' in lower:
                     self.failure = TunnelFailure('HOST_KEY', 'SSH 主机密钥未通过校验，请先核对机器身份')
                 elif any(text in lower for text in (b'address already in use', b'remote port forwarding failed',
@@ -76,7 +86,8 @@ class NativeTunnel:
                 if self.failure and not ready.done(): ready.set_exception(self.failure)
                 elif bound and entered and not ready.done(): ready.set_result(True)
             if not ready.done():
-                ready.set_exception(self.failure or TunnelFailure('CONNECTION_LOST', 'SSH 连接未能建立，正在等待重试', True))
+                ready.set_exception(self.failure or auth_failure or TunnelFailure(
+                    'CONNECTION_LOST', 'SSH 连接未能建立，正在等待重试', True))
         try:
             self.process = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
@@ -137,4 +148,82 @@ class PasswordTunnel:
         # Closing the SSH connection also closes existing forwarding channels.
         self.connection.close()
         await self.connection.wait_closed()
+        await self.listener.wait_closed()
+
+
+class SessionTunnel:
+    """Own the forwarding streams while borrowing an authenticated connection."""
+
+    def __init__(self, connection):
+        self.connection = connection
+        self.relays = set()
+        self.closing = False
+
+    @classmethod
+    async def open(cls, connection, rule):
+        self = cls(connection)
+        if rule['direction'] == 'remote':
+            async def relay(reader, writer):
+                await self.relay(reader, writer, asyncio.open_connection, rule['local_port'])
+
+            pending = asyncio.ensure_future(connection.start_server(
+                lambda _host, _port: relay, '127.0.0.1', rule['remote_port']))
+            try:
+                self.listener = await asyncio.shield(pending)
+            except asyncio.CancelledError:
+                # SSH can acknowledge the listen request after our task is cancelled.
+                self.closing = True
+
+                def close_late_listener(result):
+                    if not result.cancelled() and result.exception() is None:
+                        result.result().close()
+
+                pending.add_done_callback(close_late_listener)
+                raise
+        else:
+            async def relay(reader, writer):
+                await self.relay(reader, writer, connection.open_connection, rule['remote_port'])
+
+            self.listener = await asyncio.start_server(relay, '127.0.0.1', rule['local_port'])
+        return self
+
+    async def relay(self, reader, writer, connect, port):
+        from asyncssh import Error
+
+        if self.closing:
+            writer.close()
+            return
+        task = asyncio.current_task()
+        self.relays.add(task)
+        peer_writer = None
+        try:
+            peer_reader, peer_writer = await connect('127.0.0.1', port)
+            async with asyncio.TaskGroup() as streams:
+                streams.create_task(self.copy(reader, peer_writer))
+                streams.create_task(self.copy(peer_reader, writer))
+        except* (Error, OSError):
+            pass  # A client or destination closing a stream does not stop the tunnel.
+        finally:
+            writer.close()
+            if peer_writer is not None:
+                peer_writer.close()
+            self.relays.discard(task)
+
+    @staticmethod
+    async def copy(reader, writer):
+        while data := await reader.read(65536):
+            writer.write(data)
+            await writer.drain()
+        writer.write_eof()
+
+    async def wait_closed(self):
+        await self.connection.wait_closed()
+
+    async def close(self):
+        self.closing = True
+        self.listener.close()
+        relays = list(self.relays)
+        for task in relays:
+            task.cancel()
+        await asyncio.gather(*relays, return_exceptions=True)
         await self.listener.wait_closed()

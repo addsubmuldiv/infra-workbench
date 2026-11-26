@@ -13,10 +13,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from .agent_errors import AgentError
 from .interface_language import tr
 from .mcp_output import page
+from .ssh_accounts import ssh_account_key
 from .ssh_passwords import connection_identity
-from .tunnel_transport import NativeTunnel, PasswordTunnel, TunnelFailure
+from .tunnel_transport import NativeTunnel, PasswordTunnel, SessionTunnel, TargetAuthenticationFailure, TunnelFailure
 
 HISTORY_LIMIT = 100
+PASSWORD_AUTH_ERRORS = {'AUTH_REQUIRED', 'SSH_PASSWORD_UNAVAILABLE', 'CREDENTIAL_IDENTITY_CHANGED',
+                        'CREDENTIAL_STORE_UNAVAILABLE'}
 
 
 class TunnelRequest(BaseModel):
@@ -133,10 +136,47 @@ class SSHTunnels:
 
     async def connect_password(self, host):
         config = await self.passwords.config(host)
-        secret = await self.passwords.get(host)
+        password = self.passwords.password_for(host, config)
         # The credential is sent only if the re-resolved endpoint still matches.
-        candidate = dict(host, _import_identity=connection_identity(config))
-        return await self.ssh.password_connection(candidate, secret['password'])
+        candidate = dict(host, _credential_identity=connection_identity(config))
+        return await self.ssh.password_connection(candidate, password)
+
+    async def open_transport(self, host, rule):
+        if self.use_password(host):
+            try:
+                return await self.open_password_transport(host, rule)
+            except Exception as password_failure:
+                if classify(password_failure).code not in PASSWORD_AUTH_ERRORS:
+                    raise
+                try:
+                    return await NativeTunnel.open(self.ssh, host, rule)
+                except TargetAuthenticationFailure:
+                    raise password_failure from None
+        try:
+            return await NativeTunnel.open(self.ssh, host, rule)
+        except TargetAuthenticationFailure as native_failure:
+            try:
+                return await self.open_password_transport(host, rule)
+            except AgentError as error:
+                if error.code == 'SSH_PASSWORD_UNAVAILABLE':
+                    raise native_failure from None
+                raise
+
+    async def open_password_transport(self, host, rule):
+        try:
+            connection = await self.connect_password(host)
+        except Exception as error:
+            if classify(error).code not in PASSWORD_AUTH_ERRORS:
+                raise
+            session = self.ssh.sessions.get(ssh_account_key(host))
+            if not session or session.is_closed():
+                raise
+            current = await self.passwords.config(host)
+            original = self.ssh.connection_configs.get(session)
+            if session.is_closed() or not original or connection_identity(current) != connection_identity(original):
+                raise
+            return await SessionTunnel.open(session, rule)
+        return await PasswordTunnel.open(connection, rule)
 
     def state(self, rule_id, status, error='', code=None, **extra):
         self.states[rule_id] = dict(dict(status=status, error=error, error_code=code,
@@ -161,10 +201,7 @@ class SSHTunnels:
             transport = None
             try:
                 host = self.host(rule['host_id'])
-                if self.use_password(host):
-                    transport = await PasswordTunnel.open(await self.connect_password(host), rule)
-                else:
-                    transport = await NativeTunnel.open(self.ssh, host, rule)
+                transport = await self.open_transport(host, rule)
                 self.connections[rule_id] = transport
                 connected_at = time.time()
                 self.state(rule_id, 'connected', connected_at=connected_at)
@@ -280,7 +317,7 @@ class SSHTunnels:
                 _, writer = await asyncio.wait_for(asyncio.open_connection('127.0.0.1', rule['local_port']), 3)
             else:
                 transport = self.connections.get(rule_id)
-                if isinstance(transport, PasswordTunnel):
+                if isinstance(transport, (PasswordTunnel, SessionTunnel)):
                     _, writer = await asyncio.wait_for(transport.connection.open_connection('127.0.0.1', rule['remote_port']), 3)
                 else:
                     if self.view(rule)['status'] != 'connected': raise ValueError('请先连接隧道')

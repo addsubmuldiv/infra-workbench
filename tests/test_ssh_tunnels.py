@@ -221,11 +221,15 @@ def test_stop_cancels_connect_and_no_retry_on_bind_failure(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize(('direction', 'auto_reconnect'), [('local', True), ('remote', False), ('remote', True)])
-def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction, auto_reconnect):
+@pytest.mark.parametrize(('direction', 'auto_reconnect', 'auth'), [
+    ('local', True, 'key'), ('remote', False, 'key'), ('remote', True, 'key'),
+    ('local', False, 'password_session'),
+])
+def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction, auto_reconnect, auth):
     import shutil
     import socket
     from backend.ssh import SSHService
+    from backend.ssh_passwords import SSHPasswords
     if not shutil.which('ssh'): pytest.skip('OpenSSH unavailable')
     class Server(asyncssh.SSHServer):
         def begin_auth(self, username): return False
@@ -240,10 +244,10 @@ def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction, auto_r
         server = await asyncssh.create_server(Server, '127.0.0.1', 0, server_host_keys=[key])
         known = tmp_path/'known_hosts'
         known.write_text(f'[127.0.0.1]:{server.get_port()} '+key.export_public_key().decode(), encoding='utf-8')
-        host = dict(id='a', target='127.0.0.1', manual=True, port=server.get_port(), user='test')
+        host = dict(id='a', target='127.0.0.1', manual=True, port=server.get_port(), user='test', auth=auth)
         ssh = SSHService(tmp_path, known_hosts=known)
         store = Store(tmp_path/'native.db')
-        manager = SSHTunnels(store, ssh, [host], None)
+        manager = SSHTunnels(store, ssh, [host], SSHPasswords(ssh, {}))
         manager.retry_delays = (.1, .2)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
@@ -296,12 +300,16 @@ def test_native_openssh_roundtrip_and_bind_rejection(tmp_path, direction, auto_r
     asyncio.run(run())
 
 
-def test_routes_scope_and_saved_password_identity(tmp_path):
+def test_routes_scope_and_saved_password_identity(tmp_path, monkeypatch):
     from backend.app import create_app
+    from backend.tunnel_transport import NativeTunnel, TargetAuthenticationFailure
     from fastapi.testclient import TestClient
     class Vault:
         supported = True
         def get(self, key): return None
+    async def reject_key(*args):
+        raise TargetAuthenticationFailure('AUTH_REQUIRED', 'SSH authentication failed')
+    monkeypatch.setattr(NativeTunnel, 'open', reject_key)
     app = create_app(tmp_path, start_poll=False, ssh_credential_store=Vault())
     app.state.hosts.extend([dict(id='a', target='a', auth='password_session'), dict(id='b',target='b')])
     with TestClient(app) as client:
@@ -335,7 +343,9 @@ def test_password_connection_is_bound_and_independent(tmp_path):
         calls=[]
         class Passwords:
             async def config(self,host): return config
-            async def get(self,host): return {'password':'fixture-only'}
+            def password_for(self,host,resolved):
+                assert resolved == config
+                return 'fixture-only'
         async def password_connection(host,password):
             calls.append((host,password))
             return 'dedicated connection'
@@ -344,10 +354,190 @@ def test_password_connection_is_bound_and_independent(tmp_path):
         manager=SSHTunnels(store,ssh,[{'id':'a','auth':'password_session'}],Passwords())
         try:
             assert await manager.connect_password(manager.host('a'))=='dedicated connection'
-            assert calls[0][0]['_import_identity']==connection_identity(config)
+            assert calls[0][0]['_credential_identity']==connection_identity(config)
+            assert '_import_identity' not in calls[0][0]
             assert ssh.sessions['a'] is shared
             assert 'fixture-only' not in str(manager.rules)
         finally: await manager.close();store.db.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(('credential', 'expected_error'), [
+    ('saved', None),
+    ('missing', 'AUTH_REQUIRED'),
+    ('different_endpoint', 'CREDENTIAL_IDENTITY_CHANGED'),
+    ('untrusted_host', 'HOST_KEY'),
+])
+def test_key_tunnel_uses_saved_password_after_target_rejects_key(tmp_path, credential, expected_error):
+    import shutil
+    import socket
+
+    from backend.ssh import SSHService
+    from backend.ssh_passwords import SSHPasswords, connection_identity
+
+    if not shutil.which('ssh'):
+        pytest.skip('OpenSSH unavailable')
+
+    password_attempts = []
+
+    class Server(asyncssh.SSHServer):
+        def password_auth_supported(self):
+            return True
+
+        def validate_password(self, username, password):
+            password_attempts.append(username)
+            return (username, password) == ('test', 'fixture-only')
+
+        def server_requested(self, listen_host, listen_port):
+            return listen_host == '127.0.0.1'
+
+    async def echo(reader, writer):
+        async with asyncio.timeout(3):
+            writer.write(await reader.readexactly(5))
+            await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    async def run():
+        key = asyncssh.generate_private_key('ssh-ed25519')
+        server = await asyncssh.create_server(Server, '127.0.0.1', 0, server_host_keys=[key])
+        target = await asyncio.start_server(echo, '127.0.0.1', 0)
+        known_hosts = tmp_path/'known_hosts'
+        trusted_key = asyncssh.generate_private_key('ssh-ed25519') if credential == 'untrusted_host' else key
+        known_hosts.write_bytes(f'[127.0.0.1]:{server.get_port()} '.encode() + trusted_key.export_public_key())
+        ssh = SSHService(tmp_path, known_hosts=known_hosts)
+        host = dict(id='a', target='127.0.0.1', user='test', port=server.get_port(), manual=True, auth='key')
+        config = await ssh.effective_details(host)
+        if credential == 'different_endpoint':
+            config['user'] = 'other'
+        saved = dict(identity=connection_identity(config), password='fixture-only')
+        vault = {'a': saved} if credential != 'missing' else {}
+        store = Store(tmp_path/'fallback.db')
+        manager = SSHTunnels(store, ssh, [host], SSHPasswords(ssh, vault))
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            remote_port = sock.getsockname()[1]
+        rule = manager.create('a', TunnelRequest(name='Password fallback',
+            local_port=target.sockets[0].getsockname()[1], remote_port=remote_port))
+        try:
+            await manager.start('a', rule['id'])
+            async with asyncio.timeout(10):
+                while manager.view(rule)['status'] == 'connecting':
+                    await asyncio.sleep(.01)
+            state = manager.view(rule)
+            if expected_error:
+                assert state['status'] == 'error', state
+                assert state['error_code'] == expected_error
+                assert password_attempts == []
+                return
+            assert state['status'] == 'connected', state
+            assert password_attempts == ['test']
+            reader, writer = await asyncio.open_connection('127.0.0.1', remote_port)
+            try:
+                writer.write(b'hello')
+                await writer.drain()
+                assert await asyncio.wait_for(reader.readexactly(5), 3) == b'hello'
+            finally:
+                writer.close()
+                await writer.wait_closed()
+        finally:
+            await manager.close()
+            await ssh.close()
+            store.db.close()
+            target.close()
+            server.close()
+            await target.wait_closed()
+            await server.wait_closed()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('direction', ['local', 'remote'])
+def test_tunnel_reuses_authenticated_session_without_a_saved_password(tmp_path, direction):
+    import socket
+
+    from backend.ssh import SSHService
+    from backend.ssh_passwords import SSHPasswords
+
+    class Server(asyncssh.SSHServer):
+        def password_auth_supported(self):
+            return True
+
+        def validate_password(self, username, password):
+            return (username, password) == ('test', 'fixture-only')
+
+        def connection_requested(self, dest_host, *args):
+            return dest_host == '127.0.0.1'
+
+        def server_requested(self, listen_host, listen_port):
+            return listen_host == '127.0.0.1'
+
+    async def run():
+        async def echo(reader, writer):
+            try:
+                while chunk := await reader.read(4096):
+                    writer.write(chunk)
+                    await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        key = asyncssh.generate_private_key('ssh-ed25519')
+        server = await asyncssh.create_server(Server, '127.0.0.1', 0, server_host_keys=[key])
+        target = await asyncio.start_server(echo, '127.0.0.1', 0)
+        known_hosts = tmp_path/'known_hosts'
+        known_hosts.write_bytes(f'[127.0.0.1]:{server.get_port()} '.encode() + key.export_public_key())
+        ssh = SSHService(tmp_path, known_hosts=known_hosts)
+        host = dict(id='a', target='127.0.0.1', user='test', port=server.get_port(), manual=True,
+                    auth='password_session')
+        store = Store(tmp_path/'shared.db')
+        manager = SSHTunnels(store, ssh, [host], SSHPasswords(ssh, {}))
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            listen_port = sock.getsockname()[1]
+        target_port = target.sockets[0].getsockname()[1]
+        local_port, remote_port = ((listen_port, target_port) if direction == 'local'
+                                   else (target_port, listen_port))
+        rule = manager.create('a', TunnelRequest(name='Existing session', direction=direction,
+            local_port=local_port, remote_port=remote_port))
+
+        async def start():
+            await manager.start('a', rule['id'])
+            async with asyncio.timeout(10):
+                while manager.view(rule)['status'] == 'connecting':
+                    await asyncio.sleep(.01)
+            return manager.view(rule)
+
+        try:
+            await ssh.connect(host, 'fixture-only')
+            session = ssh.sessions['a']
+            config = ssh.connection_configs[session]
+            ssh.connection_configs[session] = dict(config, user='other')
+            assert (await start())['error_code'] == 'SSH_PASSWORD_UNAVAILABLE'
+            ssh.connection_configs[session] = config
+
+            state = await start()
+            assert state['status'] == 'connected', (state['status'], state['error_code'])
+            reader, writer = await asyncio.open_connection('127.0.0.1', listen_port)
+            try:
+                writer.write(b'hello')
+                await writer.drain()
+                assert await asyncio.wait_for(reader.readexactly(5), 3) == b'hello'
+                await manager.stop('a', rule['id'])
+                assert await asyncio.wait_for(reader.read(1), 3) == b''
+                assert not session.is_closed()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+        finally:
+            await manager.close()
+            await ssh.close()
+            store.db.close()
+            target.close()
+            server.close()
+            await target.wait_closed()
+            await server.wait_closed()
+
     asyncio.run(run())
 
 
