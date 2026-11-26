@@ -167,6 +167,13 @@ class MonitorController:
     def run(controller):
         root = app = None
         try:
+            # AsyncSSH can import win32ui on a worker. Its DLL initializer
+            # takes the GIL under the Windows loader lock, while Tk can hold
+            # the GIL waiting for a native thread that needs the loader lock.
+            try:
+                import win32ui
+            except ImportError:
+                pass  # AsyncSSH also supports running without this extension.
             import tkinter as tk
             # Apply per-monitor DPI awareness only to this UI thread.
             import ctypes

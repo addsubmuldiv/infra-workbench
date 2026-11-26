@@ -1,11 +1,47 @@
 from pathlib import Path
+import builtins
 import json
+import sys
+from types import ModuleType, SimpleNamespace
+
+import pytest
+
 from backend.desktop_host.floating_monitor import MonitorSettings, device_status
 
 
+@pytest.mark.parametrize('win32ui_available', [True, False])
+def test_float_initialization_orders_windows_extension_before_tk(monkeypatch, win32ui_available):
+    from backend.desktop_host.floating_monitor import MonitorController
+
+    stages = []
+    import_module = builtins.__import__
+    win32ui = ModuleType('win32ui')
+    tkinter = ModuleType('tkinter')
+
+    def import_windows_extension(name, *args, **kwargs):
+        if name == 'win32ui':
+            stages.append('win32ui')
+            if not win32ui_available:
+                raise ImportError('optional Windows extension unavailable')
+            return win32ui
+        return import_module(name, *args, **kwargs)
+
+    def create_tk():
+        stages.append('Tk')
+        raise RuntimeError('stop before opening a window')
+
+    tkinter.Tk = create_tk
+    monkeypatch.setitem(sys.modules, 'tkinter', tkinter)
+    monkeypatch.setattr(builtins, '__import__', import_windows_extension)
+    controller = SimpleNamespace(error='', enabled=True)
+
+    MonitorController.run(controller)
+
+    assert stages == ['win32ui', 'Tk']
+    assert controller.error == 'stop before opening a window'
+
+
 def test_alias_change_invalidates_floating_render_cache():
-    from types import SimpleNamespace
-    import pytest
     from backend.desktop_host.floating_monitor import FloatingMonitor
 
     class DrawReached(Exception):
