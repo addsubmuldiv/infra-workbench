@@ -50,7 +50,7 @@ export function AgentPermissions({mode,onMode,localRoots,onLocalRoots,remoteRoot
       triggerClassName={'chat-permission-trigger'+(currentMode==='full'?' full':'')} menuClassName="chat-permission-menu"
       preferAbove value={currentMode} options={options.map(option=>({...option,disabled:disabled||!!restoredScope}))}
       description={note} onChange={id=>onMode(id as PermissionMode)}
-      action={{label:advancedLabel,icon:<Settings2 size={14} aria-hidden="true"/>,onSelect:()=>setShowSettings(true)}}>
+      actions={[{label:advancedLabel,icon:<Settings2 size={14} aria-hidden="true"/>,onSelect:()=>setShowSettings(true)}]}>
       <Shield size={14} aria-hidden="true"/><span>{modeLabel}</span><ChevronDown size={12} aria-hidden="true"/>
     </ChatMenuButton>
     {showSettings&&<ModalDialog className="agent-permissions-dialog" labelledBy={titleId} onDismiss={()=>setShowSettings(false)}>

@@ -11,9 +11,9 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function harness(t,respond,configured=true,preferences={}){
   const values=[],deps=[],effects=[],cleanups=[],streams=[],writes=[],requests=[];let slot=0,tree;
   let savedChatId=null,onSelection;
-  const view={scrollTop:0,scrollHeight:1000,clientHeight:400};
+  const view={scrollTop:0,scrollHeight:1000,clientHeight:400,focus(){}};
   const useEffect=(fn,next)=>{const i=slot++;if(!deps[i]||next.some((v,j)=>v!==deps[i][j])){effects.push(()=>{cleanups[i]?.();cleanups[i]=fn()});deps[i]=next}};
-  const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),lazy:()=>Symbol('lazy component'),useEffect,useLayoutEffect:useEffect,
+  const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),lazy:()=>Symbol('lazy component'),useEffect,useLayoutEffect:useEffect,useId:()=>`id-${slot++}`,
     useState:initial=>{const i=slot++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],value=>{values[i]=typeof value==='function'?value(values[i]):value}]},
     useRef:initial=>{const i=slot++;if(!(i in values))values[i]={current:initial};return values[i]}};
   const previous={fetch:globalThis.fetch,window:globalThis.window,storage:Object.getOwnPropertyDescriptor(globalThis,'localStorage')};
@@ -32,7 +32,7 @@ function harness(t,respond,configured=true,preferences={}){
   const exports={};new Function('require','exports',js)(name=>i18nMock(name)??(name==='../terminal/terminalContext'?terminalContext:name==='react'?react:name==='../../workspace/workspaceState'?{workspaceStorage}:name==='../../workspace/workspaceHooks'?{useWorkspaceValue:(key,value)=>react.useState(preferences[key]??value)}:name==='./agentChat'?{...api,loadChatId:()=>savedChatId,saveChatId:id=>{savedChatId=id;writes.push(['iwb-assistant-chat',id])}}:name==='./skills'?skills:name==='../../shared/AppConfirm'?{useAppConfirm:()=>({confirm:async()=>true,confirmation:null})}:{}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...(node.props?.children||[]).flat(Infinity).flatMap(nodes)];
   const find=predicate=>nodes(tree).find(predicate);
-  const render=()=>{slot=0;tree=exports.AssistantChat({configured,selectedHostIds:[]});const node=find(n=>n.props.className==='chat-transcript');node.props.ref.current=view;for(const effect of effects.splice(0))effect();return tree};
+  const render=()=>{slot=0;tree=exports.AssistantChat({status:{configured},statusError:'',selectedHostIds:[],openSettings(){}});const node=find(n=>n.props.className==='chat-transcript');node.props.ref.current=view;for(const effect of effects.splice(0))effect();return tree};
   const unmount=()=>cleanups.splice(0).forEach(fn=>fn?.());
   t.after(()=>{unmount();globalThis.fetch=previous.fetch;globalThis.window=previous.window;if(previous.storage)Object.defineProperty(globalThis,'localStorage',previous.storage);else delete globalThis.localStorage});
   const publish=async(content,updated)=>{const data={chat_id:'a'.repeat(32),title:'a',updated,active_run:'run1',turn:{id:'t-a',role:'assistant',content,created:2,status:'running'}};streams[0].source.enqueue(new TextEncoder().encode(`event: turn\ndata: ${JSON.stringify(data)}\n\n`));await tick();render()};
@@ -45,7 +45,9 @@ test('streamed content remains visible, persists only ID changes and follows onl
   h.view.scrollHeight=1200;await h.publish('真实的第一段',3);assert.equal(h.text(),'真实的第一段');assert.equal(h.view.scrollTop,1200);assert.equal(h.writes.length,1);
   h.view.scrollTop=100;h.find(n=>n.props.className==='chat-transcript').props.onScroll();h.view.scrollHeight=1500;
   await h.publish('真实的第一段，继续输出',4);assert.equal(h.text(),'真实的第一段，继续输出');assert.equal(h.view.scrollTop,100);assert.equal(h.writes.length,1);
-  h.view.scrollTop=1100;h.find(n=>n.props.className==='chat-transcript').props.onScroll();h.view.scrollHeight=1600;await h.publish('又一段',5);assert.equal(h.view.scrollTop,1600);
+  h.find(n=>n.props.className==='chat-jump-latest').props.onClick();assert.equal(h.view.scrollTop,1500);
+  h.view.scrollHeight=1600;await h.publish('又一段',5);assert.equal(h.view.scrollTop,1600);
+  assert.equal(h.find(n=>n.props.className==='chat-jump-latest'),undefined);
 });
 
 test('resource view submits the read-only mode and omits external capabilities',async t=>{
@@ -55,7 +57,7 @@ test('resource view submits the read-only mode and omits external capabilities',
   await h.loaded();
   await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));
   h.render();
-  h.find(n=>n.type==='button'&&n.props.children.includes('资源视图')).props.onClick();
+  h.find(n=>n.type==='button'&&n.props.className?.includes('chat-resource-view')).props.onClick();
   h.render();
   h.input().props.onChange('比较设备显存');h.render();await h.input().props.onSend();
   const request=JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body);
@@ -83,7 +85,7 @@ test('terminal handoff preserves draft, previews removable text, and sends no re
   assert.equal(h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props).props.text,'keep my draft');
   assert.equal(h.find(n=>n.type==='pre').props.children[0],'<script>bad()</script>');
   assert.equal(h.requests.length,count);
-  h.find(n=>n.type==='button'&&n.props.children.includes('移除附件')).props.onClick();h.render();
+  h.find(n=>n.type==='button'&&n.props['aria-label']==='移除附件 · node').props.onClick();h.render();
   assert.equal(h.find(n=>n.type==='pre'),undefined);
 });
 
@@ -92,10 +94,11 @@ test('branch restores the previous draft, skills and permission scope',async t=>
   const draft={content:'revise this request',terminal_attachments:[],selected_skill_names:['review'],engine:'codex',restrict_to_selected:true,selected_host_ids:['original-host'],permission_mode:'read_only',local_roots:['C:/original']};
   const h=harness(t,url=>url.endsWith('/branch')?Response.json({chat:chat('c',null),draft}):undefined);await h.loaded();
   await h.find(n=>Array.isArray(n.props.items)&&typeof n.props.onChange==='function').props.onChange('b'.repeat(32));h.render();await tick();h.render();
-  await h.find(n=>n.type==='button'&&n.props.children.includes('从上一轮之前分支')).props.onClick();h.render();
+  await h.find(n=>Array.isArray(n.props.actions)).props.actions.find(action=>action.label.includes('新建分支')).onSelect();h.render();
   const input=h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props);
   assert.equal(input.props.text,draft.content);assert.deepEqual(input.props.selected,['review']);assert.equal(h.writes.at(-1)[1],'c'.repeat(32));
   assert.ok(h.requests.some(r=>r.url.endsWith('/'+ 'b'.repeat(32)+'/branch')&&r.method==='POST'));
+  h.find(n=>n.props['aria-label']==='机器范围 · 仅限所选 1 台').props.onClick();h.render();
   assert.ok(h.find(n=>n.props.role==='status'&&n.props.children.some(c=>typeof c==='string'&&c.includes('original-host'))));
   const permissions=h.find(n=>typeof n.props.onMode==='function').props;
   assert.equal(permissions.restoredScope.permission_mode,'read_only');
@@ -124,6 +127,21 @@ test('reopening a saved branch restores its original settings and keeps the edit
   assert.deepEqual(body.selected_host_ids,['fixture-host']);
   assert.equal(body.restrict_to_selected,true);
   assert.equal(body.codex_options.cwd,'C:/project');
+});
+
+test('renaming updates the history title without changing the selected chat or draft',async t=>{
+  const h=harness(t,(_url,options)=>options?.method==='PATCH'?Response.json({...chat('a'),title:'训练巡检',custom_title:true,updated:3}):undefined);
+  await h.loaded();
+  h.input().props.onChange('draft');h.render();
+  h.find(n=>Array.isArray(n.props.actions)).props.actions.find(action=>action.label==='重命名对话').onSelect();h.render();
+  h.find(n=>n.type==='input'&&n.props['data-dialog-focus']).props.onChange({target:{value:'  训练巡检  '}});h.render();
+  await h.find(n=>n.type==='form'&&!n.props.className).props.onSubmit({preventDefault(){}});h.render();
+  const request=h.requests.find(r=>r.method==='PATCH');
+  assert.deepEqual(JSON.parse(request.body),{title:'训练巡检'});
+  assert.equal(h.find(n=>Array.isArray(n.props.items)).props.items[0].title,'训练巡检');
+  assert.equal(h.input().props.text,'draft');
+  assert.equal(h.selected,'a'.repeat(32));
+  assert.equal(h.writes.length,1);
 });
 
 test('a late send acknowledgment cannot select the previous chat or clear the current draft',async t=>{
@@ -191,7 +209,7 @@ for(const engine of ['claude','opencode'])test(`${engine} sends without model AP
   const input=h.find(n=>typeof n.props.onChange==='function'&&'text' in n.props);input.props.onChange('hello');h.render();
   assert.equal(h.find(n=>n.type==='button'&&n.props.className==='primary').props.disabled,false);
   const label=engine==='claude'?'Claude Code':'OpenCode';
-  assert.ok(h.find(n=>n.type==='small'&&n.props.children.some(c=>typeof c==='string'&&c.includes(label))));
+  assert.ok(h.find(n=>n.props.className==='chat-control chat-configuration-trigger').props['aria-label'].includes(label));
   h.find(n=>n.props.className==='chat-composer').props.onSubmit({preventDefault(){}});await tick();h.render();
   const body=JSON.parse(h.requests.find(r=>r.url.endsWith('/messages')).body);assert.equal(body.engine,engine);assert.equal('profile_id' in body,false);
 });

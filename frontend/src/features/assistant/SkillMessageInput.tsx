@@ -1,11 +1,11 @@
 import {t} from '../../shared/i18n';
 import {ui} from './assistantLocale';
-import React,{useId,useRef,useState} from 'react';
+import React,{useId,useState,type RefObject} from 'react';
 import type {SkillMeta} from './skills';
 import {skillMention} from './skillMention';
 
-export function SkillMessageInput({text,onChange,skills,selected,onSelect,disabled,readOnly,supplemental,error,onSend}:{text:string;onChange:(value:string)=>void;skills:SkillMeta[];selected:string[];onSelect:(value:string[])=>void;disabled:boolean;readOnly:boolean;supplemental:boolean;error:string;onSend:()=>void}){
-  const input=useRef<HTMLTextAreaElement>(null),id=useId();
+export function SkillMessageInput({input,text,onChange,skills,selected,onSelect,disabled,readOnly,supplemental,error,onSend}:{input:RefObject<HTMLTextAreaElement|null>;text:string;onChange:(value:string)=>void;skills:SkillMeta[];selected:string[];onSelect:(value:string[])=>void;disabled:boolean;readOnly:boolean;supplemental:boolean;error:string;onSend:()=>void}){
+  const id=useId();
   const [cursor,setCursor]=useState(0),[open,setOpen]=useState(false),[active,setActive]=useState(0);
   const mention=supplemental?null:skillMention(text,cursor);
   const choices=skills.filter(skill=>skill.enabled&&!selected.includes(skill.name)&&(!mention?.query||`${skill.name} ${skill.description}`.toLocaleLowerCase().includes(mention.query)));

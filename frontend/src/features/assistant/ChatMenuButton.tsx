@@ -9,6 +9,7 @@ type MenuOption={
   description?:string;
   disabled?:boolean;
 };
+type MenuAction={label:string;icon?:ReactNode;description?:string;disabled?:boolean;danger?:boolean;onSelect:()=>void};
 
 type Props={
   label:string;
@@ -17,16 +18,16 @@ type Props={
   menuClassName?:string;
   disabled?:boolean;
   preferAbove?:boolean;
-  value:string;
-  options:MenuOption[];
-  onChange:(id:string)=>void;
+  value?:string;
+  options?:MenuOption[];
+  onChange?:(id:string)=>void;
   emptyLabel?:string;
   description?:string;
-  action?:{label:string;icon?:ReactNode;onSelect:()=>void};
+  actions?:MenuAction[];
   children:ReactNode;
 };
 
-export function ChatMenuButton({label,triggerLabel,triggerClassName,menuClassName,disabled,preferAbove=false,value,options,onChange,emptyLabel,description,action,children}:Props){
+export function ChatMenuButton({label,triggerLabel,triggerClassName,menuClassName,disabled,preferAbove=false,value,options=[],onChange,emptyLabel,description,actions=[],children}:Props){
   const [open,setOpen]=useState(false);
   const trigger=useRef<HTMLButtonElement>(null);
   const menu=useRef<HTMLDivElement>(null);
@@ -122,14 +123,18 @@ export function ChatMenuButton({label,triggerLabel,triggerClassName,menuClassNam
         const checked=option.id===value;
         return <button type="button" tabIndex={-1} role="menuitemradio" aria-checked={checked} aria-disabled={option.disabled||undefined}
           aria-describedby={option.description?id+'-'+option.id:undefined} aria-label={option.description?option.label:undefined} key={option.id} title={option.title}
-          onClick={()=>{if(!option.disabled){close(true);if(!checked)onChange(option.id)}}}>
+          onClick={()=>{if(!option.disabled){close(true);if(!checked)onChange?.(option.id)}}}>
           <span>{option.label}{option.description&&<small id={id+'-'+option.id}>{option.description}</small>}</span>
           {checked&&<Check size={15} aria-hidden="true"/>}
         </button>;
       })}
       {!options.length&&emptyLabel&&<p>{emptyLabel}</p>}
-      {action&&<button type="button" tabIndex={-1} role="menuitem" className="chat-menu-action"
-        onClick={()=>{close(true);action.onSelect()}}><span>{action.label}</span>{action.icon}</button>}
+      {actions.map((action,index)=><button key={action.label} type="button" tabIndex={-1} role="menuitem"
+        className={'chat-menu-action'+(action.danger?' danger':'')} aria-disabled={action.disabled||undefined}
+        aria-label={action.label} aria-describedby={action.description?`${id}-action-${index}`:undefined}
+        onClick={()=>{if(!action.disabled){close(true);action.onSelect()}}}>
+        <span>{action.label}{action.description&&<small id={`${id}-action-${index}`}>{action.description}</small>}</span>{action.icon}
+      </button>)}
     </div>,document.body)}
   </>;
 }

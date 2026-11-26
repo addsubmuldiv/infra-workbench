@@ -129,6 +129,18 @@ class CodexAnswerRequest(BaseModel):
     answers:dict[str,dict[str,list[str]]]
 
 
+class ChatTitleRequest(BaseModel):
+    model_config=ConfigDict(extra='forbid',str_strip_whitespace=True)
+    title:str=Field(min_length=1,max_length=120)
+
+    @field_validator('title')
+    @classmethod
+    def single_line(cls,value):
+        if value.splitlines()!=[value] or '\x00' in value:
+            raise ValueError('对话名称必须为单行文本')
+        return value
+
+
 class ChatMessageRequest(BaseModel):
     model_config=ConfigDict(extra='forbid')
     profile_id:str|None=Field(default=None,max_length=64)
@@ -281,7 +293,7 @@ class AgentChat:
                     yield frame('deleted',dict(chat_id=chat_id));return
                 running=bool(chat['active_run'])
                 turn = chat['turns'][-1]
-                update = dict(chat_id=chat_id,title=chat['title'],updated=chat['updated'],active_run=chat['active_run'])
+                update = dict(chat_id=chat_id,title=chat['title'],custom_title=chat.get('custom_title',False),updated=chat['updated'],active_run=chat['active_run'])
                 if not previous or previous['id'] != turn['id']:
                     event = frame('snapshot',self.view(chat))
                 elif deltas and running:
@@ -309,19 +321,29 @@ class AgentChat:
 
     def view(self,chat):
         result={**{key:chat[key] for key in ('id','title','created','updated','turns','active_run')},'engine':chat.get('engine','deepagents'),'draft':chat.get('draft'),'request_scope':chat.get('request_scope')}
+        result['custom_title']=chat.get('custom_title',False)
         result['turns']=[{key:value for key,value in turn.items() if key not in ('model_history_before','request')} for turn in chat['turns']]
         return result
 
     def list(self):
         items=[]
         for row in self.store.db.execute('SELECT payload FROM assistant_chats ORDER BY updated DESC'):
-            chat=json.loads(row[0]);items.append({key:chat[key] for key in ('id','title','created','updated','active_run')})
+            chat=json.loads(row[0]);items.append({**{key:chat[key] for key in ('id','title','created','updated','active_run')},'custom_title':chat.get('custom_title',False)})
         return dict(items=items)
 
     def create(self):
         now=time.time()
         chat=dict(id=uuid.uuid4().hex,title='新对话',created=now,updated=now,turns=[],messages=[],state={},active_run=None)
         self.save(chat)
+        return self.view(chat)
+
+    def rename(self,chat_id,body:ChatTitleRequest):
+        chat=self.current(chat_id)
+        if chat['title']==body.title and chat.get('custom_title'):
+            return self.view(chat)
+        renamed={**chat,'title':body.title,'custom_title':True}
+        self.save(renamed)
+        chat.update(title=renamed['title'],custom_title=True,updated=renamed['updated'])
         return self.view(chat)
 
     def branch(self,chat_id):
@@ -458,7 +480,7 @@ class AgentChat:
         chat['turns'].extend([dict(id=uuid.uuid4().hex,role='user',content=text,terminal_attachments=attachments,created=time.time(),request=request,model_history_before=history_before),
                               dict(id=run_id,role='assistant',content='',created=time.time(),status='running',tools=[],model={'codex':'Codex','claude':'Claude Code','opencode':'OpenCode','antigravity':'Antigravity','dsh':'DeepSeek Harness'}.get(body.engine,provider.config.get('model','')),profile_name=getattr(provider,'profiles',{}).get(getattr(provider,'active_id',''),{}).get('name',''),selected_skill_names=list(dict.fromkeys(body.selected_skill_names)))])
         chat['messages'].append(dict(role='user',content=model_text))
-        if len(chat['turns'])==2:chat['title']=text[:60]
+        if len(chat['turns'])==2 and not chat.get('custom_title'):chat['title']=text[:60]
         chat['active_run']=run_id
         self.save(chat)
         self.live[chat_id]=chat
@@ -668,6 +690,9 @@ def register_chat_routes(app,service):
 
     @app.get('/api/assistant/chats/{chat_id}')
     async def get(chat_id:str):return service.view(service.get(chat_id))
+
+    @app.patch('/api/assistant/chats/{chat_id}')
+    async def rename(chat_id:str,body:ChatTitleRequest):return service.rename(chat_id,body)
 
     @app.get('/api/assistant/chats/{chat_id}/events')
     async def events(chat_id:str,request:Request):

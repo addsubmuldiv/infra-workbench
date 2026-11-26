@@ -1,15 +1,15 @@
 import {ui} from './assistantLocale';
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {Check,ChevronDown,LoaderCircle,Settings2} from 'lucide-react';
+import {Check,ChevronDown,LoaderCircle} from 'lucide-react';
 import {agentRequest,type AgentView} from './agentSettings';
 import {modelCacheKey,readModelCache,writeModelCache} from './modelCache';
 
-export function ChatModelPicker({model,openSettings}:{model?:string;openSettings?:()=>void}){
+export function ChatModelPicker({model,disabled}:{model?:string;disabled:boolean}){
   const [current,setCurrent]=useState(model),[view,setView]=useState<AgentView|null>(null),[models,setModels]=useState<string[]|null>(null);
   const [loading,setLoading]=useState(false),[switching,setSwitching]=useState(''),[truncated,setTruncated]=useState(false);
   const [filter,setFilter]=useState(''),[error,setError]=useState('');
-  const [open,setOpen]=useState(false),[position,setPosition]=useState({left:12,bottom:0,width:280,maxHeight:320});
+  const [open,setOpen]=useState(false),[position,setPosition]=useState<React.CSSProperties>({left:12,width:280,maxHeight:320});
   const trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),generation=useRef(0);
   useEffect(()=>{
     const invalidate=()=>{generation.current++;setOpen(false);setModels(null);setView(null);setLoading(false)};
@@ -17,15 +17,20 @@ export function ChatModelPicker({model,openSettings}:{model?:string;openSettings
     return()=>{generation.current++;window.removeEventListener('infra-workbench:agent-settings-changed',invalidate)};
   },[]);
   useLayoutEffect(()=>{
-    if(!open)return;
+    if(!open||disabled)return;
     const rect=trigger.current!.getBoundingClientRect(),width=Math.min(300,window.innerWidth-24);
-    setPosition({left:Math.max(12,Math.min(rect.left,window.innerWidth-width-12)),bottom:window.innerHeight-rect.top+8,width,maxHeight:Math.max(80,rect.top-20)});
+    const below=window.innerHeight-rect.bottom-20,above=rect.top-20;
+    const placeBelow=below>=300||below>=above;
+    setPosition({left:Math.max(12,Math.min(rect.left,window.innerWidth-width-12)),width,
+      maxHeight:Math.max(0,Math.min(420,placeBelow?below:above)),
+      ...(placeBelow?{top:rect.bottom+8}:{bottom:window.innerHeight-rect.top+8})});
     const outside=(event:PointerEvent)=>{if(!trigger.current?.contains(event.target as Node)&&!menu.current?.contains(event.target as Node))setOpen(false)};
     const dismiss=(event:Event)=>{if(!menu.current?.contains(event.target as Node))setOpen(false)};
     document.addEventListener('pointerdown',outside);window.addEventListener('resize',dismiss);window.addEventListener('scroll',dismiss,true);
-    menu.current?.querySelector('input')?.focus();
+    (menu.current?.querySelector('input')??menu.current)?.focus({preventScroll:true});
     return()=>{document.removeEventListener('pointerdown',outside);window.removeEventListener('resize',dismiss);window.removeEventListener('scroll',dismiss,true)};
-  },[open]);
+  },[open,disabled]);
+  useEffect(()=>{if(disabled)setOpen(false)},[disabled]);
   useEffect(()=>setCurrent(model),[model]);
   useEffect(()=>{
     void load();
@@ -60,15 +65,15 @@ export function ChatModelPicker({model,openSettings}:{model?:string;openSettings
       const value=await agentRequest<AgentView>('/model','PUT',{model:name,profile_id:view?.active_id});
       setView(value);setCurrent(value.model);
       window.dispatchEvent(new Event('infra-workbench:agent-settings-changed'));
-      close();
+      close();trigger.current?.focus({preventScroll:true});
     }catch(e){setError(e instanceof Error?e.message:ui("模型切换失败"))}
     finally{setSwitching('')}
   };
   const query=filter.trim().toLowerCase();
   const visible=(models||[]).filter(item=>!query||item.toLowerCase().includes(query));
   return <div className="chat-model-picker">
-    <button ref={trigger} type="button" className="text-button" aria-expanded={open} aria-haspopup="dialog" onClick={()=>{if(open)close();else{setOpen(true);void load()}}} title={ui("切换模型")} aria-label={ui("切换模型")}>{switching&&<LoaderCircle size={12} className="spin"/>}<span>{current||ui("配置模型")}</span><ChevronDown size={12}/></button>
-    {open&&createPortal(<div ref={menu} className="chat-model-menu" role="dialog" aria-label={ui("选择模型")} style={position} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();trigger.current?.focus()}}}>
+    <button ref={trigger} type="button" className="chat-control" disabled={disabled} aria-expanded={open&&!disabled} aria-haspopup="dialog" onClick={()=>{if(open)close();else{setOpen(true);void load()}}} title={ui("切换模型")} aria-label={ui("切换模型")}>{switching&&<LoaderCircle size={12} className="spin"/>}<span>{current||ui("配置模型")}</span><ChevronDown size={12}/></button>
+    {open&&!disabled&&createPortal(<div ref={menu} tabIndex={-1} className="chat-model-menu" role="dialog" aria-label={ui("选择模型")} style={position} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();trigger.current?.focus()}}}>
       {models===null?(loading&&<p className="chat-model-state"><LoaderCircle size={13} className="spin"/>{ui("正在获取模型列表…")}</p>):<>
         <input aria-label={ui("筛选模型")} placeholder={ui("筛选模型")} autoComplete="off" spellCheck={false} value={filter} onChange={event=>setFilter(event.target.value)}/>
         <div className="chat-model-list">{visible.map(item=><button type="button" key={item} className={item===current?'active':''} disabled={!!switching} aria-pressed={item===current} onClick={()=>void switchModel(item)}><span>{item}</span>{item===current?<Check size={13}/>:switching===item?<LoaderCircle size={13} className="spin"/>:null}</button>)}
@@ -78,7 +83,6 @@ export function ChatModelPicker({model,openSettings}:{model?:string;openSettings
       </>}
       {error&&<><p className="chat-model-state error" role="alert">{error}</p><button type="button" onClick={()=>void load(true)}>{ui("重新获取模型列表")}</button>{view&&<><input aria-label={ui("手动输入模型 ID")} placeholder={ui("或手动输入模型 ID")} value={filter} onChange={event=>setFilter(event.target.value)}/><button type="button" disabled={!filter.trim()||!!switching} onClick={()=>void switchModel(filter.trim())}>{ui("切换到此模型")}</button></>}</>}
       {models!==null&&<button type="button" className="chat-model-settings" disabled={loading} onClick={()=>void load(true)}>{ui("重新获取模型列表")}</button>}
-      <button type="button" className="chat-model-settings" onClick={()=>{close();openSettings?.()}}><Settings2 size={13}/>{ui("打开模型设置")}</button>
     </div>,document.body)}
   </div>;
 }

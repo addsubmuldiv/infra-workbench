@@ -3,17 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 import {i18nMock} from '../i18n-mock.mjs';
+import {modelSettingsHash} from '../../src/workspace/navigation.ts';
 
-function harness(t,saved){
+function harness(t,saved,hash=''){
   let slot=0,tree;const values=[];let stored=saved;
   const previous=globalThis.localStorage;
+  const previousLocation=globalThis.location;
+  globalThis.location={hash};
   globalThis.localStorage={getItem:()=>stored,setItem:(_key,value)=>stored=value};
-  t.after(()=>{if(previous===undefined)delete globalThis.localStorage;else globalThis.localStorage=previous});
+  t.after(()=>{if(previous===undefined)delete globalThis.localStorage;else globalThis.localStorage=previous;if(previousLocation===undefined)delete globalThis.location;else globalThis.location=previousLocation});
   const react={useEffect(){},createElement:(type,props,...children)=>({type,props:{...props,children}}),
     useState:initial=>{const index=slot++;if(!(index in values))values[index]=typeof initial==='function'?initial():initial;return[values[index],next=>{values[index]=typeof next==='function'?next(values[index]):next}]}};
   const js=ts.transpileModule(fs.readFileSync(new URL('../../src/features/settings/SettingsPage.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   const exports={};const components={};
-  new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='react/jsx-runtime'?{jsx:(type,props,key)=>({type,key,props}),jsxs:(type,props,key)=>({type,key,props})}:name==='lucide-react'?{}:components[name]??={}),exports);
+  new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='react/jsx-runtime'?{jsx:(type,props,key)=>({type,key,props}),jsxs:(type,props,key)=>({type,key,props})}:name==='lucide-react'?{}:name==='../../workspace/navigation'?{modelSettingsHash}:components[name]??={}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(nodes)];
   const render=()=>{slot=0;tree=exports.default()};
   const all=()=>nodes(tree);
@@ -44,6 +47,11 @@ test('saved integration tab is restored on opening settings',t=>{
   const h=harness(t,'{"category":"integrations","integrations":"mail"}');
   assert.equal(h.all().find(n=>n.type==='button'&&n.props.children==='邮件').props['aria-pressed'],true);
   assert.equal(h.panels().length,1);
+});
+
+test('the assistant opens model configuration even when another settings tab was saved',t=>{
+  const h=harness(t,'{"category":"integrations","integrations":"mail","ai":"skills"}',modelSettingsHash);
+  assert.equal(h.all().find(n=>n.type==='button'&&n.props.children==='模型配置').props['aria-pressed'],true);
 });
 
 test('about and help can replay the real guide without navigating into demo',t=>{

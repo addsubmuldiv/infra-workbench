@@ -4,6 +4,7 @@ import {InfraAssistant} from './InfraAssistantPage';
 import {handoffTerminalContext} from '../terminal/terminalContext';
 import {receiveTerminalContext} from '../terminal/terminalAssistantBridge';
 import {t,useLocale} from '../../shared/i18n';
+import {modelSettingsHash} from '../../workspace/navigation';
 import './assistantWindow.css';
 import './standaloneAssistant.css';
 
@@ -34,6 +35,6 @@ export function StandaloneAssistant(){
  const action=(action:string)=>{if(invoke)void invoke('quick_window_action',{action}).catch(console.error);else window.close()};
  return <main className="standalone-assistant">
   <header onPointerDown={event=>{if(invoke&&event.button===0&&!(event.target as HTMLElement).closest('button'))action('drag')}}><Sparkles size={17}/><strong>{t('AI 助手','AI assistant')}</strong><span>{t('独立窗口','Separate window')}</span><button aria-label={t('关闭 AI 助手窗口','Close AI assistant window')} title={t('关闭窗口，保留对话','Close window and keep conversation')} onClick={()=>action('close')}><X size={17}/></button></header>
-  <InfraAssistant compact selectedHostIds={host?[host]:[]} openSettings={()=>window.open('/#settings','_blank','noopener')}/>
+  <InfraAssistant compact selectedHostIds={host?[host]:[]} openSettings={()=>window.open('/'+modelSettingsHash,'_blank','noopener')}/>
  </main>;
 }

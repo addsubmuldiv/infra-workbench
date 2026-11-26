@@ -9,6 +9,7 @@ import {MailSettingsPage} from '../reservations/MailSettingsPage';
 import {SkillsSettings} from '../assistant/SkillsSettings';
 import {LanguageSettings} from './LanguageSettings';
 import {DesktopUpdates} from '../desktop/DesktopUpdatePanel';
+import {modelSettingsHash} from '../../workspace/navigation';
 
 const storageKey='iwb.settings.navigation';
 const categoryIds=['general','ai','integrations','about'] as const;
@@ -27,7 +28,8 @@ function readNavigation():Navigation{
 
 export default function SettingsPage(){
   useLocale();
-  const [navigation,setNavigation]=useState(readNavigation);
+  const [navigation,setNavigation]=useState(()=>location.hash===modelSettingsHash
+    ?{...readNavigation(),category:'ai' as const,ai:'models' as const}:readNavigation());
   const activePanel=navigation.category==='ai'?navigation.ai:navigation.category==='integrations'?navigation.integrations:navigation.category;
   // Keep visited forms mounted so switching categories preserves unsaved edits.
   const [visited,setVisited]=useState(()=>new Set<string>([activePanel]));
@@ -41,13 +43,16 @@ export default function SettingsPage(){
   function navigate(next:Navigation){
     setNavigation(next);
     const panel=next.category==='ai'?next.ai:next.category==='integrations'?next.integrations:next.category;
+    if(panel!=='models'&&location.hash===modelSettingsHash)window.history.replaceState(window.history.state,'','#settings');
     setVisited(previous=>new Set([...previous,panel]));
     try{localStorage.setItem(storageKey,JSON.stringify(next))}catch{/* Optional preference. */}
   }
   useEffect(()=>{
     const showUpdates=()=>navigate({...readNavigation(),category:'about'});
+    const showModels=()=>{if(location.hash===modelSettingsHash)navigate({...readNavigation(),category:'ai',ai:'models'})};
     window.addEventListener('iwb:show-update-settings',showUpdates);
-    return()=>window.removeEventListener('iwb:show-update-settings',showUpdates);
+    window.addEventListener('hashchange',showModels);
+    return()=>{window.removeEventListener('iwb:show-update-settings',showUpdates);window.removeEventListener('hashchange',showModels)};
   },[]);
   const panels:Record<string,()=>ReactNode>={
     general:()=> <><LanguageSettings/><LaunchSettingsPage/></>,

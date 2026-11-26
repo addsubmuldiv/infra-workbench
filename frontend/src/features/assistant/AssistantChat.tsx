@@ -11,12 +11,15 @@ import {AgentProfilePicker} from './AgentProfilePicker';
 import {ContextUsageMeter} from './ContextUsageMeter';
 import {ChatSessionPicker} from './ChatSessionPicker';
 import {ChatModelPicker} from './ChatModelPicker';
+import {ChatMenuButton} from './ChatMenuButton';
 import {workspaceStorage} from '../../workspace/workspaceState';
 import {useWorkspaceValue} from '../../workspace/workspaceHooks';
-import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {Check,Settings2,Sparkles,Server,TriangleAlert,ChevronDown,LoaderCircle,Plus,Send,Square,Trash2} from 'lucide-react';
+import React,{useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
+import {Activity,ArrowDown,ArrowUpRight,Check,Settings2,Sparkles,Server,TriangleAlert,ChevronDown,Ellipsis,GitBranch,LoaderCircle,Pencil,Plus,Send,Square,Trash2,FileText,Bell,Paperclip,X} from 'lucide-react';
 import {assistantEngineName as engineName,chatReplyTime,applyChatEvent,chatRequest,isVisibleCodexItem,loadChatId,saveChatId,shouldFollowChat,watchChat,toolNames,toolPresentation,type Chat,type ChatItem,type ChatTool,type ChatTurn} from './agentChat';
 import {useAppConfirm} from '../../shared/AppConfirm';
+import {ModalDialog} from '../../shared/ModalDialog';
+import type {AssistantStatus} from './infraAssistant';
 import './agentChat.css';
 import {OverlayScrollbar} from '../../shared/OverlayScrollbar';
 import {ChatMarkdown} from './ChatMarkdown';
@@ -26,7 +29,11 @@ import {SkillMessageInput} from './SkillMessageInput';
 
 const AssistantA2ui=React.lazy(()=>import('./AssistantA2ui'));
 
-const suggestions=['检查可用资源和运行中的服务','分析训练日志并找出异常','帮我设置资源监控'];
+const suggestions=[
+  {icon:Server,prompt:'检查可用资源和运行中的服务'},
+  {icon:FileText,prompt:'分析训练日志并找出异常'},
+  {icon:Bell,prompt:'帮我设置资源监控'},
+];
 type ComposerDraft={chatId:string|null;text:string|null;skills:string[]|null};
 function legacyComposer():ComposerDraft{
   const draft:ComposerDraft={chatId:loadChatId(),text:null,skills:null};
@@ -39,7 +46,16 @@ function legacyComposer():ComposerDraft{
   return draft;
 }
 
-export function AssistantChat({configured,selectedHostIds,model,openSettings}:{configured:boolean;selectedHostIds:string[];model?:string;openSettings?:()=>void}){
+export function AssistantChat({status,statusError,selectedHostIds,openSettings}:{status:AssistantStatus|null;statusError:string;selectedHostIds:string[];openSettings:()=>void}){
+  const model=status?.model;
+  const [configurationOpen,setConfigurationOpen]=useState(false),[scopeOpen,setScopeOpen]=useState(false);
+  const [awayFromLatest,setAwayFromLatest]=useState(false);
+  const configurationId=useId(),scopeId=useId(),sendHintId=useId();
+  const renameId=useId();
+  const [renameDraft,setRenameDraft]=useState<{chatId:string;title:string;error?:string}|null>(null);
+  const configurationTrigger=useRef<HTMLButtonElement>(null),configurationPanel=useRef<HTMLDivElement>(null);
+  const composerInput=useRef<HTMLTextAreaElement>(null);
+  const focusComposerOnIdle=useRef(false);
   const [attachments,setAttachments]=useState<TerminalAttachment[]>(takeTerminalContext);
   useEffect(()=>{const receive=()=>setAttachments(old=>[...old,...takeTerminalContext()]);window.addEventListener(TERMINAL_CONTEXT_EVENT,receive);return()=>window.removeEventListener(TERMINAL_CONTEXT_EVENT,receive)},[]);
   const [engine,setEngine]=useWorkspaceValue<AssistantEngine>('workspace:assistant-engine','deepagents');
@@ -88,6 +104,7 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
       setDraftCodex(draft?.codex_options??null);
     }
     if(changed){
+      setRenameDraft(null);
       if(previous||value.draft)setAttachments(value.draft?.terminal_attachments??[]);
       if(value.draft)setResourceViewEnabled(!!value.draft.resource_view);
       follow.current=true;
@@ -155,8 +172,25 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
   },[chat?.id,chat?.active_run,subscriptionVersion]);
   useLayoutEffect(()=>{
     const view=transcript.current;
-    if(view&&follow.current)view.scrollTop=view.scrollHeight;
+    if(view&&follow.current)view.scrollTop=chat?.turns.length?view.scrollHeight:0;
+    if(view)setAwayFromLatest(!shouldFollowChat(view));
   },[chat]);
+  const jumpToLatest=()=>{
+    const view=transcript.current;
+    if(!view)return;
+    follow.current=true;
+    view.scrollTop=view.scrollHeight;
+    view.focus({preventScroll:true});
+    setAwayFromLatest(false);
+  };
+  useLayoutEffect(()=>{
+    if(configurationOpen)configurationPanel.current?.focus({preventScroll:true});
+  },[configurationOpen]);
+  useLayoutEffect(()=>{
+    if(busy||!focusComposerOnIdle.current)return;
+    focusComposerOnIdle.current=false;
+    composerInput.current?.focus({preventScroll:true});
+  },[busy]);
   const act=async(name:string,fn:(signal:AbortSignal,isCurrent:()=>boolean)=>Promise<void>)=>{
     if(request.current||remoteSelection.current)return;
     const controller=new AbortController();request.current=controller;setBusy(name);setError('');
@@ -168,7 +202,15 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
   const running=!!chat?.active_run;
   const runMode=running?chat?.turns.find(turn=>turn.id===chat.active_run)?.permission_mode:undefined;
   const canSteer=running&&chat?.engine==='codex';
-  const canSend=!!text.trim()&&!busy&&!steering&&(!resourceView||!hasExtraContext)&&(running?canSteer:(engine!=='deepagents'||configured)&&(!scopeRestricted||scopeHostIds.length>0));
+  const needsModel=!running&&engine==='deepagents'&&!status?.configured;
+  const modelWarning=!running&&engine==='deepagents'&&(statusError||status?.credential_error);
+  const emptyScope=!running&&scopeRestricted&&!scopeHostIds.length;
+  const incompatibleContext=resourceView&&hasExtraContext;
+  const canSend=!!text.trim()&&!busy&&!steering&&!incompatibleContext&&(running?canSteer:!needsModel&&!emptyScope);
+  const settingsLocked=!!busy||running;
+  const assistantLabel=[engine==='deepagents'?t('内置助手','Built-in assistant'):engineName(engine),engine==='deepagents'?model:engine==='codex'?(draftCodex??codexOptions).model:''].filter(Boolean).join(' · ');
+  const scopeLabel=scopeRestricted?t(`仅限所选 ${scopeHostIds.length} 台`,`Selected machines (${scopeHostIds.length})`):t('全部机器','All machines');
+  const dismissConfiguration=()=>{setConfigurationOpen(false);configurationTrigger.current?.focus({preventScroll:true})};
 
   const send=(event?:React.FormEvent)=>{
     event?.preventDefault();
@@ -192,7 +234,11 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
       setAttachments(current=>current.filter(item=>!attachments.includes(item)));
     });
   };
-  const newChat=()=>act('new',async (signal,isCurrent)=>{subscription.current?.abort();current.current=null;const value=await chatRequest<Chat>('','POST',{},signal);if(isCurrent())apply(value)});
+  const newChat=()=>act('new',async (signal,isCurrent)=>{
+    subscription.current?.abort();current.current=null;
+    const value=await chatRequest<Chat>('','POST',{},signal);
+    if(isCurrent()){apply(value);setConfigurationOpen(false);focusComposerOnIdle.current=true}
+  });
   const switchChat=(id:string)=>act('switch',async (signal,isCurrent)=>{subscription.current?.abort();current.current=null;const value=await chatRequest<Chat>('/'+id,'GET',undefined,signal);if(isCurrent())apply(value)});
   const branch=()=>{
     if(!chat||chat.active_run)return;
@@ -200,7 +246,7 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
     return act('branch',async (signal,isCurrent)=>{
       const value=await chatRequest<{chat:Chat;draft:ChatDraft}>('/'+source+'/branch','POST',{},signal);
       if(!isCurrent()||current.current!==source)return;
-      subscription.current?.abort();apply({...value.chat,draft:value.draft});
+      subscription.current?.abort();apply({...value.chat,draft:value.draft});setConfigurationOpen(false);focusComposerOnIdle.current=true;
     });
   };
   const steer=async(id:string,run:string,content:string)=>{
@@ -218,53 +264,219 @@ export function AssistantChat({configured,selectedHostIds,model,openSettings}:{c
     if(current.current!==chat.id)return;
     void act('delete',async (signal,isCurrent)=>{await chatRequest('/'+chat.id,'DELETE',undefined,signal);const value=await chatRequest<{items:ChatItem[]}>('','GET',undefined,signal);if(!isCurrent())return;setItems(value.items);if(value.items[0]){const next=await chatRequest<Chat>('/'+value.items[0].id,'GET',undefined,signal);if(isCurrent())apply(next)}else{setChat(null);chatValue.current=null;current.current=null;setAttachments([])}});
   };
+  const saveTitle=(event:React.FormEvent)=>{
+    event.preventDefault();
+    const title=renameDraft?.title.trim();
+    if(!renameDraft||!title||current.current!==renameDraft.chatId)return;
+    const id=renameDraft.chatId;
+    return act('rename',async (signal,isCurrent)=>{
+      try{
+        const value=await chatRequest<Chat>('/'+id,'PATCH',{title},signal);
+        if(isCurrent()&&current.current===id){apply(value);setRenameDraft(null)}
+      }catch(e){
+        if(isCurrent())setRenameDraft(previous=>previous?.chatId===id?{...previous,error:e instanceof Error?ui(e.message):t('无法保存对话名称','Could not save the conversation name')}:previous);
+      }
+    });
+  };
   return <section className="agent-chat" aria-label={ui("AI 工作台对话")}>
-    <div className="chat-toolbar"><ChatSessionPicker items={items} value={chat?.id||''} disabled={!!busy} onChange={switchChat}/><div><button className="icon-button" aria-label={ui("新对话")} title={ui("新对话")} disabled={!!busy} onClick={newChat}><Plus size={16}/></button><details className="chat-more"><summary aria-label={ui("对话选项")}>•••</summary><div><button disabled={!!busy||!chat||running||!chat.turns.some(turn=>turn.role==='user')} onClick={branch}>{t("从上一轮之前分支","Branch before the previous round")}</button><p>{t("分支保留此前的对话，并恢复上一轮用户消息供编辑。已执行的命令和文件修改不会回退。","Branch keeps earlier conversation and restores the previous user message for editing. Executed commands and file changes are not rolled back.")}</p><button disabled={!!busy||!chat||running} onClick={remove}><Trash2 size={14}/>{ui("删除当前对话")}</button><p>{ui("对话保存在本机，上下文较长时会自动压缩早期内容。文件片段和检查结果会发送给当前模型，常见凭据字段会脱敏。")}</p></div></details></div></div>
-    <details className="chat-configuration"><summary><Settings2 size={14}/><span>{engineName(engine)}{engine==='deepagents'&&model?' · '+model:''}</span><small>{t('模型与上下文','Model and context')}</small><ChevronDown size={13}/></summary><div>
-      <AssistantEnginePicker value={engine} onChange={setEngine} disabled={!!busy||!!chat?.active_run}/>{engine==='deepagents'&&<AgentProfilePicker onChange={value=>setProfileId(value.active_id)}/>}
-      {engine==='codex'&&<CodexHost value={draftCodex??codexOptions} onChange={value=>{if(draftCodex)setDraftCodex(value);else setCodexOptions(value)}} disabled={!!busy||!!chat?.active_run}/>}
-      {engine==='deepagents'&&<ContextUsageMeter chat={chat} model={model}/>}
-    </div></details>
+    <div className="chat-toolbar">
+      <ChatSessionPicker items={items} value={chat?.id||''} disabled={!!busy} onChange={switchChat}/>
+      <div className="chat-toolbar-actions">
+        <button type="button" className="chat-control chat-new" disabled={!!busy} onClick={newChat}>
+          <Plus size={16} aria-hidden="true"/>{ui("新对话")}
+        </button>
+        <button ref={configurationTrigger} type="button" className="chat-control chat-configuration-trigger"
+          aria-label={t('引擎与模型','Engine and model')+' · '+assistantLabel}
+          title={t('引擎与模型','Engine and model')+' · '+assistantLabel}
+          aria-expanded={configurationOpen} aria-controls={configurationOpen?configurationId:undefined}
+          onClick={()=>setConfigurationOpen(value=>!value)}>
+          <Settings2 size={16} aria-hidden="true"/><span>{assistantLabel}</span>
+        </button>
+        <ChatMenuButton label={ui("对话选项")} triggerClassName="chat-control chat-more-trigger"
+          actions={[
+            {label:t('重命名对话','Rename conversation'),icon:<Pencil size={15}/>,disabled:!!busy||!chat,
+              onSelect:()=>{if(chat)setRenameDraft({chatId:chat.id,title:chat.title})}},
+            {label:t('编辑上一条消息并新建分支','Edit last message in a new branch'),icon:<GitBranch size={15}/>,
+              description:t('保留原对话和已执行的操作。','Keeps the original conversation and completed actions.'),
+              disabled:settingsLocked||!chat?.turns.some(turn=>turn.role==='user'),onSelect:branch},
+            {label:ui('删除当前对话'),icon:<Trash2 size={15}/>,danger:true,disabled:settingsLocked||!chat,onSelect:remove},
+          ]}>
+          <Ellipsis size={17} aria-hidden="true"/>
+        </ChatMenuButton>
+      </div>
+    </div>
     {error&&<div className="assistant-error" role="alert">{error}</div>}
     <div className="chat-transcript-frame">
-    <div ref={transcript} className="chat-transcript" tabIndex={0} aria-label={ui("对话消息")} aria-live="polite" onScroll={()=>{if(transcript.current)follow.current=shouldFollowChat(transcript.current)}}>
-      {!chat?.turns.length&&<div className="chat-welcome"><span><Sparkles size={27}/></span><h3>{ui("你希望完成什么？")}</h3><p>{ui("检查资源、整理文件、预约机器或设置监控，直接描述你想完成的事情。")}</p><div>{suggestions.map(item=><button key={item} disabled={!!busy} onClick={()=>setText(ui(item))}>{ui(item)}</button>)}</div></div>}
-      {chat?.turns.map(turn=><article key={turn.id} className={'chat-turn '+turn.role} aria-label={turn.role==='user'?ui("用户消息"):ui("助手消息")}><div className="chat-turn-label">{turn.role==='user'?ui("你"):ui("AI 助手")}{turn.role==='assistant'&&turn.model&&<small title={turn.profile_name}>{turn.model}</small>}{turn.resource_view&&<small>{t('资源视图 · 只读','Resource view · Read only')}</small>}{turn.a2ui_prototype&&<small>{t('A2UI 原型 · 模拟数据','A2UI prototype · synthetic data')}</small>}{turn.role==='assistant'&&<ReplyTimestamp created={turn.created}/ >}{turn.elapsed_ms!==undefined&&<small>{(turn.elapsed_ms/1000).toFixed(1)} {ui(" 秒")}</small>}</div><div className="chat-turn-body">{turn.context_compaction&&<div className="chat-compaction" role="status">{turn.context_compaction.status==='running'?<LoaderCircle size={14} className="spin"/>:turn.context_compaction.status==='completed'?<Check size={14}/>:<TriangleAlert size={14}/>}<span>{turn.context_compaction.status==='running'?ui("正在压缩上下文…"):turn.context_compaction.status==='completed'?ui("前面的上下文已压缩"):ui("上下文压缩未完成")}</span><small>{turn.context_compaction.status==='completed'?ui("后续使用摘要和近期消息，本地聊天记录保留"):turn.context_compaction.status==='running'?ui("正在整理早期内容，完成后继续回复"):ui("请查看本轮处理结果后重试")}</small></div>}{!!turn.selected_skill_names?.length&&<div className="chat-skill-receipt">{ui("本轮指定技能：")}{turn.selected_skill_names.map(name=>`@${name}`).join('、')}</div>}{!!turn.skills_read?.length&&<div className="chat-skill-receipt">{ui("已读取技能：")}{turn.skills_read.map(skill=>`${skill.name} · v${skill.version}`).join('、')}</div>}<ExecutionSteps turn={turn} chatId={chat!.id}/>{!!turn.terminal_attachments?.length&&<div>{turn.terminal_attachments.map((item,index)=><details key={index}><summary>{t('终端附件','Terminal attachment')} · {item.label}{item.truncated?t(' · 已截断',' · Truncated'):''}</summary><small>{item.host_id} · {item.terminal_id} · {item.cwd||t('目录未知','Unknown directory')} · {item.captured_at}</small><pre>{item.content}</pre></details>)}</div>}{turn.supplemental_instructions?.map((instruction,index)=><div className="chat-supplement-receipt" key={index}><small>{t("已发送补充指令","Supplemental instruction sent")} · {new Date(instruction.created*1000).toLocaleTimeString()}</small><div>{instruction.content}</div></div>)}{turn.codex_questions?.map(question=><CodexQuestionForm key={question.id} request={question} chatId={chat!.id} activeRun={chat!.active_run} onUpdate={value=>{if(current.current===value.id)apply(value)}}/>)}{turn.approvals?.map(approval=><ApprovalCard key={approval.id} approval={approval} chatId={chat!.id} activeRun={chat!.active_run} onUpdate={value=>{if(current.current===value.id)apply(value)}}/>)}{turn.content&&<div className={"chat-message-text"+(turn.status==='running'?' streaming':'')}>{turn.role==='assistant'?<ChatMarkdown streaming={turn.status==='running'}>{turn.error_code==='codex_new_chat_required'?ui(turn.content):turn.content}</ChatMarkdown>:turn.content}</div>}{turn.a2ui&&<React.Suspense fallback={null}><AssistantA2ui message={turn.a2ui}/></React.Suspense>}{turn.a2ui_rejected&&<small className="chat-incomplete">{t('生成的界面未通过校验。','The generated interface did not pass validation.')}</small>}{turn.status==='running'&&turn.provider_status&&<small role="status">{turn.provider_status}</small>}{turn.status==='running'&&<div className="chat-working"><span className="chat-stream-dot"/>{turn.tools?.some(tool=>tool.status==='running')?ui("正在执行工具…"):turn.content?ui("正在接收回复…"):ui("正在分析或整理结果…")}</div>}{turn.status&&['failed','limited','cancelled','interrupted'].includes(turn.status)&&<small className="chat-incomplete">{turn.status==='cancelled'?ui("已取消"):turn.status==='interrupted'?ui("上次处理已中断"):turn.status==='limited'?ui("已达本轮步骤上限"):ui("本轮未完成")}</small>}</div></article>)}
+    <div hidden={!configurationOpen} className="chat-configuration" id={configurationId} ref={configurationPanel} tabIndex={-1} role="region"
+      aria-label={t('引擎与模型','Engine and model')} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();dismissConfiguration()}}}>
+      <div className="chat-configuration-heading">
+        <strong>{t('引擎与模型','Engine and model')}</strong>
+        <button type="button" className="chat-control" aria-label={t('收起引擎设置','Close engine settings')} onClick={dismissConfiguration}><X size={15}/></button>
+      </div>
+      {running&&<p className="chat-configuration-note">{t('当前任务结束后可以更改引擎与模型。','Engine and model can be changed when this run ends.')}</p>}
+      <AssistantEnginePicker value={engine} onChange={setEngine} disabled={settingsLocked}/>
+      {engine==='deepagents'&&<>
+        <AgentProfilePicker disabled={settingsLocked} onChange={value=>setProfileId(value.active_id)}/>
+        <div className="chat-model-row"><span>{t('模型','Model')}</span><ChatModelPicker model={model} disabled={settingsLocked}/></div>
+        {model&&<ContextUsageMeter chat={chat} model={model}/>}
+        <button type="button" className="chat-text-action" onClick={()=>{setConfigurationOpen(false);openSettings()}}>
+          {ui('打开模型设置')}<ArrowUpRight size={14} aria-hidden="true"/>
+        </button>
+      </>}
+      {engine==='codex'&&<CodexHost value={draftCodex??codexOptions} onChange={value=>{if(draftCodex)setDraftCodex(value);else setCodexOptions(value)}} disabled={settingsLocked}/>}
     </div>
+      <div ref={transcript} className="chat-transcript" tabIndex={0} aria-label={ui("对话消息")} onScroll={()=>{
+        if(!transcript.current)return;
+        follow.current=shouldFollowChat(transcript.current);
+        setAwayFromLatest(!follow.current);
+      }}>
+      {busy==='load'||busy==='switch'?<div className="chat-loading" role="status"><LoaderCircle size={17} className="spin"/>{t('正在打开对话…','Opening conversation…')}</div>:
+        !chat?.turns.length&&<div className="chat-welcome">
+          <span className="chat-welcome-icon"><Sparkles size={21} aria-hidden="true"/></span>
+          <h3>{t('今天要检查什么？','What are you working on?')}</h3>
+          <p>{t('直接输入问题，或选一个示例开始。','Write a question or start with a suggestion.')}</p>
+          <div className="chat-suggestions">{suggestions.map(({icon:Icon,prompt})=><button key={prompt} type="button" disabled={!!busy}
+            onClick={()=>{const example=ui(prompt);setText(old=>old.trim()?(old+'\n'+example).slice(0,4000):example);composerInput.current?.focus()}}>
+            <Icon size={15} aria-hidden="true"/><span>{ui(prompt)}</span><ArrowUpRight size={14} aria-hidden="true"/>
+          </button>)}</div>
+        </div>}
+      {busy!=='switch'&&chat?.turns.map(turn=>{
+        const isAssistant=turn.role==='assistant';
+        const isRunning=turn.status==='running';
+        const needsApproval=turn.approvals?.some(approval=>approval.status==='pending');
+        const needsAnswer=turn.codex_questions?.some(question=>question.status==='pending');
+        const activity=needsApproval?t('等待你批准操作','Waiting for your approval'):
+          needsAnswer?t('等待你回答问题','Waiting for your answer'):
+          (turn.tools?.some(tool=>tool.status==='running')||turn.codex_items?.some(item=>isVisibleCodexItem(item)&&(item.status==='running'||item.status==='inProgress')))?ui('正在执行工具…'):
+          turn.content?ui('正在接收回复…'):ui('正在分析或整理结果…');
+        return <article key={turn.id} className={'chat-turn '+turn.role} aria-label={isAssistant?ui('助手消息'):ui('用户消息')}>
+          <div className="chat-turn-label">
+            <strong>{isAssistant?ui('AI 助手'):ui('你')}</strong>
+            {isAssistant&&turn.model&&<small title={turn.profile_name}>{turn.model}</small>}
+            {turn.resource_view&&<small>{t('资源视图 · 只读','Resource view · Read only')}</small>}
+            {turn.a2ui_prototype&&<small>{t('A2UI 原型 · 模拟数据','A2UI prototype · synthetic data')}</small>}
+            {isAssistant&&<ReplyTimestamp created={turn.created}/>}
+            {turn.elapsed_ms!==undefined&&<small>{(turn.elapsed_ms/1000).toFixed(1)} {ui(' 秒')}</small>}
+          </div>
+          <div className="chat-turn-body">
+            {turn.context_compaction&&<div className="chat-compaction" role="status">
+              {turn.context_compaction.status==='running'?<LoaderCircle size={14} className="spin"/>:turn.context_compaction.status==='completed'?<Check size={14}/>:<TriangleAlert size={14}/>}
+              <span>{turn.context_compaction.status==='running'?ui('正在压缩上下文…'):turn.context_compaction.status==='completed'?ui('前面的上下文已压缩'):ui('上下文压缩未完成')}</span>
+              <small>{turn.context_compaction.status==='completed'?ui('后续使用摘要和近期消息，本地聊天记录保留'):turn.context_compaction.status==='running'?ui('正在整理早期内容，完成后继续回复'):ui('请查看本轮处理结果后重试')}</small>
+            </div>}
+            {!!turn.selected_skill_names?.length&&<div className="chat-skill-receipt">{ui('本轮指定技能：')}{turn.selected_skill_names.map(name=>'@'+name).join('、')}</div>}
+            {!!turn.skills_read?.length&&<div className="chat-skill-receipt">{ui('已读取技能：')}{turn.skills_read.map(skill=>skill.name+' · v'+skill.version).join('、')}</div>}
+            <ExecutionSteps turn={turn} chatId={chat.id}/>
+            {!!turn.terminal_attachments?.length&&<div>{turn.terminal_attachments.map((item,index)=><details key={index}>
+              <summary>{t('终端附件','Terminal attachment')} · {item.label}{item.truncated?t(' · 已截断',' · Truncated'):''}</summary>
+              <small>{item.host_id} · {item.terminal_id} · {item.cwd||t('目录未知','Unknown directory')} · {item.captured_at}</small>
+              <pre>{item.content}</pre>
+            </details>)}</div>}
+            {turn.supplemental_instructions?.map((instruction,index)=><div className="chat-supplement-receipt" key={index}>
+              <small>{t('已发送补充指令','Supplemental instruction sent')} · {new Date(instruction.created*1000).toLocaleTimeString()}</small>
+              <div>{instruction.content}</div>
+            </div>)}
+            {turn.codex_questions?.map(question=><CodexQuestionForm key={question.id} request={question} chatId={chat.id} activeRun={chat.active_run} onUpdate={value=>{if(current.current===value.id)apply(value)}}/>)}
+            {turn.approvals?.map(approval=><ApprovalCard key={approval.id} approval={approval} chatId={chat.id} activeRun={chat.active_run} onUpdate={value=>{if(current.current===value.id)apply(value)}}/>)}
+            {turn.content&&<div className={'chat-message-text'+(isRunning?' streaming':'')}>
+              {isAssistant?<ChatMarkdown streaming={isRunning}>{turn.error_code==='codex_new_chat_required'?ui(turn.content):turn.content}</ChatMarkdown>:turn.content}
+            </div>}
+            {turn.a2ui&&<React.Suspense fallback={null}><AssistantA2ui message={turn.a2ui}/></React.Suspense>}
+            {turn.a2ui_rejected&&<small className="chat-incomplete">{t('生成的界面未通过校验。','The generated interface did not pass validation.')}</small>}
+            {isRunning&&turn.provider_status&&<small role="status">{turn.provider_status}</small>}
+            {isRunning&&<div className="chat-working" role="status"><span className="chat-stream-dot" aria-hidden="true"/>{activity}</div>}
+            {turn.status&&['failed','limited','cancelled','interrupted'].includes(turn.status)&&<small role="status" className="chat-incomplete">
+              {turn.status==='cancelled'?ui('已取消'):turn.status==='interrupted'?ui('上次处理已中断'):turn.status==='limited'?ui('已达本轮步骤上限'):ui('本轮未完成')}
+            </small>}
+          </div>
+        </article>;
+      })}
+      </div>
       <OverlayScrollbar scrollRef={transcript}/>
+      {!!chat?.turns.length&&awayFromLatest&&<button type="button" className="chat-jump-latest" onClick={jumpToLatest}>
+        <ArrowDown size={15} aria-hidden="true"/>{t('回到最新消息','Jump to latest')}
+      </button>}
     </div>
-    <form className="chat-composer" onSubmit={send}>{draftScope&&<div className="chat-supplement-receipt" role="status">{draftScope.restrict_to_selected?t("沿用分支机器范围：","Restored branch machine scope: ")+ (draftScope.selected_host_ids.join(", ")||t("未选择机器","No machines selected")):t("沿用分支范围：允许操作全部已添加机器","Restored branch scope: all added machines")}<button type="button" disabled={!!busy||running} onClick={()=>setDraftScope(null)}>{t("改用当前机器选择与范围","Use current machine selection and scope")}</button></div>}<details className="chat-context"><summary><Server size={13}/><span>{scopeRestricted?t(`操作范围：所选 ${scopeHostIds.length} 台机器`,`Scope: ${scopeHostIds.length} selected machines`):t(`当前上下文：${scopeHostIds.length?`选中 ${scopeHostIds.length} 台机器`:ui("未选择机器")}`,`Context: ${scopeHostIds.length?`${scopeHostIds.length} machines selected`:ui("未选择机器")}`)}</span><Settings2 size={13}/>{ui("调整")}</summary><div className="chat-scope"><label><input type="checkbox" checked={scopeRestricted} disabled={!!busy||running||!!draftScope} onChange={event=>setRestricted(event.target.checked)}/>{ui("仅允许操作所选的 ")}{scopeHostIds.length} {ui(" 台机器")}</label><span>{engine==='codex'?t('机器选择仅约束工作台 MCP；原生 Shell 可越过此范围执行 ssh 或访问本机凭据。','Machine selection constrains workbench MCP only; native Shell can run ssh or access local credentials beyond this scope.'):scopeRestricted?ui("工具操作限于所选范围"):ui("可操作全部已添加机器；选择机器不会自动限制操作范围")}</span></div></details>{attachments.map((item,index)=><details key={index}><summary>{t('终端附件','Terminal attachment')} · {item.label} · {item.source==='selection'?t('选区','Selection'):t('当前屏幕','Visible screen')}{item.truncated?t(' · 已截断',' · Truncated'):''}</summary><small>{item.host_id} · {t("标签","Tab")} {item.terminal_id} · {t("会话","Session")} {item.session_id||t('临时','Temporary')} · {item.cwd||t('目录未知','Unknown directory')} · {item.captured_at}</small><pre>{item.content}</pre><button type="button" onClick={()=>setAttachments(old=>old.filter((_,i)=>i!==index))}>{t('移除附件','Remove attachment')}</button></details>)}
-      <SkillMessageInput text={text} onChange={setText} skills={resourceView?[]:skills} selected={selectedSkills} onSelect={setSelectedSkills}
-        disabled={!!busy||(running&&!canSteer)} readOnly={steering} supplemental={canSteer} error={skillError} onSend={send}/>
-      <div className="chat-composer-bottom">
-        <div className="chat-composer-settings">
-          {!resourceView&&<AgentPermissions codex={engine==='codex'} existingCodexChat={chat?.engine==='codex'&&!!chat.turns.length}
-            mode={runMode??permissionMode} onMode={setPermissionMode}
-            localRoots={localRoots} onLocalRoots={setLocalRoots} remoteRoots={remoteRoots} onRemoteRoots={setRemoteRoots}
-            externalMcp={externalMcp} onExternalMcp={setExternalMcp} hostCount={scopeHostIds.length}
-            disabled={!!busy||running} running={running} restoredScope={draftPermissions} onUseDefaults={()=>setDraftPermissions(null)}/>}
-          {engine==='deepagents'&&<button type="button" className="chat-resource-view" aria-pressed={resourceView}
-            disabled={!!busy||running||(!resourceView&&hasExtraContext)}
-            title={t('读取当前机器范围内已有的设备和占卡进程采样','Read existing device and accelerator process samples within the current machine scope')}
-            onClick={()=>setResourceViewEnabled(value=>!value)}>{resourceView?t('资源视图 · 只读','Resource view · Read only'):t('资源视图','Resource view')}</button>}
-          {engine==='deepagents'?<ChatModelPicker model={model} openSettings={openSettings}/>:<small>{engineName(engine)} · {engine==='codex'?(draftCodex??codexOptions).model||t('CLI 默认模型','CLI default model'):t('本机默认模型','Local default model')}</small>}
-        </div>
-        <div className="chat-composer-actions">
-          {running&&<button type="button" className="secondary" disabled={!!busy} onClick={()=>act('cancel',async (signal,isCurrent)=>{
-            const value=await chatRequest<Chat>('/'+chat!.id+'/cancel','POST',{run_id:chat!.active_run},signal);
-            if(isCurrent()&&current.current===value.id)apply(value);
-          })}><Square size={13}/>{ui("取消本轮")}</button>}
-          {(!running||canSteer)&&<button type="submit" className="primary" disabled={!canSend}>
-            {busy==='send'||steering?<LoaderCircle size={15} className="spin"/>:<Send size={15}/>}
-            <span className="chat-send-label">{canSteer?t('发送补充指令','Send supplemental instruction'):ui("发送")}</span>
-          </button>}
+    <form className="chat-composer" onSubmit={send}>
+      {(needsModel||modelWarning)&&<div className="chat-setup">
+        <span role="status">{modelWarning?ui(modelWarning):status?t('配置模型后即可发送。也可以切换到本机 CLI。','Configure a model or switch to a local CLI to send messages.'):t('正在读取模型配置…','Checking model configuration…')}</span>
+        {(status||statusError)&&<button type="button" className="chat-text-action" onClick={openSettings}>{t('配置模型','Configure model')}<ArrowUpRight size={13} aria-hidden="true"/></button>}
+      </div>}
+      <div className="chat-input-box">
+        {!!attachments.length&&<div className="chat-attachments">{attachments.map((item,index)=><div className="chat-attachment" key={index}>
+          <details><summary><Paperclip size={14} aria-hidden="true"/><span>{item.label}</span><ChevronDown size={13} aria-hidden="true"/></summary>
+            <small>{item.host_id} · {t('标签','Tab')} {item.terminal_id} · {t('会话','Session')} {item.session_id||t('临时','Temporary')} · {item.cwd||t('目录未知','Unknown directory')} · {item.captured_at} · {item.source==='selection'?t('选区','Selection'):t('当前屏幕','Visible screen')}{item.truncated?t(' · 已截断',' · Truncated'):''}</small>
+            <pre>{item.content}</pre>
+          </details>
+          <button type="button" className="chat-control" aria-label={t('移除附件','Remove attachment')+' · '+item.label}
+            onClick={()=>setAttachments(old=>old.filter((_,i)=>i!==index))}><X size={15}/></button>
+        </div>)}</div>}
+        <SkillMessageInput input={composerInput} text={text} onChange={setText} skills={resourceView?[]:skills} selected={selectedSkills} onSelect={setSelectedSkills}
+          disabled={!!busy||(running&&!canSteer)} readOnly={steering} supplemental={canSteer} error={skillError} onSend={send}/>
+        <div className="chat-composer-bottom">
+          <div className="chat-composer-settings">
+            <button type="button" className="chat-control" aria-haspopup="dialog"
+              aria-label={t('机器范围','Machine scope')+' · '+scopeLabel} onClick={()=>setScopeOpen(true)}>
+              <Server size={14} aria-hidden="true"/><span>{scopeLabel}</span><ChevronDown size={12} aria-hidden="true"/>
+            </button>
+            {!resourceView&&<AgentPermissions codex={engine==='codex'} existingCodexChat={chat?.engine==='codex'&&!!chat.turns.length}
+              mode={runMode??permissionMode} onMode={setPermissionMode}
+              localRoots={localRoots} onLocalRoots={setLocalRoots} remoteRoots={remoteRoots} onRemoteRoots={setRemoteRoots}
+              externalMcp={externalMcp} onExternalMcp={setExternalMcp} hostCount={scopeHostIds.length}
+              disabled={settingsLocked} running={running} restoredScope={draftPermissions} onUseDefaults={()=>setDraftPermissions(null)}/>}
+            {engine==='deepagents'&&<button type="button" className="chat-control chat-resource-view" aria-pressed={resourceView}
+              disabled={settingsLocked} title={t('读取当前机器范围内已有的设备和占卡进程采样','Read existing device and accelerator process samples within the current machine scope')}
+              onClick={()=>setResourceViewEnabled(value=>!value)}><Activity size={14} aria-hidden="true"/><span>{resourceView?t('资源视图 · 只读','Resource view · Read only'):t('资源视图','Resource view')}</span></button>}
+          </div>
+          <div className="chat-composer-actions">
+            {running&&<button type="button" className="secondary" disabled={!!busy} onClick={()=>act('cancel',async (signal,isCurrent)=>{
+              const value=await chatRequest<Chat>('/'+chat!.id+'/cancel','POST',{run_id:chat!.active_run},signal);
+              if(isCurrent()&&current.current===value.id)apply(value);
+            })}><Square size={13}/>{ui("取消本轮")}</button>}
+            {(!running||canSteer)&&<button type="submit" className="primary" disabled={!canSend} aria-describedby={sendHintId}
+              title={canSteer?t('发送补充指令','Send supplemental instruction'):ui('发送')}
+              aria-label={canSteer?t('发送补充指令','Send supplemental instruction'):ui('发送')}>
+              {busy==='send'||steering?<LoaderCircle size={15} className="spin"/>:<Send size={15}/>}
+            </button>}
+          </div>
         </div>
       </div>
-      {resourceView&&hasExtraContext&&<small className="chat-shortcut" role="status">{t('资源视图只读取设备和占卡进程。请移除附件或指定技能后发送。','Resource view reads device and accelerator process data. Remove attachments or selected skills to send.')}</small>}
-      {running&&!canSteer
-        ?<small className="chat-shortcut chat-steer-unavailable">{t(`当前 ${engineName(chat?.engine)} 引擎不支持运行中补充指令。`,`${engineName(chat?.engine)} does not support supplemental instructions during a run.`)}</small>
-        :<span className="chat-shortcut">{ui("Enter 发送 · Shift + Enter 换行")}</span>}
+      <div id={sendHintId} className="chat-composer-hint">
+        {incompatibleContext?<span role="status">{t('资源视图只读取设备和占卡进程。发送前请移除附件和技能，或关闭资源视图。','Resource view reads only devices and accelerator processes. Remove attachments and skills or turn off resource view to send.')}</span>:
+          emptyScope?<span role="status">{t('请先选一台机器，或在机器范围中切换到全部机器。','Select a machine or switch to all machines before sending.')}</span>:
+          running&&!canSteer?<span role="status" className="chat-steer-unavailable">{t(`${engineName(chat?.engine)} 正在回复，结束后可以继续发送。`,`${engineName(chat?.engine)} is responding. You can send another message when it finishes.`)}</span>:
+          <span className="chat-shortcut">{ui("Enter 发送 · Shift + Enter 换行")}{!resourceView&&!running&&' · '+t('@ 选技能','@ for skills')}</span>}
+      </div>
     </form>
+    {scopeOpen&&<ModalDialog className="chat-scope-dialog" labelledBy={scopeId} onDismiss={()=>setScopeOpen(false)}>
+      <h2 id={scopeId}>{t('机器范围','Machine scope')}</h2>
+      <p>{scopeHostIds.length?t('当前选中 '+scopeHostIds.length+' 台机器。',scopeHostIds.length+' machines selected.') :t('工作台还未选中机器。','No machines are selected in Workbench.')}</p>
+      {draftScope?<><p role="status">{t('这条草稿沿用分支的机器范围。','This draft uses the machine scope from its branch.')}{scopeRestricted&&scopeHostIds.length>0&&' '+scopeHostIds.join(', ')}</p>
+        <button type="button" className="secondary" disabled={settingsLocked} onClick={()=>setDraftScope(null)}>{t('改用当前机器选择与范围','Use current machine selection and scope')}</button></>:
+        <fieldset disabled={settingsLocked}>
+          <legend className="chat-sr-only">{t('机器范围','Machine scope')}</legend>
+          <label><input type="radio" name={scopeId} checked={!scopeRestricted} onChange={()=>setRestricted(false)}/><span>{t('全部已添加的机器','All added machines')}</span></label>
+          <label><input type="radio" name={scopeId} checked={scopeRestricted} onChange={()=>setRestricted(true)}/><span>{t('仅限工作台所选机器','Only machines selected in Workbench')}</span></label>
+        </fieldset>}
+      {engine==='codex'&&<p>{t('机器范围仅约束工作台 MCP。Codex 原生 Shell 仍可自行连接其他机器。','Machine scope limits Workbench MCP only. The native Codex shell can connect to other machines independently.')}</p>}
+      <footer><button type="button" className="primary" data-dialog-focus onClick={()=>setScopeOpen(false)}>{t('完成','Done')}</button></footer>
+    </ModalDialog>}
+    {renameDraft&&renameDraft.chatId===chat?.id&&<ModalDialog className="chat-rename-dialog" labelledBy={renameId}
+      onDismiss={()=>{if(busy!=='rename')setRenameDraft(null)}}>
+      <form onSubmit={saveTitle}>
+        <h2 id={renameId}>{t('重命名对话','Rename conversation')}</h2>
+        <label>{t('对话名称','Conversation name')}
+          <input type="text" maxLength={120} required data-dialog-focus value={renameDraft.title} readOnly={busy==='rename'}
+            onFocus={event=>event.currentTarget.select()}
+            onChange={event=>setRenameDraft({...renameDraft,title:event.target.value,error:undefined})}/>
+        </label>
+        {renameDraft.error&&<p role="alert">{renameDraft.error}</p>}
+        <footer>
+          <button type="button" className="secondary" disabled={busy==='rename'} onClick={()=>setRenameDraft(null)}>{t('取消','Cancel')}</button>
+          <button type="submit" className="primary" disabled={!renameDraft.title.trim()||!!busy}>{busy==='rename'?t('保存中…','Saving…'):t('保存','Save')}</button>
+        </footer>
+      </form>
+    </ModalDialog>}
     {confirmation}
   </section>;
 }

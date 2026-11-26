@@ -38,8 +38,8 @@ export function parseExternalMcpServers(value:string):ExternalMcpServer[]{
 export function permissionScope(mode:PermissionMode,local:string,remote:string,hosts:string[],external=''):PermissionScope{return {permission_mode:mode,local_roots:permissionRoots(local),remote_roots:Object.fromEntries(hosts.map(id=>[id,permissionRoots(remote)])),external_mcp_servers:parseExternalMcpServers(external)}}
 export type ChatTurn={resource_view?:boolean;a2ui?:AssistantSurface;a2ui_prototype?:boolean;a2ui_rejected?:boolean;codex_options?:CodexOptions;codex_items?:CodexItem[];codex_questions?:CodexQuestionRequest[];external_mcp_servers?:ExternalMcpServer[];approvals?:ChatApproval[];permission_mode?:PermissionMode;local_roots?:string[];remote_roots?:Record<string,string[]>;supplemental_instructions?:{content:string;created:number}[];terminal_attachments?:TerminalAttachment[];provider_status?:string;error_code?:string;model?:string;profile_name?:string;context_usage?:ContextUsage;context_compaction?:{status:'running'|'completed'|'failed';started:number;finished?:number};id:string;role:'user'|'assistant';content:string;created:number;status?:string;elapsed_ms?:number;tools?:ChatTool[];selected_skill_names?:string[];skills_read?:{name:string;version:number|string;source:string}[]};
 export type ChatDraft=Partial<PermissionScope>&{resource_view?:boolean;content:string;terminal_attachments?:TerminalAttachment[];selected_skill_names?:string[];engine?:AssistantEngine;selected_host_ids?:string[];restrict_to_selected?:boolean;codex_options?:CodexOptions};
-export type Chat={id:string;title:string;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:AssistantEngine;draft?:ChatDraft|null};
-export type ChatItem=Pick<Chat,'id'|'title'|'created'|'updated'|'active_run'>;
+export type Chat={id:string;title:string;custom_title?:boolean;created:number;updated:number;turns:ChatTurn[];active_run:string|null;engine?:AssistantEngine;draft?:ChatDraft|null};
+export type ChatItem=Pick<Chat,'id'|'title'|'custom_title'|'created'|'updated'|'active_run'>;
 export function chatReplyTime(created:number,now=new Date()):{label:string;full:string;iso:string}|null{
   const date=new Date(created*1000);
   if(!Number.isFinite(created)||created<=0||!Number.isFinite(date.getTime()))return null;
@@ -82,9 +82,10 @@ export function chatRequest<T>(path='',method='GET',body?:unknown,signal?:AbortS
 
 export type ChatEvent=
   |{type:'snapshot';data:Chat}
-  |{type:'turn';data:{chat_id:string;title:string;updated:number;active_run:string|null;turn:ChatTurn}}
-  |{type:'patch';data:{chat_id:string;title:string;updated:number;base_updated:number;active_run:string|null;turn_id:string;changes:Partial<ChatTurn>&{content_append?:string}}}
+  |{type:'turn';data:ChatEventUpdate&{turn:ChatTurn}}
+  |{type:'patch';data:ChatEventUpdate&{base_updated:number;turn_id:string;changes:Partial<ChatTurn>&{content_append?:string}}}
   |{type:'deleted';data:{chat_id:string}};
+type ChatEventUpdate={chat_id:string;title:string;custom_title?:boolean;updated:number;active_run:string|null};
 
 export function applyChatEvent(chat:Chat,event:ChatEvent):Chat|null{
   if(event.type==='snapshot')return event.data.id===chat.id&&event.data.updated>=chat.updated?event.data:chat;
@@ -98,7 +99,7 @@ export function applyChatEvent(chat:Chat,event:ChatEvent):Chat|null{
     const {content_append,...changes}=patch.changes;
     const turn={...latest,...changes};
     if(content_append!==undefined)turn.content=latest.content+content_append;
-    return {...chat,title:patch.title,updated:patch.updated,active_run:patch.active_run,turns:[...chat.turns.slice(0,-1),turn]};
+    return {...chat,title:patch.title,custom_title:patch.custom_title??chat.custom_title,updated:patch.updated,active_run:patch.active_run,turns:[...chat.turns.slice(0,-1),turn]};
   }
   const update=event.data;
   if(update.updated<chat.updated)return chat;
@@ -109,7 +110,7 @@ export function applyChatEvent(chat:Chat,event:ChatEvent):Chat|null{
     throw new Error(ui("对话更新格式不正确，正在重新连接。"));
   }
   if(chat.active_run&&update.active_run&&chat.active_run!==update.active_run)return chat;
-  return {...chat,title:update.title,updated:update.updated,active_run:update.active_run,turns:[...chat.turns.slice(0,-1),update.turn]};
+  return {...chat,title:update.title,custom_title:update.custom_title??chat.custom_title,updated:update.updated,active_run:update.active_run,turns:[...chat.turns.slice(0,-1),update.turn]};
 }
 
 export function shouldFollowChat(view:Pick<HTMLElement,'scrollHeight'|'clientHeight'|'scrollTop'>):boolean{

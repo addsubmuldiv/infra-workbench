@@ -1,6 +1,8 @@
 import {t} from '../../shared/i18n.ts';
 
 const messages:Record<string,string>={
+  '已保存的 API key 与当前接口地址不匹配，请在模型设置中核对地址并重新保存 API key':'The saved API key is for a different endpoint. Check the endpoint and save the key in Model settings.',
+  '无法读取 API key，请检查系统安全存储或重新填写':'The API key could not be read. Check the system credential store or enter the key again.',
   '查看工作台偏好':'Read Workbench preferences',
   '切换工作台主题':'Change Workbench theme',
   '切换工作台语言':'Change Workbench language',

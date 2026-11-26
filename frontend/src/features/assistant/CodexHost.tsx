@@ -21,7 +21,24 @@ function CodexItemView({item,chatId,runId}:{item:CodexItem;chatId:string;runId:s
  const next=await chatRequest<CodexOutputPage>('/'+chatId+'/codex-items/'+encodeURIComponent(item.id)+'/output?'+new URLSearchParams({run_id:runId,thread_id:item.thread_id||'',offset:String(offset),limit:'32000'}),'GET',undefined,active.signal);
  if(!active.signal.aborted)setLoaded({base:initial.text,page:appendCodexOutputPage(page,offset,next)});
  }catch(e){if(!active.signal.aborted)setError(e instanceof Error?e.message:String(e))}finally{if(controller.current===active){controller.current=null;if(!active.signal.aborted)setBusy(false)}}};
- return <details><summary>{item.type} · {item.status||t('已记录','Recorded')}{item.thread_id?' · '+t('线程','Thread')+' '+item.thread_id.slice(0,8):''}</summary><pre>{JSON.stringify(item.data,null,2)}</pre>{page.text&&<pre>{page.text}</pre>}{page.next_offset!==null&&<button type="button" disabled={busy} onClick={()=>void load()}>{t('读取后续输出','Load next output')}</button>}{page.truncated&&<small>{t('输出达到保留上限或数据已截断。','Output reached the retention limit or was truncated.')}</small>}{error&&<p role="alert">{error}</p>}</details>
+ const typeLabels:Record<string,string>={
+   commandExecution:t('执行命令','Command'),mcpToolCall:t('MCP 工具调用','MCP tool call'),
+   fileChange:t('文件变更','File change'),webSearch:t('搜索网页','Web search'),
+   agentMessage:t('助手消息','Assistant message'),collabAgentToolCall:t('协作代理调用','Agent collaboration'),
+ };
+ const statusLabels:Record<string,string>={
+   inProgress:t('执行中','Running'),running:t('执行中','Running'),completed:t('已完成','Completed'),
+   failed:t('未完成','Failed'),cancelled:t('已取消','Cancelled'),interrupted:t('已中断','Interrupted'),
+ };
+ return <details className="codex-step">
+   <summary><strong>{typeLabels[item.type]||item.type}</strong><small>{item.status?(statusLabels[item.status]||item.status):t('已记录','Recorded')}</small></summary>
+   {item.thread_id&&<small>{t('线程','Thread')} · {item.thread_id}</small>}
+   <pre>{JSON.stringify(item.data,null,2)}</pre>
+   {page.text&&<pre>{page.text}</pre>}
+   {page.next_offset!==null&&<button type="button" className="secondary" disabled={busy} onClick={()=>void load()}>{t('读取后续输出','Load next output')}</button>}
+   {page.truncated&&<small>{t('输出达到保留上限或数据已截断。','Output reached the retention limit or was truncated.')}</small>}
+   {error&&<p role="alert">{error}</p>}
+ </details>
 }
 export function CodexQuestionForm({request,chatId,activeRun,onUpdate}:{request:CodexQuestionRequest;chatId:string;activeRun:string|null;onUpdate:(chat:Chat)=>void}){
  const [values,setValues]=useState<Record<string,string>>({}),[busy,setBusy]=useState(false),[error,setError]=useState('');const pending=useRef(false);

@@ -1,4 +1,5 @@
 export type Page='overview'|'precision'|'reservations'|'history'|'settings'|'assistant';
+export const modelSettingsHash='#settings?section=models';
 const pages:Page[]=['overview','precision','reservations','history','settings','assistant'];
 export function pageFromHash(hash:string):Page{
   const page=hash.replace(/^#/,'').split('?')[0] as Page;

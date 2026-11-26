@@ -47,7 +47,7 @@ import type {TerminalRequest} from './features/terminal/TerminalDock';
 import {TerminalBoundary} from './features/terminal/TerminalBoundary';
 import {RenderBoundary,RenderFailure} from './shared/RenderBoundary';
 const QuickWindow=React.lazy(()=>import('./features/desktop/QuickWindow').then(module=>({default:module.QuickWindow})));
-import {pageFromHash,hostLocationFromHash,notificationLocation,type Page} from './workspace/navigation';
+import {pageFromHash,hostLocationFromHash,modelSettingsHash,notificationLocation,type Page} from './workspace/navigation';
 const ClusterTerminalWorkspace=React.lazy(()=>import('./features/terminal/ClusterTerminalWorkspace').then(module=>({default:module.ClusterTerminalWorkspace})));
 const TerminalDock=React.lazy(()=>import('./features/terminal/TerminalDock').then(module=>({default:module.TerminalDock})));
 const ServerImport=React.lazy(()=>import('./features/hosts/ServerImport'));
@@ -214,23 +214,23 @@ function App(){
   useEffect(()=>{if(!isDemo)return;const blocked=()=>setNotice(tr('此操作在演示中不可用，不会访问真实服务。','This action is unavailable in demo; no real service is accessed.'));document.addEventListener('demo-operation-blocked',blocked);return()=>document.removeEventListener('demo-operation-blocked',blocked)},[]);
   const lastEvent=useRef<number|null>(null),storageWarning=useRef(false),themeMenu=useRef<HTMLDetailsElement>(null),mobileHosts=useRef<HTMLDetailsElement>(null);
   const machineActions=useRef<HTMLDetailsElement>(null);
-  useEffect(()=>{if(page==='precision')setPrecisionMounted(true);if(pageFromHash(location.hash)!==page&&!hostLocationFromHash(location.hash))window.history.replaceState(window.history.state,'','#'+page)},[page]);
+  useEffect(()=>{if(page==='precision')setPrecisionMounted(true);if(pageFromHash(location.hash)!==page&&!hostLocationFromHash(location.hash)&&location.hash!==modelSettingsHash)window.history.replaceState(window.history.state,'','#'+page)},[page]);
   const [workspaceError,setWorkspaceError]=useState(false);
   useEffect(()=>{const status=(event:globalThis.Event)=>setWorkspaceError((event as unknown as CustomEvent<boolean>).detail);window.addEventListener('workspace-save-status',status as EventListener);return()=>window.removeEventListener('workspace-save-status',status as EventListener)},[]);
-  const navigate=(next:Page,historyIds?:string[])=>{
+  const navigate=(next:Page,historyIds?:string[],hash='#'+next)=>{
     if(next==='assistant'){setAssistantOpen(true);return}
     if(next==='history')setHistoryHostIds(historyIds);
     setPage(next);if(next==='precision')setPrecisionMounted(true);
     setDetail(null);setCheck(null);
     if(themeMenu.current)themeMenu.current.open=false;
     if(machineActions.current)machineActions.current.open=false;
-    if(location.hash!=='#'+next&&!(next==='overview'&&!location.hash))location.hash=next;
+    if(location.hash!==hash&&!(next==='overview'&&!location.hash))location.hash=hash;
     if(next!==page)window.scrollTo({top:0});
   };
   useEffect(()=>{
     const sync=()=>{setPendingLocation(hostLocationFromHash(location.hash));const requested=pageFromHash(location.hash);const next=requested==='assistant'?'overview':requested;if(requested==='assistant'){setAssistantOpen(true);window.history.replaceState(window.history.state,'','#overview')}setPage(next);if(next==='precision')setPrecisionMounted(true);setDetail(null);setCheck(null);window.scrollTo({top:0})};
     const syncLegacy=()=>{const legacy=location.hash.split('?')[0];if(legacy==='#watch')setNotificationTab('messages');if(legacy==='#connections'||legacy==='#watch')window.history.replaceState(window.history.state,'',location.hash.replace(/^#(?:connections|watch)/,'#overview'));sync()};
-    if(['#connections','#watch','#assistant'].includes(location.hash.split('?')[0]))syncLegacy();
+    if(location.hash===modelSettingsHash||['#connections','#watch','#assistant'].includes(location.hash.split('?')[0]))syncLegacy();
     window.addEventListener('hashchange',syncLegacy);return()=>window.removeEventListener('hashchange',syncLegacy);
   },[]);
   useEffect(()=>{
@@ -552,7 +552,7 @@ function App(){
     {page==='reservations'&&!isDemo&&<GroupReservations hosts={state.hosts} draft={groupDraft} onDraft={setGroupDraft}/>}
     {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} edit={item=>setReservationDraft(draftFromReservation(item,true))} rebook={item=>setReservationDraft(draftFromReservation(item,false))} locate={locateReservation} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} toggleNotifications={toggleNotifications} notify={notify}/>}
     <footer className="page-footer"><span><ShieldCheck size={13}/>{tr('私钥和密码保存在本机','Private keys and passwords stay on this computer')}</span><span aria-label={tr("软件版本","Software version")}>v<DesktopVersion/> · LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
-    <RenderBoundary fallback={assistantOpen?<RenderFailure title={tr("AI 助手暂时无法打开","AI assistant could not open")} floating close={()=>setAssistantOpen(false)}/>:null}><React.Suspense fallback={<p role="status">{ui("正在加载 AI 助手…")}</p>}><AssistantWindow open={assistantOpen} onClose={()=>setAssistantOpen(false)} onDockWidthChange={setAssistantWidth} selectedHostIds={scope.map(host=>host.id)} openSettings={()=>navigate('settings')} locate={(hostId,devices)=>{if(!state.hosts.some(host=>host.id===hostId)){setNotice(ui("这台机器已不在当前列表中。"));return}showMachines([hostId]);setSelected({[hostId]:devices});navigate('overview')}} openTerminal={hostId=>{const host=state.hosts.find(host=>host.id===hostId);if(host)openSSHWindow(host,'terminal',host.ssh_logins?.default_account_id);else setNotice(ui("这台机器已不在当前列表中。"))}}/></React.Suspense></RenderBoundary>
+    <RenderBoundary fallback={assistantOpen?<RenderFailure title={tr("AI 助手暂时无法打开","AI assistant could not open")} floating close={()=>setAssistantOpen(false)}/>:null}><React.Suspense fallback={<p role="status">{ui("正在加载 AI 助手…")}</p>}><AssistantWindow open={assistantOpen} onClose={()=>setAssistantOpen(false)} onDockWidthChange={setAssistantWidth} selectedHostIds={scope.map(host=>host.id)} openSettings={()=>{setAssistantOpen(false);navigate('settings',undefined,modelSettingsHash)}} locate={(hostId,devices)=>{if(!state.hosts.some(host=>host.id===hostId)){setNotice(ui("这台机器已不在当前列表中。"));return}showMachines([hostId]);setSelected({[hostId]:devices});navigate('overview')}} openTerminal={hostId=>{const host=state.hosts.find(host=>host.id===hostId);if(host)openSSHWindow(host,'terminal',host.ssh_logins?.default_account_id);else setNotice(ui("这台机器已不在当前列表中。"))}}/></React.Suspense></RenderBoundary>
     {clusterPanel&&<ClusterPanel openTerminalBatch={id=>{setClusterPanel(null);setClusterTerminal({cluster:null,batchId:id})}} cluster={clusterPanel.cluster} hosts={state.hosts} close={()=>setClusterPanel(null)} terminal={host=>{
       const current=state.hosts.find(item=>item.id===host.id);
       if(current)openSSHWindow(current,'terminal');

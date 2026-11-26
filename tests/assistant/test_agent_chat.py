@@ -4,7 +4,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from backend.app import create_app
-from backend.assistant.agent_chat import AgentChat,ChatMessageRequest
+from backend.assistant.agent_chat import AgentChat,ChatMessageRequest,ChatTitleRequest
 from backend.assistant.chat_tools import ChatTools,scrub,remote_source
 from backend.monitoring.resource_history import ResourceHistory
 from backend.monitoring.infra_assistant import InfraAssistant
@@ -64,6 +64,51 @@ def test_chat_sessions_can_be_created_and_reopened_without_a_model_call(tmp_path
         assert chat['turns']==[] and len(chat['id'])==32
         assert client.get('/api/assistant/chats/'+chat['id']).json()['id']==chat['id']
         assert client.get('/api/assistant/chats').json()['items'][0]['id']==chat['id']
+
+
+def test_chat_title_is_saved_and_validated(tmp_path):
+    app=create_app(tmp_path,start_poll=False)
+    headers={'X-IWB':'1'}
+    with TestClient(app) as client:
+        chat=client.post('/api/assistant/chats',headers=headers,json={}).json()
+        path='/api/assistant/chats/'+chat['id']
+        for title in ('   ','a'*121,'two\nlines'):
+            assert client.patch(path,headers=headers,json={'title':title}).status_code==422
+        renamed=client.patch(path,headers=headers,json={'title':'  训练巡检  '})
+        assert renamed.status_code==200
+        assert renamed.json()['title']=='训练巡检' and renamed.json()['turns']==[]
+        assert client.get(path).json()['title']=='训练巡检'
+        assert client.get('/api/assistant/chats').json()['items'][0]['title']=='训练巡检'
+
+
+def test_custom_title_survives_first_message_and_updates_during_a_run(tmp_path):
+    async def scenario():
+        harness,model,_=service(tmp_path)
+        chat_id=harness.create()['id']
+        harness.rename(chat_id,ChatTitleRequest(title='训练前检查'))
+        model.replies=[dict(message=dict(role='assistant',content='已完成'))]
+        finish=asyncio.Event()
+        original_turn=model.turn
+        async def wait_for_rename(*args):
+            await finish.wait()
+            return await original_turn(*args)
+        model.turn=wait_for_rename
+        result=harness.begin(chat_id,ChatMessageRequest(content='读取训练状态'))
+        run_id=result['active_run']
+        assert result['title']=='训练前检查'
+        stream=harness.events(chat_id,deltas=True)
+        await anext(stream)
+        renamed=harness.rename(chat_id,ChatTitleRequest(title='GPU 训练巡检'))
+        assert renamed['active_run']==run_id and renamed['turns']==result['turns']
+        event=await anext(stream)
+        assert event.startswith('event: patch')
+        assert json.loads(event.split('data: ',1)[1])['title']=='GPU 训练巡检'
+        await stream.aclose()
+        finish.set()
+        await harness.runs[run_id]
+        assert harness.get(chat_id)['title']=='GPU 训练巡检'
+        harness.store.db.close()
+    asyncio.run(scenario())
 
 
 def test_native_loop_feeds_results_back_and_replays_the_previous_turn(tmp_path):
