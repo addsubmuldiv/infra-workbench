@@ -6,7 +6,7 @@ The demo reuses the workbench interface with eight synthetic hosts across three 
 
 The normal workbench has a separate eight-step getting-started guide. It appears after the first successful load of a new empty workspace and remembers completion or skipping. Open **Settings → About and help → Replay getting-started guide** to see it again. It covers connecting a machine, resource filters, SSH accounts and process details, remote tools, AI, alerts and history, precision comparison, and settings. See the [user guide](GUIDE.en.md#first-use-and-getting-started-guide).
 
-The isolated demo offers a 16-step interactive tour. Use the step selector to jump to a feature, or skip the tour and explore. Settings explain where to configure real SSH accounts, model providers, local CLI engines, Skills, MCP, email, and desktop features.
+The isolated demo offers a 16-step interactive tour. When the next step opens another page, the button names the destination. On arrival, the guide identifies the page and highlights the controls to try. Use the step selector to jump to a feature, or skip the tour and explore. Settings explain where to configure real SSH accounts, model providers, local CLI engines, Skills, MCP, email, and desktop features.
 
 ## Run
 

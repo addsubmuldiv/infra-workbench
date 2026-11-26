@@ -4,4 +4,5 @@
 .demo-tour-picker{display:flex;align-items:center;gap:8px}
 .demo-tour-picker small{flex:none}
 .demo-tour-picker select{min-width:0;flex:1;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px}
-.demo-tour-actions{margin-top:12px}
+.demo-tour-actions{margin-top:12px;flex-wrap:wrap}
+.demo-tour-card .demo-tour-location{display:flex;align-items:center;gap:6px;margin:12px 0 0;color:var(--accent);font-weight:650}
