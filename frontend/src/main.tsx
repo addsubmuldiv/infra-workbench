@@ -74,7 +74,11 @@ let bootPreferences=loadPreferences(browserStorage());
 document.documentElement.dataset.theme=bootPreferences.theme;
 
 type Collection = {paused?:boolean;actual_interval_seconds?:number;status:string;queue_seconds?:number;duration_seconds?:number;request_bytes?:number;response_bytes?:number;samples?:number;total_response_bytes?:number};
-type Proc = {details_collected_at?:number|null;pid:number; name:string; user:string|null; memory_used:number|null; uid?:number|null; effective_uid?:number|null; parent_pid?:number|null; cwd?:string|null; executable?:string|null; command?:string|null; command_truncated?:boolean; identity_verified?:boolean; detail_status?:string; detail_source?:string; errors?:Record<string,string>};
+type ProcessContainer = {
+  id?:string|null; name?:string|null; runtime?:string|null; orchestrator?:string|null; pid?:number|null;
+  audit_login_user?:string|null; audit_login_uid?:number|null; host_cwd_status:string;
+};
+type Proc = {details_collected_at?:number|null;pid:number; name:string; user:string|null; memory_used:number|null; uid?:number|null; effective_uid?:number|null; parent_pid?:number|null; cwd?:string|null; host_cwd?:string|null; container?:ProcessContainer|null; executable?:string|null; command?:string|null; command_truncated?:boolean; identity_verified?:boolean; detail_status?:string; detail_source?:string; errors?:Record<string,string>};
 type Device = {id:string; display_id?:string; card_id?:string; chip_id?:string; physical_id?:string|null; kind:string; name:string; memory_total:number; memory_used:number; memory_free:number; utilization:number|null; temperature:number|null; processes:Proc[]; processes_known:boolean; health:string};
 type SystemMetrics = {cpu_percent:number|null;cpu_cores:number|null;memory:{memory_total:number;memory_used:number;memory_available:number}|null};
 type SudoSettings = {enabled:boolean;password_saved:boolean|null;credential_error?:string;password_in_memory:boolean;can_remember:boolean;status:string;message:string};
@@ -586,20 +590,44 @@ function SystemSummary({system,fresh,collectedAt}:{system?:SystemMetrics|null;fr
 
 function ProcessDetails({process:p,onCopy}:{process:Proc;onCopy:(text:string)=>void}){
   useLocale();
+  const container=p.container;
   const reason=(field:string)=>{
     if(p.detail_status==='process_changed')return ui("采集期间 PID 已被复用，请刷新");
     if(p.detail_status==='started_during_collection')return ui("进程在采集期间新启动，等待下次采集确认");
     if(p.detail_status==='not_visible_or_exited')return ui("进程已退出或当前 PID 命名空间不可见");
+    if(field==='host_cwd'&&container?.host_cwd_status==='unmapped')return tr("未找到可验证的宿主目录","No verified host directory");
+    if(field==='host_cwd'&&container?.host_cwd_status==='permission_denied')return ui("权限不足，无法读取");
     return p.errors?.[field]==='permission_denied'?ui("权限不足，无法读取"):p.errors?.[field]==='not_visible_or_exited'?ui("进程已退出或当前命名空间不可见"):ui("未获取");
   };
   const field=(label:string,value:string|number|null|undefined,key:string)=>
-    <div><dt>{label}</dt><dd>{value!=null&&value!==''?<><span>{value}</span>{(key==='cwd'||key==='executable')&&<button className="icon-button" aria-label={ui("复制 ")+label+' PID '+p.pid} onClick={()=>onCopy(String(value))}><Copy size={12}/></button>}</>:<span className="missing-field">{reason(key)}</span>}</dd></div>;
+    <div><dt>{label}</dt><dd>{value!=null&&value!==''?<><span>{value}</span>{['cwd','host_cwd','executable','container_id'].includes(key)&&<button className="icon-button" aria-label={ui("复制 ")+label+' PID '+p.pid} onClick={()=>onCopy(String(value))}><Copy size={12}/></button>}</>:<span className="missing-field">{reason(key)}</span>}</dd></div>;
+  const runtimeNames:Record<string,string>={docker:'Docker',containerd:'containerd','cri-o':'CRI-O',podman:'Podman'};
+  const environment=[container?.orchestrator==='kubernetes'?'Kubernetes':null,container?.runtime?runtimeNames[container.runtime]:null].filter(Boolean).join(' · ');
+  const cwdLabel=environment||container?.pid!=null
+    ?tr("容器内目录","Container directory")
+    :tr("隔离环境目录","Isolated directory");
   return <article className="process process-details"><div className="process-title"><Terminal size={16}/><strong>{p.name}</strong><Badge>PID {p.pid}</Badge></div>
     {['not_visible_or_exited','process_changed','started_during_collection'].includes(p.detail_status||'')?<p className="process-caution">{reason('identity')}</p>:null}
-    <dl>{field(ui("进程用户"),p.user,'user')}{field('UID',p.uid,'user')}{p.effective_uid!=null&&p.effective_uid!==p.uid&&field(ui("有效 UID"),p.effective_uid,'user')}{field(ui("父进程 PID"),p.parent_pid,'user')}{field(ui("设备显存"),gib(p.memory_used)+' GiB','memory')}{field(ui("工作目录"),p.cwd,'cwd')}{field(ui("可执行文件"),p.executable,'executable')}</dl>
+    <dl>
+      {container&&<>
+        {field(tr("宿主机目录","Host directory"),p.host_cwd,'host_cwd')}
+        {field(cwdLabel,p.cwd,'cwd')}
+        {field(tr("运行环境","Environment"),environment||tr("独立命名空间","Separate namespace"),'environment')}
+        {container.name&&field(tr("容器名称","Container name"),container.name,'container_name')}
+        {container.id&&field(tr("容器 ID","Container ID"),container.id,'container_id')}
+        {container.pid!=null&&field(tr("容器内 PID","Container PID"),container.pid,'inner_pid')}
+        {field(tr("登录账号","Login account"),container.audit_login_user,'audit_login_user')}
+      </>}
+      {field(ui("进程用户"),p.user,'user')}{field('UID',p.uid,'user')}
+      {p.effective_uid!=null&&p.effective_uid!==p.uid&&field(ui("有效 UID"),p.effective_uid,'user')}
+      {field(ui("父进程 PID"),p.parent_pid,'user')}{field(ui("设备显存"),gib(p.memory_used)+' GiB','memory')}
+      {!container&&field(ui("工作目录"),p.cwd,'cwd')}
+      {field(ui("可执行文件"),p.executable,'executable')}
+    </dl>
     <div className="command-heading"><span>{ui("启动命令")}</span>{p.command&&<button className="text-button" onClick={()=>onCopy(p.command!)}><Copy size={12}/>{ui("复制")}</button>}</div>
     <pre className={!p.command?'missing-field':''}>{p.command||reason('command')}</pre>
     {p.command_truncated&&<p className="process-caution">{ui("命令过长，仅显示完整参数的前段。")}</p>}
+    {container&&<p className="subtle">{tr("宿主机目录对应采样时的工作目录。系统记录的登录账号可以帮助判断谁启动了进程。","The host path maps to the working directory at sampling time. The login account recorded by the system can help identify who started the process.")}</p>}
     <small className="process-note">{p.detail_source==='sudo'?ui("已使用 sudo 补齐详情。"):ui("使用 SSH 当前账号读取。")}{ui("用户按进程 UID 解析；目录与可执行文件来自远端 /proc。常见密码、Token 参数已脱敏。")}</small>
   </article>;
 }

@@ -4,7 +4,18 @@ const GiB=1024**3;
 const now=()=>Date.now()/1000;
 const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 const blocked=()=>json({detail:'演示模式不支持此操作，不会连接真实服务。 / This action is unavailable in the isolated demo.'},403);
-function device(id:number,kind:string,busy:boolean){return {id:String(id),display_id:String(id),kind,name:kind==='NPU'?'Ascend 910B':'NVIDIA A100 80GB',memory_total:80*GiB,memory_used:(busy?64:2)*GiB,memory_free:(busy?16:78)*GiB,utilization:busy?94:0,temperature:busy?68:36,health:'OK',processes_known:true,processes:busy?[{pid:4200+id,name:'python3',user:'demo',memory_used:64*GiB,cwd:'/demo',command:'torchrun --nproc_per_node=4 train.py --config demo.yaml',identity_verified:true,detail_status:'complete'}]:[]}}
+function device(id:number,kind:string,busy:boolean){
+ const inContainer=kind==='GPU'&&id<2;
+ const process={pid:4200+id,name:'python3',user:inContainer?'root':'demo',memory_used:64*GiB,
+  cwd:inContainer?(id===0?'/workspace/train':'/app'):'/demo',
+  command:'torchrun --nproc_per_node=4 train.py --config demo.yaml',identity_verified:true,detail_status:'complete',
+  ...(inContainer?{host_cwd:id===0?'/home/demo/projects/train':null,
+   container:{runtime:'docker',id:(id===0?'d3e01234':'d3e05678').repeat(8),name:id===0?'demo-training':'demo-image-job',pid:12+id,
+    audit_login_user:id===0?'demo':null,host_cwd_status:id===0?'mapped':'unmapped'}}:{})};
+ return {id:String(id),display_id:String(id),kind,name:kind==='NPU'?'Ascend 910B':'NVIDIA A100 80GB',
+  memory_total:80*GiB,memory_used:(busy?64:2)*GiB,memory_free:(busy?16:78)*GiB,utilization:busy?94:0,
+  temperature:busy?68:36,health:'OK',processes_known:true,processes:busy?[process]:[]};
+}
 function initialHosts(){return [
  {id:'demo-gpu-free',target:'gpu-idle-demo',kind:'GPU',busy:false,online:true},
  {id:'demo-gpu-busy',target:'gpu-training-demo',kind:'GPU',busy:true,online:true},

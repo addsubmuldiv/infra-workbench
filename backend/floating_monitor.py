@@ -72,7 +72,15 @@ def process_tooltip_lines(processes):
     lines = []
     for process in processes:
         lines.append(f"PID {process.get('pid','?')} · {process.get('user') or '?'} · {process.get('name') or '?'}")
-        for key, label in (('cwd', tr('工作目录', 'Working directory')), ('executable', tr('可执行文件', 'Executable'))):
+        container = process.get('container') or {}
+        if container:
+            runtime = container.get('runtime') or container.get('orchestrator') or tr('独立命名空间', 'Separate namespace')
+            lines.append('  '.join(filter(None, (runtime, container.get('name') or (container.get('id') or '')[:12]))))
+            if container.get('audit_login_user'):
+                lines.append(f"{tr('登录账号', 'Login account')}  {container['audit_login_user']}")
+        cwd_label = tr('容器内目录', 'Container directory') if container else tr('工作目录', 'Working directory')
+        for key, label in (('host_cwd', tr('宿主机目录', 'Host directory')), ('cwd', cwd_label),
+                           ('executable', tr('可执行文件', 'Executable'))):
             if process.get(key):
                 lines.append(f'{label}  {process[key]}')
     return lines

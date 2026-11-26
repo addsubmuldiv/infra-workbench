@@ -304,14 +304,21 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                         users[parts[0]] = parts[1]
                 for device in devices:
                     for proc in device['processes']:
-                        metadata = elevated.get(str(proc['pid']), raw.get('process_details', {}).get(str(proc['pid']), {}))
-                        proc['detail_source'] = 'sudo' if str(proc['pid']) in elevated else 'user'
-                        for field in ('user', 'uid', 'effective_uid', 'parent_pid', 'cwd', 'executable', 'command',
+                        pid = str(proc['pid'])
+                        regular = raw.get('process_details', {}).get(pid, {})
+                        metadata = elevated.get(pid, regular)
+                        proc['detail_source'] = 'sudo' if pid in elevated else 'user'
+                        for field in ('user', 'uid', 'effective_uid', 'parent_pid', 'cwd', 'host_cwd', 'container', 'executable', 'command',
                                       'command_truncated', 'identity_verified', 'detail_status', 'errors', 'details_collected_at'):
                             if field in metadata:
                                 proc[field] = metadata[field]
-                        if str(proc['pid']) in elevated:
+                        if pid in elevated:
                             proc['details_collected_at'] = collection_started_at
+                            container, plain_container = metadata.get('container'), regular.get('container') or {}
+                            if (container and plain_container.get('name') and container.get('id') == plain_container.get('id')
+                                    and metadata.get('identity_verified') and regular.get('identity_verified')
+                                    and metadata.get('start_ticks') == regular.get('start_ticks')):
+                                proc['container'] = dict(container, name=plain_container['name'])
                         if not metadata:
                             proc['user'] = users.get(str(proc['pid']))
                 snap = dict(host_id=host_id, status='online', collected_at=time.time(), devices=devices,
