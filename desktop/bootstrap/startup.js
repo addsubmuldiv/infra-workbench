@@ -42,7 +42,10 @@
   let lastError = '';
   const layer = document.createElement('div'); layer.id = 'iwb-startup';
   layer.innerHTML = `<div class="iwb-startup-preview" aria-hidden="true"><div class="iwb-startup-sidebar"><div class="iwb-startup-line"></div><div class="iwb-startup-line iwb-startup-short"></div><div class="iwb-startup-line"></div><div class="iwb-startup-line"></div><div class="iwb-startup-line iwb-startup-short"></div></div><div class="iwb-startup-cards">${Array.from({length:4},()=>'<div class="iwb-startup-card"><div class="iwb-startup-line iwb-startup-short"></div><div class="iwb-startup-line"></div><div class="iwb-startup-line"></div></div>').join('')}</div></div>
-  <main id="iwb-startup-panel" aria-busy="true"><div class="iwb-startup-brand"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#152c39"/><g fill="none" stroke="#e9fff9" stroke-width="2" stroke-linecap="round"><rect x="8" y="8" width="16" height="16" rx="3"/><path d="M12 5v3m8-3v3M5 12h3m-3 8h3m16-8h3m-3 8h3M12 24v3m8-3v3"/></g><rect x="12" y="12" width="8" height="8" rx="1.5" fill="#70e2c3"/><circle cx="25" cy="25" r="5" fill="#152c39"/><circle cx="25" cy="25" r="3.5" fill="#70e2c3"/></svg><h1>Infra Workbench</h1></div>
+  <main id="iwb-startup-panel" aria-busy="true"><div class="iwb-startup-brand">
+    <svg width="48" height="48" aria-hidden="true"><image href="/favicon.svg" width="48" height="48"/></svg>
+    <h1>Infra Workbench</h1>
+  </div>
   <div class="iwb-startup-status-row"><span class="iwb-startup-spinner" aria-hidden="true"></span><p id="iwb-startup-status" role="status" aria-live="polite"></p></div><div class="iwb-startup-track" id="iwb-startup-progress" role="progressbar" aria-label="${copy.progress}" aria-valuemin="0" aria-valuemax="100"><div id="iwb-startup-bar"></div></div><div class="iwb-startup-meta"><span id="iwb-startup-percent"></span><span id="iwb-startup-elapsed"></span></div><p class="iwb-startup-note" id="iwb-startup-note">${copy.note}</p><p class="iwb-startup-note" id="iwb-startup-slow" hidden>${copy.slow}</p><button id="iwb-startup-retry" hidden>${copy.retry}</button><p class="iwb-startup-note" id="iwb-startup-hint">${copy.hint}</p></main>`;
   document.documentElement.appendChild(layer);
   if (bootstrap && window.__iwbDesktopTitlebar) {

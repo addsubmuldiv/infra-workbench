@@ -30,6 +30,13 @@ test('saved dark theme is applied during parsing and survives the handoff to the
  assert.equal(service.root.dataset.theme,'graphite');
 });
 
+test('both desktop startup stages use the current workbench icon',()=>{
+ for (const origin of ['http://tauri.localhost','http://127.0.0.1:8765']) {
+  const {nodes}=harness(origin);
+  assert.match(nodes.get('iwb-startup').innerHTML, /<image\b[^>]*\bhref="\/favicon\.svg"/);
+ }
+});
+
 test('Windows startup page can control the window before the backend is ready',async()=>{
  const calls=[];
  const native={__iwbDesktopTitlebar:true,__TAURI_INTERNALS__:{invoke:async(command,{action})=>{calls.push([command,action]);return action==='toggle-maximize'}}};
