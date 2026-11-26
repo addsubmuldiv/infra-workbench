@@ -622,7 +622,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @app.get('/api/health')
     async def health():
-        return {'name': 'infra-workbench', 'version': '0.3.1', 'instance':service_instance}
+        return {'name': 'infra-workbench', 'version': '0.3.2', 'instance':service_instance}
 
     @app.put('/api/settings/refresh')
     async def set_refresh(settings: RefreshSettings):
