@@ -86,7 +86,8 @@ class ProbeCache:
                 if (not slow and detail.get('identity_verified') and old.get('identity_verified')
                         and detail.get('start_ticks') is not None
                         and detail['start_ticks'] == old.get('start_ticks')):
-                    for field in ('cwd', 'executable', 'command', 'command_truncated', 'details_collected_at'):
+                    for field in ('cwd', 'host_cwd', 'container', 'executable', 'command', 'command_truncated',
+                                  'details_collected_at'):
                         if field in old:
                             detail[field] = old[field]
             self.details[key] = dict(boot_id=raw.get('boot_id'), items=details)

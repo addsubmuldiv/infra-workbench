@@ -24,7 +24,7 @@ def resource_view(result, options):
             if options.get('pid') is not None and pid!=options['pid']:continue
             record=by_pid[pid]
             total=0
-            for key in ('command','cwd','executable','name'):
+            for key in ('command','cwd','host_cwd','executable','name'):
                 value=record.get(key)
                 if isinstance(value,str):
                     # Redact the complete field before paging: a secret split

@@ -3,11 +3,13 @@ import sys
 import json
 import csv
 import os
+import posixpath
 import re
 import shlex
 import shutil
 import subprocess
 import time
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import unquote
 try:
@@ -117,12 +119,135 @@ def redact_arguments(arguments):
     return result
 
 
+def process_user(uid):
+    try:
+        return pwd.getpwuid(uid).pw_name if pwd else 'UID '+str(uid)
+    except (KeyError, OSError, OverflowError):
+        return 'UID '+str(uid)
+
+
+def read_mounts(path):
+    # Bound the read and only keep namespace paths, never filesystem options.
+    with path.open(encoding='utf-8', errors='surrogateescape') as source:
+        raw = source.read(2**21+1)
+    if len(raw) > 2**21:
+        return []
+    mounts = []
+    for line in raw.split('\n'):
+        fields = line.split()
+        if len(fields) < 10 or '-' not in fields[6:]:
+            continue
+        fs_type = fields[fields.index('-', 6)+1]
+        root, target = (re.sub(r'\\(040|011|012|134)', lambda m: chr(int(m[1], 8)), item)
+                        for item in fields[3:5])
+        mounts.append((fields[2], fs_type, root, target))
+    return mounts
+
+
+@lru_cache(maxsize=1)
+def collector_mounts(path):
+    # Every remote probe/helper invocation has its own Python process.
+    return read_mounts(path)
+
+
+def mount_suffix(path, prefix):
+    if path == prefix:
+        return ''
+    prefix = prefix.rstrip('/')+'/'
+    return path[len(prefix):] if path.startswith(prefix) else None
+
+
+def resolve_host_cwd(folder, cwd):
+    if not cwd or not cwd.startswith('/') or cwd.endswith(' (deleted)'):
+        return None, 'unmapped'
+    try:
+        mounts = read_mounts(folder/'mountinfo')
+        host_mounts = collector_mounts(folder.parent/'self'/'mountinfo')
+    except PermissionError:
+        return None, 'permission_denied'
+    except (OSError, ValueError):
+        return None, 'unavailable'
+    matching = [mount for mount in mounts if mount_suffix(cwd, mount[3]) is not None]
+    deepest = max((len(mount[3]) for mount in matching), default=0)
+    matching = [mount for mount in matching if len(mount[3]) == deepest
+                and not (mount[3] == '/' and mount[1] in ('overlay', 'fuse.overlayfs'))]
+    if not matching:
+        return None, 'unmapped'
+    try:
+        cwd_stat = os.stat(folder/'cwd')
+    except PermissionError:
+        return None, 'permission_denied'
+    except OSError:
+        return None, 'unavailable'
+    denied = False
+    for device, fs_type, root, target in matching:
+        suffix = mount_suffix(cwd, target)
+        filesystem_path = posixpath.join(root, suffix) if suffix else root
+        for host_device, host_fs, host_root, host_target in host_mounts:
+            if (device, fs_type) != (host_device, host_fs):
+                continue
+            suffix = mount_suffix(filesystem_path, host_root)
+            if suffix is None:
+                continue
+            path = posixpath.join(host_target, suffix) if suffix else host_target
+            try:
+                if os.path.samestat(cwd_stat, os.stat(path)):
+                    return path, 'mapped'
+            except PermissionError:
+                denied = True
+            except (OSError, ValueError):
+                continue
+    return None, 'permission_denied' if denied else 'unmapped'
+
+
+def container_details(folder, inner_pid, cwd, cwd_error):
+    try:
+        cgroup = (folder/'cgroup').read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        cgroup = ''
+    paths = [line.split(':', 2)[-1] for line in cgroup.splitlines()]
+    kubernetes = any(re.search(r'(?:^|/)kubepods(?:[./-]|$)', path) for path in paths)
+    pattern = r'(?:^|/)(docker|cri-containerd|containerd|crio|libpod)[-/]([a-f0-9]{64})(?:\.scope)?(?=/|$)'
+    matches = [match for path in paths for match in re.finditer(pattern, path)]
+    runtime, container_id = matches[0].groups() if matches else (None, None)
+    if kubernetes and not container_id:
+        container_id = next((path.rsplit('/', 1)[-1] for path in paths
+                             if re.search(r'(?:^|/)kubepods[./-].*/[a-f0-9]{64}$', path)), None)
+    runtime = {'cri-containerd': 'containerd', 'crio': 'cri-o', 'libpod': 'podman'}.get(runtime, runtime)
+    if not (container_id or kubernetes or inner_pid):
+        try:
+            if os.readlink(folder/'ns'/'mnt') == os.readlink(folder.parent/'self'/'ns'/'mnt'):
+                return None, None, cwd
+        except OSError:
+            return None, None, cwd
+    if cwd:
+        try:
+            # procfs can render cwd from the collector's root even when
+            # mountinfo paths are relative to the target's root.
+            root = os.readlink(folder/'root')
+            suffix = mount_suffix(cwd, root) if root.startswith('/') else None
+            if suffix is not None:
+                cwd = '/'+suffix
+        except OSError:
+            pass
+    try:
+        audit_uid = int((folder/'loginuid').read_text().strip())
+        if not 0 <= audit_uid < 2**32-1:
+            audit_uid = None
+    except (OSError, ValueError):
+        audit_uid = None
+    host_cwd, mapping = resolve_host_cwd(folder, cwd) if cwd else (None, cwd_error or 'unavailable')
+    return dict(runtime=runtime, id=container_id, orchestrator='kubernetes' if kubernetes else None,
+                pid=inner_pid, audit_login_uid=audit_uid, audit_login_user=process_user(audit_uid) if audit_uid is not None else None,
+                host_cwd_status=mapping), host_cwd, cwd
+
+
 def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None, include_details=True):
     if not isinstance(pid, int) or pid <= 0:
         raise ValueError('invalid PID')
     folder = Path(proc_root)/str(pid)
     result = dict(pid=pid, user=None, uid=None, effective_uid=None, parent_pid=None,
-                  cwd=None, executable=None, command=None, command_truncated=False,
+                  cwd=None, host_cwd=None, container=None, executable=None, command=None, command_truncated=False,
                   identity_verified=False, detail_status='ok', errors={})
 
     def error_code(exc):
@@ -144,18 +269,20 @@ def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None, incl
         # A newer PID cannot be safely attributed to the earlier smi observation.
         result['detail_status'] = 'started_during_collection'
         return result
+    inner_pid = None
     try:
         status = folder.joinpath('status').read_text()
         for line in status.splitlines():
             if line.startswith('Uid:'):
                 values = line.split()[1:]
                 result['uid'], result['effective_uid'] = int(values[0]), int(values[1])
-                try:
-                    result['user'] = pwd.getpwuid(result['uid']).pw_name if pwd else 'UID '+str(result['uid'])
-                except KeyError:
-                    result['user'] = 'UID '+str(result['uid'])
+                result['user'] = process_user(result['uid'])
             elif line.startswith('PPid:'):
                 result['parent_pid'] = int(line.split()[1])
+            elif include_details and line.startswith('NSpid:'):
+                pids = line.split()[1:]
+                if len(pids) > 1:
+                    inner_pid = int(pids[-1])
     except (OSError, ValueError, IndexError) as exc:
         result['errors']['user'] = error_code(exc)
     if include_details:
@@ -164,6 +291,9 @@ def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None, incl
                 result[field] = os.readlink(folder/('exe' if field == 'executable' else field))
             except OSError as exc:
                 result['errors'][field] = error_code(exc)
+        if before is not None:
+            result['container'], result['host_cwd'], result['cwd'] = container_details(
+                folder, inner_pid, result['cwd'], result['errors'].get('cwd'))
         try:
             with folder.joinpath('cmdline').open('rb') as source:
                 raw = source.read(65537)
@@ -181,7 +311,7 @@ def read_process_details(pid, proc_root='/proc', process_cutoff_ticks=None, incl
         result['errors']['identity'] = error_code(exc)
         after = None
     if before is not None and before != after:
-        for field in ('user', 'uid', 'effective_uid', 'parent_pid', 'cwd', 'executable', 'command'):
+        for field in ('user', 'uid', 'effective_uid', 'parent_pid', 'cwd', 'host_cwd', 'container', 'executable', 'command'):
             result[field] = None
         result['detail_status'] = 'not_visible_or_exited' if after is None else 'process_changed'
         return result
@@ -207,6 +337,37 @@ def tmux_sessions():
             return dict(status='unknown', items=[])
         items.append(dict(id=parts[0], name=parts[1][:200], attached=int(parts[2]), created=int(parts[3])))
     return dict(status='known', items=items, truncated=len(result['out'].splitlines())>200)
+
+
+def docker_names(details):
+    # The optional name lookup runs only as the SSH user, against a local
+    # Docker daemon, and requests names only for already observed device PIDs.
+    containers = [detail['container'] for detail in details.values()
+                  if detail.get('identity_verified') and detail.get('container')
+                  and detail['container']['runtime'] == 'docker']
+    ids = sorted({container['id'] for container in containers})[:128]
+    if not ids or not shutil.which('docker'):
+        return
+    sockets = (Path('/run/user')/str(os.getuid())/'docker.sock', Path('/var/run/docker.sock'))
+    names = {}
+    for socket in sockets:
+        try:
+            is_socket = socket.is_socket()
+        except OSError:
+            continue
+        if not is_socket:
+            continue
+        result = run(['docker', '--host', 'unix://'+socket.as_posix(), 'inspect', '--type', 'container',
+                      '--format', '{{.Id}} {{.Name}}', *ids], timeout=2)
+        for line in result['out'].splitlines():
+            container_id, _, name = line.partition(' ')
+            if container_id in ids and re.fullmatch(r'/[A-Za-z0-9][A-Za-z0-9_.-]{0,199}', name):
+                names[container_id] = name[1:]
+        if len(names) == len(ids):
+            break
+    for container in containers:
+        if container['id'] in names:
+            container['name'] = names[container['id']]
 
 
 def main():
@@ -242,6 +403,7 @@ def main():
     pids = reported_process_ids(result['kind'], result['metrics']['out'], result.get('processes', {}).get('out', ''))
     result['process_details'] = {str(pid): read_process_details(pid, process_cutoff_ticks=process_cutoff_ticks, include_details=slow) for pid in pids}
     if slow:
+        docker_names(result['process_details'])
         stamp = time.time()
         for detail in result['process_details'].values():
             detail['details_collected_at'] = stamp

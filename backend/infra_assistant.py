@@ -205,13 +205,19 @@ def search_inventory(inventory, plan, now=None):
                         unknown.append(warning)
                 if owner and proc.get('user') != owner:
                     continue
-                text = ' '.join(str(proc.get(key) or '') for key in ('name','command','cwd','executable','pid'))
+                container = proc.get('container') or {}
+                text = ' '.join(str(value or '') for value in (
+                    proc.get('name'), proc.get('command'), proc.get('cwd'), proc.get('host_cwd'),
+                    proc.get('executable'), proc.get('pid'), container.get('id'), container.get('name'), container.get('runtime'),
+                    container.get('orchestrator'), container.get('audit_login_user')))
                 if not matches(text):
                     continue
                 pid = proc['pid']
                 if pid not in pids:
                     pids[pid] = dict(type='process',host_id=host['id'],alias=alias,collected_at=stamp,device_ids=[],
                                      **{key:proc.get(key) for key in ('pid','user','name','command','cwd','detail_status')})
+                    if container:
+                        pids[pid].update(container=container, host_cwd=proc.get('host_cwd'))
                 pids[pid]['device_ids'].append(device['id'])
         rows.extend(pids.values())
     return rows, dict(searched_hosts=searched, unavailable=unavailable, unknown=unknown, self_unknown=self_unknown,

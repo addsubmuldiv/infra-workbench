@@ -30,8 +30,10 @@ def helper_source():
     source = '''"""Fixed read-only process metadata helper."""
 import json
 import os
+import posixpath
 import re
 import shlex
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import unquote
 try:
@@ -41,6 +43,8 @@ except ImportError:
 
 '''
     for function in (remote_probe.sensitive_name, remote_probe.redact_arguments,
+                     remote_probe.process_user, remote_probe.read_mounts, remote_probe.collector_mounts.__wrapped__,
+                     remote_probe.mount_suffix, remote_probe.resolve_host_cwd, remote_probe.container_details,
                      remote_probe.read_process_details, validate_request):
         source += inspect.getsource(function)+'\n'
     return source+'''
