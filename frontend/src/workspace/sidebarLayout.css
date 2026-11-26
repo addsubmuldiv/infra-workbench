@@ -60,7 +60,7 @@
 .sidebar-hosts{container:sidebar-hosts / inline-size}
 
 /* The separator changes the sidebar width without changing the viewport. */
-@container sidebar-hosts (max-width: 340px){
+@container sidebar-hosts (max-width: 268px){
   .sidebar-hosts > .cluster-picker{display:flex;gap:6px}
   .cluster-picker .host-picker-heading{align-items:center;padding:0 2px 2px}
   .cluster-picker .host-picker-heading>button,.cluster-picker .host-search>svg{flex-shrink:0}
