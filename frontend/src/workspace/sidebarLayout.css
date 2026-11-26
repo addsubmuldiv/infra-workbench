@@ -60,7 +60,7 @@
 .sidebar-hosts{container:sidebar-hosts / inline-size}
 
 /* The separator changes the sidebar width without changing the viewport. */
-@container sidebar-hosts (max-width: 268px){
+@container sidebar-hosts (max-width: 340px){
   .sidebar-hosts > .cluster-picker{display:flex;gap:6px}
   .cluster-picker .host-picker-heading{align-items:center;padding:0 2px 2px}
   .cluster-picker .host-picker-heading>button,.cluster-picker .host-search>svg{flex-shrink:0}
@@ -78,9 +78,7 @@
 
   .cluster-picker .cluster-group .host-picker-row{gap:2px;padding:0 3px 0 7px;margin:2px 0;min-height:38px}
   .cluster-picker .host-picker-row>input{flex:none;margin:0 3px 0 0}
-  .cluster-picker .host-picker-row > .host-row-main{align-self:stretch;align-items:flex-start;gap:5px;border:0;background:transparent;padding:5px 1px}
-  .cluster-picker .host-picker-row > .host-row-main:hover{background:transparent}
-  .cluster-picker .host-row-main:focus-visible{outline-offset:-2px}
+  .cluster-picker .host-picker-row > .host-row-main{align-items:flex-start;gap:5px;padding:5px 1px}
   .cluster-picker .host-row-main .host-dot{margin-top:6px}
   .cluster-picker .host-row-main strong,.cluster-picker .cluster-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cluster-picker .host-row-main strong{font-size:12px;font-weight:600;line-height:17px}
