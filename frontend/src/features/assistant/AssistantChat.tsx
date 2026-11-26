@@ -15,7 +15,7 @@ import {workspaceStorage} from '../../workspace/workspaceState';
 import {useWorkspaceValue} from '../../workspace/workspaceHooks';
 import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Check,Settings2,Sparkles,Server,TriangleAlert,ChevronDown,LoaderCircle,Plus,Send,Square,Trash2} from 'lucide-react';
-import {chatReplyTime,applyChatEvent,chatRequest,isVisibleCodexItem,loadChatId,saveChatId,shouldFollowChat,watchChat,toolNames,toolPresentation,type Chat,type ChatItem,type ChatTool,type ChatTurn} from './agentChat';
+import {assistantEngineName as engineName,chatReplyTime,applyChatEvent,chatRequest,isVisibleCodexItem,loadChatId,saveChatId,shouldFollowChat,watchChat,toolNames,toolPresentation,type Chat,type ChatItem,type ChatTool,type ChatTurn} from './agentChat';
 import {useAppConfirm} from '../../shared/AppConfirm';
 import './agentChat.css';
 import {OverlayScrollbar} from '../../shared/OverlayScrollbar';
@@ -26,7 +26,6 @@ import {SkillMessageInput} from './SkillMessageInput';
 
 const AssistantA2ui=React.lazy(()=>import('./AssistantA2ui'));
 
-const engineName=(engine?:AssistantEngine)=>engine==='claude'?'Claude Code':engine==='opencode'?'OpenCode':engine==='codex'?'Codex':'Deep Agents';
 const suggestions=['检查可用资源和运行中的服务','分析训练日志并找出异常','帮我设置资源监控'];
 type ComposerDraft={chatId:string|null;text:string|null;skills:string[]|null};
 function legacyComposer():ComposerDraft{

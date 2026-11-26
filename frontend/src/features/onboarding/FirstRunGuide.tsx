@@ -19,7 +19,7 @@ const steps=[
     ['需要端口转发时配置 SSH 隧道，也可勾选在打开 VS Code 前连接指定隧道。本机需安装 VS Code 和 Remote - SSH 扩展。','Configure SSH tunnels for port forwarding, and optionally connect selected tunnels before opening VS Code. Install VS Code and its Remote - SSH extension locally.'],
   ]},
   {title:['让 AI 在明确的机器范围内协助','Give the AI assistant a clear host scope'],location:['右上角 AI 助手；设置 → AI 助手','AI assistant at the top right; Settings → AI assistant'],items:[
-    ['可配置模型接口，或选择本机 Codex、Claude Code、OpenCode；使用本机引擎前需自行安装并完成登录。','Configure a model connection or select local Codex, Claude Code, or OpenCode. Install and sign in to a local engine before using it.'],
+    ['可配置模型接口，或选择本机 Codex、Claude Code、OpenCode、Antigravity。使用本机引擎前请安装对应的 CLI 并完成登录。','Configure a model connection or select local Codex, Claude Code, OpenCode, or Antigravity. Install and sign in to the corresponding CLI first.'],
     ['发送前核对机器范围。终端选区或当前屏幕可先附加到草稿；展开执行记录核对工具目标与结果，重复流程可保存为 Skills。','Check the host scope before sending. Attach terminal selections or the current screen to a draft, inspect tool targets and results, and save repeatable workflows as Skills.'],
   ]},
   {title:['用预约和历史安排资源','Plan with availability alerts and history'],location:['资源预约、资源历史与精度对比','Availability alerts, Resource history, and Precision comparison'],items:[

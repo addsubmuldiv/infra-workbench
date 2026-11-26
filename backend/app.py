@@ -563,7 +563,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_mcp(app, app.state.agent_service, probes)
     app.state.mcp_service.skills = app.state.skills
     register_skill_routes(app, app.state.skills, lambda: list(app.state.mcp_service.scoped({}, None).catalog()))
-    app.state.agent_chat = AgentChat(store,agent_api,MCPGateway(app.state.mcp_service))
+    app.state.agent_chat = AgentChat(
+        store,agent_api,MCPGateway(app.state.mcp_service),
+        antigravity_profile=data/'antigravity-profile',
+    )
     register_chat_routes(app,app.state.agent_chat)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 

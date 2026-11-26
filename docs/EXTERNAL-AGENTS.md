@@ -1,6 +1,16 @@
-# Claude Code 与 OpenCode
+# Claude Code、OpenCode 与 Antigravity
 
 助手的执行引擎可以选择「Claude Code · 本机 CLI」或「OpenCode · 本机 CLI」。它们使用各自 CLI 的本机登录或 provider 环境变量，不要求填写工作台 API 配置，也不会把工作台保存的 API key 转交给其他服务。
+
+## Antigravity
+
+选择「Antigravity · 本机 CLI」，点击「显示登录命令」，在本机 PowerShell（Windows）或终端（macOS/Linux）运行显示的命令。首次使用请按 `agy acp --login` 的提示，在 Google 页面授权并将授权码填回刚才启动登录的终端。完成后回到工作台发送消息。需要安装官方 `agy` 1.5.16 或更新版本。若工作台找不到 CLI，可给后台设置 `IWB_ANTIGRAVITY_PATH` 指向官方可执行文件。
+
+工作台通过 STDIO 与官方 `agy acp` 通信，Google 登录保存在工作台数据目录下的独立 Antigravity 配置中，由 CLI 管理。每轮传入同一引擎、同一范围内的历史，以及经过工作台校验的 MCP 工具。工作台继续处理机器范围、工具审批和取消操作。CLI 程序是否存在与 Google 账号是否可以使用是两项检查。
+
+参考 [Google ACP 文档](https://antigravity.google/docs/ide/extensions/acp/) 和 [T3 Code 的 Antigravity 接入](https://github.com/pingdotgg/t3code/blob/main/docs/user/providers-antigravity.md)。
+
+## Claude Code 与 OpenCode
 
 先在本机终端安装并配置对应 CLI。后台检测只表示找到了程序，不代表账号、默认模型或网络可用。找不到程序时可为后台设置 `IWB_CLAUDE_PATH` 或 `IWB_OPENCODE_PATH`。Windows npm 安装只解析已知包中的原生程序或 Claude 的已知 Node 入口，不执行 PowerShell、CMD 或自定义包装脚本。修改路径或登录后可重新打开引擎选择菜单刷新状态。
 

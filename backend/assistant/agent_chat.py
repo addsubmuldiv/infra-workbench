@@ -132,7 +132,7 @@ class CodexAnswerRequest(BaseModel):
 class ChatMessageRequest(BaseModel):
     model_config=ConfigDict(extra='forbid')
     profile_id:str|None=Field(default=None,max_length=64)
-    engine:Literal['deepagents','codex','claude','opencode']='deepagents'
+    engine:Literal['deepagents','codex','claude','opencode','antigravity']='deepagents'
     content:str=Field(min_length=1,max_length=4000)
     selected_host_ids:list[str]=Field(default_factory=list)
     terminal_attachments:list[TerminalAttachment]=Field(default_factory=list)
@@ -200,8 +200,9 @@ def visible_stream_text(text,secret='',*,final=False):
 
 
 class AgentChat:
-    def __init__(self,store,provider,tools):
+    def __init__(self,store,provider,tools,*,antigravity_profile=None):
         self.store,self.provider,self.tools=store,provider,tools
+        self.antigravity_profile=antigravity_profile
         self.a2ui_prototype=False
         from .skill_service import SkillService
         from backend.mcp.mcp_client import MCPGateway
@@ -337,7 +338,7 @@ class AgentChat:
                   state={},active_run=None,engine=source.get('engine','deepagents'),
                   request_scope=copy.deepcopy(source.get('request_scope')),
                   draft=copy.deepcopy(user.get('request',dict(content=user['content'],terminal_attachments=user.get('terminal_attachments',[]),selected_skill_names=[]))))
-        if chat['engine'] in ('codex','claude','opencode'):
+        if chat['engine'] in ('codex','claude','opencode','antigravity'):
             seed=copy.deepcopy(chat['messages'])
             while seed and len(json.dumps(seed,ensure_ascii=False))>60000:seed.pop(0)
             chat['branch_seed']=dict(engine=chat['engine'],scope=copy.deepcopy(chat['request_scope']),messages=seed)
@@ -455,7 +456,7 @@ class AgentChat:
         for old_turn in chat['turns']:old_turn.pop('model_history_before',None)
         chat.pop('draft',None)
         chat['turns'].extend([dict(id=uuid.uuid4().hex,role='user',content=text,terminal_attachments=attachments,created=time.time(),request=request,model_history_before=history_before),
-                              dict(id=run_id,role='assistant',content='',created=time.time(),status='running',tools=[],model={'codex':'Codex','claude':'Claude Code','opencode':'OpenCode'}.get(body.engine,provider.config.get('model','')),profile_name=getattr(provider,'profiles',{}).get(getattr(provider,'active_id',''),{}).get('name',''),selected_skill_names=list(dict.fromkeys(body.selected_skill_names)))])
+                              dict(id=run_id,role='assistant',content='',created=time.time(),status='running',tools=[],model={'codex':'Codex','claude':'Claude Code','opencode':'OpenCode','antigravity':'Antigravity'}.get(body.engine,provider.config.get('model','')),profile_name=getattr(provider,'profiles',{}).get(getattr(provider,'active_id',''),{}).get('name',''),selected_skill_names=list(dict.fromkeys(body.selected_skill_names)))])
         chat['messages'].append(dict(role='user',content=model_text))
         if len(chat['turns'])==2:chat['title']=text[:60]
         chat['active_run']=run_id
@@ -538,9 +539,10 @@ class AgentChat:
                     # Deep Agents-specific virtual paths/task instructions are not native Codex capabilities.
                     native_instructions=codex_instructions(context)
                     await run_codex_agent(chat,self.tools,allowed,native_instructions,lambda:self.save(chat),start_text,on_text,skills=self.skills,controls=self.controls,request=request)
-                elif chat.get('engine') in ('claude','opencode'):
+                elif chat.get('engine') in ('claude','opencode','antigravity'):
                     from .external_agents import run_external_agent
-                    await run_external_agent(chat,self.tools,allowed,instructions,lambda:self.save(chat),start_text,on_text,skills=self.skills)
+                    options={'profile':self.antigravity_profile} if chat['engine']=='antigravity' else {}
+                    await run_external_agent(chat,self.tools,allowed,instructions,lambda:self.save(chat),start_text,on_text,skills=self.skills,**options)
                 else:
                     chat['last_engine']='deepagents'
                     async with provider.connection() if hasattr(provider,'connection') else no_connection():
@@ -639,10 +641,24 @@ def register_chat_routes(app,service):
         for engine,label in LABELS.items():
             try:
                 resolve_agent(engine)
-                external[engine]=dict(available=True,steering=False,message=f'使用本机 {label} 登录和默认模型；每轮独立会话，由工作台传入同范围历史。')
+                if engine=='antigravity':
+                    external[engine]=dict(available=True,steering=False,setup='antigravity_login')
+                else:
+                    external[engine]=dict(available=True,steering=False,message=f'使用本机 {label} 登录和默认模型；每轮独立会话，由工作台传入同范围历史。')
             except ValueError as exc:
                 external[engine]=dict(available=False,steering=False,message=str(exc))
         return dict(codex={**codex,'steering':True},deepagents=dict(steering=False),**external)
+
+    @app.post('/api/assistant/engines/antigravity/login-command')
+    async def antigravity_login_command():
+        from .antigravity_agent import login_command
+        from .external_agents import resolve_agent
+
+        try:
+            command=await login_command(resolve_agent('antigravity'),service.antigravity_profile)
+        except (OSError,ValueError):
+            raise HTTPException(400,'无法准备 Antigravity 登录，请检查 CLI 安装和工作台数据目录权限。') from None
+        return dict(command=command)
 
     @app.get('/api/assistant/chats')
     async def sessions():return service.list()

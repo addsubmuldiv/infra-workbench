@@ -15,15 +15,15 @@ import tempfile
 from .chat_tools import scrub
 from .codex_agent import ScopedMCPBridge, TracedService, codex_environment
 
-LABELS={'claude':'Claude Code','opencode':'OpenCode'}
+LABELS={'claude':'Claude Code','opencode':'OpenCode','antigravity':'Antigravity'}
 
 def resolve_agent(engine,configured=None):
-    name='claude' if engine=='claude' else 'opencode'
+    name={'claude':'claude','opencode':'opencode','antigravity':'agy'}[engine]
     candidate=configured or os.environ.get('IWB_'+engine.upper()+'_PATH') or shutil.which(name)
     if not candidate:raise ValueError(f'未找到 {LABELS[engine]} CLI，请先安装并在本机终端完成登录/模型配置。')
     path=Path(candidate).resolve()
     if path.suffix.lower() in ('.ps1','.cmd','.bat'):
-        if path.stem.lower()!=name:raise ValueError('不允许执行自定义 CLI 包装脚本。')
+        if engine=='antigravity' or path.stem.lower()!=name:raise ValueError('不允许执行自定义 CLI 包装脚本。')
         package='@anthropic-ai/claude-code' if engine=='claude' else 'opencode-ai'
         native=path.parent/'node_modules'/package/'bin'/f'{name}.exe'
         if native.is_file():path=native
@@ -170,7 +170,7 @@ async def validate_opencode_config(command,env,cwd):
     finally:
         if proc.returncode is None:proc.kill();await proc.wait()
 
-async def run_external_agent(chat,tools,allowed,instructions,save,start_text,on_text,*,skills=None):
+async def run_external_agent(chat,tools,allowed,instructions,save,start_text,on_text,*,skills=None,profile=None):
     from backend.mcp.mcp_client import gateway_for
     engine=chat['engine'];command=resolve_agent(engine);turn=chat['turns'][-1]
     details=None
@@ -188,8 +188,13 @@ async def run_external_agent(chat,tools,allowed,instructions,save,start_text,on_
     with tempfile.TemporaryDirectory(prefix='iwb-'+engine+'-') as folder:
         cwd=Path(folder);await protect_directory(cwd)
         async with ScopedMCPBridge(traced) as bridge:
-            args,env=cli_configuration(engine,cwd,bridge,instructions)
-            if engine=='opencode':await validate_opencode_config(command,env,cwd)
-            start_text();content=await stream_cli(command,args,env,cwd,prompt,engine,on_text)
+            if engine=='antigravity':
+                from .antigravity_agent import run_antigravity
+                start_text()
+                content=await run_antigravity(command,profile,cwd,bridge,instructions,prompt,on_text)
+            else:
+                args,env=cli_configuration(engine,cwd,bridge,instructions)
+                if engine=='opencode':await validate_opencode_config(command,env,cwd)
+                start_text();content=await stream_cli(command,args,env,cwd,prompt,engine,on_text)
     chat['messages'].append({'role':'assistant','content':scrub(content)})
     chat.update(external_context=dict(engine=engine,scope=scope),last_engine=engine,runtime=engine,tool_transport='mcp');save()

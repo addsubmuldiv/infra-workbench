@@ -1,11 +1,19 @@
 import type {AssistantSurface} from './AssistantA2ui';
-import type {AssistantEngine} from './AssistantEnginePicker';
 import type {TerminalAttachment} from '../terminal/terminalContext';
 import {t} from '../../shared/i18n.ts';
 import {localizedLabels} from '../../shared/localizedLabels.ts';
 import {ui} from './assistantLocale.ts';
 import {workspaceStorage} from '../../workspace/workspaceState.ts';
 import {assistantRequest} from './infraAssistant.ts';
+export const assistantEngineNames={
+  deepagents:'Deep Agents',
+  codex:'Codex',
+  claude:'Claude Code',
+  opencode:'OpenCode',
+  antigravity:'Antigravity',
+} as const;
+export type AssistantEngine=keyof typeof assistantEngineNames;
+export const assistantEngineName=(engine?:AssistantEngine)=>assistantEngineNames[engine??'deepagents']??assistantEngineNames.deepagents;
 export type ChatTool={id:string;name:string;target?:string;status:string;arguments:string;output:string;started:number;finished?:number};
 export type ContextUsage={used_tokens:number;total_tokens:number;trigger_tokens:number;source:'provider'|'official'|'manual'|'fallback';model:string;estimated:boolean;phase:'request'|'response';updated:number};
 export type PermissionMode='ask'|'full'|'read_only';
