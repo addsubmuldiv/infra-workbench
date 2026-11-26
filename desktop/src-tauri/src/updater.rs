@@ -15,7 +15,12 @@ pub struct Status {
 struct Inner { status: Status, update: Option<Update>, bytes: Option<Vec<u8>>, safety: HashMap<String, Option<bool>> }
 pub struct UpdaterState(Mutex<Inner>);
 impl Default for UpdaterState {
-    fn default() -> Self { Self(Mutex::new(Inner { status: Status { supported: cfg!(all(windows, feature = "signed-updater", not(debug_assertions))), current_version: env!("CARGO_PKG_VERSION").into(), phase: "idle".into(), available_version: None, notes: None, downloaded_bytes: 0, total_bytes: None, last_checked: None, error: None }, update: None, bytes: None, safety: HashMap::new() })) }
+    fn default() -> Self {
+        let supported = cfg!(all(windows, feature = "signed-updater", not(debug_assertions)))
+            && super::runtime_source_root().is_none()
+            && std::env::current_exe().is_ok_and(|exe| exe.with_file_name("iwb-runtime.exe").is_file());
+        Self(Mutex::new(Inner { status: Status { supported, current_version: env!("CARGO_PKG_VERSION").into(), phase: "idle".into(), available_version: None, notes: None, downloaded_bytes: 0, total_bytes: None, last_checked: None, error: None }, update: None, bytes: None, safety: HashMap::new() }))
+    }
 }
 pub fn installing(app: &tauri::AppHandle) -> bool { app.state::<UpdaterState>().0.lock().unwrap().status.phase == "installing" }
 fn allowed(label: &str, url: &reqwest::Url) -> bool {

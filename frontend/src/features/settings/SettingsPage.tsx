@@ -35,7 +35,7 @@ export default function SettingsPage(){
     {id:'general',Icon:SlidersHorizontal,label:t('通用','General'),description:t('语言、启动方式与桌面浮窗。','Language, launch preferences and desktop monitor.')},
     {id:'ai',Icon:Sparkles,label:t('AI 助手','AI assistant'),description:t('配置模型连接与助手技能。','Configure model connections and assistant skills.')},
     {id:'integrations',Icon:Plug,label:t('集成服务','Integrations'),description:t('连接 MCP 服务与邮件通知。','Connect MCP services and email notifications.')},
-    {id:'about',Icon:Info,label:t('关于与帮助','About and help'),description:t('软件更新与使用指引。','Software updates and getting started.')},
+    {id:'about',Icon:Info,label:t('关于与帮助','About and help'),description:t('应用信息与使用指引。','App information and getting started.')},
   ] as const;
   const current=categories.find(category=>category.id===navigation.category)!;
   function navigate(next:Navigation){

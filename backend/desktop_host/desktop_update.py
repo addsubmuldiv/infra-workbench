@@ -164,6 +164,12 @@ def register_routes(app):
     app.state.desktop_update_active = 0
     app.state.desktop_command_jobs = {}
     app.add_middleware(UpdateDrainMiddleware, owner=app)
+
+    @app.get('/api/desktop/update-capability', include_in_schema=False)
+    async def update_capability():
+        return JSONResponse({'supported': _control is not None and bool(getattr(sys, 'frozen', False))},
+                            headers={'Cache-Control': 'no-store'})
+
     @app.post('/api/desktop/update-shutdown', include_in_schema=False)
     async def shutdown(request: Request):
         control = _control

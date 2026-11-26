@@ -14,21 +14,26 @@ export function canRestartForUpdate(target:Window,hasUnsaved:()=>boolean){
   const accepted=target.dispatchEvent(event);
   return accepted&&!event.defaultPrevented&&!hasUnsaved();
 }
-export function createDesktopUpdater(bridge:UpdateBridge|null,guard:()=>boolean=()=>true){
-  let status:UpdateStatus={supported:!!bridge,current_version:'',phase:'idle',available_version:null,notes:null,downloaded_bytes:0,total_bytes:null,last_checked:null,error:null};
+export function createDesktopUpdater(bridge:UpdateBridge|null,guard:()=>boolean=()=>true,backendSupportsUpdates:()=>Promise<boolean>=async()=>true){
+  const initial:UpdateStatus={supported:false,current_version:'',phase:'idle',available_version:null,notes:null,downloaded_bytes:0,total_bytes:null,last_checked:null,error:null};
+  let status=initial;
   let pending:Promise<void>|null=null,statusPending:Promise<void>|null=null,started=false,capability:boolean|undefined;
   const listeners=new Set<()=>void>();
   const publish=(next:UpdateStatus)=>{status=next;listeners.forEach(listener=>listener())};
   const fail=(error:unknown)=>{
     const message=error instanceof Error?error.message:String(error);
     if(/unknown.?command|command.*not.?found|not.?found.*command|unsupported|not supported|only supported|仅支持|不支持/i.test(message)){
-      capability=false;publish({...status,supported:false,phase:'idle',available_version:null,error:null});
+      capability=false;publish({...initial,current_version:status.current_version});
     }else publish({...status,phase:'error',error:message});
   };
   const readStatus=():Promise<void>=>{
     if(!bridge||capability===false)return Promise.resolve();
     if(statusPending)return statusPending;
-    statusPending=Promise.resolve().then(()=>bridge('desktop_update_status')).then(value=>{capability=value.supported;publish(value)}).catch(fail).finally(()=>{statusPending=null});
+    statusPending=Promise.resolve().then(async()=>{
+      const value=await bridge('desktop_update_status');
+      capability=value.supported&&(capability===true||await backendSupportsUpdates());
+      publish(capability?value:{...initial,current_version:value.current_version});
+    }).catch(fail).finally(()=>{statusPending=null});
     return statusPending;
   };
   const run=(action:'status'|'check'|'download'|'install'):Promise<void>=>{

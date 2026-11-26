@@ -15,7 +15,7 @@ import {SSHTunnelButton,type TunnelRule} from './features/hosts/SSHTunnelPanel';
 import {TERMINAL_CONTEXT_EVENT} from './features/terminal/terminalContext';
 import {isDemo,demoRuntime} from './features/onboarding/demoBootstrap';
 import {LanguageSettings} from './features/settings/LanguageSettings';
-import {DesktopUpdateNotification} from './features/desktop/DesktopUpdatePanel';
+import {DesktopUpdateNotification,DesktopVersion} from './features/desktop/DesktopUpdatePanel';
 import {DemoGuide} from './features/onboarding/DemoGuide';
 import {FirstRunGuide} from './features/onboarding/FirstRunGuide';
 import {GitHubStarPrompt} from './features/onboarding/GitHubStarPrompt';
@@ -68,8 +68,6 @@ import {pinSSHLogin, sshAccountUrl, type SSHLoginHost} from './features/hosts/ss
 import {RemoveHostDialog} from './features/hosts/RemoveHostDialog';
 import {deviceUsage} from './features/monitoring/hostUsage';
 import {HOST_CATEGORIES,filterHosts,type HostCategory} from './features/hosts/hostList';
-declare const __IWB_VERSION__:string;
-const appVersion=typeof __IWB_VERSION__==='undefined'?'':__IWB_VERSION__;
 
 type Collection = {paused?:boolean;actual_interval_seconds?:number;status:string;queue_seconds?:number;duration_seconds?:number;request_bytes?:number;response_bytes?:number;samples?:number;total_response_bytes?:number};
 type ProcessContainer = {
@@ -553,7 +551,7 @@ function App(){
     {page==='history'&&<ResourceHistory hosts={state.hosts} initialHostIds={historyHostIds}/>}
     {page==='reservations'&&!isDemo&&<GroupReservations hosts={state.hosts} draft={groupDraft} onDraft={setGroupDraft}/>}
     {page==='reservations'&&<Reservations items={state.reservations} create={()=>setReservationDraft({})} edit={item=>setReservationDraft(draftFromReservation(item,true))} rebook={item=>setReservationDraft(draftFromReservation(item,false))} locate={locateReservation} remove={async(id)=>{await api('/reservations/'+id,'DELETE');await load()}} toggleNotifications={toggleNotifications} notify={notify}/>}
-    <footer className="page-footer"><span><ShieldCheck size={13}/>{tr('私钥和密码保存在本机','Private keys and passwords stay on this computer')}</span><span aria-label={tr("软件版本","Software version")}>v{appVersion} · LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
+    <footer className="page-footer"><span><ShieldCheck size={13}/>{tr('私钥和密码保存在本机','Private keys and passwords stay on this computer')}</span><span aria-label={tr("软件版本","Software version")}>v<DesktopVersion/> · LOCAL WORKSPACE / {new Date().getFullYear()}</span></footer></div></main>
     <RenderBoundary fallback={assistantOpen?<RenderFailure title={tr("AI 助手暂时无法打开","AI assistant could not open")} floating close={()=>setAssistantOpen(false)}/>:null}><React.Suspense fallback={<p role="status">{ui("正在加载 AI 助手…")}</p>}><AssistantWindow open={assistantOpen} onClose={()=>setAssistantOpen(false)} onDockWidthChange={setAssistantWidth} selectedHostIds={scope.map(host=>host.id)} openSettings={()=>navigate('settings')} locate={(hostId,devices)=>{if(!state.hosts.some(host=>host.id===hostId)){setNotice(ui("这台机器已不在当前列表中。"));return}showMachines([hostId]);setSelected({[hostId]:devices});navigate('overview')}} openTerminal={hostId=>{const host=state.hosts.find(host=>host.id===hostId);if(host)openSSHWindow(host,'terminal',host.ssh_logins?.default_account_id);else setNotice(ui("这台机器已不在当前列表中。"))}}/></React.Suspense></RenderBoundary>
     {clusterPanel&&<ClusterPanel openTerminalBatch={id=>{setClusterPanel(null);setClusterTerminal({cluster:null,batchId:id})}} cluster={clusterPanel.cluster} hosts={state.hosts} close={()=>setClusterPanel(null)} terminal={host=>{
       const current=state.hosts.find(item=>item.id===host.id);

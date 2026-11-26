@@ -14,7 +14,9 @@ def test_update_shutdown_requires_owned_frozen_runtime(tmp_path, monkeypatch):
     assert update.activate(tmp_path, owned=True) is None
     app = FastAPI()
     update.register_routes(app)
-    assert TestClient(app).post('/api/desktop/update-shutdown', headers={'X-IWB': '1'}).status_code == 404
+    client = TestClient(app)
+    assert client.get('/api/desktop/update-capability').json() == {'supported': False}
+    assert client.post('/api/desktop/update-shutdown', headers={'X-IWB': '1'}).status_code == 404
 
 
 def test_update_auth_identity_and_owned_receipt_cleanup(tmp_path, monkeypatch):
@@ -26,6 +28,7 @@ def test_update_auth_identity_and_owned_receipt_cleanup(tmp_path, monkeypatch):
         app = FastAPI()
         update.register_routes(app)
         client = TestClient(app)
+        assert client.get('/api/desktop/update-capability').json() == {'supported': True}
         body = {key: value[key] for key in ('instance', 'executable')}
         headers = {'X-IWB': '1', 'Authorization': 'Bearer wrong'}
         assert client.post('/api/desktop/update-shutdown', headers=headers, json=body).status_code == 403
