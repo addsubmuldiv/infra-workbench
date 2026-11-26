@@ -1,5 +1,8 @@
 """Add a local OpenSSH Host entry for a saved Workbench machine."""
 import asyncio
+import hashlib
+import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -9,6 +12,7 @@ from tempfile import NamedTemporaryFile
 from fastapi import HTTPException
 
 from backend.monitoring.core import discover_aliases
+from .ssh_accounts import ssh_account_key
 
 
 DIRECTIVES = (
@@ -19,6 +23,8 @@ DIRECTIVES = (
 )
 KEYS = tuple(name.lower() for name in DIRECTIVES)
 HOST_ALIAS = re.compile(r'[\w][\w.-]{0,199}')
+VSCODE_CONFIG_TIMEOUT = 5
+LOGGER = logging.getLogger(__name__)
 
 
 class SSHConfigExportError(ValueError):
@@ -43,8 +49,11 @@ def config_entry(alias, details):
     return lines
 
 
-def connection_matches(expected, current):
-    return all(expected.get(key) == current.get(key) for key in KEYS)
+def connection_matches(expected, current, *, for_vscode=False):
+    # Automatic aliases must preserve trust, authentication and session options,
+    # including those that the manual export format doesn't copy.
+    keys = (expected.keys() | current.keys()) - {'host'} if for_vscode else KEYS
+    return all(expected.get(key) == current.get(key) for key in keys)
 
 
 def preserve_original_target(details, source):
@@ -69,10 +78,24 @@ class SSHConfigExport:
         self.config = config
         self.lock = asyncio.Lock()
 
-    async def add(self, host):
+    async def vscode_alias(self, host):
+        key_path = host.get('key_path')
+        if not key_path:
+            return None
+        try:
+            if not Path(key_path).is_file():
+                return None
+            result = await asyncio.wait_for(self.add(host, for_vscode=True), VSCODE_CONFIG_TIMEOUT)
+            return result['alias']
+        except SSHConfigExportError as exc:
+            LOGGER.debug('Skipping VS Code SSH alias: %s', exc)
+        except (TimeoutError, OSError):
+            LOGGER.debug('Could not prepare VS Code SSH alias')
+
+    async def add(self, host, *, for_vscode=False):
         async with self.lock:
             try:
-                return await self._add(host)
+                return await self._add(host, for_vscode=for_vscode)
             except SSHConfigExportError:
                 raise
             except (TimeoutError, ValueError):
@@ -80,7 +103,7 @@ class SSHConfigExport:
             except OSError:
                 raise SSHConfigExportError('SSH_CONFIG_IO_FAILED') from None
 
-    async def _add(self, host):
+    async def _add(self, host, *, for_vscode):
         config = (self.config or Path.home() / '.ssh' / 'config').resolve()
         original = config.read_bytes() if config.exists() else None
         aliases = discover_aliases(config)
@@ -92,24 +115,30 @@ class SSHConfigExport:
                 raise SSHConfigExportError('SSH_CONFIG_ALIAS_CONFLICT')
             matching_target = matches[0] if matches else None
         source = target if host.get('manual') else matching_target or target
-        fallback = f"iwb-{host['id'][:8]}"
-        alias = host.get('alias') or (matching_target if not host.get('manual') else None) or (
-            f'iwb-{target}-{host["id"][:8]}' if HOST_ALIAS.fullmatch(target) and len(target) < 187 else fallback)
-        if not HOST_ALIAS.fullmatch(alias):
-            raise SSHConfigExportError('SSH_CONFIG_ALIAS_INVALID')
         for value in (source, host.get('user'), host.get('key_path')):
             if value and (value.startswith('-') or any(ord(char) < 32 or ord(char) == 127 for char in value)):
                 raise SSHConfigExportError('SSH_CONFIG_UNRESOLVED')
         options = ['-F', str(config) if original is not None else 'none'] if self.config else []
         details = await self.ssh.config_details(options + self.ssh.connection_options(host), source)
+        if for_vscode:
+            preserve_original_target(details, source)
+            identity = json.dumps([ssh_account_key(host), source, details], sort_keys=True)
+            alias = 'iwb-vscode-' + hashlib.sha256(identity.encode()).hexdigest()[:20]
+        else:
+            fallback = f"iwb-{host['id'][:8]}"
+            if HOST_ALIAS.fullmatch(target) and len(target) < 187:
+                fallback = f'iwb-{target}-{host["id"][:8]}'
+            alias = host.get('alias') or (matching_target if not host.get('manual') else None) or fallback
+            if not HOST_ALIAS.fullmatch(alias):
+                raise SSHConfigExportError('SSH_CONFIG_ALIAS_INVALID')
         existing = [name for name in aliases if name.casefold() == alias.casefold()]
         if existing and alias not in existing:
             alias = existing[0]
-        if alias != source:
+        if not for_vscode and alias != source:
             preserve_original_target(details, source)
         if existing:
             current = await self.ssh.config_details(options, alias)
-            if not connection_matches(details, current):
+            if not connection_matches(details, current, for_vscode=for_vscode):
                 raise SSHConfigExportError('SSH_CONFIG_ALIAS_CONFLICT')
             return dict(alias=alias, added=False)
 
@@ -122,7 +151,7 @@ class SSHConfigExport:
         try:
             candidate.write_bytes((original + newline + newline if original else b'') + block)
             current = await self.ssh.config_details(['-F', str(candidate)], alias)
-            if not connection_matches(details, current):
+            if not connection_matches(details, current, for_vscode=for_vscode):
                 raise SSHConfigExportError('SSH_CONFIG_SHADOWED')
             if (config.read_bytes() if config.exists() else None) != original:
                 raise SSHConfigExportError('SSH_CONFIG_CHANGED')
@@ -135,7 +164,7 @@ class SSHConfigExport:
 
 
 def register_ssh_config_export(app):
-    service = SSHConfigExport(app.state.ssh)
+    service = app.state.ssh_config_export = SSHConfigExport(app.state.ssh)
 
     @app.post('/api/hosts/{host_id}/ssh-config')
     async def export_ssh_config(host_id: str):

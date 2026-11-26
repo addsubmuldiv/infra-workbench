@@ -11,6 +11,8 @@ import sys
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from .ssh_accounts import ssh_account_key
+
 
 class VSCodeFailure(ValueError):
     def __init__(self, code, message, expected_authority=None):
@@ -105,8 +107,9 @@ async def launch_cli(argv):
 
 
 class VSCodeService:
-    def __init__(self, tunnels, ssh, *, launcher=None, launch=None):
+    def __init__(self, tunnels, ssh, *, config_export=None, launcher=None, launch=None):
         self.tunnels, self.ssh = tunnels, ssh
+        self.config_export = config_export
         self.launcher, self.launch = launcher or find_launcher, launch or launch_cli
 
     def prerequisites(self, host_id):
@@ -123,6 +126,10 @@ class VSCodeService:
             raise VSCodeFailure('TUNNEL_START_FAILED', '无法启动所选隧道，请检查监听端口是否冲突', target) from None
         return dict(authority=target, tunnels=self.prerequisites(host_id))
 
+    def require_ready_tunnels(self, host_id, skip_tunnels, target):
+        if not skip_tunnels and any(r['status'] != 'connected' for r in self.prerequisites(host_id)):
+            raise VSCodeFailure('TUNNEL_NOT_READY', 'SSH 隧道尚未全部连接，请重试或选择仍然打开 VS Code', target)
+
     async def open(self, host_id, *, skip_tunnels=False, expected_authority=None):
         host = self.tunnels.host(host_id)
         argv = self.launcher()
@@ -131,8 +138,17 @@ class VSCodeService:
             raise VSCodeFailure('VSCODE_TARGET_CHANGED', '请重新准备连接后再选择仍然打开 VS Code')
         if expected_authority is not None and expected_authority != target:
             raise VSCodeFailure('VSCODE_TARGET_CHANGED', 'SSH 目标已变化，请重试打开 VS Code')
-        if not skip_tunnels and any(r['status'] != 'connected' for r in self.prerequisites(host_id)):
-            raise VSCodeFailure('TUNNEL_NOT_READY', 'SSH 隧道尚未全部连接，请重试或选择仍然打开 VS Code')
+        self.require_ready_tunnels(host_id, skip_tunnels, target)
+        if self.config_export is not None and host.get('key_path'):
+            account, key_path = ssh_account_key(host), host['key_path']
+            alias = await self.config_export.vscode_alias(dict(host))
+            current = self.tunnels.host(host_id)
+            if (authority(current, self.ssh) != target or ssh_account_key(current) != account
+                    or current.get('key_path') != key_path):
+                raise VSCodeFailure('VSCODE_TARGET_CHANGED', 'SSH 目标已变化，请重试打开 VS Code')
+            self.require_ready_tunnels(host_id, skip_tunnels, target)
+            if alias:
+                target = 'ssh-remote+' + alias
         await self.launch(argv+['--new-window', '--remote', target])
         return dict(launched=True)
 
@@ -144,7 +160,9 @@ class OpenRequest(BaseModel):
 
 
 def register_vscode(app):
-    service = app.state.vscode = VSCodeService(app.state.ssh_tunnels, app.state.ssh)
+    service = app.state.vscode = VSCodeService(
+        app.state.ssh_tunnels, app.state.ssh, config_export=app.state.ssh_config_export,
+    )
 
     async def invoke(action, *args, **kwargs):
         try: return await action(*args, **kwargs)

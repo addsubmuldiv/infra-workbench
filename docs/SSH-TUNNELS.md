@@ -30,7 +30,9 @@
 
 点击机器上的 VS Code 后，工作台启动该机器所有勾选的隧道，最多等待 60 秒。全部连接后才提交打开请求；已经连接的隧道直接复用。失败或超时会显示“重试”和“仍然打开 VS Code”，后者只跳过隧道等待，仍会核对 SSH 目标是否变化。取消打开不会断开后台维护的隧道。
 
-SSH 别名继续由 VS Code 解析，手动机器的账号和端口会带入连接信息。VS Code 独立完成认证，可能提示输入密码；工作台不会传递保存的密码，也不会修改用户 SSH 配置或 VS Code 设置。工作台单独指定的私钥不自动写入 VS Code，若需要，应在对应 SSH 配置中设置 `IdentityFile`。首次连接时 Remote - SSH 可能需要安装或启动远端组件。
+VS Code Remote - SSH 沿用本机 SSH 密钥和 agent。添加机器时，如果勾选了 **登录后自动配置免密连接** 并且密钥验证成功，工作台会在本机 `~/.ssh/config` 中为这把密钥准备一个专用别名。已有机器使用工作台专用密钥时，点击 **VS Code** 也会补建别名。别名只记录密钥文件路径，已有 SSH 配置条目会保留。
+
+如果无法准备别名，工作台会按原有目标打开 VS Code，由 Remote - SSH 完成认证；密码登录仍会提示输入密码。使用自定义 `remote.SSH.configFile` 的 VS Code 需要能读到 `~/.ssh/config` 中的专用别名。首次连接时 Remote - SSH 可能需要安装或启动远端组件。
 
 打开成功表示本机 CLI 接受了请求，不表示远端认证完成或 Codex 已可用。此版本只打开机器连接，不记忆远端目录。官方 CLI 用法见 [从终端连接远端机器](https://code.visualstudio.com/docs/remote/troubleshooting#_connect-to-a-remote-host-from-the-terminal)。
 
@@ -56,7 +58,7 @@ Status refreshes every two seconds. Connect or reconnect saved tunnels directly 
 
 The read-only MCP tool `get_ssh_tunnel_status` lists current tunnels by machine. Set `section="history"` for up to 100 recorded connection, disconnection, and failure events per machine, newest first. Consecutive identical failures during the same reconnect sequence are recorded once. History starts with this version and preserves the forwarding direction and ports at the time of each event. Abrupt backend termination can leave no disconnect event. Inspect the remote listener separately with `ssh_check(check="ports", port=remote_port)` for remote forwarding and verify its process identity before attributing it to a tunnel.
 
-The machine's **VS Code** button launches local VS Code with Remote - SSH. Enable **Connect before opening VS Code** on each required tunnel and save it. All selected tunnels must connect before launch, with a 60-second wait limit. Failure offers retry or an explicit skip; cancelling leaves backend tunnels alone. The launch target is rechecked even when skipping. Install VS Code and Remote - SSH first. Authentication remains in VS Code; saved Workbench passwords, custom private keys and editor settings are not transferred automatically. A successful launch acknowledges CLI dispatch, not remote authentication.
+The machine's **VS Code** button launches local VS Code with Remote - SSH. Enable **Connect before opening VS Code** on each required tunnel and save it. All selected tunnels must connect before launch, with a 60-second wait limit. Failure offers retry or an explicit skip; cancelling leaves backend tunnels alone. The launch target is rechecked even when skipping. Install VS Code and Remote - SSH first. Remote - SSH uses local keys and the SSH agent. When Workbench provisions a dedicated key while adding a machine, it prepares an alias in `~/.ssh/config` that references that key. Opening VS Code for an existing machine with a dedicated key also prepares the alias. If Workbench cannot prepare an alias, it opens the original SSH target and Remote - SSH handles authentication. A custom `remote.SSH.configFile` must include the generated alias. A successful launch confirms that the CLI accepted the request.
 
 Use the chain icon on a machine card to create dedicated SSH tunnels. Remote-to-local mode makes a local proxy available through a fixed remote loopback port; local-to-remote mode exposes a remote service locally. Set the local and remote ports, save, and connect. Configure the remote application's proxy separately and remove duplicate VS Code `RemoteForward` rules.
 
