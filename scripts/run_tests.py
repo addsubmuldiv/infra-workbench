@@ -58,7 +58,7 @@ GROUPS = {
     'assistant': group(
         'assistant/test_agent_permission_integration assistant/test_agent_permissions assistant/test_agent_capabilities assistant/test_agent_external_mcp assistant/test_agent_api assistant/test_agent_profiles assistant/test_agent_context assistant/test_agent_memory assistant/test_agent_chat '
         'assistant/test_assistant_efficiency assistant/test_assistant_performance assistant/test_chat_stream assistant/test_compaction_accounting assistant/test_deepagents '
-        'assistant/test_model_stream assistant/test_model_turn assistant/test_codex_agent assistant/test_codex_host assistant/test_external_agents assistant/test_antigravity_agent assistant/test_user_skills '
+        'assistant/test_model_stream assistant/test_model_turn assistant/test_codex_agent assistant/test_codex_host assistant/test_external_agents assistant/test_antigravity_agent assistant/test_dsh_agent assistant/test_user_skills '
         'assistant/test_skill_integration assistant/test_unified_mcp assistant/test_mcp_output_budget assistant/test_mcp_query_economy',
         'assistant/agentChat assistant/agentChatStreaming assistant/agentSettings assistant/assistant-chat-streaming assistant/assistant-engine-picker '
         'assistant/chat-model-picker assistant/chat-reply-time assistant/chatMarkdown assistant/context-usage-meter assistant/modelCache assistant/skillMention assistant/codex-host '

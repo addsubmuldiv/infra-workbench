@@ -11,6 +11,7 @@ export const assistantEngineNames={
   claude:'Claude Code',
   opencode:'OpenCode',
   antigravity:'Antigravity',
+  dsh:'DeepSeek Harness',
 } as const;
 export type AssistantEngine=keyof typeof assistantEngineNames;
 export const assistantEngineName=(engine?:AssistantEngine)=>assistantEngineNames[engine??'deepagents']??assistantEngineNames.deepagents;

@@ -5,11 +5,12 @@ from types import SimpleNamespace
 import pytest
 
 from backend.assistant.antigravity_agent import (
-    AntigravityACP,
     LOGIN_REQUIRED,
+    describe_error,
     prepare_profile,
     profile_environment,
 )
+from backend.assistant.local_acp import LocalACP
 
 
 def test_profile_isolates_auth_and_native_tools(tmp_path, monkeypatch):
@@ -66,9 +67,10 @@ def test_acp_stream_and_scoped_permissions(tmp_path):
             service=SimpleNamespace(catalog=lambda: {'list_hosts': {}}),
         )
         updates = []
-        acp = AntigravityACP(
+        acp = LocalACP(
             SimpleNamespace(stdin=Input(), stdout=stdout), bridge,
             lambda text, **options: updates.append((text, options.get('final', False))),
+            label='Antigravity', describe_error=describe_error,
         )
         assert await acp.run(tmp_path, 'instructions', 'prompt') == 'hello world'
         assert updates == [('hello', False), ('hello world', False), ('hello world', True)]
@@ -96,7 +98,10 @@ def test_auth_required_uses_local_login_hint():
                 pass
 
         bridge = SimpleNamespace(service=SimpleNamespace(catalog=dict))
-        acp = AntigravityACP(SimpleNamespace(stdin=Input(), stdout=stdout), bridge, None)
+        acp = LocalACP(
+            SimpleNamespace(stdin=Input(), stdout=stdout), bridge, None,
+            label='Antigravity', describe_error=describe_error,
+        )
         with pytest.raises(ValueError, match=LOGIN_REQUIRED):
             await acp.request('session/new', {}, timeout=1)
 

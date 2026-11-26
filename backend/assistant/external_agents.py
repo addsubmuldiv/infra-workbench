@@ -15,9 +15,12 @@ import tempfile
 from .chat_tools import scrub
 from .codex_agent import ScopedMCPBridge, TracedService, codex_environment
 
-LABELS={'claude':'Claude Code','opencode':'OpenCode','antigravity':'Antigravity'}
+LABELS={'claude':'Claude Code','opencode':'OpenCode','antigravity':'Antigravity','dsh':'DeepSeek Harness'}
 
 def resolve_agent(engine,configured=None):
+    if engine=='dsh':
+        from .dsh_agent import resolve_dsh
+        return resolve_dsh(configured)
     name={'claude':'claude','opencode':'opencode','antigravity':'agy'}[engine]
     candidate=configured or os.environ.get('IWB_'+engine.upper()+'_PATH') or shutil.which(name)
     if not candidate:raise ValueError(f'未找到 {LABELS[engine]} CLI，请先安装并在本机终端完成登录/模型配置。')
@@ -192,6 +195,10 @@ async def run_external_agent(chat,tools,allowed,instructions,save,start_text,on_
                 from .antigravity_agent import run_antigravity
                 start_text()
                 content=await run_antigravity(command,profile,cwd,bridge,instructions,prompt,on_text)
+            elif engine=='dsh':
+                from .dsh_agent import run_dsh
+                start_text()
+                content=await run_dsh(command,cwd,bridge,instructions,prompt,on_text)
             else:
                 args,env=cli_configuration(engine,cwd,bridge,instructions)
                 if engine=='opencode':await validate_opencode_config(command,env,cwd)

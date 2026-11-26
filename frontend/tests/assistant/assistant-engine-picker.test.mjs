@@ -15,7 +15,7 @@ function harness(result){
 }
 test('CLI picker offers each engine and displays only its own setup status',async()=>{
   const h=harness(Promise.resolve({codex:{available:true,message:'Codex ready'},claude:{available:false,message:'Claude login required'},opencode:{available:false,message:'OpenCode not installed'}}));
-  await h.load();assert.deepEqual(h.nodes().filter(n=>n.type==='option').map(n=>n.props.value),['deepagents','codex','claude','opencode','antigravity']);
+  await h.load();assert.deepEqual(h.nodes().filter(n=>n.type==='option').map(n=>n.props.value),['deepagents','codex','claude','opencode','antigravity','dsh']);
   const status=()=>h.nodes().find(n=>n.type==='small').props.children.join('');
   assert.equal(status(),'Claude login required');h.render('opencode');assert.equal(status(),'OpenCode not installed');h.render('codex');assert.equal(status(),'Codex ready');
   h.render('deepagents');assert.equal(h.nodes().find(n=>n.props.role==='status'),undefined);

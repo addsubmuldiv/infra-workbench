@@ -1,6 +1,6 @@
-# Claude Code、OpenCode 与 Antigravity
+# 本机 CLI 执行引擎
 
-助手的执行引擎可以选择「Claude Code · 本机 CLI」或「OpenCode · 本机 CLI」。它们使用各自 CLI 的本机登录或 provider 环境变量，不要求填写工作台 API 配置，也不会把工作台保存的 API key 转交给其他服务。
+助手的执行引擎可以选择「Claude Code · 本机 CLI」、「OpenCode · 本机 CLI」或「Antigravity · 本机 CLI」。它们使用各自 CLI 的本机登录或 provider 环境变量，不要求填写工作台 API 配置，也不会把工作台保存的 API key 转交给其他服务。
 
 ## Antigravity
 
@@ -9,6 +9,14 @@
 工作台通过 STDIO 与官方 `agy acp` 通信，Google 登录保存在工作台数据目录下的独立 Antigravity 配置中，由 CLI 管理。每轮传入同一引擎、同一范围内的历史，以及经过工作台校验的 MCP 工具。工作台继续处理机器范围、工具审批和取消操作。CLI 程序是否存在与 Google 账号是否可以使用是两项检查。
 
 参考 [Google ACP 文档](https://antigravity.google/docs/ide/extensions/acp/) 和 [T3 Code 的 Antigravity 接入](https://github.com/pingdotgg/t3code/blob/main/docs/user/providers-antigravity.md)。
+
+## DeepSeek Harness
+
+安装官方 DeepSeek Harness（桌面版随附 CLI，或用 `npm install -g @deepseek-ai/dsh` 安装），在 Harness 中登录 DeepSeek 或在其模型设置中配置 API Key。回到助手选择「DeepSeek Harness · 本机 CLI」。也可以给工作台后台设置 `DEEPSEEK_API_KEY`，优先使用官方 API。若无法自动找到 dsh，可设置 `IWB_DSH_PATH`，指向已安装的官方 CLI。Windows 桌面版可指定其自带的 `dsh.cmd` 路径。
+
+每轮用 `dsh --profile acp` 创建一个独立会话。DSH 自己读取 `DSH_HOME`（默认 `~/.dsh`）中的凭据，工作台不会读取凭据内容。工作台只给 DSH 配置当前会话的 MCP，业务工具仍受机器范围和工作台审批约束。原生 Shell、文件、网络、子 Agent 及插件管理工具不参与该引擎的请求。
+
+参考 [DeepSeek Harness ACP 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/acp/acp/README.md)。
 
 ## Claude Code 与 OpenCode
 

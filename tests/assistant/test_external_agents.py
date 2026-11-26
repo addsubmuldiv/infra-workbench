@@ -161,7 +161,7 @@ def test_failed_run_removes_protected_mcp_config(monkeypatch):
     with pytest.raises(ValueError):asyncio.run(module.run_external_agent(chat,MCPGateway(Service()),None,'safe',lambda:None,lambda:None,lambda *a,**kw:None))
     assert paths and not paths[0].exists() and not paths[0].parent.exists()
 
-@pytest.mark.parametrize('engine',['claude','opencode','antigravity'])
+@pytest.mark.parametrize('engine',['claude','opencode','antigravity','dsh'])
 @pytest.mark.parametrize('scope_changed',[False,True])
 def test_first_external_branch_turn_uses_only_matching_server_snapshot(tmp_path,monkeypatch,engine,scope_changed):
     import asyncio
