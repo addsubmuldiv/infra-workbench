@@ -8,6 +8,26 @@ from types import SimpleNamespace
 from backend.floating_monitor import FloatingMonitor,MonitorSettings
 tk = pytest.importorskip('tkinter')
 
+
+def test_workbench_menu_uses_the_right_clicked_machine(tmp_path, monkeypatch):
+    app = FloatingMonitor.__new__(FloatingMonitor)
+    app.settings = MonitorSettings(tmp_path / 'float.json')
+    app.settings.values['host'] = 'machine-a'
+    app.hide_tooltip = lambda: None
+    calls = []
+    options = []
+    monkeypatch.setattr('backend.floating_menu.MachineContextMenu',
+                        lambda _app, _x, _y, items: options.extend(items))
+    monkeypatch.setattr('backend.launcher.open_preferred_interface',
+                        lambda _data, _root, *, host_id: calls.append(host_id))
+
+    app.machine_context_menu(SimpleNamespace(x_root=100, y_root=100), 'machine-b')
+    options[2][1]()
+    app.open_workbench()
+
+    assert calls == ['machine-b', None]
+
+
 def _collect_tk_scenario(scenario, folder):
     # Tk interpreters and widget cycles must be released on their creating thread,
     # before a later TestClient worker can trigger process-wide garbage collection.
@@ -63,10 +83,10 @@ def _exercise_menu(tmp_path):
     app=FloatingMonitor(root,MonitorSettings(tmp_path/'float.json'),fetch=lambda:{'hosts':[]})
     calls=[]
     app.open_machine_tool=lambda tool,host:calls.append((tool,host))
-    app.open_workbench=lambda:calls.append(('workbench',None))
+    app.open_workbench=lambda host_id:calls.append(('workbench',host_id))
     try:
         root.update()
-        for index,expected in enumerate([('terminal','machine-a'),('files','machine-a'),('workbench',None)]):
+        for index,expected in enumerate([('terminal','machine-a'),('files','machine-a'),('workbench','machine-a')]):
             app.machine_context_menu(SimpleNamespace(x_root=100,y_root=100),'machine-a')
             root.update()
             popup=app.context_menu

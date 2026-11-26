@@ -11,6 +11,8 @@ from urllib.error import URLError
 from urllib.request import build_opener,ProxyHandler
 import webbrowser
 
+from .reminder_links import host_overview_link
+
 ROOT=Path(__file__).resolve().parents[1]
 URL='http://127.0.0.1:8765/'
 
@@ -73,11 +75,15 @@ def find_desktop(root=ROOT):
     return None
 
 
-def dispatch_interface(mode,desktop,open_browser=webbrowser.open,spawn=subprocess.Popen):
+def dispatch_interface(mode,desktop,open_browser=webbrowser.open,spawn=subprocess.Popen,*,host_id=None):
     if mode=='browser':
-        if open_browser(URL) is False:raise RuntimeError('无法打开默认浏览器')
+        destination = URL + host_overview_link(host_id) if host_id else URL
+        if open_browser(destination) is False:raise RuntimeError('无法打开默认浏览器')
     elif mode=='desktop' and desktop:
-        spawn([str(desktop), '--show-desktop'])
+        args = [str(desktop), '--show-desktop']
+        if host_id:
+            args.extend(['--host', host_id])
+        spawn(args)
     else:raise RuntimeError('未找到桌面窗口程序，请先安装桌面版本，或在设置中选择浏览器启动。')
 
 
@@ -106,9 +112,9 @@ def shutdown_desktop(root=ROOT):
         except OSError:logging.exception('Unable to close the resident desktop window')
 
 
-def open_preferred_interface(data=None,root=ROOT):
+def open_preferred_interface(data=None,root=ROOT,*,host_id=None):
     data=Path(data) if data is not None else Path(os.environ.get('IWB_DATA',str(Path(root)/'data')))
-    dispatch_interface(LaunchSettings(data).mode,find_desktop(root),open_browser=webbrowser.open)
+    dispatch_interface(LaunchSettings(data).mode,find_desktop(root),open_browser=webbrowser.open,host_id=host_id)
 
 
 def register_launch_routes(app,data,root=ROOT,set_floating=None):

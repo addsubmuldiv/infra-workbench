@@ -324,11 +324,13 @@ function App(){
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),UI_NOTICE_DURATION_MS);return()=>clearTimeout(t)},[notice]);
   useEffect(()=>{
     if(!pendingLocation||!state.server_time)return;
+    const hasDevices=pendingLocation.devices.length>0;
     const host=state.hosts.find(host=>host.id===pendingLocation.hostId);
-    if(!host){setNotice(ui("提醒对应的机器已移除，请在卡预约中查看记录。"));setPendingLocation(null);return}
-    if(host.snapshot.status==='connecting'&&!host.snapshot.devices.length)return;
+    if(!host){setNotice(hasDevices?ui("提醒对应的机器已移除，请在卡预约中查看记录。"):ui("这台机器已不在当前列表中。"));setPendingLocation(null);return}
+    if(hasDevices&&host.snapshot.status==='connecting'&&!host.snapshot.devices.length)return;
     const ids=pendingLocation.devices.filter(id=>host.snapshot.devices.some(device=>device.id===id));
     setPreferences(old=>({...old,hostIds:[host.id]}));setFilter('全部');setHostCategory('全部');setHostSearch('');
+    setDeviceOverview(false);if(mobileHosts.current)mobileHosts.current.open=false;
     setSelected({[host.id]:ids});
     if(ids.length<pendingLocation.devices.length)setNotice(ui("已定位机器；部分设备未出现在最近采集中，请核对当前设备列表。"));
     else if(ids.length)setNotice(ui("已定位提醒对应的机器和设备，请在使用前检查当前占用。"));

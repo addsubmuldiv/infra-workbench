@@ -27,6 +27,19 @@ pub fn fade_alpha(elapsed:u64,duration:u64)->u8 {
 
 pub const SERVICE_URL: &str = "http://127.0.0.1:8765/";
 
+pub fn machine_overview_fragment(args: &[String]) -> Option<String> {
+    if !args.iter().any(|arg| arg == "--show-desktop") {
+        return None;
+    }
+    let host = &args.windows(2).find(|pair| pair[0] == "--host")?[1];
+    if host.is_empty() || host.starts_with("--") || host.encode_utf16().count() > 253 {
+        return None;
+    }
+    let mut url = Url::parse(SERVICE_URL).unwrap();
+    url.query_pairs_mut().append_pair("host", host);
+    Some(format!("#overview?{}", url.query().unwrap()))
+}
+
 pub fn is_service_url(url: &Url) -> bool {
     url.scheme() == "http" && url.host_str() == Some("127.0.0.1")
         && url.port() == Some(8765) && url.username().is_empty() && url.password().is_none()
@@ -44,6 +57,18 @@ pub fn is_download_url(url: &Url) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_desktop_machine_target_uses_the_overview_fragment() {
+        let fragment = |args: &[&str]| {
+            machine_overview_fragment(&args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>())
+        };
+        assert_eq!(fragment(&["app", "--show-desktop", "--host", "a b&c/#"]).as_deref(),
+                   Some("#overview?host=a+b%26c%2F%23"));
+        assert_eq!(fragment(&["app", "--show-desktop"]), None);
+        assert_eq!(fragment(&["app", "--show-desktop", "--host", ""]), None);
+        assert_eq!(fragment(&["app", "--quick-tool", "files", "--host", "a"]), None);
+    }
 
     #[test]
     fn only_the_exact_loopback_origin_can_live_inside_the_window() {

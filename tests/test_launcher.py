@@ -69,6 +69,18 @@ def test_dispatch_opens_exactly_one_selected_interface(tmp_path):
     with pytest.raises(RuntimeError):dispatch_interface('desktop',None,lambda _:calls.append('unexpected'),lambda _:calls.append('unexpected'))
 
 
+def test_dispatch_targets_machine_in_either_interface(tmp_path):
+    exe = tmp_path / 'desktop.exe'
+    host_id = 'machine a&b/#'
+    opened = []
+    spawned = []
+    dispatch_interface('browser', exe, opened.append, spawned.append, host_id=host_id)
+    dispatch_interface('desktop', exe, opened.append, spawned.append, host_id=host_id)
+
+    assert opened == ['http://127.0.0.1:8765/#overview?host=machine+a%26b%2F%23']
+    assert spawned == [[str(exe), '--show-desktop', '--host', host_id]]
+
+
 def test_settings_api_rejects_unavailable_desktop_and_saves_float_choice(tmp_path, monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr('backend.launcher.sys', SimpleNamespace(platform='win32'))
@@ -265,8 +277,8 @@ def test_normal_desktop_activation_creates_main_after_quick_tool_start():
     source = (Path(__file__).resolve().parents[1] / 'desktop/src-tauri/src/main.rs').read_text(encoding='utf-8')
     single_instance = source.split('.plugin(tauri_plugin_single_instance::init(', 1)[1].split('.plugin(tauri_plugin_window_state', 1)[0]
     setup = source.split('.setup(|app| {', 1)[1].split('.build(tauri::generate_context!())', 1)[0]
-    assert 'activate_main(app, true, args.iter().any(|arg| arg == "--show-desktop"))' in single_instance
-    assert 'show_main_window(app.handle(), false, desktop_selected)' in setup
+    assert 'activate_main(app, true,' in single_instance and 'machine_overview_fragment(&args)' in single_instance
+    assert 'show_main_window(app.handle(), false, desktop_selected, machine_overview_fragment(&args))' in setup
     helper = source.split('fn show_main_window(', 1)[1].split('fn main()', 1)[0]
     assert 'get_webview_window("main")' in helper
     assert 'WebviewWindowBuilder::new(app, "main"' in helper
@@ -281,9 +293,9 @@ def test_direct_shortcut_reads_shared_launch_preference_and_explicit_desktop_res
     activation = source.split('fn activate_main(', 1)[1].split('fn main()', 1)[0]
     fast_path, direct_launch = activation.split('std::thread::spawn', 1)
     assert 'if desktop_selected' in fast_path
-    assert 'show_main_window(&handle, focus, true)' in fast_path
+    assert 'show_main_window(&handle, focus, true, fragment)' in fast_path
     assert 'return;' in fast_path
     assert 'prefers_browser' not in fast_path
     assert 'prefers_browser(&client)' in direct_launch
     assert 'open::that(SERVICE_URL)' in direct_launch
-    assert 'show_main_window(&handle, focus, false)' in direct_launch
+    assert 'show_main_window(&handle, focus, false, None)' in direct_launch

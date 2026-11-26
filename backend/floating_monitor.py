@@ -1019,7 +1019,7 @@ class FloatingMonitor:
         self.context_menu=MachineContextMenu(self,event.x_root,event.y_root,[
             (tr('打开终端', 'Open terminal'),lambda:self.open_machine_tool('terminal',host_id)),
             (tr('打开文件', 'Open files'),lambda:self.open_machine_tool('files',host_id)),
-            (tr('打开工作台', 'Open workbench'),self.open_workbench),
+            (tr('打开工作台', 'Open workbench'),lambda:self.open_workbench(host_id)),
         ])
         return 'break'
 
@@ -1031,10 +1031,10 @@ class FloatingMonitor:
             from tkinter import messagebox
             messagebox.showerror(tr('无法打开窗口', 'Unable to open window'),str(exc),parent=self.root)
 
-    def open_workbench(self):
+    def open_workbench(self, host_id=None):
         from backend.launcher import open_preferred_interface
         try:
-            open_preferred_interface(self.settings.path.parent,ROOT)
+            open_preferred_interface(self.settings.path.parent,ROOT,host_id=host_id)
         except (OSError,RuntimeError) as exc:
             from tkinter import messagebox
             messagebox.showerror(tr('无法打开工作台', 'Unable to open workbench'),str(exc),parent=self.root)

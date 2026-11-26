@@ -1,5 +1,10 @@
-"""Shared site-local destinations for reservation reminders."""
+"""Shared site-local destinations for machines and reservation reminders."""
 from urllib.parse import urlencode, parse_qs
+
+
+def host_overview_link(host_id, devices=()):
+    query = [('host', host_id)] + [('device', device) for device in devices]
+    return '#overview?' + urlencode(query)
 
 
 def reservation_link(item):
@@ -9,8 +14,7 @@ def reservation_link(item):
     if not host:
         return '#reservations'
     devices = item.get('matched_devices', []) if item.get('mode') == 'count' else item.get('devices', [])
-    query = [('host', host)] + [('device', device) for device in devices]
-    return '#overview?' + urlencode(query)
+    return host_overview_link(host, devices)
 
 
 def event_link(event):
@@ -21,4 +25,4 @@ def event_link(event):
             return url
     if isinstance(url, str) and (url.startswith('#overview?') or url == '#reservations'):
         return url
-    return '#overview?' + urlencode({'host': event['host']}) if event.get('host') else '#reservations'
+    return host_overview_link(event['host']) if event.get('host') else '#reservations'

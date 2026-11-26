@@ -1,7 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use infra_workbench_desktop::{is_download_url, is_service_url, DesktopSession, SERVICE_URL};
-use std::{path::PathBuf, process::{Command, Stdio}, sync::atomic::{AtomicBool, Ordering}, time::{Duration, Instant}};
+use infra_workbench_desktop::{is_download_url, is_service_url, machine_overview_fragment, DesktopSession, SERVICE_URL};
+use std::{path::PathBuf, process::{Command, Stdio}, sync::{Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 mod window_fade;
 mod lifecycle;
@@ -11,6 +11,32 @@ use window_fade::restore_window;
 
 #[derive(Default)]
 struct Connecting(AtomicBool);
+
+#[derive(Default)]
+struct MainNavigation {
+    // Keep a machine request until the workbench has installed its hash listener.
+    ready: bool,
+    pending: Option<String>,
+}
+
+impl MainNavigation {
+    fn apply(&mut self, window: &WebviewWindow) -> tauri::Result<()> {
+        if !self.ready || !window.url().map(|url| is_service_url(&url)).unwrap_or(false) {
+            return Ok(());
+        }
+        if let Some(fragment) = &self.pending {
+            let fragment = serde_json::to_string(fragment).unwrap();
+            window.eval(format!(r#"(() => {{
+                if (location.origin !== 'http://127.0.0.1:8765') return;
+                const target = {fragment};
+                if (location.hash === target) window.dispatchEvent(new Event('hashchange'));
+                else location.hash = target;
+            }})();"#))?;
+            self.pending = None;
+        }
+        Ok(())
+    }
+}
 
 fn startup_trace(message: &str) {
     use std::io::Write;
@@ -204,6 +230,11 @@ fn desktop_ready(window: WebviewWindow, custom_titlebar: Option<bool>) -> Result
     window.set_decorations(custom_titlebar != Some(true)).map_err(|error| error.to_string())?;
     #[cfg(not(windows))]
     let _ = custom_titlebar;
+    let navigation = window.state::<Mutex<MainNavigation>>();
+    let mut navigation = navigation.lock().unwrap();
+    navigation.ready = true;
+    navigation.apply(&window).map_err(|error| error.to_string())?;
+    drop(navigation);
     if window.state::<DesktopSession>().mark_ready() {
         restore_window(&window,false);
     }
@@ -232,15 +263,22 @@ const READY_SCRIPT: &str = concat!(include_str!("../../bootstrap/startup.js"), r
 "#);
 
 // Serialize window creation with updater installation, just like quick windows.
-fn show_main_window(app: &tauri::AppHandle, focus: bool, desktop_selected: bool) -> tauri::Result<()> {
+fn show_main_window(app: &tauri::AppHandle, focus: bool, desktop_selected: bool, fragment: Option<String>) -> tauri::Result<()> {
     let _window_gate = updater::WINDOW_GATE.lock().unwrap();
     if updater::installing(app) { return Ok(()); }
+    let navigation = app.state::<Mutex<MainNavigation>>();
     if let Some(window) = app.get_webview_window("main") {
+        if let Some(fragment) = fragment {
+            let mut navigation = navigation.lock().unwrap();
+            navigation.pending = Some(fragment);
+            navigation.apply(&window)?;
+        }
         if app.state::<DesktopSession>().request_show() {
             restore_window(&window, focus);
         }
         return Ok(());
     }
+    *navigation.lock().unwrap() = MainNavigation { ready: false, pending: fragment };
     let navigation_app=app.clone();
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
@@ -281,7 +319,9 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool, desktop_selected: bool)
             true
         })
         .on_page_load(move |window, payload| {
-            if payload.event() == tauri::webview::PageLoadEvent::Finished && bootstrap_url(payload.url()) {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                window.state::<Mutex<MainNavigation>>().lock().unwrap().ready = false;
+            } else if bootstrap_url(payload.url()) {
                 connect(window, desktop_selected);
             }
         })
@@ -300,11 +340,11 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool, desktop_selected: bool)
 
 // The tray and source launcher already chose the interface. Direct launches
 // still consult the shared setting and can open the browser without closing SSH sessions.
-fn activate_main(app: &tauri::AppHandle, focus: bool, desktop_selected: bool) {
+fn activate_main(app: &tauri::AppHandle, focus: bool, desktop_selected: bool, fragment: Option<String>) {
     if desktop_selected {
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
-            if let Err(error) = show_main_window(&handle, focus, true) {
+            if let Err(error) = show_main_window(&handle, focus, true, fragment) {
                 startup_trace(&format!("window activation failed: {error}"));
             }
         });
@@ -324,7 +364,7 @@ fn activate_main(app: &tauri::AppHandle, focus: bool, desktop_selected: bool) {
         // A failed read returns to the startup UI, which can retry the backend.
         let main_handle = handle.clone();
         let _ = main_handle.run_on_main_thread(move || {
-            if let Err(error) = show_main_window(&handle, focus, false) {
+            if let Err(error) = show_main_window(&handle, focus, false, None) {
                 startup_trace(&format!("window activation failed: {error}"));
             }
         });
@@ -337,24 +377,26 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Connecting::default())
         .manage(DesktopSession::default())
+        .manage(Mutex::new(MainNavigation::default()))
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
             if updater::installing(app) { return; }
             if args.iter().any(|arg|arg=="--quit-desktop") { app.exit(0);return; }
             if let Some((tool,host))=quick_window::request(&args) { let _=quick_window::open(app,&tool,&host);return; }
-            activate_main(app, true, args.iter().any(|arg| arg == "--show-desktop"));
+            activate_main(app, true, args.iter().any(|arg| arg == "--show-desktop"), machine_overview_fragment(&args));
         }))
         .plugin(tauri_plugin_window_state::Builder::default()
             .with_filter(|label|label=="main")
             .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE | tauri_plugin_window_state::StateFlags::POSITION | tauri_plugin_window_state::StateFlags::MAXIMIZED).build())
         .invoke_handler(tauri::generate_handler![updater::desktop_update_status, updater::desktop_update_check, updater::desktop_update_download, updater::desktop_update_install, updater::desktop_update_safety_response, close_desktop, main_window_action, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
         .setup(|app| {
-            if std::env::args().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
+            let args = std::env::args().collect::<Vec<_>>();
+            if args.iter().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
             watch_service(app.handle().clone());
             #[cfg(target_os = "macos")]
             app.set_menu(tauri::menu::Menu::default(app.handle())?)?;
-            if let Some((tool,host))=quick_window::request(&std::env::args().collect::<Vec<_>>()) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
-            let desktop_selected = std::env::args().any(|arg| arg == "--show-desktop");
-            show_main_window(app.handle(), false, desktop_selected)?;
+            if let Some((tool,host))=quick_window::request(&args) { quick_window::open(app.handle(),&tool,&host)?;return Ok(()); }
+            let desktop_selected = args.iter().any(|arg| arg == "--show-desktop");
+            show_main_window(app.handle(), false, desktop_selected, machine_overview_fragment(&args))?;
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -362,7 +404,7 @@ fn main() {
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = &event {
-                activate_main(app, false, false);
+                activate_main(app, false, false, None);
             }
             if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
                 api.prevent_exit();
