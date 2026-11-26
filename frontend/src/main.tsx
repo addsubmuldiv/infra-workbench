@@ -445,7 +445,7 @@ function App(){
     <rect x="3.6" y="3.6" width="16.8" height="16.8" rx="4.4" stroke="currentColor" strokeWidth="1.9"/>
     <path d="M12 6.6c.48 3.1 2.3 4.92 5.4 5.4-3.1.48-4.92 2.3-5.4 5.4-.48-3.1-2.3-4.92-5.4-5.4 3.1-.48 4.92-2.3 5.4-5.4Z" fill="currentColor"/>
   </svg>;
-  const header=<header className="workspace-titlebar">
+  const header=<header className={desktopTitlebar?'workspace-titlebar desktop-titlebar':'workspace-titlebar'}>
       <div className="brand workspace-brand"><span className="brand-icon"><BrandMark size={24}/></span><div>Infra<span>WORKBENCH</span></div></div>
       <div className="breadcrumb">{ui("工作空间 ")}<ChevronRight size={13}/>{pageTitle}</div>
       {desktopTitlebar&&<div className="desktop-titlebar-space" onMouseDown={event=>{
