@@ -445,8 +445,8 @@ function App(){
     <rect x="3.6" y="3.6" width="16.8" height="16.8" rx="4.4" stroke="currentColor" strokeWidth="1.9"/>
     <path d="M12 6.6c.48 3.1 2.3 4.92 5.4 5.4-3.1.48-4.92 2.3-5.4 5.4-.48-3.1-2.3-4.92-5.4-5.4 3.1-.48 4.92-2.3 5.4-5.4Z" fill="currentColor"/>
   </svg>;
-  const header=<header className={desktopTitlebar?'desktop-titlebar':undefined}>
-      {desktopTitlebar&&<div className="brand desktop-brand"><span className="brand-icon"><BrandMark size={24}/></span><div>Infra<span>WORKBENCH</span></div></div>}
+  const header=<header className="workspace-titlebar">
+      <div className="brand workspace-brand"><span className="brand-icon"><BrandMark size={24}/></span><div>Infra<span>WORKBENCH</span></div></div>
       <div className="breadcrumb">{ui("工作空间 ")}<ChevronRight size={13}/>{pageTitle}</div>
       {desktopTitlebar&&<div className="desktop-titlebar-space" onMouseDown={event=>{
         if(event.button!==0)return;
@@ -461,13 +461,13 @@ function App(){
   return <WorkspaceLayout desktopTitlebar={!!desktopTitlebar} assistantWidth={assistantWidth} onClickCapture={event=>{
     if(deviceOverview&&event.target instanceof Element&&!event.target.closest('#device-overview,[aria-controls="device-overview"]'))setDeviceOverview(false);
   }}>
-    {desktopTitlebar&&header}
-    <aside className="sidebar"><div className="brand"><span className="brand-icon"><BrandMark size={28}/></span><div>Infra<span>WORKBENCH</span></div></div>
+    {header}
+    <aside className="sidebar">
       <div className="nav-label">{ui("工作台")}</div><nav>{[["overview",ui("算力总览"),LayoutGrid],["reservations",tr("资源预约","Resource alerts"),CalendarClock],["history",tr("资源历史","Resource history"),History],["precision",ui("精度对比"),ChartLine],["settings",ui("设置"),Settings]].map(([key,label,Icon])=><button data-tour={key==='settings'?'settings':undefined} key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&pendingReservations>0&&<span className="nav-count">{pendingReservations}</span>}</button>)}</nav>
       <div className="sidebar-hosts" data-tour="hosts">{hostList}</div>
       <div className="sidebar-bottom"><div className={'agent'+(error?' disconnected':'')} role="status" tabIndex={0} title={ui("机器选择保存在本机后台，其他窗口会同步更新。通过 SSH 连接远端机器，无需远端常驻 Agent。")}><i aria-hidden="true"/>{isDemo?tr("演示数据","Demo data"):ui("本地服务")}{error?ui("未连接"):ui("已连接")}</div></div>
     </aside>
-    <main onClick={clearDeviceSelection}><DesktopUpdateNotification openSettings={()=>navigate('settings')}/>{workspaceError&&<div role="alert" className="assistant-error">{ui("工作空间状态同步失败，正在重试；未保存时请勿关闭页面。")}</div>}{!desktopTitlebar&&header}
+    <main onClick={clearDeviceSelection}><DesktopUpdateNotification openSettings={()=>navigate('settings')}/>{workspaceError&&<div role="alert" className="assistant-error">{ui("工作空间状态同步失败，正在重试；未保存时请勿关闭页面。")}</div>}
     {!isDemo&&page==='overview'&&state.hosts.length>0&&!notice&&(!assistantOpen||assistantWidth>0)&&<GitHubStarPrompt key={state.hosts.map(host=>host.id).join(',')}/>}
     {preferences.theme==='frieren'&&<JourneyArt/>}
     <div className="content" data-tour-panel={page==='settings'?'settings':undefined}><div className="page-heading" hidden={page==='history'}><div><div className="eyebrow">COMPUTE / {page==='precision'?'PRECISION COMPARE':page==='overview'?'OVERVIEW':page==='history'?'RESOURCE HISTORY':page==='reservations'?'RESERVATIONS':page==='settings'?'SETTINGS':page==='assistant'?'AI ASSISTANT':'OVERVIEW'}</div><h1>{pageTitle}<span className="heading-dot"/></h1><p>{page==='precision'?ui("跨机器读取训练日志，自动提取指标并按真实步数对齐。"):page==='history'?tr("查看各时段空闲设备和机器数量，未知数据单独标记。","View idle devices and machines over time, with missing data shown separately."):page==='reservations'?tr("单台、指定多台或集群任意几台连续空闲后提醒。","Receive an alert when a machine or group stays available."):page==='settings'?ui("管理模型接口、外部 Agent 接入和邮件通知。"):page==='assistant'?ui("查找多台机器上的任务与会话，了解资源发生了哪些变化。"):tr(`全部 ${state.hosts.length} 台机器的资源概况 · 左侧勾选用于查看详情和批量删除`,`Resources across ${state.hosts.length} machines · Select in the sidebar for details or removal`)}</p></div><div className="page-heading-actions"><TunnelManagerButton hosts={state.hosts} disabled={isDemo}/><button className="primary" onClick={()=>isDemo?setNotice(tr("演示模式不接入真实机器或凭据，请退出演示后配置。","The demo does not accept real machines or credentials. Exit demo to configure them.")):setAdding(true)}><Plus size={17}/>{ui("添加机器")}</button><button className="secondary machine-delete-action" aria-label={ui("删除机器")} title={scope.length?tr(`删除选中的 ${scope.length} 台机器`,`Delete ${scope.length} selected machines`):ui("请先在左侧勾选机器")} disabled={scope.length===0} onClick={()=>setRemovalHosts([...scope])}><Trash2 size={15}/>{ui("删除机器")}{scope.length>0&&<span className="machine-delete-count">{scope.length}</span>}</button></div></div>

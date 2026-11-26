@@ -2,6 +2,7 @@ import {t,useLocale} from '../shared/i18n';
 import {useWorkspaceRestore} from './workspaceHooks';
 import {workspaceStorage} from './workspaceState';
 import React,{useEffect,useRef,useState} from 'react';
+import {OverlayScrollbar} from '../shared/OverlayScrollbar';
 import {DEFAULT_SIDEBAR_WIDTH,MIN_SIDEBAR_WIDTH,MOBILE_BREAKPOINT,fitSidebarWidth,loadSidebarWidth,saveSidebarWidth,sidebarMaximum} from './sidebarLayout';
 
 function storage(){try{return workspaceStorage}catch{return null}}
@@ -32,6 +33,7 @@ export function WorkspaceLayout({children,onClickCapture,assistantWidth=0,deskto
   };
   return <div onClickCapture={onClickCapture} className={'shell'+(desktopTitlebar?' desktop-shell':'')+(dragging?' resizing-sidebar':'')+(assistantWidth?' assistant-docked':'')} style={{'--sidebar-width':`${width}px`,'--assistant-width':`${assistantWidth}px`} as React.CSSProperties} data-sidebar-wide={width>=480}>
     {children}
+    <OverlayScrollbar className="workspace-scrollbar"/>
     <div className="sidebar-resizer" role="separator" aria-label={t("调整左侧栏宽度","Resize sidebar")} aria-orientation="vertical" aria-valuemin={viewport<=MOBILE_BREAKPOINT?65:MIN_SIDEBAR_WIDTH} aria-valuemax={viewport<=MOBILE_BREAKPOINT?65:maximum} aria-valuenow={width} tabIndex={0}
       title={t("拖动调整左栏宽度；双击恢复默认；方向键微调","Drag to resize; double-click to reset; use arrow keys to adjust")}
       onPointerDown={event=>{

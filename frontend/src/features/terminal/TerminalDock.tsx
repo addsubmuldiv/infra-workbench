@@ -28,7 +28,7 @@ import {activateFloatingWindow,registerFloatingWindow} from '../../workspace/win
 const terminalViewport=()=>({
   width:window.innerWidth||1200,
   height:window.innerHeight||900,
-  topInset:document.querySelector('.desktop-shell > .desktop-titlebar')?.getBoundingClientRect().bottom??0,
+  topInset:document.querySelector('.shell > .workspace-titlebar')?.getBoundingClientRect().bottom??0,
 });
 function terminalStorage(){try{return workspaceStorage??null}catch{return null}}
 

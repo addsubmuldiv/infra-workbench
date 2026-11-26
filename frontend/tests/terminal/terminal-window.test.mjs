@@ -15,7 +15,7 @@ function harness(t,{titlebarBottom=0}={}){
     useRef:current=>{const i=slot++;if(!(i in state))state[i]={current};return state[i]},
     useEffect:(fn,next)=>{const i=slot++;if(!deps[i]||next.some((v,j)=>v!==deps[i][j])){deps[i]=next;effects.push(fn)}}};
   const globals={window:{innerWidth:1400,innerHeight:900,localStorage:{getItem:key=>disk.get(key)??null,setItem:(key,value)=>disk.set(key,value)},addEventListener(){},removeEventListener(){},confirm:()=>false},
-    document:{querySelector:selector=>titlebarBottom&&selector==='.desktop-shell > .desktop-titlebar'?{getBoundingClientRect:()=>({bottom:titlebarBottom})}:null,documentElement:{style:{setProperty(){},removeProperty(){}}}},requestAnimationFrame:fn=>{fn();return 1}};
+    document:{querySelector:selector=>titlebarBottom&&selector==='.shell > .workspace-titlebar'?{getBoundingClientRect:()=>({bottom:titlebarBottom})}:null,documentElement:{style:{setProperty(){},removeProperty(){}}}},requestAnimationFrame:fn=>{fn();return 1}};
   t.after(()=>cleanups.forEach(fn=>fn?.()));
   for(const [key,value] of Object.entries(globals)){const original=Object.getOwnPropertyDescriptor(globalThis,key);Object.defineProperty(globalThis,key,{configurable:true,value,writable:true});t.after(()=>{if(original)Object.defineProperty(globalThis,key,original);else delete globalThis[key]})}
   const js=ts.transpileModule(fs.readFileSync(new URL('../../src/features/terminal/TerminalDock.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;

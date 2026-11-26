@@ -57,7 +57,7 @@ function harness(t,hash='#overview',reservations=[],hostItems=hosts,demo=false,d
 test('Windows title bar keeps its window controls above the open assistant',t=>{
   const h=harness(t,'#assistant',[],hosts,false,true);
   const layout=h.render();
-  assert.equal(layout.props.children[0].props.className,'desktop-titlebar');
+  assert.equal(layout.props.children[0].props.className,'workspace-titlebar');
   assert.ok(h.find(node=>node.type==='DesktopWindowControls'));
   const assistantToggle=h.find(node=>node.props?.['aria-controls']==='infra-assistant-panel');
   assert.equal(assistantToggle.props['aria-expanded'],true);
@@ -65,6 +65,14 @@ test('Windows title bar keeps its window controls above the open assistant',t=>{
   h.render();
   assert.ok(h.find(node=>node.type==='DesktopWindowControls'));
   assert.equal(h.find(node=>node.props?.['aria-controls']==='infra-assistant-panel').props['aria-expanded'],false);
+});
+
+test('browser uses the same workspace title bar with the assistant open',t=>{
+  const h=harness(t,'#assistant');
+  const layout=h.render();
+  assert.equal(layout.props.children[0].props.className,'workspace-titlebar');
+  assert.equal(h.find(node=>node.type==='DesktopWindowControls'),undefined);
+  assert.equal(h.find(node=>node.props?.['aria-controls']==='infra-assistant-panel').props['aria-expanded'],true);
 });
 
 test('reservation summary excludes ready reservations and their machines but opens all reservations',t=>{

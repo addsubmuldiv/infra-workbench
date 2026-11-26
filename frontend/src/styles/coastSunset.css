@@ -11,7 +11,7 @@
     url('../assets/coastal-sunset.webp') right center / cover fixed var(--bg);
 }
 
-:root[data-theme="coast-sunset"] .shell>main>header {
+:root[data-theme="coast-sunset"] .shell>.workspace-titlebar {
   border-bottom:1px solid transparent;
   border-image:linear-gradient(90deg,#b38ead40,#e7a89c73,#fabf8ba6) 1;
 }
@@ -28,5 +28,5 @@
 
 @media (forced-colors:active) {
   :root[data-theme="coast-sunset"] .shell>main {background:Canvas}
-  :root[data-theme="coast-sunset"] .shell>main>header {border-image:none}
+  :root[data-theme="coast-sunset"] .shell>.workspace-titlebar {border-image:none}
 }
