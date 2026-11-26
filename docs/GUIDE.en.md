@@ -63,7 +63,7 @@ To select a machine directly from VS Code Remote - SSH, click **Add to SSH confi
 
 For bulk import, open **Add machine → Import Excel** and upload `.xlsx` with the headers `IP`, `Username`, `Password`, and `Port`. The IP field may contain an SSH alias. The account overrides the alias user; an empty port inherits the alias port or defaults to 22 for plain addresses. An explicit port overrides it. Passwords are saved after verification. Existing machines are not duplicated; ambiguous address matches need a unique alias. See the [Chinese import reference](IMPORT.md).
 
-In **Resource overview**, search the sidebar and filter by **All / GPU / NPU**. Click a name to show one machine, or use checkboxes for several. **Select all** selects all and **Clear** clears selection. These display choices do not stop background monitoring. Drag the sidebar divider to resize; double-click to reset it.
+In **Resource overview**, search the sidebar and filter by **All / GPU / NPU**. Click a name to show one machine, or use checkboxes for several. **Select all** selects all and **Clear** clears selection. Sidebar rows also provide a button to copy the displayed machine name, and switch to compact layouts when the sidebar is narrowed. These display choices do not stop background monitoring. Drag the sidebar divider to resize; double-click to reset it.
 
 To remove a machine, hover over its sidebar row and click the trash icon, or use **Remove** beside its heading. The confirmation explains that related monitoring, reservations, saved SSH / sudo passwords, and open tools are removed from the app. Remote files and local SSH configuration are retained.
 
@@ -77,7 +77,7 @@ Use **Find training resources** to set device type, count, free memory per devic
 
 The top **All machines** control selects all machines and clears search/type filters, or clears selection when all are selected. **Accelerators** groups devices by type and model. **Matching machines** counts matches across all machines using your resource criteria; **My alerts** opens availability alerts.
 
-Click a device or process to inspect user, PID, program, working directory, executable, and command. Missing permissions or unavailable fields are shown explicitly.
+Click a device or process to inspect user, PID, program, working directory, executable, and command. When a process runs inside a container, details also show the container runtime, container PID, and container working directory, plus host directory and audit login user when verifiable. Missing permissions or unavailable fields are shown explicitly.
 
 ![Process details](images/process-details-en.png)
 
@@ -127,7 +127,7 @@ SMTP acceptance is not confirmed inbox delivery. Failed or uncertain sends are n
 
 Use **Terminal** or **Files** beside a machine heading to open tools in the workbench. Both can remain open together. The desktop monitor can also open separate native tool windows.
 
-Terminals support tabs, font size, dragging, resizing, minimizing, maximizing, history suggestions, output search, command templates, completion alerts, and recoverable tmux sessions. Click a minimized card to restore it, or **+** to add a session. With text selected, `Ctrl+C` copies; otherwise it interrupts the foreground command. `Ctrl+V`, Windows clipboard history, and `Ctrl+Shift+C / V` are supported. Closing a session or refreshing can affect foreground work; use tmux for long-running jobs. See [terminal details in Chinese](TERMINAL.md).
+Terminals support tabs, font size, dragging, resizing, minimizing, maximizing, history suggestions, output search, command templates, completion alerts, and recoverable tmux sessions. Click a minimized card to restore it, **+** to add a session, or the folder icon in the toolbar (**Open current directory**) to browse the active shell's last reported working directory in the file window. With text selected, `Ctrl+C` copies; otherwise it interrupts the foreground command. `Ctrl+V`, Windows clipboard history, and `Ctrl+Shift+C / V` are supported. Closing a session or refreshing can affect foreground work; use tmux for long-running jobs. See [terminal details in Chinese](TERMINAL.md).
 
 In the file window:
 
@@ -146,7 +146,7 @@ File tools use the current SSH account. Text editing, copying, uploads, and down
 | Your situation | Start here |
 | --- | --- |
 | You have a Responses API with tool-call support | Settings → AI assistant → Model configuration; [setup](AGENT.md) |
-| You installed and authenticated a local CLI | Choose its engine in the assistant; [Codex](CODEX.md), [Claude Code / OpenCode](EXTERNAL-AGENTS.md) |
+| You installed and authenticated a local CLI | Choose its engine in the assistant; [Codex](CODEX.md), [Claude Code / OpenCode / Antigravity](EXTERNAL-AGENTS.md) |
 | You want another AI client to access the workbench | Settings → Integrations → MCP; [MCP setup](MCP.md) |
 | You want to reuse a workflow | Settings → AI assistant → Skills; [Skills](USER-SKILLS.md) |
 
@@ -156,9 +156,9 @@ API and CLI credentials are independent; you do not need both. Skills describe w
 
 Create a new conversation, enable **Only allow operations on selected machines** in the composer context settings, verify the scope, and ask “Inspect these machines and report device status, sample times and unknown information.” Expand the tool records to check target hosts and returned facts. A text reply or successful text connection test alone does not prove server tools were called. See [AI troubleshooting](TROUBLESHOOTING.md#ai-助手) for model versus tool failures.
 
-Configure a service URL, API key, and model under **Settings → AI assistant → Model configuration**, then save and test. Multiple profiles are supported. A text test alone does not validate function-tool support. Alternatively, select local Codex, Claude Code, or OpenCode in the assistant; install and sign in to the chosen CLI separately. See [local engines and validation limits](EXTERNAL-AGENTS.md).
+Configure a service URL, API key, and model under **Settings → AI assistant → Model configuration**, then save and test. Multiple profiles are supported. A text test alone does not validate function-tool support. Alternatively, select local Codex, Claude Code, OpenCode, or Antigravity in the assistant; install and sign in to the chosen CLI separately. See [local engines and validation limits](EXTERNAL-AGENTS.md).
 
-Open **AI assistant** and describe a goal: find four free GPUs with 40 GiB each, identify accelerator users and working directories, read a specified training log, or create an alert with confirmed conditions. The assistant can query resources, processes, tmux, and files, and manage reservations, monitoring, and files as requested. Expand execution steps to inspect target machines, arguments, raw results, and errors.
+Open **AI assistant** and describe a goal: find four free GPUs with 40 GiB each, identify accelerator users and working directories, read a specified training log, or create an alert with confirmed conditions. The assistant can query resources, processes, tmux, and files, manage reservations, monitoring, and files as requested, and render read-only **Resource view** tables or charts from collected samples. Switch between **Ask** (default), **Full access**, and **Read-only** permission modes in the composer; see [assistant permissions](AGENT-PERMISSIONS.md). Expand execution steps to inspect target machines, arguments, raw results, and errors.
 
 By default, tools may access all added machines. To restrict a turn, expand the composer context controls and enable the option to restrict operations to the selected machines. Selecting machines in the sidebar alone does not restrict assistant access.
 
@@ -203,7 +203,7 @@ Toggle **Show monitor** in the Windows tray menu or use startup settings. The mo
 
 Click a machine or **Details ›** for device details. Hover over a device to see memory, utilization, and collected process information. Use **Machines** to search and select machines, **−** to collapse, and **Expand** to expand. Drag the header to move, drag an edge to resize, use the pin for always-on-top, and open the gear for opacity settings. Layout and selections are saved, and the monitor follows the workbench theme.
 
-Right-click a machine card, name, or device and choose **Open terminal** or **Open files**. A file window can open a terminal in its current directory; terminal directory links can open a separate file window. Closing a normal SSH terminal may end foreground jobs, so use tmux for long tasks.
+Right-click a machine card, name, or device and choose **Open terminal**, **Open files**, or **Open workbench** (which focuses directly on that machine in the overview). A file window can open a terminal in its current directory; terminal directory links can open a separate file window. Closing a normal SSH terminal may end foreground jobs, so use tmux for long tasks.
 
 Unknown or stale data must not be treated as free resources. Availability alerts apply additional utilization, memory, and continuous-idle checks. See the [illustrated monitor guide](FLOATING-MONITOR.en.md).
 
@@ -221,7 +221,7 @@ Unknown or stale data must not be treated as free resources. Availability alerts
 
 ### Appearance and refresh settings
 
-Choose a theme from **Theme**. Keep passwords, private keys, and the local `data/` directory private. The app does not provide team accounts or a resource scheduler; do not expose its local service directly to a LAN or the internet. See [data and credentials in Chinese](../SECURITY.md).
+Choose a theme from **Theme** (Daylight, Warm paper, Midnight, Graphite, Coastal Sunset, Floral journey, and the Solid Glass themes: Light, Dark, Jade, Dusk, White, Black). Keep passwords, private keys, and the local `data/` directory private. The app does not provide team accounts or a resource scheduler; do not expose its local service directly to a LAN or the internet. See [data and credentials in Chinese](../SECURITY.md).
 
 Refresh intervals are 5, 10, 15, 20, or 30 seconds, defaulting to 30. The backend saves the choice for all windows and uses it for collection and display refresh. Legacy 60-second settings are reduced to 30 seconds.
 

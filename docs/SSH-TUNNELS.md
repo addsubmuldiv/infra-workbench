@@ -45,7 +45,8 @@ VS Code Remote - SSH 沿用本机 SSH 密钥和 agent。添加机器时，如果
 - 认证、主机密钥和本机监听端口绑定错误需要修正后手动连接。
 - 默认不在软件启动时连接，可对每条规则单独开启。
 - “检测目标端口”只检测 TCP 目标是否可连接，不验证代理协议、外网或 Codex 可用性。原生 OpenSSH 的本地转发只报告隧道状态，提示使用本机端口验证远端服务。
-- 密码登录的独立连接需要先在机器的 SSH 密码设置中保存密码，凭据沿用系统凭据存储及 SSH 身份绑定检查。临时登录会话不会被隧道复用。
+- 密码登录的独立连接优先使用机器「SSH 账号」中为默认账号保存的密码，也可在适用时复用当前账号已认证的 SSH 会话；凭据沿用系统凭据存储及 SSH 身份绑定检查。
+- 隧道发生非预期断开时，会在通知中心留下记录，并按现有设置发送桌面或浏览器通知；主动断开不会重复弹通知。
 - 免密登录支持已有密钥、SSH agent 和跳板配置。隧道使用专用 SSH 连接，禁用连接复用及继承的转发规则。
 
 客户端只请求 `127.0.0.1` 监听并只转发到 `127.0.0.1`。远端 SSH 服务端最终决定监听行为；例如 OpenSSH 的 `GatewayPorts yes` 可以覆盖请求地址。需要远端严格回环监听时，服务端应采用 `GatewayPorts no` 或 `clientspecified`，并核对实际监听地址。工作台不会修改服务端 SSH 配置。
@@ -64,6 +65,6 @@ Use the chain icon on a machine card to create dedicated SSH tunnels. Remote-to-
 
 After the backend accepts a manual connection request, the dialog closes. The first successful connection or final failure appears in the notification center and uses your existing desktop or browser notification settings.
 
-Connections belong to the backend and continue when panels or VS Code close. Quit the backend to disconnect. Optional network reconnect and app-start connection are configured per rule. With reconnect enabled, a rejected remote forward is retried up to four times, with delays of 2, 5, 10, and 30 seconds, to give an old SSH session time to release the port. Authentication, host-key, and local binding errors require manual correction. Password-based hosts need a saved SSH password. Target-port checks test TCP reachability only.
+Connections belong to the backend and continue when panels or VS Code close. Quit the backend to disconnect. Optional network reconnect and app-start connection are configured per rule. With reconnect enabled, a rejected remote forward is retried up to four times, with delays of 2, 5, 10, and 30 seconds, to give an old SSH session time to release the port. Unexpected tunnel disconnects are recorded in the notification center and use your desktop or browser notification settings. Authentication, host-key, and local binding errors require manual correction. Password-based hosts can use a saved SSH password or reuse an authenticated SSH session for the default account when applicable. Target-port checks test TCP reachability only.
 
 The client requests loopback listening, but the SSH server controls the final bind address. Server configurations such as `GatewayPorts yes` can override it. No server configuration is changed automatically.

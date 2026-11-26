@@ -11,7 +11,7 @@
 | 状态持久化与取消 / State and cancellation | 图运行使用内存 checkpoint；应用将图状态序列化到本地会话数据库，并在后续请求恢复。取消沿现有工具链传播，修复未完成工具消息后再继续，不自动重放中断操作。这不是把运行中的网络连接持久化。 |
 | 提示缓存 / Prompt caching | 框架自带供应商专用缓存 middleware，但当前 `WorkbenchChatModel` 不是原生 `ChatAnthropic` 等模型类，这些 middleware 不保证生效。供应商自动前缀缓存取决于接口和模型；未测量命中率或节省比例。 |
 | 长期记忆 / Long-term memory | 使用框架 `MemoryMiddleware` 读取应用提供的虚拟记忆文件；记忆持久化和修改范围由应用后端控制。不会因此读取用户目录中的任意 `AGENTS.md`。会话摘要与跨会话记忆是不同数据。 |
-| Shell、子代理、任意文件写入 / Shell, subagents, arbitrary writes | 不因框架存在这些功能就全部开放。通用子代理关闭；虚拟文件工具提供查询、读取，以及仅限 `/memories/AGENTS.md` 的写入、编辑和删除；技能文件及其他路径不允许修改。远端操作仍通过现有 MCP 服务，保留权限、机器范围和取消检查。 |
+| Shell、子代理、任意文件写入 / Shell, subagents, arbitrary writes | 不因框架存在这些功能就全部开放。默认启用 `general-purpose` 子代理（继承当前机器范围、工具与权限模式，最多并发 3 个、单轮最多 12 次委派、禁止嵌套）；虚拟文件工具提供查询、读取，以及仅限 `/memories/AGENTS.md` 的写入、编辑和删除；技能文件及其他路径不允许修改。本机文件、本机 Shell、公开网页和远端 MCP 操作统一经过运行绑定的权限控制器（详见 [AGENT-PERMISSIONS.md](AGENT-PERMISSIONS.md)），保留权限、机器范围和取消检查。 |
 
 技能披露是减少模型上下文的机制，不是权限控制。即使模型猜到工具名称，也必须由共享后端执行原有参数与机器范围校验。每次模型调用都由框架根据当前技能索引和工具目录重算披露记录；历史记录不应被当成长期授权。
 

@@ -46,7 +46,7 @@
 - **多机 GPU / Ascend NPU 一屏看清。** 通过 SSH 聚合多台 Linux 服务器的卡型、显存、利用率与占卡进程；采样失败、缺失或过期时保持未知状态，不拿旧数据冒充空闲。
 - **终端、文件与远程服务一体。** 在目标机器上直接打开网页终端（支持 tmux）、编辑和传输文件、转发 TensorBoard / Jupyter，或配置 SSH 隧道与 VS Code 连接。
 - **空闲预约与资源历史。** 按数量或指定卡号等待连续空闲并触发桌面/邮件提醒，也可回看资源历史采样，或对比不同实验的训练日志精度。
-- **AI 原生工作流。** 内置助手直接调用机器、资源、进程、文件与预约工具并展示执行记录；支持 Responses / 工具调用接口，以及已安装登录的 [Codex](docs/CODEX.md)、[Claude Code 与 OpenCode](docs/EXTERNAL-AGENTS.md)。
+- **AI 原生工作流。** 内置助手直接调用机器、资源、进程、文件与预约工具并展示执行记录；支持 Responses / 工具调用接口，以及已安装登录的 [Codex](docs/CODEX.md)、[Claude Code、OpenCode 与 Antigravity](docs/EXTERNAL-AGENTS.md)。
 - **MCP 接入外部 Agent。** 通过统一 [MCP](docs/MCP.md) 暴露工作台能力，让外部 Agent 在同一套服务端校验下发现算力并操作授权机器。
 - **可复用的 Skill（技能）。** 将确认过的巡检、排障流程沉淀为 Markdown / ZIP 技能，支持 `@` 指定、按需发现、草稿、启停与版本回退（脚本不会自动执行）。
 - **本地运行，无需远端常驻 Agent。** 桌面端、系统托盘与资源浮窗共用本机后台；机器范围校验与凭据保护由服务端统一执行。
@@ -109,7 +109,7 @@ npm run build:demo  # 构建静态演示包
 - **签名与验收状态**：Windows 安装包尚未做 Authenticode 代码签名（更新包另有独立更新签名）；干净 Windows 系统的安装、升级和卸载仍待验收。
 - **应用内更新**：Windows 安装版从 `v0.1.1` 起支持启动检查及手动下载安装更新。`v0.1.0` 用户需先手动安装一次；更新前请保存文件、关闭活动终端，并从托盘菜单退出旧后台。详见 [应用更新](docs/UPDATES.md)。
 - **源码更新**：托盘退出后拉取新代码并重新运行 `install.cmd`，已有机器配置会保留。详见 [更新与修复](docs/WINDOWS.md#更新与修复)。
-- **macOS**：需要在 Mac 上自行构建；仅当对应 Release 明确提供时才包含 Apple Silicon 实验性安装包，且 Mac 尚待实机验证。详见 [Mac 说明](docs/MACOS.md)。
+- **macOS**：需要在 Mac 上自行构建；仅当对应 Release 明确提供时才包含 Apple Silicon 与 Intel 实验性安装包，且 Mac 尚待实机验证。详见 [Mac 说明](docs/MACOS.md)。
 
 </details>
 

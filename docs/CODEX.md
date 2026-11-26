@@ -70,4 +70,4 @@ Codex 使用原生执行循环处理本机命令、文件编辑及子 Agent，�
 
 2026-11-03 的真实 CLI 验证还在合成 MCP 工具等待时调用 `turn/steer`，确认返回相同的 turn ID，再取消本轮并确认工具、进程和活动连接清理。验证仅证明 App Server 接受补充指令；取消前没有等待模型执行补充内容，不声称验证了最终输出。没有连接生产 SSH。
 
-其他本机 CLI 的安装、隔离及验证范围见 [Claude Code 与 OpenCode](EXTERNAL-AGENTS.md)。
+其他本机 CLI 的安装、隔离及验证范围见 [Claude Code、OpenCode 与 Antigravity](EXTERNAL-AGENTS.md)。

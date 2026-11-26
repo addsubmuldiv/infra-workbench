@@ -46,7 +46,7 @@
 - **Multi-host GPU / Ascend NPU visibility.** Aggregate accelerator models, free memory, utilization, and occupying processes across Linux servers over SSH. Failed, missing, or stale samples stay explicitly unknown instead of appearing idle.
 - **Terminals, files, and remote services in one place.** Open web terminals (with tmux support), edit and transfer files, forward TensorBoard / Jupyter, or configure SSH tunnels and VS Code connections.
 - **Availability alerts and usage history.** Wait for a target count or specific devices to stay free before triggering desktop or email alerts, review historical samples, and compare training metrics across experiments.
-- **AI-native workflows.** The built-in assistant calls the workbench's real host, resource, process, file, and alert tools with full execution records. Supports Responses / tool-calling APIs as well as locally installed [Codex](docs/CODEX.md), [Claude Code, and OpenCode](docs/EXTERNAL-AGENTS.md).
+- **AI-native workflows.** The built-in assistant calls the workbench's real host, resource, process, file, and alert tools with full execution records. Supports Responses / tool-calling APIs as well as locally installed [Codex](docs/CODEX.md), [Claude Code, OpenCode, and Antigravity](docs/EXTERNAL-AGENTS.md).
 - **MCP for external agents.** Expose the same server-validated workbench capabilities over [MCP](docs/MCP.md) so your existing agent can discover capacity and operate on authorized hosts.
 - **Reusable Skills.** Turn verified inspection or troubleshooting steps into Markdown / ZIP skills with `@` selection, on-demand discovery, drafts, enable/disable controls, and version rollback (scripts in skills do not run automatically).
 - **Local-first, no remote daemon required.** Desktop windows, the system tray, and the floating monitor share a single local backend; host scope checks and credential protections are enforced server-side.
@@ -109,7 +109,7 @@ The demo isolates all requests to the real backend—it never connects to server
 - **Code signing & acceptance**: The Windows installer has no Authenticode signature (updater packages carry a separate update signature). Clean Windows install, upgrade, and uninstall acceptance is still pending.
 - **In-app updates**: Windows installers support startup update checks and user-initiated download/install starting from `v0.1.1`. Existing `v0.1.0` users must manually install once; save work, close active terminals, and exit the old tray backend first. See [updater operation and limits](docs/UPDATES.md).
 - **Source updates**: Exit from the tray menu, pull the latest code, and re-run `install.cmd`; existing machine configurations are preserved.
-- **macOS**: Must be built on a Mac; experimental Apple Silicon packages are included only when explicitly listed on a Release, and physical Mac verification is still pending. See [macOS notes](docs/MACOS.md) (in Chinese).
+- **macOS**: Must be built on a Mac; experimental Apple Silicon and Intel packages are included only when explicitly listed on a Release, and physical Mac verification is still pending. See [macOS notes](docs/MACOS.md) (in Chinese).
 
 </details>
 

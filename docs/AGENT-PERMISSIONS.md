@@ -21,7 +21,7 @@
 - 本机文本文件：目录列表、读取、写入、唯一片段编辑、单文件删除。文本上限 2 MiB，写入/删除须使用读取返回的 revision，新建须使用 missing。读取分页每页最多 6000 字符。
 - 本机 Shell：输出有界，超时 1–300 秒。取消/超时尝试终止 Windows 进程树或 POSIX 进程组；主动脱离树的守护进程不保证清理。服务器后台任务仍使用现有任务管理接口，取消聊天不等于取消服务器任务。
 - 联网：Bing RSS 搜索，失败后尝试 DuckDuckGo HTML，无需搜索 API Key。免费服务可能超时、限流、返回验证码或低相关性结果，不能承诺覆盖完整。读取公开 HTTP(S) 文本，限制下载大小、超时及重定向；逐跳校验公网 DNS 并固定连接 IP。网页结果属于不可信资料，回答应附来源。暂不支持浏览器登录态、JavaScript 渲染页面和 PDF 正文解析。
-- Deep Agents 子 Agent：默认启用 general-purpose，继承同一机器范围、MCP 权限和只读规则，执行步骤共同记录。最多并发 3 个，本轮最多 12 次委派，禁止嵌套委派。Deep Agents 的委派限制不适用于 Codex 原生子 Agent。Codex 使用 CLI 原生命令和文件能力，服务器业务继续通过共享 MCP。Claude Code 与 OpenCode 的隔离方式见各引擎文档。
+- Deep Agents 子 Agent：默认启用 general-purpose，继承同一机器范围、MCP 权限和只读规则，执行步骤共同记录。最多并发 3 个，本轮最多 12 次委派，禁止嵌套委派。Deep Agents 的委派限制不适用于 Codex 原生子 Agent。Codex 使用 CLI 原生命令和文件能力，服务器业务继续通过共享 MCP。Claude Code、OpenCode 与 Antigravity 的隔离与审批方式见 [EXTERNAL-AGENTS.md](EXTERNAL-AGENTS.md)。
 - 外部 MCP：在输入框填写 name HTTP(S)URL，每行一个，最多 3 个 Streamable HTTP 服务、共 100 个工具。不加载本机 stdio 服务，不支持请求头凭据和交互登录。按需批准在连接前询问；配置的本机/内网服务属于用户明确选择的可信服务，和公开网页抓取的公网边界不同。工具逐次经过同一审批层，工具名使用 external_ 前缀，过长名称生成稳定哈希别名。只读声明由外部服务提供，配置前应确认可信。
 
 Codex 原生命令、文件变更和提权使用 CLI 协议审批，复用工作台批准卡片；结构化问题单独等待当前请求的答案。决定绑定当前 run、thread、turn 和 item，取消或重启后不自动执行。共享 MCP 审批保留原有业务语义。一次批准不意味着用户授予了整个 CLI 会话权限。

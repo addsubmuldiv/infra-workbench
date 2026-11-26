@@ -32,7 +32,8 @@
 先看 [AI 使用方式选择](GUIDE.md#选择-ai-使用方式)，再按需要阅读：
 
 - [模型接口配置](AGENT.md)：填写服务地址、密钥及模型，测试连接。
-- [本机 Codex](CODEX.md)、[Claude Code 与 OpenCode](EXTERNAL-AGENTS.md)：使用已安装并登录的 CLI。
+- [本机 Codex](CODEX.md)、[Claude Code、OpenCode 与 Antigravity](EXTERNAL-AGENTS.md)：使用已安装并登录的 CLI。
+- [助手权限与批准](AGENT-PERMISSIONS.md)：按需批准、完全访问与只读模式，以及本机文件、Shell 和外部 MCP 边界。
 - [用户技能](USER-SKILLS.md)：保存和复用固定流程。
 - [MCP 接入](MCP.md)：让外部 AI 客户端使用工作台能力。
 - [外部 Agent Skills](AGENT-SKILLS.md)：安装工作台提供的 Agent Skills。

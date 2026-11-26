@@ -41,7 +41,7 @@ Right-click a machine card, name, or device and select **Open terminal** or **Op
 
 ![Machine context menu](images/floating-menu-en.jpg)
 
-A directory link in the terminal can open a separate file window. **Open terminal in current directory** in the file toolbar opens another terminal in that directory while leaving the file window open. Use **Workbench ↗** or **Open workbench** to open the full workbench.
+A directory link in the terminal can open a separate file window. **Open terminal in current directory** in the file toolbar opens another terminal in that directory while leaving the file window open. Use **Workbench ↗** or **Open workbench** to open the full workbench; opening the workbench from a machine's context menu focuses directly on that machine in the overview.
 
 Closing a standalone terminal disconnects its ordinary SSH sessions and may end foreground tasks. Use persistent tmux sessions for long-running jobs. See the [English user guide](GUIDE.en.md#ssh-terminals-and-server-files) for terminal and file operations.
 
@@ -56,6 +56,6 @@ Closing a standalone terminal disconnects its ordinary SSH sessions and may end 
 
 The monitor does not lock or allocate devices. Availability alerts additionally check utilization, free memory, and continuous-idle duration, so an idle cell does not guarantee an alert has qualified.
 
-Updates follow the backend's 5 / 10 / 20 / 30-second interval. Stale or disconnected data is shown as unknown; hover details may retain the last sample with a stale-data notice. A shorter interval cannot guarantee immediate completion of remote collection.
+Updates follow the backend's 5 / 10 / 15 / 20 / 30-second interval. Stale or disconnected data is shown as unknown; hover details may retain the last sample with a stale-data notice. A shorter interval cannot guarantee immediate completion of remote collection.
 
 If visibility controls do not work, check that the tray backend is running. If menus are missing after an update, exit the tray and restart. Build and implementation details remain in the [Chinese desktop reference](DESKTOP.md).

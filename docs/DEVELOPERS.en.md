@@ -70,7 +70,7 @@ Start with `run_deep_agent` and `create_deep_agent` in [`backend/assistant/agent
 5. The shared MCP dispatcher routes requests to business services, which validate parameters, host scope, and paths before accessing SQLite or SSH.
 6. Tool records and text deltas return to the UI, and framework state is saved with the conversation. Restoration handles unfinished tool messages so interrupted operations are not automatically replayed.
 
-This describes the built-in model API engine. Local Codex, Claude Code, and OpenCode have their own CLI adapters; do not assume they all run through the same Deep Agents graph. See [CODEX.md](CODEX.md) and [EXTERNAL-AGENTS.md](EXTERNAL-AGENTS.md).
+This describes the built-in model API engine. Local Codex, Claude Code, OpenCode, and Antigravity have their own CLI adapters; do not assume they all run through the same Deep Agents graph. See [CODEX.md](CODEX.md) and [EXTERNAL-AGENTS.md](EXTERNAL-AGENTS.md).
 
 ### Framework capabilities and application boundaries
 
@@ -83,7 +83,7 @@ This describes the built-in model API engine. Local Codex, Claude Code, and Open
 | Conversation recovery | In-memory checkpoints plus application persistence of `deep_state` | Live connections are not persisted; cancellation or restart does not imply remote side effects were rolled back |
 | Cross-conversation memory | `backend/assistant/agent_memory.py` connects native memory middleware to restricted storage | Only the designated virtual memory file is available, isolated by model configuration and exact host scope. Never store credentials or treat historical host state as current fact |
 | File tools | `StateBackend` and related backends provide virtual files; memory uses a restricted storage adapter | Virtual `read_file` and remote `read_server_file` have different paths and permissions |
-| Subagents and shell | General-purpose subagents are disabled; remote commands use shared business tools | Framework support for shell or file writes is not a reason to expose arbitrary local execution |
+| Subagents and shell | Bounded `general-purpose` subagents are enabled (inheriting current permissions and host scope, max 3 concurrent / 12 per turn); local files/shell, public web tools, and remote business tools go through the run-bound permission controller (see [AGENT-PERMISSIONS.md](AGENT-PERMISSIONS.md)) | Do not bypass the permission controller for local execution, and do not expose local shell tools to external `/mcp` clients |
 | Prompt caching | A generic model adapter is used | Provider-specific caching is not guaranteed, and no cache savings ratio has been established |
 
 See [DEEPAGENTS.md](DEEPAGENTS.md) for more detail. When changing the integration, check the corresponding tests and the behavior of the pinned framework version rather than directly copying examples for another version.
@@ -160,7 +160,7 @@ In a PR, explain what changed, which use case it addresses, which checks you act
 ## 7. Business rules to preserve
 
 - Preserve unknown, missing, and stale resource states and sampling timestamps. Do not substitute zero values and report resources as idle. Reservations wait and notify; they do not lock devices or schedule tasks.
-- Enforce host scope, credential protection, and remote path checks in the backend, not solely through prompts or hidden UI buttons. Tools include writes and remote commands, with no separate per-operation human approval layer. Parameter validation does not replace user authorization.
+- Enforce host scope, credential protection, and remote path checks in the backend, not solely through prompts or hidden UI buttons. The built-in assistant applies per-run permission modes (`ask` / `full` / `read_only`), while external `/mcp` clients have no separate per-operation human approval layer. Parameter validation does not replace user authorization.
 - A write timeout or cancellation does not guarantee rollback. Read state back before retrying to avoid duplicate creation, repeated execution, or false success claims. An upload/download handoff is not a completed transfer.
 - Use shared workspace state for UI preferences. Do not persist runtime objects such as SSH connections, password inputs, or request controllers as preferences.
 - The demo must not connect to real SSH, models, or MCP, or write real workbench data. New features must preserve demo isolation.
