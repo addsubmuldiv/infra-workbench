@@ -17,6 +17,7 @@
 *.woff2 binary
 *.command text eol=lf
 *.sh text eol=lf
+.github/tools/macos/hdiutil text eol=lf
 desktop/src-tauri/tests/fixtures/updater/payload.bin binary
 # Generated bundles embed third-party template strings with intentional spaces.
 # Keep whitespace checks on sources without rewriting compiled string contents.

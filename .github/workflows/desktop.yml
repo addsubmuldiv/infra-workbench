@@ -84,7 +84,17 @@ jobs:
         working-directory: desktop
       - run: cargo test --locked
         working-directory: desktop/src-tauri
-      - run: npm run build
+      - name: Build on Windows
+        if: runner.os == 'Windows'
+        run: npm run build
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          IWB_UNSIGNED_BUILD: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+      - name: Build on macOS
+        if: runner.os == 'macOS'
+        run: PATH="$GITHUB_WORKSPACE/.github/tools/macos:$PATH" npm run build
         working-directory: desktop
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}

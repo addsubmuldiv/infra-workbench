@@ -1,0 +1,36 @@
+#!/bin/bash
+# Tauri's create-dmg script uses hdiutil from PATH. Retry only the two
+# operations known to hit a transient disk-image lock on hosted macOS runners.
+set -eu
+
+case "${1:-}" in
+  create|detach) ;;
+  *) exec /usr/bin/hdiutil "$@" ;;
+esac
+
+output=$(mktemp -d "${TMPDIR:-/tmp}/iwb-hdiutil.XXXXXXXX")
+trap 'rm -f "$output/stdout" "$output/stderr"; rmdir "$output"' EXIT
+delay=2
+
+for attempt in 1 2 3 4 5; do
+  if LC_ALL=C /usr/bin/hdiutil "$@" >"$output/stdout" 2>"$output/stderr"; then
+    cat "$output/stdout"
+    cat "$output/stderr" >&2
+    exit 0
+  else
+    status=$?
+  fi
+
+  if (( attempt == 5 )) ||
+    { [[ $1 != detach || $status -ne 16 ]] &&
+      ! grep -Fq 'Resource busy' "$output/stderr" "$output/stdout"; }; then
+    cat "$output/stdout"
+    cat "$output/stderr" >&2
+    exit "$status"
+  fi
+
+  cat "$output/stderr" >&2
+  printf 'hdiutil %s: disk image busy, retrying in %ss.\n' "$1" "$delay" >&2
+  sleep "$delay"
+  delay=$((delay * 2))
+done
