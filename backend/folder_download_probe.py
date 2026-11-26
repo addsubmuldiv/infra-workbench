@@ -1,17 +1,16 @@
-"""Standalone bounded ZIP packer, sent over SSH stdin; no remote installation."""
+"""Standalone ZIP packer, sent over SSH stdin; no remote installation."""
 import json
 import os
 import stat
 import sys
 import tempfile
+import time
 import zipfile
 
 
 
 # BEGIN GENERATED INTERNAL DEFAULTS
 # Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
-# 文件夹下载 ZIP 和源文件总量上限，单位：字节。
-MAX_SIZE = 536870912
 # 文件夹下载最多扫描/归档的条目数。
 MAX_ENTRIES = 10000
 
@@ -22,7 +21,7 @@ def format_bytes(value):
 
 # END GENERATED INTERNAL DEFAULTS
 
-def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
+def build_archive(path,target,max_entries=MAX_ENTRIES,on_progress=None):
     path=os.path.abspath(os.path.expanduser(path))
     if os.path.islink(path):raise ValueError('不支持下载符号链接目录，请选择实际目录')
     # Linux uses directory descriptors and O_NOFOLLOW throughout the walk. A
@@ -30,7 +29,7 @@ def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
     anchored=os.open in os.supports_dir_fd and os.scandir in os.supports_fd
     flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0)
     root_fd=os.open(path,flags|getattr(os,'O_DIRECTORY',0)) if anchored else None
-    count=0;seen=1;total=0;skipped=0
+    count=0;seen=1;skipped=0
     def safe_name(name):
         if name in ('.','..') or any(c in name for c in '\\/:\0\r\n'):
             raise ValueError('目录包含无法安全打包的文件名，请重命名后重试')
@@ -46,7 +45,7 @@ def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
         root=safe_name(os.path.basename(path) or 'root')
         with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_STORED,allowZip64=True) as archive:
             def visit(directory,fd,arcpath,depth):
-                nonlocal count,seen,total,skipped
+                nonlocal count,seen,skipped
                 if depth>64:raise ValueError('目录层级超过 64 层，请选择更具体的子目录')
                 before_dir=directory_info(directory,fd)
                 count+=1
@@ -60,6 +59,7 @@ def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
                         if seen>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
                         entries.append(entry)
                 for entry in sorted(entries,key=lambda item:item.name):
+                    if on_progress:on_progress()
                     info=entry.stat(follow_symlinks=False) if anchored else os.stat(entry.path,follow_symlinks=False)
                     if stat.S_ISLNK(info.st_mode) or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
                         count+=1;skipped+=1;continue
@@ -75,23 +75,20 @@ def build_archive(path,target,max_size=MAX_SIZE,max_entries=MAX_ENTRIES):
                             count+=1
                             if count>max_entries:raise ValueError(f'文件夹超过 {max_entries} 项，请选择更具体的子目录')
                             if not stat.S_ISREG(before.st_mode):raise ValueError('只能打包普通文件')
-                            total+=before.st_size
-                            if total>max_size:raise ValueError(f'文件夹内容超过 {format_bytes(max_size)}，请选择更小的子目录')
                             remaining=before.st_size
-                            with archive.open(arcpath+'/'+name,'w') as output:
+                            member=zipfile.ZipInfo(arcpath+'/'+name);member.file_size=remaining
+                            with archive.open(member,'w') as output:
                                 while remaining:
                                     block=os.read(child,min(128*1024,remaining))
                                     if not block:raise ValueError('打包期间文件缩短，请重试')
                                     output.write(block);remaining-=len(block)
+                                    if on_progress:on_progress()
                             if signature(before)!=signature(os.fstat(child)):raise ValueError('打包期间文件发生变化，请重试')
                     finally:
                         if child is not None:os.close(child)
-                    if target.tell()>max_size:raise ValueError(f'ZIP 超过 {format_bytes(max_size)}，请选择更小的子目录')
                 if signature(before_dir)!=signature(directory_info(directory,fd)):raise ValueError('打包期间目录发生变化，请重试')
             visit(path,root_fd,root,0)
-        size=target.tell()
-        if size>max_size:raise ValueError(f'ZIP 超过 {format_bytes(max_size)}，请选择更小的子目录')
-        return dict(size=size,skipped=skipped)
+        return dict(size=target.tell(),skipped=skipped)
     finally:
         if root_fd is not None:os.close(root_fd)
 
@@ -100,9 +97,16 @@ def main(request):
     # Pack fully before sending the success header, so failures cannot become a
     # seemingly successful but incomplete browser download. TemporaryFile is
     # removed automatically on completion, failure or process termination.
+    next_update=time.monotonic()+15
+    def progress():
+        nonlocal next_update
+        now=time.monotonic()
+        if now>=next_update:
+            sys.stdout.buffer.write(b'IWB_PACKING\n');sys.stdout.buffer.flush()
+            next_update=now+15
     with tempfile.TemporaryFile(mode='w+b') as target:
         try:
-            result=build_archive(request['path'],target)
+            result=build_archive(request['path'],target,on_progress=progress)
         except PermissionError:result=dict(error='当前 SSH 账号没有读取文件夹中部分内容的权限')
         except FileNotFoundError:result=dict(error='文件夹或其中的文件已不存在，请刷新后重试')
         except ValueError as exc:result=dict(error=str(exc))

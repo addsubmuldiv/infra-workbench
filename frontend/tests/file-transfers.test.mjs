@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sendUpload,uploadFile} from '../src/fileTransfers.ts';
+import {prepareFileDownload,sendUpload,uploadFile} from '../src/fileTransfers.ts';
 import {downloadOriginalLog} from '../src/logDownload.ts';
 import {searchFiles} from '../src/files.ts';
 
@@ -45,6 +45,19 @@ test('downloads report byte progress while preserving original binary data',asyn
 test('folder downloads preserve ZIP filename and skipped-entry details',async()=>{
   const result=await downloadOriginalLog({host_id:'h',path:'/data/folder'},async()=>new Response('zip-bytes',{headers:{'Content-Disposition':"attachment; filename*=UTF-8''folder.zip",'X-IWB-Skipped-Entries':'2'}}),'/api/files/download-folder');
   assert.equal(result.filename,'folder.zip');assert.equal(result.skipped,2);
+});
+
+test('large file and folder downloads hand off a local URL without buffering the file in the page',async()=>{
+  const size=3*1024**3,ticket='a'.repeat(43),id='test-prepared-download';
+  for(const folder of [false,true]){
+    const filename=folder?'project.zip':'checkpoint.bin',skipped=folder?2:0;
+    const result=await prepareFileDownload('host','/tmp/data',id,folder,new AbortController().signal,async(url,options)=>{
+      assert.equal(url,folder?'/api/files/download-folder':'/api/files/download');
+      assert.deepEqual(JSON.parse(options.body),{host_id:'host',path:'/tmp/data',transfer_id:id,delivery:'browser'});
+      return Response.json({ticket,filename,size,skipped});
+    });
+    assert.deepEqual(result,{url:`/api/files/downloads/${id}/content/${ticket}`,filename,size,skipped});
+  }
 });
 test('search defaults to indexed-first and explicit real-time search bypasses it',async()=>{
   let body;

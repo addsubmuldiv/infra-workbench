@@ -1,23 +1,9 @@
-"""Receive one bounded binary upload, verify it, publish without overwriting."""
+"""Receive one binary upload, verify it, publish without overwriting."""
 import hashlib
 import json
 import os
 import sys
 import tempfile
-
-
-
-# BEGIN GENERATED INTERNAL DEFAULTS
-# Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
-# 单个文件上传上限，单位：字节；后台、客户端和远端接收探针共用。
-MAX_UPLOAD = 536870912
-
-def format_bytes(value):
-    for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
-        if value >= size and value % size == 0: return str(value // size) + " " + unit
-    return str(value) + " B"
-
-# END GENERATED INTERNAL DEFAULTS
 
 def receive(stream,ready=None):
     line=stream.readline(16385)
@@ -26,7 +12,7 @@ def receive(stream,ready=None):
     directory,name,size,digest=info['directory'],info['name'],info['size'],info['sha256']
     if (not isinstance(directory,str) or not directory or len(directory)>4096 or any(c in directory for c in '\0\r\n')
             or not isinstance(name,str) or not name or name in ('.','..') or len(name.encode('utf-8'))>255
-            or any(c in name for c in '/\\\0\r\n') or type(size) is not int or not 0<=size<=MAX_UPLOAD
+            or any(c in name for c in '/\\\0\r\n') or type(size) is not int or size<0
             or not isinstance(digest,str) or len(digest)!=64):
         raise ValueError('上传目标或文件大小无效')
     directory=os.path.realpath(os.path.expanduser(directory))

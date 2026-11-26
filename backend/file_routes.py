@@ -1,4 +1,4 @@
-from .internal_defaults import FILES_TEXT_EDIT_MAX_BYTES, FILES_COPY_MAX_BYTES, FILES_FOLDER_UPLOAD_MAX_BYTES
+from .internal_defaults import FILES_TEXT_EDIT_MAX_BYTES, FILES_COPY_MAX_BYTES
 import asyncio
 import json
 from pathlib import Path
@@ -9,7 +9,7 @@ from pydantic import Field,field_validator,model_validator
 
 from .log_routes import LogLocation
 from .log_download import original_log_response
-from .file_transfers import FileTransfers,MAX_UPLOAD
+from .file_transfers import FileTransfers
 from .ssh_accounts import resolve_ssh_account
 
 
@@ -26,13 +26,7 @@ class SearchRequest(LogLocation):
 class UploadRequest(LogLocation):
     kind:Literal['file','folder']='file'
     name:str=Field(min_length=1,max_length=255)
-    size:int=Field(ge=0,le=max(MAX_UPLOAD,FILES_FOLDER_UPLOAD_MAX_BYTES))
-
-    @model_validator(mode='after')
-    def size_limit(self):
-        limit = FILES_FOLDER_UPLOAD_MAX_BYTES if self.kind == 'folder' else MAX_UPLOAD
-        if self.size > limit: raise ValueError(f'上传内容不能超过 {limit} 字节')
-        return self
+    size:int=Field(ge=0,strict=True)
 
     @field_validator('name')
     @classmethod
@@ -44,6 +38,12 @@ class UploadRequest(LogLocation):
 
 class DownloadRequest(LogLocation):
     transfer_id:str|None=Field(default=None,min_length=16,max_length=64,pattern=r'^[a-zA-Z0-9-]+$')
+    delivery:Literal['response','browser']='response'
+
+    @model_validator(mode='after')
+    def validate_delivery(self):
+        if self.delivery=='browser' and self.transfer_id is None:raise ValueError('浏览器下载需要传输标识')
+        return self
 
 
 class FileOperation(LogLocation):
@@ -68,8 +68,8 @@ def register_file_routes(app,ssh,find):
 
     @app.get('/api/files/capabilities')
     async def capabilities():
-        return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,folder_download=True,folder_upload=True,
-                    operations=['read','save','copy','move','mkdir','create'],text_limit=FILES_TEXT_EDIT_MAX_BYTES,copy_limit=FILES_COPY_MAX_BYTES,upload_limit=MAX_UPLOAD)
+        return dict(editing=True,upload=True,search=True,terminal_cwd=True,transfer_progress=True,folder_download=True,folder_upload=True,browser_download=True,
+                    operations=['read','save','copy','move','mkdir','create'],text_limit=FILES_TEXT_EDIT_MAX_BYTES,copy_limit=FILES_COPY_MAX_BYTES,upload_limit=None)
 
     @app.post('/api/files/search')
     async def search(body:SearchRequest, ssh_account_id: str | None = None):
@@ -111,11 +111,14 @@ def register_file_routes(app,ssh,find):
 
     @app.delete('/api/files/downloads/{transfer_id}')
     async def download_cancel(transfer_id:str):
-        job=transfers.downloads.get(transfer_id)
-        if job and job['status']=='receiving':
-            job['status']='cancelled';task=job.get('task')
-            if task and not task.done(): task.cancel()
+        transfers.cancel_download(transfer_id)
         return {'ok':True}
+
+    @app.get('/api/files/downloads/{transfer_id}/content/{ticket}')
+    async def download_content(transfer_id:str,ticket:str,request:Request):
+        if request.headers.get('sec-fetch-site') not in (None,'none','same-origin'):
+            raise HTTPException(403,'仅允许本机页面下载')
+        return transfers.claim_download(transfer_id,ticket)
 
     @app.post('/api/files/operation')
     async def operation(body:FileOperation,request:Request=None, ssh_account_id: str | None = None):
@@ -167,35 +170,33 @@ def perform(request):
         except ValueError as exc: raise HTTPException(400,str(exc)) from None
         except Exception: raise HTTPException(400,'文件浏览失败，请检查 SSH 连接和远端 Python3') from None
 
+    async def file_download(body,request,ssh_account_id,folder=False):
+        host=resolve_ssh_account(find(body.host_id),ssh_account_id)
+        key=getattr(body,'transfer_id',None)
+        browser=getattr(body,'delivery','response')=='browser'
+        options={'folder':True} if folder else {}
+        label='文件夹' if folder else '文件'
+        if not key:
+            async with downloads:return await original_log_response(ssh,host,body.path,request,label=label,**options)
+        job,progress=transfers.begin_download(key)
+        if browser:options['prepare_only']=True
+        try:
+            async with downloads:
+                response=await original_log_response(ssh,host,body.path,request,label=label,on_progress=progress,**options)
+            if browser:return transfers.stage_download(job,response)
+            job.update(status='remote_done',task=None)
+            return response
+        except asyncio.CancelledError:
+            job.update(status='cancelled',error=label+'下载已取消',task=None)
+            raise
+        except Exception:
+            job.update(status='error',error=label+'下载失败',task=None)
+            raise
+
     @app.post('/api/files/download')
     async def download(body:DownloadRequest,request:Request, ssh_account_id: str | None = None):
-        host=resolve_ssh_account(find(body.host_id), ssh_account_id)
-        async with downloads:
-            key=getattr(body,'transfer_id',None)
-            if not key: return await original_log_response(ssh,host,body.path,request,label='文件')
-            job,progress=transfers.begin_download(key)
-            try:
-                response=await original_log_response(ssh,host,body.path,request,label='文件',on_progress=progress)
-                job['status']='remote_done'
-                return response
-            except BaseException as exc:
-                job.update(status='error',error='下载失败或已取消')
-                raise
+        return await file_download(body,request,ssh_account_id)
 
     @app.post('/api/files/download-folder')
     async def download_folder(body:DownloadRequest,request:Request, ssh_account_id: str | None = None):
-        host=resolve_ssh_account(find(body.host_id), ssh_account_id)
-        async with downloads:
-            job=None
-            try:
-                if body.transfer_id:job,progress=transfers.begin_download(body.transfer_id)
-                else:progress=None
-                response=await original_log_response(ssh,host,body.path,request,label='文件夹',on_progress=progress,folder=True)
-                if job:job.update(status='remote_done',task=None)
-                return response
-            except asyncio.CancelledError:
-                if job:job.update(status='cancelled',error='文件夹下载已取消',task=None)
-                raise
-            except Exception:
-                if job:job.update(status='error',error='文件夹下载失败或已取消',task=None)
-                raise
+        return await file_download(body,request,ssh_account_id,folder=True)

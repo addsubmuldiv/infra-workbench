@@ -11,22 +11,14 @@ ASSISTANT_METADATA_TIMEOUT_SECONDS = 8
 FILES_COPY_MAX_BYTES = 67108864
 # 单次复制最多包含的文件和目录数。
 FILES_COPY_MAX_ENTRIES = 1000
-# 普通文件下载上限，单位：字节；与日志下载分别维护。
-FILES_DOWNLOAD_MAX_BYTES = 536870912
-# 文件夹下载 ZIP 和源文件总量上限，单位：字节。
-FILES_FOLDER_DOWNLOAD_MAX_BYTES = 536870912
 # 文件夹下载最多扫描/归档的条目数。
 FILES_FOLDER_DOWNLOAD_MAX_ENTRIES = 10000
 # 文件夹清单的 UTF-8 大小上限，单位：字节。
 FILES_FOLDER_MANIFEST_MAX_BYTES = 1048576
-# 文件夹上传包总大小上限，单位：字节；包含清单和文件内容。
-FILES_FOLDER_UPLOAD_MAX_BYTES = 536870912
 # 文件夹上传最多包含的文件和目录数，隐式父目录也计数。
 FILES_FOLDER_UPLOAD_MAX_ENTRIES = 10000
 # 在线文本编辑和保存上限，单位：字节；超过后使用下载或终端。
 FILES_TEXT_EDIT_MAX_BYTES = 1048576
-# 单个文件上传上限，单位：字节；后台、客户端和远端接收探针共用。
-FILES_UPLOAD_MAX_BYTES = 536870912
 # 资源变化事件最多保留条数。
 HISTORY_CHANGES_MAX_EVENTS = 10000
 # 资源变化事件保留天数；不改变资源新鲜度规则。
@@ -81,7 +73,7 @@ TRANSFERS_CONCURRENCY = 2
 TRANSFERS_IDLE_EXPIRY_SECONDS = 600
 # 最多保留的上传任务数；优先回收已完成任务。
 TRANSFERS_MAX_JOBS = 32
-# 上传发送与远端验证阶段预算，单位：秒。
+# 上传无进展超时，单位：秒。持续传输会重置计时。
 TRANSFERS_SEND_TIMEOUT_SECONDS = 600
 # 未达到加星提示门槛时，重新检查资源历史的间隔，单位：毫秒。
 UI_GITHUB_STAR_HISTORY_POLL_MS = 300000

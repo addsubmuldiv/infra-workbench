@@ -28,11 +28,16 @@ test('directory handle includes empty directories and respects cancellation whil
   const controller=new AbortController();controller.abort();await assert.rejects(readFolder(root,controller.signal),{name:'AbortError'});
 });
 
-test('mixed roots, traversal, duplicate files, file-parent conflicts and oversized folders are rejected before sending',()=>{
+test('mixed roots, traversal, duplicate files and file-parent conflicts are rejected before sending',()=>{
   for(const files of [[file('a/x'),file('b/y')],[file('a/../escape')],[file('a/x'),file('a/x')],[file('a/x'),file('a/x/y')]])
     assert.throws(()=>folderPayload(folderFromFiles(files)));
-  const huge=file('a/b');Object.defineProperty(huge,'size',{value:512*1024*1024});
-  assert.throws(()=>folderPayload(folderFromFiles([huge])),/512 MiB/);
+});
+
+test('the folder manifest describes files larger than the previous size cap',async()=>{
+  const large=file('a/b'),bytes=3*1024**3;
+  Object.defineProperty(large,'size',{value:bytes});
+  const payload=await folderPayload(folderFromFiles([large])).text();
+  assert.equal(JSON.parse(payload.split('\n')[1]).files[0].size,bytes);
 });
 
 test('folder upload shares progress, verifies remote completion and cancels the whole batch',async()=>{

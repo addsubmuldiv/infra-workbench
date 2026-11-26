@@ -1,8 +1,8 @@
 from .internal_defaults import TRANSFERS_CONCURRENCY, TRANSFERS_IDLE_EXPIRY_SECONDS, TRANSFERS_MAX_JOBS, TRANSFERS_SEND_TIMEOUT_SECONDS
-from .internal_defaults import FILES_UPLOAD_MAX_BYTES, FILES_FOLDER_UPLOAD_MAX_BYTES
-"""Ephemeral transfers with bounded spooling, cancellation and real SSH progress."""
+"""Ephemeral transfers with disk spooling, cancellation and real SSH progress."""
 import asyncio
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -16,9 +16,6 @@ from pathlib import Path
 from fastapi import HTTPException
 from .ssh_accounts import ssh_account_key
 
-MAX_UPLOAD=FILES_UPLOAD_MAX_BYTES
-
-
 class FileTransfers:
     def __init__(self,ssh):
         self.ssh=ssh;self.uploads={};self.downloads={};self.slots=asyncio.Semaphore(TRANSFERS_CONCURRENCY)
@@ -28,12 +25,12 @@ class FileTransfers:
         for mapping in (self.uploads,self.downloads):
             for key,job in list(mapping.items()):
                 if now-job['touched']>TRANSFERS_IDLE_EXPIRY_SECONDS and job['status'] not in ('receiving','sending','verifying'):
+                    if job['status']=='ready':self.discard_download(job)
                     mapping.pop(key)
 
     def create(self,host,directory,name,size,kind='file'):
         self.prune()
-        limit = FILES_FOLDER_UPLOAD_MAX_BYTES if kind == 'folder' else MAX_UPLOAD
-        if type(size) is not int or not 0 <= size <= limit: raise HTTPException(400,f'上传内容不能超过 {limit} 字节')
+        if type(size) is not int or size<0: raise HTTPException(400,'上传内容大小无效')
         if len(self.uploads)>=TRANSFERS_MAX_JOBS:
             finished=[(key,job) for key,job in self.uploads.items() if job['status'] in ('done','error','cancelled') and job.get('task') is None]
             if finished: self.uploads.pop(min(finished,key=lambda pair:pair[1]['touched'])[0])
@@ -58,18 +55,20 @@ class FileTransfers:
         length=request.headers.get('content-length')
         if length and (not length.isdigit() or int(length)!=job['total']): raise HTTPException(400,'上传长度与文件信息不一致')
         job.update(status='receiving',task=asyncio.current_task())
-        target=tempfile.TemporaryFile(mode='w+b')
-        handed_off=False
+        target=None;handed_off=False
         try:
             async with self.slots:
-                hasher=hashlib.sha256()
-                async for block in request.stream():
-                    if job['cancelled']: raise ValueError('上传已取消')
-                    job['received']+=len(block)
-                    if job['received']>job['total']: raise ValueError('上传长度超出声明值')
-                    hasher.update(block)
-                    await asyncio.to_thread(target.write,block)
-                    job['touched']=time.monotonic()
+                target=tempfile.TemporaryFile(mode='w+b');hasher=hashlib.sha256()
+                loop=asyncio.get_running_loop()
+                async with asyncio.timeout(TRANSFERS_SEND_TIMEOUT_SECONDS) as idle:
+                    async for block in request.stream():
+                        if job['cancelled']: raise ValueError('上传已取消')
+                        job['received']+=len(block)
+                        if job['received']>job['total']: raise ValueError('上传长度超出声明值')
+                        hasher.update(block)
+                        await asyncio.to_thread(target.write,block)
+                        job['touched']=time.monotonic()
+                        if block:idle.reschedule(loop.time()+TRANSFERS_SEND_TIMEOUT_SECONDS)
                 if job['received']!=job['total']: raise ValueError('上传内容不完整')
                 target.seek(0)
                 job.update(status='sending',sha256=hasher.hexdigest(),task=asyncio.create_task(self.send(job,target)))
@@ -78,17 +77,24 @@ class FileTransfers:
         except asyncio.CancelledError:
             job.update(status='cancelled',error='上传已取消');raise
         except Exception as exc:
-            job.update(status='error',error=str(exc) if isinstance(exc,ValueError) else '上传中断，未发送到远端')
+            if isinstance(exc,ValueError):message=str(exc)
+            elif isinstance(exc,TimeoutError):message='上传长时间没有进展，未发送到远端'
+            elif isinstance(exc,OSError) and exc.errno in (errno.ENOSPC,errno.EDQUOT):message='本地临时磁盘空间不足，未发送到远端'
+            else:message='上传中断，未发送到远端'
+            job.update(status='error',error=message)
             raise HTTPException(400,job['error']) from None
         finally:
-            if not handed_off: target.close();job['task']=None
+            if not handed_off:
+                if target is not None:target.close()
+                job['task']=None
 
     async def send(self,job,target):
         process=None;error_task=None;cached=False
         async def discard(reader):
             while await reader.read(8192): pass
         try:
-            async with self.slots,asyncio.timeout(TRANSFERS_SEND_TIMEOUT_SECONDS):
+            loop=asyncio.get_running_loop()
+            async with self.slots,asyncio.timeout(TRANSFERS_SEND_TIMEOUT_SECONDS) as idle:
                 if job['cancelled']: raise asyncio.CancelledError()
                 source=Path(__file__).with_name('folder_upload_probe.py' if job.get('kind')=='folder' else 'file_upload_probe.py').read_text(encoding='utf-8')
                 command='python3 -u -c '+shlex.quote(source)
@@ -120,6 +126,7 @@ class FileTransfers:
                 while block:=await asyncio.to_thread(target.read,128*1024):
                     process.stdin.write(block);await process.stdin.drain()
                     job['sent']+=len(block);job['touched']=time.monotonic()
+                    idle.reschedule(loop.time()+TRANSFERS_SEND_TIMEOUT_SECONDS)
                 job['status']='verifying'
                 if cached: process.stdin.write_eof()
                 else: process.stdin.close()
@@ -171,14 +178,48 @@ class FileTransfers:
             task=job.get('task')
             if task and not task.done(): task.cancel();tasks.append(task)
         await asyncio.gather(*tasks,return_exceptions=True)
+        for job in self.downloads.values():self.discard_download(job)
 
     def begin_download(self,key):
         self.prune()
         if len(self.downloads)>=64:
-            finished=[(item,job) for item,job in self.downloads.items() if job['status']!='receiving']
+            finished=[(item,job) for item,job in self.downloads.items() if job['status'] not in ('receiving','ready')]
             if finished: self.downloads.pop(min(finished,key=lambda pair:pair[1]['touched'])[0])
         if key in self.downloads or len(self.downloads)>=64: raise HTTPException(409,'下载任务标识重复或下载请求过多')
         job=dict(id=key,total=None,received=0,status='receiving',touched=time.monotonic(),task=asyncio.current_task(),error=None)
         self.downloads[key]=job
         def progress(received,total): job.update(received=received,total=total,touched=time.monotonic())
         return job,progress
+
+    @staticmethod
+    def discard_download(job):
+        expiry=job.pop('expiry',None)
+        if expiry is not None:expiry.cancel()
+        prepared=job.pop('prepared',None)
+        if prepared is not None:prepared.target.close()
+
+    def stage_download(self,job,prepared):
+        ticket=secrets.token_urlsafe(32)
+        def expire():
+            self.discard_download(job)
+            job.update(status='error',error='下载已过期，请重新下载')
+        expiry=asyncio.get_running_loop().call_later(TRANSFERS_IDLE_EXPIRY_SECONDS,expire)
+        job.update(status='ready',task=None,prepared=prepared,ticket=ticket,expiry=expiry,touched=time.monotonic())
+        return dict(ticket=ticket,size=prepared.size,filename=prepared.filename,skipped=prepared.skipped)
+
+    def claim_download(self,key,ticket):
+        self.prune()
+        job=self.downloads.get(key)
+        if not job or job['status']!='ready' or not secrets.compare_digest(job['ticket'].encode(),ticket.encode()):
+            raise HTTPException(404,'下载不存在、已过期或已领取')
+        prepared=job.pop('prepared');job.pop('expiry').cancel()
+        job.update(status='remote_done',touched=time.monotonic())
+        return prepared.response()
+
+    def cancel_download(self,key):
+        job=self.downloads.get(key)
+        if job and job['status'] in ('receiving','ready'):
+            job.update(status='cancelled',touched=time.monotonic())
+            self.discard_download(job)
+            task=job.get('task')
+            if task and not task.done():task.cancel()

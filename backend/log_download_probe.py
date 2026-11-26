@@ -10,8 +10,6 @@ from pathlib import Path
 # Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
 # 原始训练日志下载上限，单位：字节。
 MAX_DOWNLOAD = 536870912
-# 普通文件下载上限，单位：字节；与日志下载分别维护。
-MAX_FILE_DOWNLOAD = 536870912
 
 def format_bytes(value):
     for unit, size in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
@@ -25,7 +23,7 @@ def send_header(value):
     sys.stdout.buffer.flush()
 
 
-def main(request):
+def main(request,max_bytes=MAX_DOWNLOAD):
     fd=None
     def reject(message):
         if fd is not None: os.close(fd)
@@ -36,13 +34,16 @@ def main(request):
         fd=os.open(path,os.O_RDONLY|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0))
         before=os.fstat(fd)
         if not stat.S_ISREG(before.st_mode): raise ValueError('只能下载普通日志文件')
-        if before.st_size>MAX_DOWNLOAD: raise ValueError(f'原始日志超过 {format_bytes(MAX_DOWNLOAD)}，请使用 SSH 文件工具下载')
+        if max_bytes is not None and before.st_size>max_bytes:
+            reject(f'原始日志超过 {format_bytes(max_bytes)}，请使用 SSH 文件工具下载');return
     except FileNotFoundError:
         reject('找不到远端日志，请确认机器和文件路径');return
     except PermissionError:
         reject('当前 SSH 账号没有读取此日志的权限');return
-    except (OSError,ValueError):
-        reject(f'文件不可下载：请选择不超过 {format_bytes(MAX_DOWNLOAD)} 的普通日志文件');return
+    except ValueError as exc:
+        reject(str(exc));return
+    except OSError:
+        reject('文件不可下载，请检查日志路径和权限');return
     try:
         send_header(dict(ok=True,size=before.st_size))
         remaining=before.st_size

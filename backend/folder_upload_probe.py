@@ -1,4 +1,4 @@
-"""Receive a bounded folder bundle, verify it, then publish without overwriting."""
+"""Receive a folder bundle, verify it, then publish without overwriting."""
 import ctypes
 import errno
 import hashlib
@@ -12,8 +12,6 @@ import tempfile
 
 # BEGIN GENERATED INTERNAL DEFAULTS
 # Generated from config/internal-defaults.jsonc. DO NOT EDIT. Run node scripts/generate-internal-defaults.mjs
-# 文件夹上传包总大小上限，单位：字节；包含清单和文件内容。
-MAX_UPLOAD = 536870912
 # 文件夹清单的 UTF-8 大小上限，单位：字节。
 MAX_MANIFEST = 1048576
 # 文件夹上传最多包含的文件和目录数，隐式父目录也计数。
@@ -59,14 +57,13 @@ def validate_manifest(value):
     files,folders=value.get('files'),value.get('directories')
     if not isinstance(files,list) or not isinstance(folders,list) or len(files)+len(folders)>MAX_ENTRIES:
         raise ValueError(f'文件夹最多支持 {MAX_ENTRIES} 项')
-    file_paths=set();directories=set();total=0
+    file_paths=set();directories=set()
     for file in files:
-        if not isinstance(file,dict) or type(file.get('size')) is not int or not 0<=file['size']<=MAX_UPLOAD:
+        if not isinstance(file,dict) or type(file.get('size')) is not int or file['size']<0:
             raise ValueError('文件大小无效')
         path=relative_path(file.get('path'))
         if path in file_paths:raise ValueError('文件夹清单包含重复文件')
-        file_paths.add(path);total+=file['size']
-    if total>MAX_UPLOAD:raise ValueError(f'文件夹总大小不能超过 {format_bytes(MAX_UPLOAD)}')
+        file_paths.add(path)
     for folder in folders:
         path=relative_path(folder)
         if path in directories:raise ValueError('文件夹清单包含重复目录')
@@ -87,7 +84,7 @@ def receive(stream,ready=None):
     info=json.loads(line);directory,name,size,digest=info['directory'],info['name'],info['size'],info['sha256']
     if (not isinstance(directory,str) or not directory or len(directory)>4096 or any(c in directory for c in '\0\r\n')
         or not isinstance(name,str) or not name or name in ('.','..') or len(name.encode('utf-8'))>255 or any(c in name for c in '/\\\0\r\n:')
-        or type(size) is not int or not 0<=size<=MAX_UPLOAD or not isinstance(digest,str) or len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest)):
+        or type(size) is not int or size<0 or not isinstance(digest,str) or len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest)):
         raise ValueError('文件夹上传目标或大小无效')
     directory=os.path.realpath(os.path.expanduser(directory));destination=os.path.join(directory,name)
     if not os.path.isdir(directory):raise FileNotFoundError(directory)
@@ -101,6 +98,7 @@ def receive(stream,ready=None):
         return value
     if read_line(32)!=b'IWB_FOLDER:1\n':raise ValueError('文件夹上传格式无效')
     manifest=json.loads(read_line(MAX_MANIFEST+1));files,folders=validate_manifest(manifest)
+    if sum(file['size'] for file in files)!=size-received:raise ValueError('文件夹长度与清单不匹配')
     staging=tempfile.mkdtemp(prefix='.iwb-folder-upload-',dir=directory)
     try:
         for folder in folders:os.makedirs(os.path.join(staging,*folder.split('/')),exist_ok=True)

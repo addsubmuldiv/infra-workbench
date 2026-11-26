@@ -32,10 +32,18 @@ def test_folder_archive_preserves_tree_hidden_empty_unicode_and_binary(tmp_path)
 
 def test_folder_archive_bounds_and_invalid_paths_fail_without_success(tmp_path):
     folder=tmp_path/'data';folder.mkdir();(folder/'a').write_bytes(b'x'*32)
-    for kwargs,reason in [({'max_size':16},'16 B'),({'max_entries':1},'项')]:
-        with pytest.raises(ValueError,match=reason):build_archive(str(folder),io.BytesIO(),**kwargs)
+    with pytest.raises(ValueError,match='项'):build_archive(str(folder),io.BytesIO(),max_entries=1)
     with pytest.raises((NotADirectoryError,ValueError)):build_archive(str(folder/'a'),io.BytesIO())
     with pytest.raises(FileNotFoundError):build_archive(str(folder/'missing'),io.BytesIO())
+
+
+def test_zip64_is_selected_from_the_member_size_before_writing(tmp_path,monkeypatch):
+    monkeypatch.setattr(zipfile,'ZIP64_LIMIT',512)
+    folder=tmp_path/'data';folder.mkdir();raw=b'x'*1024;(folder/'large').write_bytes(raw)
+    target=io.BytesIO();build_archive(str(folder),target)
+    with zipfile.ZipFile(target) as archive:
+        assert archive.getinfo('data/large').extract_version>=45
+        assert archive.read('data/large')==raw
 
 
 def test_folder_archive_skips_links_without_reading_external_targets(tmp_path):
@@ -130,6 +138,30 @@ def test_folder_download_over_real_ssh_supports_native_and_cached_sessions(tmp_p
                     if cached:assert not connection.is_closed()
                 bad=await client.post('/api/files/download-folder',headers={'X-IWB':'1'},json=dict(host_id='folder',path=str(folder/'missing')))
                 assert bad.status_code==400 and bad.headers['content-type'].startswith('application/json')
+                for endpoint,path in [('/api/files/download-folder',folder),('/api/files/download',folder/'raw.bin')]:
+                    headers={'X-IWB':'1'}
+                    key='download-browser-'+path.name.replace('.','-')
+                    body=dict(host_id='folder',path=str(path),transfer_id=key,delivery='browser')
+                    prepared=await client.post(endpoint,headers=headers,json=body)
+                    assert prepared.status_code==200,prepared.text
+                    data=prepared.json();url=f'/api/files/downloads/{key}/content/{data["ticket"]}'
+                    assert (await client.get(f'/api/files/downloads/{key}')).json()['status']=='ready'
+                    staged=app.state.file_transfers.downloads[key]['prepared']
+                    assert (await client.get(url+'invalid')).status_code==404
+                    assert (await client.get(url,headers={'Sec-Fetch-Site':'same-site'})).status_code==403
+                    fetched=await client.get(url,headers={'Sec-Fetch-Site':'same-origin'})
+                    assert fetched.status_code==200 and len(fetched.content)==data['size'] and staged.target.closed
+                    if path.is_dir():
+                        with zipfile.ZipFile(io.BytesIO(fetched.content)) as archive:assert archive.read(folder.name+'/raw.bin')==b'\0\xff\r\n'
+                    else:assert fetched.content==b'\0\xff\r\n'
+                    assert (await client.get(url)).status_code==404
+                key='download-browser-cancel'
+                prepared=await client.post('/api/files/download',headers=headers,json=dict(host_id='folder',path=str(folder/'raw.bin'),transfer_id=key,delivery='browser'))
+                assert prepared.status_code==200,prepared.text
+                staged=app.state.file_transfers.downloads[key]['prepared']
+                await client.delete(f'/api/files/downloads/{key}',headers=headers)
+                assert staged.target.closed
+                assert (await client.get(f'/api/files/downloads/{key}/content/{prepared.json()["ticket"]}')).status_code==404
         finally:
             await app.state.ssh.close();listener.close();await listener.wait_closed()
     asyncio.run(scenario())

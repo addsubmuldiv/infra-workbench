@@ -1,9 +1,9 @@
-import {FILES_FOLDER_UPLOAD_MAX_BYTES,FILES_FOLDER_UPLOAD_MAX_ENTRIES,FILES_FOLDER_MANIFEST_MAX_BYTES} from './internalDefaults.ts';
-import {capacityError,formatBytes} from './internalPolicy.ts';
+import {FILES_FOLDER_UPLOAD_MAX_ENTRIES,FILES_FOLDER_MANIFEST_MAX_BYTES} from './internalDefaults.ts';
+import {capacityError} from './internalPolicy.ts';
 import {toolText as tt} from './toolI18n.ts';
 export type FolderHandle={kind:'directory';name:string;entries:()=>AsyncIterable<[string,FolderHandle|{kind:'file';name:string;getFile:()=>Promise<File>}]>};
 export type FolderSelection={name:string;files:{path:string;file:File}[];directories:string[];preservesEmpty:boolean};
-const MAX_BYTES=FILES_FOLDER_UPLOAD_MAX_BYTES,MAX_ENTRIES=FILES_FOLDER_UPLOAD_MAX_ENTRIES;
+const MAX_ENTRIES=FILES_FOLDER_UPLOAD_MAX_ENTRIES;
 const aborted=()=>new DOMException(tt("文件夹上传已取消"),'AbortError');
 function components(path:string):string[]{
   const parts=path.split('/');
@@ -12,10 +12,9 @@ function components(path:string):string[]{
 }
 function validate(selection:FolderSelection){
   if(components(selection.name).length!==1)throw new Error(tt("文件夹名称无效"));
-  const files=new Set<string>(),dirs=new Set<string>();let bytes=0;
+  const files=new Set<string>(),dirs=new Set<string>();
   for(const path of selection.directories){components(path);if(dirs.has(path))throw new Error(tt("文件夹包含重复目录"));dirs.add(path)}
-  for(const {path,file} of selection.files){components(path);if(files.has(path))throw new Error(tt("文件夹包含重复文件"));files.add(path);bytes+=file.size}
-  if(bytes>MAX_BYTES)throw new Error(capacityError(`文件夹总大小不能超过 ${formatBytes(MAX_BYTES)}`,`Folder size must not exceed ${formatBytes(MAX_BYTES)}`));
+  for(const {path} of selection.files){components(path);if(files.has(path))throw new Error(tt("文件夹包含重复文件"));files.add(path)}
   for(const path of [...files,...dirs]){
     const parts=components(path);for(let i=1;i<parts.length;i++)dirs.add(parts.slice(0,i).join('/'));
     if(files.size+dirs.size>MAX_ENTRIES)throw new Error(capacityError(`文件夹最多支持 ${MAX_ENTRIES} 项`,`Folders support up to ${MAX_ENTRIES} items`));
@@ -32,14 +31,14 @@ export function folderFromFiles(files:File[]):FolderSelection{
   selection.directories=validate(selection);return selection;
 }
 export async function readFolder(root:FolderHandle,signal:AbortSignal,onScan?:(entries:number)=>void):Promise<FolderSelection>{
-  const selection:FolderSelection={name:root.name,files:[],directories:[],preservesEmpty:true};let entries=0,bytes=0;
+  const selection:FolderSelection={name:root.name,files:[],directories:[],preservesEmpty:true};let entries=0;
   async function visit(handle:FolderHandle,prefix:string,depth:number){
     if(signal.aborted)throw aborted();if(depth>64)throw new Error(tt("目录层级超过 64 层"));
     for await(const [name,entry] of handle.entries()){
       if(signal.aborted)throw aborted();if(++entries>MAX_ENTRIES)throw new Error(capacityError(`文件夹最多支持 ${MAX_ENTRIES} 项`,`Folders support up to ${MAX_ENTRIES} items`));
       if(components(name).length!==1)throw new Error(tt("文件夹包含无效名称"));const path=prefix+name;components(path);
       if(entry.kind==='directory'){selection.directories.push(path);await visit(entry,path+'/',depth+1)}
-      else{const file=await entry.getFile();if(signal.aborted)throw aborted();bytes+=file.size;if(bytes>MAX_BYTES)throw new Error(capacityError(`文件夹总大小不能超过 ${formatBytes(MAX_BYTES)}`,`Folder size must not exceed ${formatBytes(MAX_BYTES)}`));selection.files.push({path,file})}
+      else{const file=await entry.getFile();if(signal.aborted)throw aborted();selection.files.push({path,file})}
       onScan?.(entries);
     }
   }
@@ -49,7 +48,5 @@ export function folderPayload(selection:FolderSelection):Blob{
   const directories=validate(selection),manifest=JSON.stringify({version:1,files:selection.files.map(({path,file})=>({path,size:file.size})),directories})+'\n';
   if(new TextEncoder().encode(manifest).length>FILES_FOLDER_MANIFEST_MAX_BYTES)throw new Error(tt("文件夹清单过大，请选择更具体的子目录"));
   // Blob references file data; preparing the bundle does not read all bytes into JS memory.
-  const body=new Blob(['IWB_FOLDER:1\n',manifest,...selection.files.map(({file})=>file)]);
-  if(body.size>MAX_BYTES)throw new Error(capacityError(`文件夹及清单总大小不能超过 ${formatBytes(MAX_BYTES)}`,`Folder and manifest must not exceed ${formatBytes(MAX_BYTES)}`));
-  return body;
+  return new Blob(['IWB_FOLDER:1\n',manifest,...selection.files.map(({file})=>file)]);
 }

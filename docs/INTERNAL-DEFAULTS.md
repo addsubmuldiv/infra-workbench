@@ -21,12 +21,8 @@ HTTP、内置助手、外部 MCP 复用原服务校验；前端只是提前提�
 
 | 键 | 当前值 |
 |---|---|
-| `files.upload_max_bytes` | 536870912 |
-| `files.folder_upload_max_bytes` | 536870912 |
 | `files.folder_upload_max_entries` | 10000 |
 | `files.folder_manifest_max_bytes` | 1048576 |
-| `files.download_max_bytes` | 536870912 |
-| `files.folder_download_max_bytes` | 536870912 |
 | `files.folder_download_max_entries` | 10000 |
 | `files.text_edit_max_bytes` | 1048576 |
 | `files.copy_max_bytes` | 67108864 |
