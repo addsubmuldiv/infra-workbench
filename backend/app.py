@@ -537,8 +537,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_terminal_routes(app,hosts,ssh,store,sudo)
     register_port_forwarding(app,store,ssh,hosts)
     register_ssh_tunnels(app,store,ssh,hosts,ssh_passwords,on_result=state_changes.publish)
-    register_vscode(app)
     register_ssh_config_export(app)
+    register_vscode(app)
     app.state.agent_service = AgentService(hosts,snapshots,ssh,ssh_passwords,collect)
     app.state.reservations, app.state.workbench_rules = reservations, rules
     async def refresh_assistant():
@@ -713,6 +713,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             except Exception:
                 sudo.status(host, 'error')
         store.save('hosts', hosts)
+        if result['auth'] == 'key':
+            await app.state.ssh_config_export.vscode_alias(host)
         if collect_now:await collect(host)
         return dict(**result, host_id=host['id'])
 
@@ -774,6 +776,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 current=next((h for h in hosts if h['id']==row.host_id),None)
                 if current is None or any(current.get(key)!=candidate.get(key) for key in ('target','user','port','manual')):return dict(ok=False)
                 current.update(auth='key',key_path=candidate['key_path']);store.save('hosts',hosts)
+            await app.state.ssh_config_export.vscode_alias(dict(candidate))
             return dict(ok=True)
         finally:await worker.close()
 

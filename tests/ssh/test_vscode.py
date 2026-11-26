@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -164,3 +165,78 @@ def test_prepare_collision_retains_expected_target_for_explicit_skip(tmp_path):
             assert exc.value.expected_authority=='ssh-remote+server-a'
         finally:await tunnels.close();store.db.close()
     asyncio.run(run())
+
+
+@pytest.mark.skipif(not shutil.which('ssh'), reason='OpenSSH required')
+def test_connect_prepares_vscode_key_and_existing_hosts_get_it_on_open(tmp_path):
+    from fastapi.testclient import TestClient
+    from backend.app import create_app
+
+    app = create_app(tmp_path / 'data', start_poll=False)
+    ssh = app.state.ssh
+    config = tmp_path / 'ssh' / 'config'
+    config.parent.mkdir()
+    original = b'Host jump fixture\n    HostName 192.0.2.11\n'
+    config.write_bytes(original)
+    app.state.ssh_config_export.config = config
+    key_path = tmp_path / 'key with spaces'
+    key_path.touch()
+
+    async def connect(host, password, provision):
+        assert provision
+        host['key_path'] = str(key_path)
+        return dict(auth='key', message='test connection')
+
+    async def run(*args, **kwargs):
+        return 255, '', 'synthetic probe failure'
+
+    calls = []
+    async def launch(argv):
+        calls.append(argv)
+
+    ssh.connect, ssh.run = connect, run
+    service = app.state.vscode
+    service.launcher, service.launch = lambda: ['fixture-code'], launch
+    headers = {'X-IWB': '1'}
+    with TestClient(app) as client:
+        result = client.post('/api/connect', headers=headers, json=dict(
+            target='192.0.2.10', user='tester', manual=True, port=2222,
+            password='test-password', provision=True,
+        ))
+        assert result.status_code == 200
+        host_id = result.json()['host_id']
+        added = config.read_bytes()
+        assert added.startswith(original) and b'Host iwb-vscode-' in added
+
+        # This also models a host added by an older Workbench version.
+        config.write_bytes(original)
+        path = f'/api/hosts/{host_id}/vscode'
+        prepared = client.post(path + '/prepare', headers=headers).json()
+        opened = client.post(path + '/open', headers=headers, json={
+            'expected_authority': prepared['authority'],
+        })
+        assert opened.json() == {'launched': True}
+        assert config.read_bytes() == added
+        alias = calls[-1][-1].removeprefix('ssh-remote+')
+        assert alias.startswith('iwb-vscode-')
+        details = client.portal.call(ssh.config_details, ['-F', str(config)], alias)
+        assert (details['hostname'], details['user'], details['port']) == ('192.0.2.10', 'tester', '2222')
+        assert details['identityfile'] == [str(key_path)]
+        assert details['identitiesonly'] == 'yes'
+        assert client.post(path + '/open', headers=headers, json={}).json() == {'launched': True}
+        assert calls[-1][-1] == 'ssh-remote+' + alias
+        assert config.read_bytes() == added
+
+        # If an existing rule shadows the alias, keep using the original target.
+        conflict = b'Host iwb-vscode-*\n    HostName 192.0.2.99\n'
+        config.write_bytes(conflict + added)
+        assert client.post(path + '/open', headers=headers, json={}).json() == {'launched': True}
+        assert calls[-1][-1] == prepared['authority']
+        assert config.read_bytes() == conflict + added
+
+        # A machine whose key has gone missing still opens through Remote - SSH.
+        key_path.unlink()
+        config.write_bytes(original)
+        assert client.post(path + '/open', headers=headers, json={}).json() == {'launched': True}
+        assert calls[-1][-1] == prepared['authority']
+        assert config.read_bytes() == original
