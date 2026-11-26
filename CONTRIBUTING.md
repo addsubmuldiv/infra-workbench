@@ -37,25 +37,38 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-backgroun
 
 部署测试中的源码打包检查会另外创建不含 pip 的临时 Python 环境，并运行真实的启动器编译、内部参数校验和前端资源清单校验，需要本机具备 Python、Node.js 和 Windows .NET Framework 编译器。它不创建真实桌面快捷方式，也不写入正在使用的数据目录。
 
-默认后端测试不打开原生托盘或浮窗。浮窗菜单实测需显式设置 `IWB_TEST_FLOATING_UI=1`，再运行 `python -m pytest tests/test_floating_context_menu.py -q`；它会打开测试窗口，适合在允许操作桌面的独立验证环境中执行。该测试在子进程中创建和清理 Tk 对象，结束前等待采集线程并在创建线程上回收对象，避免其他测试线程触发 Tcl 崩溃。默认测试仍会运行不创建窗口的 Tcl 生命周期回归用例。
+默认后端测试不打开原生托盘或浮窗。浮窗菜单实测需显式设置 `IWB_TEST_FLOATING_UI=1`，再运行 `python -m pytest tests/desktop/test_floating_context_menu.py -q`；它会打开测试窗口，适合在允许操作桌面的独立验证环境中执行。该测试在子进程中创建和清理 Tk 对象，结束前等待采集线程并在创建线程上回收对象，避免其他测试线程触发 Tcl 崩溃。默认测试仍会运行不创建窗口的 Tcl 生命周期回归用例。
+
+## 仓库目录
+
+| 位置 | 内容 |
+| --- | --- |
+| `backend/` | 后端启动入口、公共路径和内部默认值。业务代码按助手、主机、采集、SSH、终端、文件等功能分包。 |
+| `backend/probes/` | 会被读取为源代码并交给独立解释器执行的探针。源码归档和桌面运行时保留这些文件的路径。 |
+| `frontend/src/features/` | 功能页面、请求、样式和模块内组件。共享控件、工作区状态和主题分别在 `shared/`、`workspace/` 和 `styles/`。 |
+| `frontend/dist/` | 供源码启动和桌面打包使用的生产构建。 |
+| `desktop/` | Tauri 桌面壳和 Python 运行时打包。 |
+| `tests/`、`frontend/tests/` | 按功能组织的后端和前端测试。 |
+| `scripts/` | 开发和发布入口。诊断、性能测量和原型分别在 `diagnostics/`、`benchmarks/` 和 `prototypes/`。 |
+| `docs/` | 使用指南、设计文档、验证记录与性能报告。 |
 
 ## 代码结构
 
 | 位置 | 职责 |
 |---|---|
 | `backend/app.py` | 本地 API、主机与轮询、训练前检查、监控规则 |
-| `backend/ssh.py` | 本机 OpenSSH、密码会话与免密配置 |
-| `backend/agent_tools.py` / `agent_schema.py` | 六个 MCP 工具的统一说明、参数/schema、默认值、示例与恢复动作 |
-| `backend/agent_service.py` / `agent_query.py` / `connection_info.py` | 共用查询、有界刷新、资源筛选与 SSH 连接描述 |
-| `backend/ssh_passwords.py` | 身份绑定的可选 SSH 密码存储，与 sudo/邮件分开 |
-| `backend/mcp_server.py` | 官方 SDK Streamable HTTP 适配与现有后台生命周期集成 |
-| `backend/agent_api.py` | 内置模型接口配置、独立凭据、Responses/Chat Completions 适配和连接测试 |
-| `backend/agent_runtime.py` / `agent_langchain.py` | Deep Agents 图、模型适配、虚拟技能、工具记录及框架状态保存；不自行维护模型/工具循环 |
+| `backend/ssh/ssh.py` | 本机 OpenSSH、密码会话与免密配置 |
+| `backend/mcp/agent_tools.py` / `agent_schema.py` | 六个 MCP 工具的统一说明、参数/schema、默认值、示例与恢复动作 |
+| `backend/mcp/agent_service.py` / `agent_query.py` / `connection_info.py` | 共用查询、有界刷新、资源筛选与 SSH 连接描述 |
+| `backend/ssh/ssh_passwords.py` | 身份绑定的可选 SSH 密码存储，与 sudo/邮件分开 |
+| `backend/mcp/mcp_server.py` | 官方 SDK Streamable HTTP 适配与现有后台生命周期集成 |
+| `backend/assistant/agent_api.py` | 内置模型接口配置、独立凭据、Responses/Chat Completions 适配和连接测试 |
+| `backend/assistant/agent_runtime.py` / `agent_langchain.py` | Deep Agents 图、模型适配、虚拟技能、工具记录及框架状态保存；不自行维护模型/工具循环 |
 | `backend/skills/*/SKILL.md` | 只读业务技能；下一轮对话发现更新，不加载用户目录中的未知技能 |
-| `backend/infra_assistant.py` / `resource_history.py` | 中文只读查询条件、确定性跨机匹配、有界变化记录及带引用的 AI 摘要 |
-| `backend/core.py` | GPU/NPU 解析和资源判断 |
-| `backend/remote_probe.py` | 远端只读采集 CPU、内存、设备、进程和端口 |
-| `backend/store.py` | SQLite 中的主机、规则和事件 |
+| `backend/monitoring/infra_assistant.py` / `resource_history.py` | 中文只读查询条件、确定性跨机匹配、有界变化记录及带引用的 AI 摘要 |
+| `backend/monitoring/core.py` | GPU/NPU 解析和资源判断 |
+| `backend/probes/remote_probe.py` | 远端只读采集 CPU、内存、设备、进程和端口 |
+| `backend/storage/store.py` | SQLite 中的主机、规则和事件 |
 | `backend/desktop.py` | Windows 系统托盘、桌面通知及当前用户登录启动 |
 | `backend/assets` | 托盘图标和可编辑 SVG 源文件 |
 | `frontend/src` | 页面、主题与浏览器偏好 |

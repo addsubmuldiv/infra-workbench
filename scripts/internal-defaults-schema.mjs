@@ -306,24 +306,24 @@ export const SCHEMA = {
 
 // Independent SSH scripts receive generated constants without importing the local backend.
 export const PROBES = {
-  "backend/file_ops.py": {
+  "backend/probes/file_ops.py": {
     "TEXT_LIMIT": "FILES_TEXT_EDIT_MAX_BYTES",
     "COPY_LIMIT": "FILES_COPY_MAX_BYTES",
     "ENTRY_LIMIT": "FILES_COPY_MAX_ENTRIES"
   },
-  "backend/folder_upload_probe.py": {
+  "backend/probes/folder_upload_probe.py": {
     "MAX_MANIFEST": "FILES_FOLDER_MANIFEST_MAX_BYTES",
     "MAX_ENTRIES": "FILES_FOLDER_UPLOAD_MAX_ENTRIES"
   },
-  "backend/folder_download_probe.py": {
+  "backend/probes/folder_download_probe.py": {
     "MAX_ENTRIES": "FILES_FOLDER_DOWNLOAD_MAX_ENTRIES"
   },
-  "backend/log_reader.py": {
+  "backend/probes/log_reader.py": {
     "MAX_BYTES": "LOGS_READ_MAX_BYTES",
     "MAX_RECORDS": "LOGS_READ_MAX_RECORDS",
     "MAX_LINE": "LOGS_LINE_MAX_BYTES"
   },
-  "backend/log_download_probe.py": {
+  "backend/probes/log_download_probe.py": {
     "MAX_DOWNLOAD": "LOGS_DOWNLOAD_MAX_BYTES"
   }
 };

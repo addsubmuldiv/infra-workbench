@@ -119,6 +119,8 @@ def main():
             '--onedir' if sys.platform == 'win32' else '--onefile', '--name', 'iwb-runtime',
             '--distpath', str(work/'dist'), '--workpath', str(work/'build'), '--specpath', str(work),
             '--paths', str(ROOT), '--collect-submodules', 'backend', '--collect-submodules', 'uvicorn',
+            '--hidden-import', 'backend.desktop', '--hidden-import', 'backend.desktop_macos',
+            '--hidden-import', 'backend.terminal.posix_pty_child',
             '--add-data', str(frontend)+os.pathsep+'frontend/dist',
             '--add-data', str(ROOT/'backend'/'assets')+os.pathsep+'backend/assets',
             '--add-data', str(ROOT/'backend'/'skills')+os.pathsep+'backend/skills',
@@ -130,13 +132,10 @@ def main():
         args += ['--exclude-module', module]
     args += ['--add-data', str(ROOT/'frontend'/'src'/'themeTokens.css')+os.pathsep+'frontend/src']
     # SSH/file probes read their own source to send it to the remote interpreter.
-    # Only explicit .py files are included, never backend caches or user data.
-    for source in sorted((ROOT/'backend').glob('*.py')):
-        args += ['--add-data', str(source)+os.pathsep+'backend']
-        # Collection subprocesses run in the isolated build environment; resolve
-        # local dynamic entry points explicitly so their imports are analyzed.
-        if source.stem != '__init__':
-            args += ['--hidden-import', 'backend.'+source.stem]
+    # Copy standalone probes as source. Local Python modules use --collect-submodules.
+    for source in sorted((ROOT/'backend'/'probes').glob('*.py')):
+        if source.name != '__init__.py':
+            args += ['--add-data', str(source)+os.pathsep+'backend/probes']
     if sys.platform == 'win32':
         # SSPI's native AcquireCredentialsHandle imports this dynamically when
         # AsyncSSH initializes GSS authentication, even for password connections.

@@ -101,7 +101,7 @@ jobs:
           node work/desktop-benchmark/node_modules/playwright/cli.js install webkit
       - name: Check shared UI on WebKit (including missing newer APIs)
         if: runner.os == 'macOS'
-        run: node scripts/check-webkit-performance-compat.cjs
+        run: node scripts/benchmarks/check-webkit-performance-compat.cjs
       - uses: actions/upload-artifact@v6
         if: always()
         with:

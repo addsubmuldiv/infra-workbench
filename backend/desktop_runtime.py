@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import sys
 
+from backend.paths import probe_directory
+
 
 def data_directory(platform, home, environ):
     if platform not in ('win32', 'darwin'):
@@ -33,7 +35,7 @@ def pty_arguments(executable, helper, descriptor, args, *, frozen=None):
 def main(argv=None, *, platform=None, loader=importlib.import_module):
     platform = sys.platform if platform is None else platform
     if argv and argv[0] == '--pty-child':
-        return loader('backend.posix_pty_child').main(argv[1:])
+        return loader('backend.terminal.posix_pty_child').main(argv[1:])
     # This must precede importing desktop/app: both resolve their data path on import.
     os.environ['IWB_DATA'] = str(data_directory(platform, Path.home(), os.environ))
     if argv and argv[0] == '--self-test':
@@ -42,12 +44,6 @@ def main(argv=None, *, platform=None, loader=importlib.import_module):
         return self_test(Path(argv[1]))
     entry = loader('backend.desktop' if platform == 'win32' else 'backend.desktop_macos')
     return entry.main(['--no-browser'] if argv is None else argv)
-
-
-def probe_directory():
-    # PyInstaller's executable entry has a different __file__ parent from package modules.
-    import backend
-    return Path(backend.__file__).parent
 
 
 def check_internal_defaults(directory):
@@ -119,9 +115,9 @@ def self_test(destination):
             # Import both desktop modules; macOS Cocoa itself stays lazy.
             importlib.import_module('backend.desktop')
             importlib.import_module('backend.desktop_macos')
-            from backend.agent_runtime import bundled_files
+            from backend.assistant.agent_runtime import bundled_files
             result['builtin_skills'] = len(bundled_files())
-            from backend.desktop_checks import check_resources, check_ssh, check_agent
+            from backend.desktop_host.desktop_checks import check_resources, check_ssh, check_agent
             result['feature_checks'] = check_resources()
             result['feature_checks'] += asyncio.run(asyncio.wait_for(check_ssh(Path(directory)), timeout=15))
             result['feature_checks'] += asyncio.run(asyncio.wait_for(check_agent(), timeout=15))
@@ -134,10 +130,10 @@ def self_test(destination):
                 result['windows_ssh_auth'] = True
             async def check_native_pty():
                 if sys.platform == 'win32':
-                    from backend.terminal import NativeTerminal as Terminal
+                    from backend.terminal.terminal import NativeTerminal as Terminal
                     args = [os.environ.get('COMSPEC', 'cmd.exe'), '/d', '/c', 'echo IWB_DESKTOP_PTY_OK']
                 else:
-                    from backend.terminal_posix import PosixTerminal as Terminal
+                    from backend.terminal.terminal_posix import PosixTerminal as Terminal
                     args = ['/bin/sh', '-c', 'printf IWB_DESKTOP_PTY_OK']
                 terminal = await Terminal.spawn(args, 80, 24)
                 try:

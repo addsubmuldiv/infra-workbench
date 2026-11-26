@@ -59,14 +59,14 @@ Windows 终端路径使用 `pywinpty`；macOS 菜单栏和凭据集成使用 `ru
 
 ## 3. Deep Agents 如何接入
 
-阅读入口是 [`agent_runtime.py`](../backend/agent_runtime.py) 中的 `run_deep_agent` 和 `create_deep_agent`。应用把模型、工具、技能、middleware 和状态恢复交给图执行，不另写一套模型与工具循环。
+阅读入口是 [`backend/assistant/agent_runtime.py`](../backend/assistant/agent_runtime.py) 中的 `run_deep_agent` 和 `create_deep_agent`。应用把模型、工具、技能、middleware 和状态恢复交给图执行，不另写一套模型与工具循环。
 
 ### 一轮聊天的路径
 
 1. 聊天层接收用户消息，准备当前模型配置、机器范围和技能快照。
-2. `agent_runtime.py` 恢复框架状态，构建 Deep Agents 图。
-3. `agent_langchain.py` 的 `WorkbenchChatModel` 将 LangChain 消息与工具 schema 转换为现有模型接口格式。底层接口配置及传输由 `agent_api.py` 等模块承担，统一使用 Responses 协议。
-4. 模型按需读取技能，再选择工具。`mcp_client.py` 经 MCP SDK 的进程内消息流执行真实的初始化、发现和调用协议，无须向后台自己的 HTTP 端口绕行。
+2. `backend/assistant/agent_runtime.py` 恢复框架状态，构建 Deep Agents 图。
+3. `backend/assistant/agent_langchain.py` 的 `WorkbenchChatModel` 将 LangChain 消息与工具 schema 转换为现有模型接口格式。底层接口配置及传输由 `backend/assistant/agent_api.py` 等模块承担，统一使用 Responses 协议。
+4. 模型按需读取技能，再选择工具。`backend/mcp/mcp_client.py` 经 MCP SDK 的进程内消息流执行真实的初始化、发现和调用协议，无须向后台自己的 HTTP 端口绕行。
 5. 共享 MCP 分发器将请求交给业务服务，执行参数、机器范围和路径检查，再访问数据库或 SSH。
 6. 工具记录和文本增量回到界面，框架状态随会话保存。下一轮恢复时会处理未完成的工具消息，避免自动重放中断操作。
 
@@ -81,7 +81,7 @@ Windows 终端路径使用 `pywinpty`；macOS 菜单栏和凭据集成使用 `ru
 | 历史压缩 | 原生 summarization middleware，摘要状态随会话保存 | 不要把可见聊天记录与模型当前上下文当成同一份数据；token 数是本地估算 |
 | 大结果处理 | 业务分页和输出预算先限制结果；框架可将大工具结果卸载到虚拟文件 | 不要静默截断后宣称结果完整；保留分页、覆盖范围和操作标识 |
 | 会话恢复 | 内存 checkpoint 加应用层 `deep_state` 持久化 | 不保存活跃连接；取消或重启也不代表远端副作用已回滚 |
-| 跨会话记忆 | `agent_memory.py` 将原生 Memory middleware 接到受限存储 | 当前只允许指定虚拟记忆文件，按模型配置和机器范围隔离；不能存凭据或把历史机器状态当成实时事实 |
+| 跨会话记忆 | `backend/assistant/agent_memory.py` 将原生 Memory middleware 接到受限存储 | 当前只允许指定虚拟记忆文件，按模型配置和机器范围隔离；不能存凭据或把历史机器状态当成实时事实 |
 | 文件工具 | `StateBackend` 等提供虚拟文件；记忆使用受限的存储适配 | 虚拟 `read_file` 与远端 `read_server_file` 不同，不能混淆路径和权限 |
 | 子代理与 Shell | 通用子代理关闭；远端命令走共享业务工具 | 不要因为框架支持 Shell 或文件写入就直接开放本机任意执行能力 |
 | 提示缓存 | 使用通用模型适配器 | 不能据此承诺供应商专用缓存生效，也没有缓存节省比例的结论 |
@@ -99,13 +99,13 @@ Windows 终端路径使用 `pywinpty`；macOS 菜单栏和凭据集成使用 `ru
 | 想改什么 | 先看这些位置 |
 | --- | --- |
 | API 与后台生命周期 | `backend/app.py`、`backend/desktop.py` |
-| Agent 图、模型消息、聊天 | `backend/agent_runtime.py`、`agent_langchain.py`、`agent_chat.py`、`agent_api.py` |
-| MCP 能力与调用桥 | `backend/mcp_service.py`、`mcp_operations.py`、`mcp_server.py`、`mcp_client.py`、`chat_tools.py` |
-| 资源查询与采集 | `backend/agent_service.py`、`agent_query.py`、`polling.py`、`remote_probe.py`、`core.py` |
-| SSH、终端和隧道 | `backend/ssh.py`、`terminal.py`、`terminal_tmux.py`、`ssh_tunnels.py` |
-| 服务器文件与日志 | `backend/file_ops.py`、`file_routes.py`、`log_routes.py`、`log_compare.py` |
-| 持久化与多窗口偏好 | `backend/store.py`；先读 [WORKSPACE-STATE.md](WORKSPACE-STATE.md) |
-| 工作台界面与国际化 | `frontend/src`、`frontend/src/i18n.ts` |
+| Agent 图、模型消息、聊天 | `backend/assistant/agent_runtime.py`、`backend/assistant/agent_langchain.py`、`backend/assistant/agent_chat.py`、`backend/assistant/agent_api.py` |
+| MCP 能力与调用桥 | `backend/mcp/mcp_service.py`、`backend/mcp/mcp_operations.py`、`backend/mcp/mcp_server.py`、`backend/mcp/mcp_client.py`、`backend/assistant/chat_tools.py` |
+| 资源查询与采集 | `backend/mcp/agent_service.py`、`backend/monitoring/agent_query.py`、`backend/monitoring/polling.py`、`backend/probes/remote_probe.py`、`backend/monitoring/core.py` |
+| SSH、终端和隧道 | `backend/ssh/ssh.py`、`backend/terminal/terminal.py`、`backend/terminal/terminal_tmux.py`、`backend/ssh/ssh_tunnels.py` |
+| 服务器文件与日志 | `backend/probes/file_ops.py`、`backend/files/file_routes.py`、`backend/training_logs/log_routes.py`、`backend/training_logs/log_compare.py` |
+| 持久化与多窗口偏好 | `backend/storage/store.py`；先读 [WORKSPACE-STATE.md](WORKSPACE-STATE.md) |
+| 工作台界面与国际化 | `frontend/src`、`frontend/src/shared/i18n.ts` |
 | 桌面壳与分发 | `desktop/src-tauri`、`desktop/run.mjs`、`desktop/release.mjs` |
 | 回归测试 | `tests`、`frontend/tests` |
 

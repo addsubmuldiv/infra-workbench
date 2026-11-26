@@ -1,6 +1,6 @@
 # Deep Agents 原生能力接入
 
-本项目使用已安装的 Deep Agents 0.7.32，由 `backend/agent_runtime.py` 创建图，`backend/agent_langchain.py` 把 LangChain 消息和工具转换为现有模型接口格式。能力审计依据为该版本的 `deepagents/graph.py`、`middleware/skills.py`、`middleware/filesystem.py`、`middleware/_prompt_caching.py` 以及 LangChain 的 `agents/middleware/todo.py`。
+本项目使用已安装的 Deep Agents 0.7.32，由 `backend/assistant/agent_runtime.py` 创建图，`backend/assistant/agent_langchain.py` 把 LangChain 消息和工具转换为现有模型接口格式。能力审计依据为该版本的 `deepagents/graph.py`、`middleware/skills.py`、`middleware/filesystem.py`、`middleware/_prompt_caching.py` 以及 LangChain 的 `agents/middleware/todo.py`。
 
 | 能力 / Capability | 接入方式及边界 / Integration and limits |
 | --- | --- |
@@ -24,7 +24,7 @@ English: The integration reuses native middleware rather than introducing anothe
 离线验证使用临时数据库和脚本化模型，不连接真实模型或 SSH：
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/test_deepagents.py -q
+.venv\Scripts\python.exe -m pytest tests/assistant/test_deepagents.py -q
 ```
 
 这些测试验证技能披露、会话恢复、摘要恢复、计划持久化、取消和校验边界；构建或单元测试通过不表示真实模型的技能选择质量、缓存命中或远端执行已经验证。
@@ -74,6 +74,6 @@ English: Explicit native tool declarations take precedence over text mentions. K
 
 真实 SSH 只读复验（2026-11-05）：在 Codex 内置浏览器中，三个场景均新开标签页并创建空白对话。读取系统文件 15.983 秒、4 次工具调用；寻找真实训练日志并读取末尾 34.703 秒、12 次调用（含目录分页与尾部窗口缩小）；给定两份日志路径后的精确比较 20.476 秒、6 次调用，两份日志并行读取。全部无完全重复调用或压缩，不修改远端文件。训练日志持续增长，统计基于读取时的快照；日志发现和已知路径读取不是相同开销。
 
-复验发现真实 JSON 日志使用 optimizer_steps，现将其作为 iteration/global_step/step 之后的步数别名，同时排除在数值指标之外，避免把步数当作比较指标。已有字段优先级、无效步数检查、轨迹与重复记录处理保持原规则。修复前两份日志不能解析，修复后已重启后台并完成同一提示的独立新对话复测。只运行 tests/test_log_compare.py 与 tests/test_log_routes.py，共 18 项通过；未运行全量。私有路径与原始日志不提交，独立实测报告保留在忽略目录 work/real-machine-skills-2026-11-05/。
+复验发现真实 JSON 日志使用 optimizer_steps，现将其作为 iteration/global_step/step 之后的步数别名，同时排除在数值指标之外，避免把步数当作比较指标。已有字段优先级、无效步数检查、轨迹与重复记录处理保持原规则。修复前两份日志不能解析，修复后已重启后台并完成同一提示的独立新对话复测。只运行 tests/files/test_log_compare.py 与 tests/files/test_log_routes.py，共 18 项通过；未运行全量。私有路径与原始日志不提交，独立实测报告保留在忽略目录 work/real-machine-skills-2026-11-05/。
 
 English: Real SSH browser verification used new tabs and empty chats for file reading, log discovery/tail reading, and exact comparison. The reader now accepts optimizer_steps as a fallback step field without exposing it as a metric. Eighteen related parser/API tests passed; no full suite or remote-file writes were performed. Growing logs are compared using captured snapshots.

@@ -37,7 +37,7 @@ Run `npm test` in frontend for demo transport, legacy-storage isolation and rese
 
 On 2026-11-03, the frontend suite passed 241 tests and both the normal and standalone demo production builds completed. Browser checks covered desktop and 390px layouts, the five-step tour, an active-tour assistant response, process and reservation dialogs, zero-wait simulated alerts, sample log viewing, a simulated terminal, Escape/replay focus, and retained legacy browser preferences. The normal workbench `?demo=1` entry and standalone static entry both showed zero actual `/api` resource requests. Static demo HTML includes a `connect-src 'none'` policy.
 
-These checks validate the simulated interface and isolation behavior. They do not validate real SSH commands, model replies, operating-system notifications, public hosting, or installation on clean systems. Desktop packaging and remaining platform checks are recorded separately in [release validation](RELEASE-VALIDATION.md).
+These checks validate the simulated interface and isolation behavior. They do not validate real SSH commands, model replies, operating-system notifications, public hosting, or installation on clean systems. Desktop packaging and remaining platform checks are recorded separately in [release validation](validation/RELEASE-VALIDATION.md).
 
 ## Optional public demo deployment
 

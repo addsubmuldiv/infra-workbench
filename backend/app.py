@@ -10,6 +10,8 @@ import uuid
 from functools import wraps
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+from backend.paths import PROBES_DIR
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Query
@@ -19,43 +21,43 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator, model_validator
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
-from .port_forwarding import register_port_forwarding
-from .ssh_tunnels import register_ssh_tunnels
-from .vscode import register_vscode
-from .ssh_config_export import register_ssh_config_export
-from .ssh import SSHService
-from .probe_cache import ProbeCache
-from .polling import FleetSchedule
-from .state_changes import StateChanges
-from .snapshot_sections import section_views
-from .host_alias import HostAliasRequest
-from .store import Store
-from .credentials import create_credential_store
-from .sudo import SudoService
-from .terminal import register_terminal_routes
-from .log_routes import register_log_routes
-from .file_routes import register_file_routes
-from .reservations import ReservationBook
-from .mail import MailService, register_mail_routes
-from .agent_api import AgentAPIService, register_agent_api_routes
-from .resource_history import ResourceHistory
-from .resource_stats import ResourceStats
-from .resource_stats_routes import register_resource_history_routes
-from .infra_assistant import InfraAssistant, register_assistant_routes
-from .agent_chat import AgentChat, register_chat_routes
-from .chat_tools import ChatTools
-from .desktop_notifications import register_desktop_notification_routes
-from .ssh_passwords import SSHPasswords, connection_identity
-from .ssh_accounts import (
+from .monitoring.core import TransitionTracker, discover_aliases, eligible, parse_npu, parse_nvidia
+from .ssh.port_forwarding import register_port_forwarding
+from .ssh.ssh_tunnels import register_ssh_tunnels
+from .ssh.vscode import register_vscode
+from .ssh.ssh_config_export import register_ssh_config_export
+from .ssh.ssh import SSHService
+from .monitoring.probe_cache import ProbeCache
+from .monitoring.polling import FleetSchedule
+from .workspace.state_changes import StateChanges
+from .monitoring.snapshot_sections import section_views
+from .hosts.host_alias import HostAliasRequest
+from .storage.store import Store
+from .storage.credentials import create_credential_store
+from .ssh.sudo import SudoService
+from .terminal.terminal import register_terminal_routes
+from .training_logs.log_routes import register_log_routes
+from .files.file_routes import register_file_routes
+from .reservations.reservations import ReservationBook
+from .reservations.mail import MailService, register_mail_routes
+from .assistant.agent_api import AgentAPIService, register_agent_api_routes
+from .monitoring.resource_history import ResourceHistory
+from .monitoring.resource_stats import ResourceStats
+from .monitoring.resource_stats_routes import register_resource_history_routes
+from .monitoring.infra_assistant import InfraAssistant, register_assistant_routes
+from .assistant.agent_chat import AgentChat, register_chat_routes
+from .assistant.chat_tools import ChatTools
+from .desktop_host.desktop_notifications import register_desktop_notification_routes
+from .ssh.ssh_passwords import SSHPasswords, connection_identity
+from .ssh.ssh_accounts import (
     account_records, default_account_id, register_ssh_account_routes,
     resolve_ssh_account, ssh_account_key, ssh_account_summary,
 )
-from .agent_service import AgentService
-from .mcp_server import register_mcp
-from .mcp_client import MCPGateway
-from .mcp_operations import REQUEST_ORIGIN
-from .agent_errors import AgentError
+from .mcp.agent_service import AgentService
+from .mcp.mcp_server import register_mcp
+from .mcp.mcp_client import MCPGateway
+from .mcp.mcp_operations import REQUEST_ORIGIN
+from .common.agent_errors import AgentError
 from .hosts.imports.server_import_routes import register_import_routes
 from .hosts.imports.server_import_matching import find_existing,prepare_existing,new_import_host
 
@@ -207,7 +209,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     invalid_rules = set()
     semaphore = asyncio.Semaphore(8)
     connection_lock = asyncio.Lock()
-    probe = ProbeCache((Path(__file__).parent/'remote_probe.py').read_text(encoding='utf-8'))
+    probe = ProbeCache((PROBES_DIR/'remote_probe.py').read_text(encoding='utf-8'))
 
     def serialize_connections(fn):
         @wraps(fn)
@@ -544,19 +546,19 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     app.state.infra_assistant = InfraAssistant(agent_api, app.state.agent_service.inventory, resource_history, refresh_assistant)
     register_assistant_routes(app, app.state.infra_assistant)
     probes = ChatTools(app.state.infra_assistant,app.state.agent_service,ssh)
-    from .clusters import ClusterService
-    from .cluster_routes import register_cluster_routes
-    from .command_tools import CommandTools
+    from .hosts.clusters import ClusterService
+    from .hosts.cluster_routes import register_cluster_routes
+    from .terminal.command_tools import CommandTools
     app.state.clusters = ClusterService(store, hosts, CommandTools(probes, sudo, getattr(app.state, 'desktop_command_jobs', None)))
     register_cluster_routes(app, app.state.clusters)
-    from .group_reservations import GroupReservationService
-    from .group_reservation_routes import register_group_reservation_routes
+    from .reservations.group_reservations import GroupReservationService
+    from .reservations.group_reservation_routes import register_group_reservation_routes
     app.state.group_reservations = GroupReservationService(store, hosts, snapshots, app.state.clusters, mail)
     app.state.resource_stats = resource_stats
     register_group_reservation_routes(app, app.state.group_reservations)
     register_resource_history_routes(app, resource_stats, lambda: hosts)
-    from .skill_service import SkillService
-    from .skill_routes import register_skill_routes
+    from .assistant.skill_service import SkillService
+    from .assistant.skill_routes import register_skill_routes
     app.state.skills = SkillService(store)
     register_mcp(app, app.state.agent_service, probes)
     app.state.mcp_service.skills = app.state.skills
@@ -594,16 +596,16 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     from .launcher import register_launch_routes
     register_launch_routes(app, data)
-    from .desktop_update import register_routes as register_desktop_update_routes
+    from .desktop_host.desktop_update import register_routes as register_desktop_update_routes
     register_desktop_update_routes(app)
     app.state.clusters.bind_command_registry(app.state.desktop_command_jobs)
 
-    from .workspace_state import register_workspace_state
+    from .workspace.workspace_state import register_workspace_state
     register_workspace_state(app, store)
 
     @app.post('/api/desktop/floating-monitor')
     async def open_floating_monitor():
-        from .floating_monitor import launch_monitor
+        from .desktop_host.floating_monitor import launch_monitor
         try:
             launch_monitor()
         except (OSError, RuntimeError) as exc:

@@ -25,7 +25,7 @@ SSH 失败时不会重新标记旧系统数据的采样时间。主页面的 CPU
 使用临时数据和合成响应，不需要真实 SSH 或模型接口：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_live_collection.py tests/test_chat_stream.py tests/test_api.py -q
+.\.venv\Scripts\python.exe -m pytest tests/monitoring/test_live_collection.py tests/assistant/test_chat_stream.py tests/core/test_api.py -q
 Push-Location frontend
 node --test tests/stateChanges.test.mjs tests/agentChatStreaming.test.mjs tests/latestUpdate.test.mjs tests/chatMarkdown.test.mjs
 npm.cmd test

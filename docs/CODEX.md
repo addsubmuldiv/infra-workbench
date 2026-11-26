@@ -36,7 +36,7 @@ Codex 使用原生执行循环处理本机命令、文件编辑及子 Agent，�
 
 2026-11-07 的 Codex 内置浏览器验证使用独立临时数据、8895 端口和新建空白对话，选用 `gpt-6.1-sol`，观察到原生命令和输出记录及最终 `IWB-UI-NATIVE-OK` 回复，整轮 22.247 秒。会话与测量记录单独保存在忽略的 `work/codex-host-ui-validation.json`。没有连接真实服务器或操作系统窗口。
 
-运行 `.venv/Scripts/python.exe scripts/validate-codex-host.py`，可用 `--model`、`--effort`、`--timeout` 和 `--output` 调整验证；重复 `--scenario` 可只运行指定项目（续聊项需要同时运行前面的 MCP 项）。脚本使用临时项目、隔离 `IWB_DATA` 和合成服务器/技能工具，不连接生产 SSH，不登录、不复制凭据、不修改全局配置。它使用已有 CLI 登录并产生实际模型用量。
+运行 `.venv/Scripts/python.exe scripts/diagnostics/validate-codex-host.py`，可用 `--model`、`--effort`、`--timeout` 和 `--output` 调整验证；重复 `--scenario` 可只运行指定项目（续聊项需要同时运行前面的 MCP 项）。脚本使用临时项目、隔离 `IWB_DATA` 和合成服务器/技能工具，不连接生产 SSH，不登录、不复制凭据、不修改全局配置。它使用已有 CLI 登录并产生实际模型用量。
 
 报告默认写入 `work/codex-host-validation.json`，分别记录 `verified`、`not_verified` 和 `failed`。命令、文件、原生子 Agent 的 MCP/技能继承、续聊、结构化提问、审批拒绝、steer 及取消必须依据实际事件判断；缺少事件或模型未调用工具不能视为通过。steer 接受成功不代表最终指令已执行。Windows 实测不代表 macOS 已验证。
 
@@ -56,9 +56,9 @@ Codex 使用原生执行循环处理本机命令、文件编辑及子 Agent，�
 
 另一次真实验证未手工提供代理环境，依靠系统代理成功进入合成 MCP 工具；在工具等待期间取消，确认工具被取消、Codex 子进程退出。受控业务任务会先取消并返回 MCP 错误，再关闭 HTTP 监听，避免等待连接超时。
 
-旧脚本 `scripts/validate-codex-integration.py` 对应当时的隔离模式，其历史报告位于 `work/codex-live-validation.json`；当前宿主请使用上面的新脚本。
+旧脚本 `scripts/diagnostics/validate-codex-integration.py` 对应当时的隔离模式，其历史报告位于 `work/codex-live-validation.json`；当前宿主请使用上面的新脚本。
 
-相关测试：`.venv/Scripts/python.exe -m pytest tests/test_codex_agent.py tests/test_agent_chat.py tests/test_unified_mcp.py -q`。
+相关测试：`.venv/Scripts/python.exe -m pytest tests/assistant/test_codex_agent.py tests/assistant/test_agent_chat.py tests/assistant/test_unified_mcp.py -q`。
 
 ## 对话分支
 

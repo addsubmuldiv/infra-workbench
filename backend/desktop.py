@@ -17,9 +17,9 @@ import webbrowser
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0,str(ROOT))
-from backend.interface_language import tr
-from backend.notifications import should_notify
-from backend.reminder_links import event_link
+from backend.workspace.interface_language import tr
+from backend.reservations.notifications import should_notify
+from backend.reservations.reminder_links import event_link
 URL = 'http://127.0.0.1:8765/'
 APP_ID = 'InfraWorkbench.Desktop'
 BACKEND_STARTUP_TIMEOUT = 60
@@ -47,7 +47,7 @@ def register_notification_identity(registry=None,shell=None,shortcut=None):
         registry.SetValueEx(entry,'DisplayName',0,registry.REG_SZ,'Infra Workbench')
         registry.SetValueEx(entry,'IconUri',0,registry.REG_SZ,str(icon))
     if shortcut is None:
-        from backend.notification_identity import ensure_shortcut
+        from backend.desktop_host.notification_identity import ensure_shortcut
         shortcut=ensure_shortcut
     shortcut(ROOT,APP_ID)
     set_identity=shell.SetCurrentProcessExplicitAppUserModelID
@@ -60,7 +60,7 @@ def register_notification_identity(registry=None,shell=None,shortcut=None):
 
 def get_api(path):
     if path=='health':
-        from backend.local_service import loopback_listening
+        from backend.desktop_host.local_service import loopback_listening
         from urllib.parse import urlsplit
         if not loopback_listening(port=urlsplit(URL).port or 80):raise URLError('Local service is not listening')
     with OPENER.open(Request(URL+'api/'+path), timeout=3) as response:
@@ -381,7 +381,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 raise RuntimeError(tr('Windows 未接受桌面通知请求', 'Windows did not accept the desktop notification request'))
             receipt['notification_accepted']=True
 
-    from backend.floating_monitor import get_monitor_controller
+    from backend.desktop_host.floating_monitor import get_monitor_controller
     floating_monitor = get_monitor_controller() if not smoke_test else None
 
     def menu(hwnd):
@@ -418,7 +418,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 logging.info('Taskbar recreated; restoring tray icon')
                 ensure_tray_icon(shell,icon_data);return 0
             if message==0x113 and wp==1:
-                from backend.desktop_update import requested
+                from backend.desktop_host.desktop_update import requested
                 if requested() or service.failed():
                     if service.failed():logging.error('Backend stopped; closing tray and floating monitor')
                     user.DestroyWindow(hwnd)
@@ -442,7 +442,7 @@ def run_tray(service,settings,startup,open_browser,smoke_test=False,started_at=N
                 logging.info('Tray window destroyed')
                 user.KillTimer(hwnd,1)
                 if floating_monitor: floating_monitor.shutdown()
-                from backend.desktop_update import requested
+                from backend.desktop_host.desktop_update import requested
                 if not smoke_test and not requested():
                     from backend.launcher import shutdown_desktop
                     shutdown_desktop(ROOT)
@@ -532,7 +532,7 @@ def main(argv=None):
     if not mutex: raise ctypes.WinError(ctypes.get_last_error())
     duplicate=ctypes.get_last_error()==183
     service=ServiceHost()
-    from backend.desktop_update import activate, deactivate
+    from backend.desktop_host.desktop_update import activate, deactivate
     update_control=None
     try:
         logging.info('Desktop launch pid=%s duplicate=%s',os.getpid(),duplicate)

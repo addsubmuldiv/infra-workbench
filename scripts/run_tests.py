@@ -24,73 +24,73 @@ def group(backend='', frontend='', tooling=''):
 # classifying a new regression by a guessed filename prefix. Overlap is allowed.
 GROUPS = {
     'core': group(
-        'test_api test_auth test_store test_core test_platform_credentials test_macos_credentials test_sudo',
-        'requests'),
+        'core/test_api core/test_auth core/test_store core/test_core core/test_platform_credentials core/test_macos_credentials core/test_sudo',
+        'core/requests'),
     'monitoring': group(
-        'test_collection_scheduling test_live_collection test_probe_cache test_probe_cache_remote '
-        'test_probe_timeouts test_refresh_settings test_system_metrics test_resource_stats '
-        'test_history_time_ranges test_find_hosts test_fleet_schedule test_fleet_roundtrips '
-        'test_process_details test_command_probe test_agent_query test_infra_assistant',
-        'overview host-usage resourceHistory stateChanges infraAssistant'),
+        'monitoring/test_collection_scheduling monitoring/test_live_collection monitoring/test_probe_cache monitoring/test_probe_cache_remote '
+        'monitoring/test_probe_timeouts monitoring/test_refresh_settings monitoring/test_system_metrics monitoring/test_resource_stats '
+        'monitoring/test_history_time_ranges monitoring/test_find_hosts monitoring/test_fleet_schedule monitoring/test_fleet_roundtrips '
+        'monitoring/test_process_details monitoring/test_command_probe monitoring/test_agent_query monitoring/test_infra_assistant',
+        'monitoring/overview monitoring/host-usage monitoring/resourceHistory monitoring/stateChanges monitoring/infraAssistant'),
     'hosts': group(
-        'test_host_alias test_server_import test_server_import_aliases test_server_import_matching '
-        'test_server_import_routes test_import_host_keys test_clusters test_cluster_integration',
-        'host-alias host-list remove-host server-import server-import-panel clusters cluster-sidebar '
-        'cluster-panel-history cluster-terminal-workspace'),
+        'hosts/test_host_alias hosts/test_server_import hosts/test_server_import_aliases hosts/test_server_import_matching '
+        'hosts/test_server_import_routes hosts/test_import_host_keys hosts/test_clusters hosts/test_cluster_integration',
+        'hosts/host-alias hosts/host-list hosts/remove-host hosts/server-import hosts/server-import-panel hosts/clusters hosts/cluster-sidebar '
+        'hosts/cluster-panel-history hosts/cluster-terminal-workspace'),
     'reservations': group(
-        'test_reservations test_reservation_count test_reservation_edit test_group_reservations '
-        'test_resource_planning_integration test_mail test_notifications test_desktop_delivery',
-        'reservations reservation-panel groupReservations mailSettings notifications notification-center'),
+        'reservations/test_reservations reservations/test_reservation_count reservations/test_reservation_edit reservations/test_group_reservations '
+        'reservations/test_resource_planning_integration reservations/test_mail reservations/test_notifications reservations/test_desktop_delivery',
+        'reservations/reservations reservations/reservation-panel reservations/groupReservations reservations/mailSettings reservations/notifications reservations/notification-center'),
     'ssh': group(
-        'test_ssh_password_routes test_ssh_proxy test_ssh_timeouts test_ssh_tunnels '
-        'test_port_forwarding test_jump_platforms test_connection_info test_vscode test_ssh_config_export',
-        'ssh-password tunnel-manager vscode'),
+        'ssh/test_ssh_password_routes ssh/test_ssh_proxy ssh/test_ssh_timeouts ssh/test_ssh_tunnels '
+        'ssh/test_port_forwarding ssh/test_jump_platforms ssh/test_connection_info ssh/test_vscode ssh/test_ssh_config_export',
+        'ssh/ssh-password ssh/tunnel-manager ssh/vscode'),
     'terminal': group(
-        'test_terminal test_terminal_posix test_terminal_workspace test_terminal_completions test_command_tools',
-        'terminal terminal-window terminal-commands terminal-context terminal-highlights '
-        'terminal-images-archives terminal-input terminal-insert terminal-paths terminal-renderer '
-        'terminal-suggestions terminal-templates terminal-assistant-bridge cluster-terminal-workspace'),
+        'terminal/test_terminal terminal/test_terminal_posix terminal/test_terminal_workspace terminal/test_terminal_completions terminal/test_command_tools',
+        'terminal/terminal terminal/terminal-window terminal/terminal-commands terminal/terminal-context terminal/terminal-highlights '
+        'terminal/terminal-images-archives terminal/terminal-input terminal/terminal-insert terminal/terminal-paths terminal/terminal-renderer '
+        'terminal/terminal-suggestions terminal/terminal-templates terminal/terminal-assistant-bridge hosts/cluster-terminal-workspace'),
     'files': group(
-        'test_files test_files_search test_file_ops test_file_transfers test_folder_download '
-        'test_folder_upload test_transfer_session_restore test_log_routes test_log_compare test_log_download',
-        'files file-browser file-editor file-transfers file-window folder-upload file-drop text-editor-actions '
-        'logDownload precision-sync'),
+        'files/test_files files/test_files_search files/test_file_ops files/test_file_transfers files/test_folder_download '
+        'files/test_folder_upload files/test_transfer_session_restore files/test_log_routes files/test_log_compare files/test_log_download',
+        'files/files files/file-browser files/file-editor files/file-transfers files/file-window files/folder-upload files/file-drop files/text-editor-actions '
+        'files/logDownload files/precision-sync'),
     'assistant': group(
-        'test_agent_permission_integration test_agent_permissions test_agent_capabilities test_agent_external_mcp test_agent_api test_agent_profiles test_agent_context test_agent_memory test_agent_chat '
-        'test_assistant_efficiency test_assistant_performance test_chat_stream test_compaction_accounting test_deepagents '
-        'test_model_stream test_model_turn test_codex_agent test_codex_host test_external_agents test_user_skills '
-        'test_skill_integration test_unified_mcp test_mcp_output_budget test_mcp_query_economy',
-        'agentChat agentChatStreaming agentSettings assistant-chat-streaming assistant-engine-picker '
-        'chat-model-picker chat-reply-time chatMarkdown context-usage-meter modelCache skillMention codex-host '
-        'skills skills-settings toolPresentation terminal-assistant-bridge'),
+        'assistant/test_agent_permission_integration assistant/test_agent_permissions assistant/test_agent_capabilities assistant/test_agent_external_mcp assistant/test_agent_api assistant/test_agent_profiles assistant/test_agent_context assistant/test_agent_memory assistant/test_agent_chat '
+        'assistant/test_assistant_efficiency assistant/test_assistant_performance assistant/test_chat_stream assistant/test_compaction_accounting assistant/test_deepagents '
+        'assistant/test_model_stream assistant/test_model_turn assistant/test_codex_agent assistant/test_codex_host assistant/test_external_agents assistant/test_user_skills '
+        'assistant/test_skill_integration assistant/test_unified_mcp assistant/test_mcp_output_budget assistant/test_mcp_query_economy',
+        'assistant/agentChat assistant/agentChatStreaming assistant/agentSettings assistant/assistant-chat-streaming assistant/assistant-engine-picker '
+        'assistant/chat-model-picker assistant/chat-reply-time assistant/chatMarkdown assistant/context-usage-meter assistant/modelCache assistant/skillMention assistant/codex-host '
+        'assistant/skills assistant/skills-settings assistant/toolPresentation terminal/terminal-assistant-bridge'),
     'mcp': group(
-        'test_agent_permission_integration test_agent_permissions test_agent_capabilities test_agent_external_mcp test_agent_tools test_atomic_mcp test_mcp test_mcp_e2e test_unified_mcp '
-        'test_mcp_output_budget test_mcp_query_economy test_skill_integration test_workbench_feature_mcp',
-        'toolPresentation'),
+        'assistant/test_agent_permission_integration assistant/test_agent_permissions assistant/test_agent_capabilities assistant/test_agent_external_mcp mcp/test_agent_tools mcp/test_atomic_mcp mcp/test_mcp mcp/test_mcp_e2e assistant/test_unified_mcp '
+        'assistant/test_mcp_output_budget assistant/test_mcp_query_economy assistant/test_skill_integration mcp/test_workbench_feature_mcp',
+        'assistant/toolPresentation'),
     'workspace': group(
-        'test_workspace_state test_interface_language',
-        'workspace-state preferences browser-id navigation settings-navigation sidebar-layout '
-        'window-layers assistant-window app-confirm locale first-run-guide github-star-prompt demo-runtime demo-workspace'),
+        'workspace/test_workspace_state workspace/test_interface_language',
+        'workspace/workspace-state workspace/preferences workspace/browser-id workspace/navigation workspace/settings-navigation workspace/sidebar-layout '
+        'workspace/window-layers workspace/assistant-window workspace/app-confirm workspace/locale workspace/first-run-guide workspace/github-star-prompt workspace/demo-runtime workspace/demo-workspace'),
     'desktop': group(
-        'test_desktop test_desktop_macos test_desktop_runtime test_desktop_startup test_desktop_update '
-        'test_launcher test_quick_window test_floating_monitor test_floating_position '
-        'test_floating_resize test_floating_context_menu test_macos_regressions test_startup_performance',
-        'desktop-startup desktopUpdates latestUpdate native-window-command'),
+        'desktop/test_desktop desktop/test_desktop_macos desktop/test_desktop_runtime desktop/test_desktop_startup desktop/test_desktop_update '
+        'desktop/test_launcher desktop/test_quick_window desktop/test_floating_monitor desktop/test_floating_position '
+        'desktop/test_floating_resize desktop/test_floating_context_menu desktop/test_macos_regressions desktop/test_startup_performance',
+        'desktop/desktop-startup desktop/desktopUpdates desktop/latestUpdate desktop/native-window-command'),
     'distribution': group(
-        'test_audit_release test_build_environment test_desktop_packaging test_installer_cleanup '
-        'test_macos_install test_source_archive test_windows_launcher_install test_desktop_runtime',
-        'buildInventory',
+        'distribution/test_audit_release distribution/test_build_environment distribution/test_desktop_packaging distribution/test_installer_cleanup '
+        'distribution/test_macos_install distribution/test_source_archive distribution/test_windows_launcher_install desktop/test_desktop_runtime',
+        'distribution/buildInventory',
         'desktop/release.test.mjs scripts/sync-version.test.mjs'),
     'policy': group(
-        'test_internal_defaults test_internal_defaults_review',
-        'internal-defaults',
+        'policy/test_internal_defaults policy/test_internal_defaults_review',
+        'policy/internal-defaults',
         'scripts/generate-internal-defaults.test.mjs scripts/test_test_groups.py'),
 }
 
 
 def inventory(root=ROOT):
     return {p.relative_to(root).as_posix()
-            for directory, pattern in [('tests', 'test_*.py'), ('frontend/tests', '*.test.mjs'),
+            for directory, pattern in [('tests', '**/test_*.py'), ('frontend/tests', '**/*.test.mjs'),
                                        ('scripts', 'test_*.py'), ('scripts', '*.test.mjs'),
                                        ('desktop', '*.test.mjs')]
             for p in (root / directory).glob(pattern)}
