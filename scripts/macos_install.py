@@ -50,7 +50,7 @@ class MacInstaller:
     def checked(self, args):
         result = self.runner([str(value) for value in args], cwd=str(self.root))
         if result.returncode:
-            raise RuntimeError('安装命令失败，请查看上方错误后重新双击运行.command。')
+            raise RuntimeError('安装命令失败，请查看上方错误后重新双击 start.command。')
 
     def install(self, repair=False):
         self.prerequisites()
@@ -162,7 +162,7 @@ def main(argv=None):
     parser.add_argument('--repair', action='store_true')
     args = parser.parse_args(argv)
     if sys.platform != 'darwin':
-        raise RuntimeError('此入口用于 macOS。Windows 请双击运行.cmd。')
+        raise RuntimeError('此入口用于 macOS。Windows 请双击 install.cmd。')
     if sys.version_info < (3, 11):
         raise RuntimeError('需要 Python 3.11 或更新版本。')
     os.umask(0o077)
@@ -170,7 +170,7 @@ def main(argv=None):
     if args.check_only:
         installer.prerequisites()
         if not installer.environment_ready():
-            raise RuntimeError('运行环境尚未安装或依赖已变化，请双击运行.command。')
+            raise RuntimeError('运行环境尚未安装或依赖已变化，请双击 start.command。')
         print('Runtime dependencies are ready; native UI and Keychain access still require a real test.')
         return
     with installation_lock(ROOT):

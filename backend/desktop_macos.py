@@ -462,7 +462,7 @@ def main(argv=None, *, platform=None, rumps_loader=load_rumps, service_factory=m
         rumps = rumps_loader()
     except Exception:
         logging.exception('macOS menu bar dependencies unavailable')
-        print('无法加载 macOS 菜单栏依赖 rumps/PyObjC，请先运行 运行.command；后台服务未启动', file=sys.stderr)
+        print('无法加载 macOS 菜单栏依赖 rumps/PyObjC，请先运行 start.command；后台服务未启动', file=sys.stderr)
         return 1
     lock = lock_factory()
     try:

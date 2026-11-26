@@ -23,7 +23,7 @@ Pop-Location
 
 功能分组、跨模块选测和全量回归的适用范围见[测试说明](docs/TESTING.md)。原有 `python -m pytest tests -q` 仍运行完整后端测试。
 
-`frontend/dist` 随仓库分发，目的是让普通使用者无须安装 Node.js。修改前端后必须重新构建并提交构建结果；不要只提交源码而保留旧页面。开发时可运行 `npm.cmd run dev`。普通使用者双击根目录的 `运行.cmd` 完成安装和托盘启动；`start.cmd` 保留为控制台排障入口。
+`frontend/dist` 随仓库分发，目的是让普通使用者无须安装 Node.js。修改前端后必须重新构建并提交构建结果；不要只提交源码而保留旧页面。开发时可运行 `npm.cmd run dev`。普通使用者双击根目录的 `install.cmd` 完成安装和托盘启动；`start.ps1` 保留为控制台排障入口。
 
 验证部署脚本：
 
@@ -60,8 +60,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-backgroun
 | `backend/assets` | 托盘图标和可编辑 SVG 源文件 |
 | `frontend/src` | 页面、主题与浏览器偏好 |
 | `install.ps1` / `start.ps1` | Windows 安装及运行入口 |
-| `运行.cmd` | 双击后自动安装并启动托盘，后续使用同一入口 |
-| `background.cmd` / `background.ps1` | Windows 托盘后台运行入口 |
+| `install.cmd` | 双击后自动安装并启动托盘，后续使用同一入口 |
+| `background.ps1` | Windows 托盘后台运行入口 |
 | `scripts/windows-common.ps1` | 安装、启动共用环境检查 |
 
 sudo 权限由使用者按机器自行启用；安装和后台启动入口不会自动开启任何机器的 sudo，也不会自动启用登录启动。
@@ -95,7 +95,7 @@ git clone https://github.com/addsubmuldiv/infra-workbench.git
 cd infra-workbench
 ```
 
-克隆完成后，在资源管理器中打开项目目录，双击 **`运行.cmd`**。
+克隆完成后，在资源管理器中打开项目目录，双击 **`install.cmd`**。
 
 维护者提交并通过检查后推送：
 

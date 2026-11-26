@@ -4,13 +4,13 @@
 
 Infra Workbench is an AI-native server workbench for AI engineers. It runs locally on Windows and connects to Linux servers over SSH, bringing resource discovery, process inspection, availability alerts, terminals, files, and training comparison together. The assistant uses workbench tools and can turn confirmed workflows into reusable skills. No persistent remote agent is required.
 
-The UI supports Simplified Chinese and English. Screenshots below show the English interface; Chinese button names are included in the instructions for reference. Screenshots contain fictional machines and sample data. macOS users should read the [platform notes in Chinese](MACOS.md); native Mac behavior still requires hardware verification.
+The UI supports Simplified Chinese and English. The instructions and screenshots use the English interface. Screenshots contain fictional machines and sample data. macOS users should read the [platform notes in Chinese](MACOS.md); native Mac behavior still requires hardware verification.
 
 ## Start and exit
 
-Installer users download the Windows package from the [latest Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest), then use the **Infra Workbench** desktop shortcut; Neither Python nor Node.js needs to be installed separately for normal use. Source users run **`安装.cmd`** to prepare Python and dependencies and must retain the complete project directory.
+Installer users download the Windows package from the [latest Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest), then use the **Infra Workbench** desktop shortcut. Neither Python nor Node.js needs to be installed separately for normal use. Source users run **`install.cmd`** to prepare Python and dependencies and must retain the complete project directory.
 
-Under **Settings → General → Startup and desktop monitor (设置 → 通用 → 启动与桌面浮窗)**, choose a browser or standalone desktop interface and toggle the floating monitor. Save the settings: monitor visibility changes immediately, while the interface choice applies the next time you open the app.
+Under **Settings → General → Startup and floating monitor**, choose a browser or standalone desktop interface and toggle the floating monitor. Save the settings: monitor visibility changes immediately, while the interface choice applies the next time you open the app.
 
 Closing the browser leaves the tray backend running, so monitoring, availability alerts, and notifications continue. Exit the entire app through the tray menu. Monitoring cannot observe remote resources while the computer is asleep, powered off, or disconnected.
 
@@ -51,7 +51,7 @@ Availability alerts do not lock hardware or start training, and history gaps rem
 
 ## Connect and select machines
 
-Click **Add machine (添加机器)** to select an entry from `~/.ssh/config` and its Include files, or enter an address, port, and account manually.
+Click **Add machine** to select an entry from `~/.ssh/config` and its Include files, or enter an address, port, and account manually.
 
 To select a machine directly from VS Code Remote - SSH, click **Add to SSH config** at the bottom of its machine card. Workbench uses the displayed alias as the `Host` name and generates one when there is no alias. An existing entry with the same name and connection settings is reused. Jump hosts and key paths are included when configured. SSH passwords are handled when you connect.
 
@@ -61,11 +61,11 @@ To select a machine directly from VS Code Remote - SSH, click **Add to SSH confi
 - Optional automatic key setup creates a dedicated key, appends its public key remotely, and verifies key authentication.
 - Verify and trust the server fingerprint before connecting to an unknown host.
 
-For bulk import, open **添加机器 → Excel 批量导入** and upload `.xlsx` with the headers `IP`, `账号`, `密码`, and `端口`. The IP field may contain an SSH alias. The account overrides the alias user; an empty port inherits the alias port or defaults to 22 for plain addresses. An explicit port overrides it. Passwords are saved after verification. Existing machines are not duplicated; ambiguous address matches need a unique alias. See the [Chinese import reference](IMPORT.md).
+For bulk import, open **Add machine → Import Excel** and upload `.xlsx` with the headers `IP`, `Username`, `Password`, and `Port`. The IP field may contain an SSH alias. The account overrides the alias user; an empty port inherits the alias port or defaults to 22 for plain addresses. An explicit port overrides it. Passwords are saved after verification. Existing machines are not duplicated; ambiguous address matches need a unique alias. See the [Chinese import reference](IMPORT.md).
 
-In **Resource overview (算力总览)**, search the sidebar and filter by **全部 / GPU / NPU**. Click a name to show one machine, or use checkboxes for several. **全选** selects all and **清空** clears selection. These display choices do not stop background monitoring. Drag the sidebar divider to resize; double-click to reset it.
+In **Resource overview**, search the sidebar and filter by **All / GPU / NPU**. Click a name to show one machine, or use checkboxes for several. **Select all** selects all and **Clear** clears selection. These display choices do not stop background monitoring. Drag the sidebar divider to resize; double-click to reset it.
 
-To remove a machine, hover over its sidebar row and click the trash icon, or use **移除** beside its heading. The confirmation explains that related monitoring, reservations, saved SSH / sudo passwords, and open tools are removed from the app. Remote files and local SSH configuration are retained.
+To remove a machine, hover over its sidebar row and click the trash icon, or use **Remove** beside its heading. The confirmation explains that related monitoring, reservations, saved SSH / sudo passwords, and open tools are removed from the app. Remote files and local SSH configuration are retained.
 
 ## Inspect resources and processes
 
@@ -73,9 +73,9 @@ To remove a machine, hover over its sidebar row and click the trash icon, or use
 
 The top summary covers all added machines; sidebar selection controls the details below. Machine cards show connectivity, CPU usage and logical cores, RAM, and accelerator memory, utilization, temperature, and processes. CPU and RAM reflect the remote system view; container limits may differ.
 
-Use **寻找训练资源** to set device type, count, free memory per device, and optionally **无可见计算进程** (no visible compute processes). Search covers all machines unless **仅在所选机器中寻找** is enabled. Click **查看机器** to display matches. Results use valid online samples; resource discovery does not allocate devices.
+Use **Find training resources** to set device type, count, free memory per device, and optionally **No visible compute processes**. Search covers all machines unless **Search selected machines only** is enabled. Click **View machines** to display matches. Results use valid online samples; resource discovery does not allocate devices.
 
-The top **全部机器** control selects all machines and clears search/type filters, or clears selection when all are selected. **加速设备** groups devices by type and model. **全局符合条件** counts matches across all machines using your resource criteria; **我的预约** opens availability alerts.
+The top **All machines** control selects all machines and clears search/type filters, or clears selection when all are selected. **Accelerators** groups devices by type and model. **Matching machines** counts matches across all machines using your resource criteria; **My alerts** opens availability alerts.
 
 Click a device or process to inspect user, PID, program, working directory, executable, and command. Missing permissions or unavailable fields are shown explicitly.
 
@@ -95,21 +95,21 @@ Select devices to reveal the action bar. Clicking an empty page or machine backg
 
 | UI action | Purpose |
 | --- | --- |
-| 训练前检查 | Enter a training port and inspect selected device resources and port occupancy, with reasons for the result. |
-| 监控所选 | Track resource changes for selected devices; manage rules in 通知中心 → 监控规则. |
-| 预约所选 | Get an alert after selected devices meet continuous-idle conditions. |
+| Readiness check | Enter a training port and inspect selected device resources and port occupancy, with reasons for the result. |
+| Monitor selected | Track resource changes for selected devices; manage rules in Notification center → Monitoring rules. |
+| Alert for selected | Get an alert after selected devices meet continuous-idle conditions. |
 
 Low utilization alone does not prove a device is free. Checks and searches do not reserve hardware.
 
 ## Availability alerts
 
-Click **预约** on a machine to open a form with that machine and selected devices already filled in, or open **卡预约 → 新建预约**.
+Click **Alert** on a machine to open a form with that machine and selected devices already filled in, or open **Availability alerts → New reservation**.
 
 Choose either a device count, such as any four GPUs, or specific device IDs. The default idle period is **two minutes**, configurable from 0 to 1440 minutes, with a free-memory requirement per device. Zero means notify after the next valid sample confirms the conditions.
 
 A qualifying device must have no visible compute process, utilization explicitly equal to zero, sufficient free memory, and no Alarm. Unknown utilization does not qualify; Warning does not block the alert. Occupancy, uncertain state, or interrupted collection resets the timer. For count-based alerts, changing eligible IDs does not reset it while enough devices remain continuously eligible.
 
-The list shows status, progress, remaining time, and separate notification delivery states. **编辑预约** changes conditions and restarts the timer; **再次预约** creates a new alert with previous conditions. **查看机器和设备** locates the target resources. Backend restarts retain alerts but recheck continuous-idle time; completed alerts are not resent.
+The list shows status, progress, remaining time, and separate notification delivery states. **Edit reservation** changes conditions and restarts the timer; **Reserve again** creates a new alert with previous conditions. **View machine and devices** locates the target resources. Backend restarts retain alerts but recheck continuous-idle time; completed alerts are not resent.
 
 These are availability notifications: they do not lock devices or launch jobs. Acceptance by Windows or SMTP does not prove receipt. See the [Chinese reservation reference](RESERVATIONS.md).
 
@@ -117,27 +117,27 @@ These are availability notifications: they do not lock devices or launch jobs. A
 
 ![Notification center](images/notification-center-en.png)
 
-The bell opens **通知中心**, showing seven days of events and monitoring rules. **全部已读** clears unread resource alerts for the current browser. SSH connection changes remain in history but do not count toward unread resource alerts or repeatedly trigger system notifications.
+The bell opens **Notification center**, showing seven days of events and monitoring rules. **Mark all as read** clears unread resource alerts for the current browser. SSH connection changes remain in history but do not count toward unread resource alerts or repeatedly trigger system notifications.
 
 Windows tray notifications work while the backend runs, even with the page closed. The tray menu controls notifications, test messages, and Windows login startup. Browser notifications are a separate option; enabling both can produce two notifications. Old events are not replayed as a backlog.
 
-For email, open **设置 → 集成服务 → 邮件**, enter SMTP host, port, encryption, sender, credentials, and recipient, then enable, save, send a test, and confirm receipt. Enable **使用邮箱通知** separately for each availability alert. New blank alerts default to email off; editing or repeating preserves their choice. Existing alerts are not automatically opted in when SMTP is configured.
+For email, open **Settings → Integrations → Email**, enter SMTP host, port, encryption, sender, credentials, and recipient, then enable, save, send a test, and confirm receipt. Enable **Send email notifications** separately for each availability alert. New blank alerts default to email off; editing or repeating preserves their choice. Existing alerts are not automatically opted in when SMTP is configured.
 
 SMTP acceptance is not confirmed inbox delivery. Failed or uncertain sends are not repeatedly retried automatically. See [email](MAIL.md) and [background behavior](BACKGROUND.md) in Chinese.
 
 ## SSH terminals and server files
 
-Use **终端** or **文件** beside a machine heading to open tools in the workbench. Both can remain open together. The desktop monitor can also open separate native tool windows.
+Use **Terminal** or **Files** beside a machine heading to open tools in the workbench. Both can remain open together. The desktop monitor can also open separate native tool windows.
 
 Terminals support tabs, font size, dragging, resizing, minimizing, maximizing, history suggestions, output search, command templates, completion alerts, and recoverable tmux sessions. Click a minimized card to restore it, or **+** to add a session. With text selected, `Ctrl+C` copies; otherwise it interrupts the foreground command. `Ctrl+V`, Windows clipboard history, and `Ctrl+Shift+C / V` are supported. Closing a session or refreshing can affect foreground work; use tmux for long-running jobs. See [terminal details in Chinese](TERMINAL.md).
 
 In the file window:
 
-- Browse the directory tree, enter a path and navigate, return home or up, refresh, and search filenames. Search can use a remote locate index with a find fallback; **实时搜索** skips the index.
+- Browse the directory tree, enter a path and navigate, return home or up, refresh, and search filenames. Search can use a remote locate index with a find fallback; **Live search (skip index)** skips the index.
 - Single-click to select; double-click a text file or press Enter to edit. Save with the button or `Ctrl+S`. Closing unsaved content offers save, discard, or cancel. Remote version conflicts are not silently overwritten.
 - Create files/directories, copy, cut, move, rename, copy paths, and paste into the destination. Existing targets are not overwritten.
 - Use the upload buttons to send files or folders to the current directory. Follow progress through remote confirmation and cancel when needed. You can also drop local files or folders onto a directory row or elsewhere in the file window. The drop hint shows the destination before you release. Folder uploads preserve the tree, including empty directories when the browser exposes them. Uploads require a new folder name at the destination.
-- Download individual files, or use the folder's three-dot menu → **下载文件夹** for a ZIP. Folder downloads skip symbolic links and special files and report skipped items.
+- Download individual files, or use the folder's three-dot menu → **Download folder** for a ZIP. Folder downloads skip symbolic links and special files and report skipped items.
 
 File tools use the current SSH account. Uploads and downloads have no fixed size cap and require enough disk space for temporary and destination files. The text editor supports up to 1 MiB, a copy operation up to 64 MiB and 1000 items, and a folder transfer up to 10000 items and 64 directory levels. See the [file guide in Chinese](FILES.md) for transfer details.
 
@@ -160,19 +160,19 @@ Create a new conversation, enable **Only allow operations on selected machines**
 
 Configure a service URL, API key, and model under **Settings → AI assistant → Model configuration**, then save and test. Multiple profiles are supported. A text test alone does not validate function-tool support. Alternatively, select local Codex, Claude Code, or OpenCode in the assistant; install and sign in to the chosen CLI separately. See [local engines and validation limits](EXTERNAL-AGENTS.md).
 
-Open **AI 助手** and describe a goal: find four free GPUs with 40 GiB each, identify accelerator users and working directories, read a specified training log, or create an alert with confirmed conditions. The assistant can query resources, processes, tmux, and files, and manage reservations, monitoring, and files as requested. Expand execution steps to inspect target machines, arguments, raw results, and errors.
+Open **AI assistant** and describe a goal: find four free GPUs with 40 GiB each, identify accelerator users and working directories, read a specified training log, or create an alert with confirmed conditions. The assistant can query resources, processes, tmux, and files, and manage reservations, monitoring, and files as requested. Expand execution steps to inspect target machines, arguments, raw results, and errors.
 
-By default, tools may access all added machines. To restrict a turn, expand the composer context controls and enable **仅允许操作所选的机器**. Selecting machines in the sidebar alone does not restrict assistant access.
+By default, tools may access all added machines. To restrict a turn, expand the composer context controls and enable the option to restrict operations to the selected machines. Selecting machines in the sidebar alone does not restrict assistant access.
 
-Click **取消本轮** to stop further work. Completed actions are not rolled back. Collapsing the assistant, switching pages, or closing the display connection does not cancel background work. Replies support Markdown, tables, Mermaid, and math; review the underlying tool output when assessing conclusions.
+Click **Cancel turn** to stop further work. Completed actions are not rolled back. Collapsing the assistant, switching pages, or closing the display connection does not cancel background work. Replies support Markdown, tables, Mermaid, and math; review the underlying tool output when assessing conclusions.
 
-The assistant docks on the right. Drag its header to float it; drag back to the right edge or click **停靠到右侧** to dock again. Resize or collapse it while retaining the conversation and input draft. Create or switch conversations as needed. Long conversations show context-compaction status while retaining local chat history.
+The assistant docks on the right. Drag its header to float it; drag back to the right edge or click **Dock on the right** to dock again. Resize or collapse it while retaining the conversation and input draft. Create or switch conversations as needed. Long conversations show context-compaction status while retaining local chat history.
 
 ### Create and import skills
 
 Use skills to capture repeatable inspection steps, log-analysis instructions, or report requirements:
 
-1. Open **Settings → AI assistant → Skills (设置 → AI 助手 → Skills)** and create a draft, paste `SKILL.md`, or import UTF-8 Markdown / ZIP. Imported content first becomes a draft for review.
+1. Open **Settings → AI assistant → Skills** and create a draft, paste `SKILL.md`, or import UTF-8 Markdown / ZIP. Imported content first becomes a draft for review.
 2. Edit the instructions, validate the package, and install it. Drafts persist, so you can return later.
 3. Type `@` in the chat composer to search and select a skill. Arrow keys and Enter / Tab select; Esc closes the picker. Without an explicit selection, the assistant can discover skills as needed.
 4. Manage installed skills with enable/disable, copy, export, and version rollback. Changes apply on the next turn; a running turn retains its original skill snapshot.
@@ -185,7 +185,7 @@ Conversations and server content actually read by tools are sent to your configu
 
 ## Compare training metrics
 
-In **精度对比**, choose baseline and candidate machines and log files, load them, select rank / training segment and metrics, and set a step range.
+In **Training comparison**, choose baseline and candidate machines and log files, load them, select rank / training segment and metrics, and set a step range.
 
 Supported training JSON logs are aligned by actual step. Results include curves, mean absolute error (MAE), maximum absolute error, and per-step differences, with access to source log lines. Duplicate steps can raise an error or retain the first/last occurrence; data is not automatically interpolated or smoothed.
 
@@ -193,7 +193,7 @@ Save configurations, export all results as CSV, or download raw logs without met
 
 ## Interface language
 
-Open **Settings → General → Interface language (设置 → 通用 → 界面语言)** and choose **English** or **简体中文**. The change applies immediately without reconnecting machines, resetting editor drafts, or recreating terminal sessions. The local backend saves the choice for future launches and synchronizes it across workbench windows, the Windows desktop monitor, and tray menus. Machine names, files and logs, terminal output, model responses, and some original backend diagnostics retain their source language.
+Open **Settings → General → Interface language** and choose **English** or **简体中文**. The change applies immediately without reconnecting machines, resetting editor drafts, or recreating terminal sessions. The local backend saves the choice for future launches and synchronizes it across workbench windows, the Windows desktop monitor, and tray menus. Machine names, files and logs, terminal output, model responses, and some original backend diagnostics retain their source language.
 
 ![English interface and language settings](images/interface-language-en.png)
 
@@ -201,11 +201,11 @@ Open **Settings → General → Interface language (设置 → 通用 → 界面
 
 ![Resource monitor overview](images/floating-overview-en.jpg)
 
-Toggle **显示浮窗** in the Windows tray menu or use startup settings. The monitor works with either main interface. The OS title bar in these screenshots belongs to a preview host; the production monitor is borderless.
+Toggle **Show monitor** in the Windows tray menu or use startup settings. The monitor works with either main interface. The OS title bar in these screenshots belongs to a preview host; the production monitor is borderless.
 
-Click a machine or **详情 ›** for device details. Hover over a device to see memory, utilization, and collected process information. Use **选择机器** to search and select machines, **−** to collapse, and **展开** to expand. Drag the header to move, drag an edge to resize, use the pin for always-on-top, and open the gear for opacity settings. Layout and selections are saved, and the monitor follows the workbench theme.
+Click a machine or **Details ›** for device details. Hover over a device to see memory, utilization, and collected process information. Use **Machines** to search and select machines, **−** to collapse, and **Expand** to expand. Drag the header to move, drag an edge to resize, use the pin for always-on-top, and open the gear for opacity settings. Layout and selections are saved, and the monitor follows the workbench theme.
 
-Right-click a machine card, name, or device to open a standalone terminal (**打开终端**) or file window (**打开文件**). A file window can open a terminal in its current directory; terminal directory links can open a separate file window. Closing a normal SSH terminal may end foreground jobs, so use tmux for long tasks.
+Right-click a machine card, name, or device and choose **Open terminal** or **Open files**. A file window can open a terminal in its current directory; terminal directory links can open a separate file window. Closing a normal SSH terminal may end foreground jobs, so use tmux for long tasks.
 
 Unknown or stale data must not be treated as free resources. Availability alerts apply additional utilization, memory, and continuous-idle checks. See the [illustrated monitor guide](FLOATING-MONITOR.en.md).
 
@@ -223,7 +223,7 @@ Unknown or stale data must not be treated as free resources. Availability alerts
 
 ### Appearance and refresh settings
 
-Choose a theme from **主题**. Keep passwords, private keys, and the local `data/` directory private. The app does not provide team accounts or a resource scheduler; do not expose its local service directly to a LAN or the internet. See [data and credentials in Chinese](../SECURITY.md).
+Choose a theme from **Theme**. Keep passwords, private keys, and the local `data/` directory private. The app does not provide team accounts or a resource scheduler; do not expose its local service directly to a LAN or the internet. See [data and credentials in Chinese](../SECURITY.md).
 
 Refresh intervals are 5, 10, 15, 20, or 30 seconds, defaulting to 30. The backend saves the choice for all windows and uses it for collection and display refresh. Legacy 60-second settings are reduced to 30 seconds.
 

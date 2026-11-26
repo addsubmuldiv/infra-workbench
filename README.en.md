@@ -76,7 +76,7 @@ The execution host changes, while the agent stays in the same thread with your g
 | Option | Best for | Details |
 | --- | --- | --- |
 | **Windows installer (recommended)** | Daily use | Bundles the Python backend and frontend assets; no separate Python or Node.js required |
-| **Run from source** | Developers / custom setups | Clone or extract the repo and run `安装.cmd` to prepare Python and dependencies |
+| **Run from source** | Developers / custom setups | Clone or extract the repo and run `install.cmd` to prepare Python and dependencies |
 | **Browser demo** | Quick exploration | Browser-only simulated data; no servers or model API keys required |
 
 ### Windows installer (recommended)
@@ -88,7 +88,7 @@ Download the Windows x64 installer from the [latest Release](https://github.com/
 
 ### Run from source
 
-Extract or clone the full repository and run `安装.cmd`. First-time setup requires internet access to prepare Python (via WinGet for Python 3.12 if missing) and dependencies, and requires keeping the entire project directory. See [Windows instructions](docs/WINDOWS.md).
+Extract or clone the full repository and run `install.cmd`. First-time setup requires internet access to prepare Python (via WinGet for Python 3.12 if missing) and dependencies, and requires keeping the entire project directory. See [Windows instructions](docs/WINDOWS.md).
 
 ### Browser demo (no server required)
 
@@ -108,7 +108,7 @@ The demo isolates all requests to the real backend—it never connects to server
 
 - **Code signing & acceptance**: The Windows installer has no Authenticode signature (updater packages carry a separate update signature). Clean Windows install, upgrade, and uninstall acceptance is still pending.
 - **In-app updates**: Windows installers support startup update checks and user-initiated download/install starting from `v0.1.1`. Existing `v0.1.0` users must manually install once; save work, close active terminals, and exit the old tray backend first. See [updater operation and limits](docs/UPDATES.md).
-- **Source updates**: Exit from the tray menu, pull the latest code, and re-run `安装.cmd`; existing machine configurations are preserved.
+- **Source updates**: Exit from the tray menu, pull the latest code, and re-run `install.cmd`; existing machine configurations are preserved.
 - **macOS**: Must be built on a Mac; experimental Apple Silicon packages are included only when explicitly listed on a Release, and physical Mac verification is still pending. See [macOS notes](docs/MACOS.md) (in Chinese).
 
 </details>

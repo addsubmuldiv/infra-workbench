@@ -44,7 +44,7 @@
 
 涉及业务工具先读 [统一 MCP](UNIFIED-MCP.md)，涉及多窗口偏好读 [共享工作空间状态](WORKSPACE-STATE.md)。桌面打包和更新见 [桌面构建](DESKTOP.md) 与 [更新机制](UPDATES.md)。
 
-文件名含 `VALIDATION` 的文档和 `superpowers/` 中的设计、计划用于保留验证或开发记录，不能代替当前版本的使用说明或实机验收。
+文件名含 `VALIDATION` 的文档记录了验证结果，`superpowers/specs/` 保留设计文档。
 
 ## 设计草案
 

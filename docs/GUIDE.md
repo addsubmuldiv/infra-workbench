@@ -10,7 +10,7 @@ Infra Workbench 是面向 AI 工程师的 AI 原生服务器工作台，在 Wind
 
 ## 启动与退出
 
-安装版用户从 [Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest) 下载安装包，安装后使用桌面的 **Infra Workbench** 图标，不需要另外安装 Python 或 Node.js。源码用户首次运行项目根目录的 **`安装.cmd`**，此方式需要准备 Python 和依赖，并保留整个项目目录。「设置 → 通用 → 启动与桌面浮窗」可选择浏览器或独立桌面窗口，并开关桌面浮窗；保存后，界面启动方式在下次打开时生效，浮窗开关立即生效。
+安装版用户从 [Release](https://github.com/addsubmuldiv/infra-workbench/releases/latest) 下载安装包，安装后使用桌面的 **Infra Workbench** 图标，不需要另外安装 Python 或 Node.js。源码用户首次运行项目根目录的 **`install.cmd`**，此方式需要准备 Python 和依赖，并保留整个项目目录。「设置 → 通用 → 启动与桌面浮窗」可选择浏览器或独立桌面窗口，并开关桌面浮窗；保存后，界面启动方式在下次打开时生效，浮窗开关立即生效。
 
 关闭网页后，托盘和本地后台仍可继续监控、处理预约和发送通知。退出整个软件请使用托盘右键菜单。电脑睡眠、关机或网络断开期间不能持续观察远端资源。
 

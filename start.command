@@ -5,7 +5,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/s
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 if [ "$(uname -s)" != "Darwin" ]; then
-  printf '%s\n' 'This launcher requires macOS. On Windows, double-click 运行.cmd.' >&2
+  printf '%s\n' 'This launcher requires macOS. On Windows, double-click install.cmd.' >&2
   exit 1
 fi
 for candidate in python3.13 python3.12 python3.11 python3 /Library/Frameworks/Python.framework/Versions/*/bin/python3; do

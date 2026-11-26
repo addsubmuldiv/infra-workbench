@@ -268,8 +268,8 @@ def test_command_launcher_preserves_unicode_paths_arguments_and_missing_python(t
     import os
     import shutil
     root=tmp_path/'中文 space checkout';(root/'scripts').mkdir(parents=True)
-    source=Path(__file__).resolve().parents[1]/'运行.command'
-    script=root/'运行.command';script.write_bytes(source.read_bytes())
+    source=Path(__file__).resolve().parents[1]/'start.command'
+    script=root/'start.command';script.write_bytes(source.read_bytes())
     output=root/'argv.json'
     (root/'scripts'/'macos_install.py').write_text('import json,sys;from pathlib import Path;Path(__file__).parent.parent.joinpath("argv.json").write_text(json.dumps(sys.argv))',encoding='utf-8')
     commands=tmp_path/'fake-bin';commands.mkdir()

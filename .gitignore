@@ -15,6 +15,7 @@ Thumbs.db
 .idea/
 # Local agent plans and session artifacts.
 /.zcode/
+/docs/superpowers/plans/
 *.pem
 *.key
 id_rsa*
