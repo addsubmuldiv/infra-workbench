@@ -10,7 +10,7 @@
 | 启动退出 | `backend/desktop.py` 60 秒；`backend/launcher.py` 默认 90 秒；线程等待 | 分清不同阶段的预算 |
 | 采样与历史 | `reservations.py` 采样间隔上限 30 秒；`resource_history.py` 7 天/10000 条；`resource_stats.py` 30 天和新鲜度规则 | 保留未知状态与采样时间 |
 | 文件与日志 | `file_ops.py` 文本 1 MiB、复制 64 MiB、1000 项；上传下载 512 MiB；文件夹 10000 项；日志 64 MiB/10000 条 | 优先核对本地与远端 probe 重复限制 |
-| 导入与技能 | `server_import.py` 2 MiB/100 行；`skill_service.py` 大小和数量限制；`mcp_skills.py` schema | 同步校验、schema 和界面提示 |
+| 导入与技能 | `backend/hosts/imports/server_import.py` 2 MiB/100 行；`skill_service.py` 大小和数量限制；`mcp_skills.py` schema | 同步校验、schema 和界面提示 |
 | 助手与模型 | `agent_context.py` 默认上下文 32000；助手模块缓存、调用预算、输出限制 | 区分模型能力、内部默认与用户设置 |
 | 界面浮窗 | `floating_layout.py` 尺寸与缩放；前端轮询、提示时长、防抖 | 尺寸与时间分开管理，保留共享偏好 |
 | 桌面更新与探测 | `desktop/src-tauri/src/updater.rs` 请求 90 秒、退出等待 45 秒、恢复观察 180 秒；`startup_probe.rs` TCP 探测 150 毫秒 | 保留各阶段安全语义，不能统一缩短 |
@@ -123,11 +123,11 @@
 | `backend/resource_stats.py:135` | `db=sqlite3.connect(Path(self.database_path).as_uri()+'?mode=ro',uri=True,timeout=1)` |
 | `backend/resource_stats.py:151` | `return {host_id for host_id in host_ids if db.execute('SELECT 1 FROM resource_observations WHERE host_id=? LIMIT 1',(host_id,)).fetchone()}` |
 | `backend/resource_stats.py:169` | `rows = db.execute('SELECT observed_at,fresh_until,name,status,reason,devices,run_id,id,COALESCE(last_observed_at,observed_at) FROM resource_observations WHERE host_id=? AND observed_at<? AND (observed_at>=? OR id=(SELECT id FROM resource_observations WHERE host_id=? AND observed_at<? ORDER BY observed_at DESC,id DESC LIMI…` |
-| `backend/server_import.py:11` | `MAX_FILE=2*1024*1024` |
-| `backend/server_import.py:12` | `MAX_ROWS=100` |
-| `backend/server_import.py:53` | `if not data or len(data)>MAX_FILE:raise WorkbookError('文件不能为空，且不能超过 2 MiB')` |
-| `backend/server_import.py:82` | `if len(rows)>=MAX_ROWS:raise WorkbookError('一次最多导入 100 台服务器，请拆分表格')` |
-| `backend/server_import_routes.py:39` | `if len(data)+len(chunk)>MAX_FILE:raise HTTPException(413,'Excel 文件不能超过 2 MiB')` |
+| `backend/hosts/imports/server_import.py:11` | `MAX_FILE=2*1024*1024` |
+| `backend/hosts/imports/server_import.py:12` | `MAX_ROWS=100` |
+| `backend/hosts/imports/server_import.py:53` | `if not data or len(data)>MAX_FILE:raise WorkbookError('文件不能为空，且不能超过 2 MiB')` |
+| `backend/hosts/imports/server_import.py:82` | `if len(rows)>=MAX_ROWS:raise WorkbookError('一次最多导入 100 台服务器，请拆分表格')` |
+| `backend/hosts/imports/server_import_routes.py:39` | `if len(data)+len(chunk)>MAX_FILE:raise HTTPException(413,'Excel 文件不能超过 2 MiB')` |
 | `backend/skill_routes.py:77` | `if len(content)+len(chunk)>UPLOAD_LIMIT:raise HTTPException(413,'导入文件不能超过 2 MiB')` |
 | `backend/skill_service.py:19` | `UPLOAD_LIMIT = 2 * 1024 * 1024` |
 | `backend/skill_service.py:20` | `TOTAL_LIMIT = 8 * 1024 * 1024` |

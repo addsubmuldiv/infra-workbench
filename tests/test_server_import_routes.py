@@ -112,7 +112,7 @@ def test_preview_discard_and_report_spreadsheet_formula_escaping(tmp_path):
 
 
 def test_host_added_between_duplicate_check_and_connection_lock_is_skipped(tmp_path):
-    from backend.server_import import ImportRow
+    from backend.hosts.imports.server_import import ImportRow
     app=import_app(tmp_path);manager=app.state.server_imports
     async def forbidden(*args):raise AssertionError('existing host must not be authenticated again')
     app.state.ssh.connect=forbidden

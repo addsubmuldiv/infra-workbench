@@ -10,7 +10,7 @@ def check_resources():
     from PIL import Image
     from .chat_tools import remote_source
     from .floating_theme import palettes
-    from .server_import import import_template, parse_workbook
+    from .hosts.imports.server_import import import_template, parse_workbook
 
     checks = []
     context = ssl.create_default_context(cafile=certifi.where())

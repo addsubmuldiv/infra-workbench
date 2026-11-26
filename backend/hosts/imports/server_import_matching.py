@@ -1,9 +1,9 @@
 """Match spreadsheet rows to existing hosts without changing SSH configuration."""
 from pathlib import Path
 
-from .core import discover_aliases
+from ...core import discover_aliases
 from .server_import import WorkbookError
-from .ssh_passwords import connection_identity
+from ...ssh_passwords import connection_identity
 
 
 def new_import_host(row):

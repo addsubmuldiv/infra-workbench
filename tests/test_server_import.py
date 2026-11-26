@@ -5,8 +5,8 @@ import json
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from backend.server_import import parse_workbook, import_template, ImportRow, safe_failure
-from backend.server_import_jobs import ImportJobs
+from backend.hosts.imports.server_import import parse_workbook, import_template, ImportRow, safe_failure
+from backend.hosts.imports.server_import_jobs import ImportJobs
 
 
 def workbook(rows):

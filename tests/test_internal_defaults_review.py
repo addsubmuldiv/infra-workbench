@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 
 def test_streaming_entry_errors_report_actual_limits(monkeypatch,tmp_path):
     monkeypatch.setenv('IWB_DATA',str(tmp_path))
-    from backend import server_import_routes,skill_routes
+    from backend import skill_routes
+    from backend.hosts.imports import server_import_routes
     app=FastAPI()
     monkeypatch.setattr(server_import_routes,'MAX_FILE',8)
     monkeypatch.setattr(skill_routes,'UPLOAD_LIMIT',8)

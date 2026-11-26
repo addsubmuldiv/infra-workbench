@@ -56,8 +56,8 @@ from .mcp_server import register_mcp
 from .mcp_client import MCPGateway
 from .mcp_operations import REQUEST_ORIGIN
 from .agent_errors import AgentError
-from .server_import_routes import register_import_routes
-from .server_import_matching import find_existing,prepare_existing,new_import_host
+from .hosts.imports.server_import_routes import register_import_routes
+from .hosts.imports.server_import_matching import find_existing,prepare_existing,new_import_host
 
 ROOT = Path(__file__).resolve().parents[1]
 

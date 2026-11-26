@@ -8,8 +8,8 @@ import pytest
 from backend.agent_errors import AgentError
 from backend.app import create_app
 from backend.cluster_terminals import ClusterTerminals
-from backend.server_import import ImportRow
-from backend.server_import_jobs import ImportJobs
+from backend.hosts.imports.server_import import ImportRow
+from backend.hosts.imports.server_import_jobs import ImportJobs
 from backend.terminal_shell import shell_rc
 from backend.terminal_tmux import tmux_command
 
