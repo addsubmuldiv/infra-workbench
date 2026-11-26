@@ -3,16 +3,26 @@
   const service = location.origin === 'http://127.0.0.1:8765';
   const bootstrap = (location.protocol === 'tauri:' && location.hostname === 'localhost') || ['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost'].includes(location.origin);
   if ((!service && !bootstrap) || window.__iwbStartup) return;
-  // Tauri runs initialization scripts before HTML parsing. Wait for the
-  // document's blocking stylesheet; never present an unstyled startup overlay.
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startup, {once:true});return;
-  }
-  if (!document.documentElement) {
+  const root = document.documentElement;
+  if (!root) {
     const observer = new MutationObserver(() => {
       if (document.documentElement) {observer.disconnect();startup();}
     });
     observer.observe(document, {childList:true});return;
+  }
+  const theme = window.__iwbStartupTheme;
+  if (theme && !root.dataset.theme) {
+    root.dataset.theme = theme.id;
+    if (bootstrap) {
+      const style = document.createElement('style');
+      style.textContent = theme.css;
+      root.prepend(style);
+    }
+  }
+  // Tauri runs initialization scripts before HTML parsing. Wait for the
+  // document's blocking stylesheet; never present an unstyled startup overlay.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startup, {once:true});return;
   }
   // Service locale is owned by the shared workspace; its default is Chinese.
   let en = service ? (document.documentElement.lang || 'zh').toLowerCase().startsWith('en') : !navigator.language.toLowerCase().startsWith('zh');

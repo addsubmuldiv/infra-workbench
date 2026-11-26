@@ -70,8 +70,6 @@ import {deviceUsage} from './features/monitoring/hostUsage';
 import {HOST_CATEGORIES,filterHosts,type HostCategory} from './features/hosts/hostList';
 declare const __IWB_VERSION__:string;
 const appVersion=typeof __IWB_VERSION__==='undefined'?'':__IWB_VERSION__;
-let bootPreferences=loadPreferences(browserStorage());
-document.documentElement.dataset.theme=bootPreferences.theme;
 
 type Collection = {paused?:boolean;actual_interval_seconds?:number;status:string;queue_seconds?:number;duration_seconds?:number;request_bytes?:number;response_bytes?:number;samples?:number;total_response_bytes?:number};
 type ProcessContainer = {
@@ -697,7 +695,7 @@ function AddMachine({close,connected,imported}:{close:()=>void;connected:(messag
 }
 async function boot(){
  const root=document.getElementById('root')!;root.textContent=ui("正在读取工作空间状态…");
- try{await initializeWorkspace({isolated:isDemo});initializeLocale();bootPreferences=loadPreferences(workspaceStorage);document.documentElement.dataset.theme=bootPreferences.theme}
+ try{await initializeWorkspace({isolated:isDemo});initializeLocale();document.documentElement.dataset.theme=loadPreferences(workspaceStorage).theme}
  catch{root.textContent=ui("无法读取工作空间状态，请确认后台已更新并运行。");const retry=document.createElement('button');retry.textContent=ui("重试");retry.onclick=()=>{void boot()};root.append(retry);return}
  const quick=!isDemo&&new URLSearchParams(location.search).has('tool');
  createRoot(root).render(<RenderBoundary fallback={<RenderFailure title={tr("工作台界面暂时无法显示","Workbench could not display")}/>}>

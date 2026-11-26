@@ -1,11 +1,12 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use infra_workbench_desktop::{is_download_url, is_service_url, machine_overview_fragment, DesktopSession, SERVICE_URL};
-use std::{path::PathBuf, process::{Command, Stdio}, sync::{Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
+use std::{path::{Path, PathBuf}, process::{Command, Stdio}, sync::{Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 mod window_fade;
 mod lifecycle;
 mod quick_window;
+mod startup_theme;
 mod updater;
 use window_fade::restore_window;
 
@@ -102,28 +103,34 @@ fn watch_service(app:tauri::AppHandle){
     });
 }
 
-fn start_runtime() -> Result<std::process::Child, String> {
-    let mut command;
-    let data;
-    let source_root = std::env::var_os("IWB_SOURCE_ROOT").map(PathBuf::from).or_else(|| {
+fn runtime_source_root() -> Option<PathBuf> {
+    std::env::var_os("IWB_SOURCE_ROOT").map(PathBuf::from).or_else(|| {
         cfg!(debug_assertions).then(|| {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
         })
-    });
+    })
+}
+
+fn runtime_data_directory(source_root: Option<&Path>) -> Option<PathBuf> {
+    std::env::var_os("IWB_DATA").map(PathBuf::from)
+        .or_else(|| source_root.map(|root| root.join("data")))
+        .or_else(|| dirs::data_local_dir().map(|base| base.join("InfraWorkbench")))
+}
+
+fn start_runtime() -> Result<std::process::Child, String> {
+    let mut command;
+    let source_root = runtime_source_root();
+    let data = runtime_data_directory(source_root.as_deref()).ok_or("无法确定当前用户的数据目录")?;
     if let Some(root) = source_root {
         let python = root.join(if cfg!(windows) {".venv/Scripts/pythonw.exe"} else {".venv/bin/python"});
         if !python.is_file() { return Err("找不到项目 Python 环境，请先运行原有安装入口。".into()); }
         command = Command::new(python);
         command.args(["-m", "backend.desktop_runtime"]).current_dir(&root);
-        data = std::env::var_os("IWB_DATA").map(PathBuf::from).unwrap_or_else(|| root.join("data"));
     } else {
         let executable = std::env::current_exe().map_err(|e| e.to_string())?;
         let runtime = executable.parent().unwrap().join(if cfg!(windows) {"iwb-runtime.exe"} else {"iwb-runtime"});
         if !runtime.is_file() { return Err("安装包缺少 Python 后台，请重新安装完整桌面版。".into()); }
         command = Command::new(runtime);
-        data = std::env::var_os("IWB_DATA").map(PathBuf::from)
-            .or_else(|| dirs::data_local_dir().map(|base| base.join("InfraWorkbench")))
-            .ok_or("无法确定当前用户的数据目录")?;
     }
     std::fs::create_dir_all(&data).map_err(|e| format!("无法创建数据目录：{e}"))?;
     command.arg("--no-browser").env("IWB_DATA", &data)
@@ -280,10 +287,13 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool, desktop_selected: bool,
     }
     *navigation.lock().unwrap() = MainNavigation { ready: false, pending: fragment };
     let navigation_app=app.clone();
+    let data = runtime_data_directory(runtime_source_root().as_deref());
+    let theme = startup_theme::StartupTheme::load(data.as_deref());
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Infra Workbench").inner_size(1440.0, 900.0).min_inner_size(480.0, 360.0)
-        .visible(true)
-        .background_color(tauri::window::Color(242,245,249,255));
+        .visible(false)
+        .background_color(theme.background)
+        .initialization_script(theme.initialization_script());
     #[cfg(windows)]
     let builder = builder.decorations(false).initialization_script("window.__iwbDesktopTitlebar = true;");
     let window = builder
@@ -322,6 +332,7 @@ fn show_main_window(app: &tauri::AppHandle, focus: bool, desktop_selected: bool,
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 window.state::<Mutex<MainNavigation>>().lock().unwrap().ready = false;
             } else if bootstrap_url(payload.url()) {
+                if window.state::<DesktopSession>().mark_ready() { restore_window(&window, false); }
                 connect(window, desktop_selected);
             }
         })

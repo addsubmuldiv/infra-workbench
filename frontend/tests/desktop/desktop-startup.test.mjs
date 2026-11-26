@@ -6,11 +6,29 @@ const script=()=>readFileSync(new URL('../../../desktop/bootstrap/startup.js',im
 function harness(origin='http://127.0.0.1:8765',lang='en',readyState='complete',window={}) {
  const nodes=new Map(),intervals=new Map(),timeouts=new Map(),observers=[],documentListeners=new Map();let now=0,nextId=0,reloads=0;
  const element=()=>({style:{},attributes:{},listeners:{},children:[],appendChild(child){this.children.push(child)},prepend(child){this.children.unshift(child)},setAttribute(k,v){this.attributes[k]=v},remove(){this.removed=true},addEventListener(k,fn){this.listeners[k]=fn}});
- const document={readyState,addEventListener(name,fn){documentListeners.set(name,fn)},documentElement:{lang,appendChild(node){nodes.set(node.id,node)}},createElement:element,getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)}};
+ const root={lang,dataset:{},styles:[],appendChild(node){nodes.set(node.id,node)},prepend(style){this.styles.unshift(style)}};
+ const document={readyState,addEventListener(name,fn){documentListeners.set(name,fn)},documentElement:root,createElement:element,getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)}};
  class MutationObserver {constructor(callback){this.callback=callback;observers.push(this)} observe(target,options){this.options=options} disconnect(){this.disconnected=true}}
  const context={window,document,MutationObserver,setTimeout(fn,delay){const id=++nextId;timeouts.set(id,{fn,delay});return id},clearTimeout(id){timeouts.delete(id)},location:{origin,reload(){reloads++}},navigator:{language:'en-US'},performance:{now:()=>now},setInterval(fn){const id=++nextId;intervals.set(id,fn);return id},clearInterval(id){intervals.delete(id)},Date};
- vm.runInNewContext(script(),context);return {window,nodes,intervals,timeouts,observers,get reloads(){return reloads},loaded(){document.readyState='interactive';documentListeners.get('DOMContentLoaded')?.()},tick(ms){now=ms;intervals.forEach(fn=>fn())},setLang(value){document.documentElement.lang=value;observers.filter(o=>!o.disconnected).forEach(o=>o.callback())}};
+ vm.runInNewContext(script(),context);return {window,root,nodes,intervals,timeouts,observers,get reloads(){return reloads},loaded(){document.readyState='interactive';documentListeners.get('DOMContentLoaded')?.()},tick(ms){now=ms;intervals.forEach(fn=>fn())},setLang(value){document.documentElement.lang=value;observers.filter(o=>!o.disconnected).forEach(o=>o.callback())}};
 }
+
+test('saved dark theme is applied during parsing and survives the handoff to the workspace',()=>{
+ const theme={id:'midnight',css:'[data-theme="midnight"]{color-scheme:dark}'};
+ const bootstrap=harness('http://tauri.localhost','zh-CN','loading',{__iwbStartupTheme:theme});
+ assert.equal(bootstrap.root.dataset.theme,'midnight');
+ assert.equal(bootstrap.root.styles[0].textContent,theme.css);
+ assert.equal(bootstrap.nodes.size,0);
+ bootstrap.loaded();
+ assert.equal(bootstrap.root.styles.length,1);
+
+ const service=harness(undefined,'zh-CN','loading',{__iwbStartupTheme:theme});
+ assert.equal(service.root.dataset.theme,'midnight');
+ assert.equal(service.root.styles.length,0);
+ service.root.dataset.theme='graphite';
+ service.loaded();
+ assert.equal(service.root.dataset.theme,'graphite');
+});
 
 test('Windows startup page can control the window before the backend is ready',async()=>{
  const calls=[];
