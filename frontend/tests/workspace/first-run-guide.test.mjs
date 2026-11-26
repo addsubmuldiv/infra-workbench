@@ -35,7 +35,7 @@ test('existing workspaces are not interrupted and settings can still replay the 
   const h=harness(t,{hasHosts:true});assert.equal(h.render(),null);h.replay();assert.match(h.text(),/连接第一台机器/);
 });
 test('completing all steps records completion without connecting to any server',t=>{
-  const h=harness(t);h.render();for(let i=0;i<5;i++)h.click('下一步');assert.match(h.text(),/随时回来/);h.click('完成引导');
+  const h=harness(t);h.render();for(let i=0;i<7;i++)h.click('下一步');assert.match(h.text(),/随时回来/);h.click('完成引导');
   assert.equal(h.render(),null);assert.equal(h.storage.get('workspace:onboarding-completed:v1'),'true');assert.equal(h.added(),0);
 });
 test('adding a machine is an explicit user action after dismissing the guide',t=>{

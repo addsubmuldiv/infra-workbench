@@ -33,7 +33,7 @@ export function NotificationCenter({events,rules,hosts,tab,setTab,notify,busy,to
     setTab(index===0?'messages':'rules');event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')[index]?.focus();
   };
   const ordered=[...events].sort((a,b)=>b.id-a.id);
-  return <div className="notification-center" ref={root}>
+  return <div className="notification-center" ref={root} data-tour="notifications">
     <button ref={bell} className={'icon-button notification-bell '+(tab?'active':'')} title={t("通知中心","Notification center")} aria-label={unread?t(`通知中心，${unread} 条未读`,`Notification center, ${unread} unread`):t("通知中心","Notification center")} aria-expanded={!!tab} aria-controls="notification-panel" onClick={()=>setTab(tab?null:'messages')}><Bell size={18}/>{unread>0&&<span className="notification-count">{unread>99?'99+':unread}</span>}</button>
     {tab&&<section ref={panel} id="notification-panel" className="notification-panel" role="dialog" aria-label={t("通知中心","Notification center")} tabIndex={-1}>
       <div className="notification-heading"><div><h2>{t("通知中心","Notification center")}</h2><p>{t("资源提醒、预约通知与运行记录","Resource alerts, reservations, and activity")}</p></div><button className="icon-button" aria-label={t("关闭通知中心","Close notification center")} onClick={close}><X size={17}/></button></div>

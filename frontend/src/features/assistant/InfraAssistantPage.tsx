@@ -9,7 +9,7 @@ import {AssistantChat} from './AssistantChat';
 import {TerminalInsert} from '../terminal/TerminalInsert';
 
 type AssistantProps={compact?:boolean;openSettings:()=>void;selectedHostIds?:string[]};
-export function InfraAssistant(props:AssistantProps){return isDemo?<DemoAssistant/>:<LiveInfraAssistant {...props}/>}
+export function InfraAssistant(props:AssistantProps){return isDemo?<DemoAssistant selectedHostIds={props.selectedHostIds}/>:<LiveInfraAssistant {...props}/>}
 function LiveInfraAssistant({openSettings,selectedHostIds=[],compact=false}:{compact?:boolean;openSettings:()=>void;selectedHostIds?:string[]}){
   const [status,setStatus]=useState<AssistantStatus|null>(null),[error,setError]=useState('');
   useEffect(()=>{

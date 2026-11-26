@@ -1,12 +1,12 @@
 # Browser demo and guided tour
 
-The demo reuses the workbench interface with four synthetic hosts. It never connects to SSH, the model provider, MCP, email or the real backend. The assistant uses labelled preset answers. The terminal accepts only a few simulated commands. Unsupported actions show a demo limitation; there is no backend fallback.
+The demo reuses the workbench interface with eight synthetic hosts across three clusters. The hosts include idle, busy, offline, and stale samples. All demo state stays in the page. The assistant uses labelled preset answers, and the terminal accepts a few simulated commands.
 
 ## Real first-run guide and demo tour
 
-The normal workbench now has a separate six-step getting-started guide. It appears after the first successful load of a new empty workspace, remembers completion or skipping in shared workspace state, and can be replayed from **Settings → About and help → Replay getting-started guide**. It introduces connections, aliases/clusters, terminals/files/tunnels/VS Code, AI engines and scope, alerts/history, and settings. Existing workspaces with hosts are not forced through it on upgrade. See the [user guide](GUIDE.en.md#first-use-and-getting-started-guide).
+The normal workbench has a separate eight-step getting-started guide. It appears after the first successful load of a new empty workspace and remembers completion or skipping. Open **Settings → About and help → Replay getting-started guide** to see it again. It covers connecting a machine, resource filters, SSH accounts and process details, remote tools, AI, alerts and history, precision comparison, and settings. See the [user guide](GUIDE.en.md#first-use-and-getting-started-guide).
 
-The nine-step spotlight tour below belongs to the isolated demo. Completing or skipping that tour does not mark the real-workspace guide complete. Newer real features such as cluster batch operations, persistent SSH tunnels, local CLI engines, and durable resource history are described where helpful, but are not presented as supported demo actions. Real credentials and server operations must be configured after exiting demo.
+The isolated demo offers a 16-step interactive tour. Use the step selector to jump to a feature, or skip the tour and explore. Settings explain where to configure real SSH accounts, model providers, local CLI engines, Skills, MCP, email, and desktop features.
 
 ## Run
 
@@ -18,20 +18,21 @@ The normal application build retains the real workbench; `?demo=1` explicitly en
 
 ## What to try
 
-Follow the spotlight guide, or skip it and explore. Filter GPU/NPU resources, open a busy device's process details, create an availability alert, inspect/edit `/demo/train.log`, and open the simulated terminal. Try `help`, `pwd`, `ls`, `cat train.log`, and `clear`. Open the assistant and choose a preset example.
+Try GPU/NPU filters, cluster membership, process details, a training preflight check, and device monitoring. Resource history includes samples with collection gaps. The two precision logs share most steps and each has one unmatched step. Open the result to inspect source lines or export CSV.
 
-A seeded alert waits for the busy GPU. **Finish demo training** frees its devices and creates one in-page event. User-created alerts retain their selected continuous-idle waiting time; choose zero minutes to see the result immediately. No desktop notification permission or email is requested. **Reset** discards all simulated changes and restarts the guide. Reloading also resets demo state.
+Two sample alerts wait for the busy GPU machine. **Finish demo training** frees its devices and satisfies both the single-device and cluster alert once. Choose a zero-minute delay for a new alert to see the result immediately. The notification center receives the simulated events. **Reset** discards all simulated changes and restarts the tour.
 
-The guide highlights the actual controls, leaves them clickable, and follows opened dialogs. Next/Back, Skip, replay, Escape, and Tab are supported. On a narrow screen, machine selection uses the mobile machine picker. The demo is not a simulation of every settings or precision-comparison API; those unsupported operations fail explicitly.
+Browse and edit sample files, try `cat train.log` in the terminal, and inspect a preset assistant reply and its tool record. The tunnel manager and Services simulate starting and stopping forwarding rules. The demo opens no listening ports or service URLs. Use the regular workbench for real SSH sessions, cluster commands, models, credentials, and integrations.
 
 ## Isolation checks
 
 - Demo initialization runs before workspace loading; legacy browser preferences are neither imported nor removed.
 - Workspace state, fake hosts, files, alerts and preset responses live only in memory.
 - Application fetch calls are handled in memory; unrecognized endpoints and absolute URLs are denied. WebSocket, EventSource, XMLHttpRequest, WebTransport, RTCPeerConnection and sendBeacon do not connect to real services.
+- In the desktop window, Tauri's native ready handshake and title bar controls keep working over its local IPC protocol. Workbench API requests continue to use the simulated transport.
 - Static JavaScript, CSS, fonts and images still load from the demo host. This is an application-level isolation boundary, not a browser sandbox against arbitrary third-party code or extensions.
 
-Run `npm test` in frontend for demo transport, legacy-storage isolation and reservation-state regression checks. Browser verification should include the nine-step tour, keyboard skip, booking dialogs, file editing, reset, a narrow viewport and a zero-API-request network trace.
+Run `python scripts/run_tests.py workspace desktop --scope frontend` for demo state, IPC, and network isolation regression checks. In the browser, verify entry from the first-run guide and settings, navigation through the 16 steps, reset and replay, and simulated actions.
 
 ## Historical verification (2026-11-03)
 
@@ -44,11 +45,3 @@ These checks validate the simulated interface and isolation behavior. They do no
 In the repository's Settings → Pages, select GitHub Actions as the source, then manually run **Browser demo** with **publish** enabled. The workflow uploads the standalone artifact and deploys it through the `github-pages` environment; the job exposes the resulting URL. Default runs only build the artifact. This change has not enabled Pages or deployed a public site.
 
 The deployment configuration follows [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages). Repository settings and account eligibility must support Pages. The build retains relative static-asset URLs so it can run beneath the repository path, and the deployed artifact always starts in isolated demo mode.
-
-## Nine-step demo tour
-
-The guide now follows the first-use workflow: resource overview → host selection → idle-device filtering → process inspection → availability alerts → files and sample logs → terminal → AI assistant → setup and Skills/MCP entry points. The selected steps introduce the main day-to-day operations without visiting unsupported demo screens.
-
-Changing steps closes the previous demo dialog or floating window and restores the overview so the next control stays reachable. Save edits before continuing. The availability-alert step includes a simulated training-completion button. Guide cards measure their rendered height to stay within narrow viewports.
-
-Validation for this update: TypeScript check, 241 frontend tests, an isolated standalone production build, all nine desktop steps including live simulated controls, and all nine cards at a 390px viewport. The browser recorded no real `/api` requests during the tour. The published installer was not rebuilt as part of this guide-only update.

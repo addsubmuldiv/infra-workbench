@@ -29,7 +29,7 @@ function connectionRank(rules:TunnelRule[]){
 export function TunnelManagerButton({hosts,disabled=false}:{hosts:Host[];disabled?:boolean}){
  const [open,setOpen]=useState(false);
  const count=hosts.reduce((sum,h)=>sum+(h.ssh_tunnels??[]).filter(active).length,0);
- return <><button className="secondary" disabled={disabled} onClick={()=>setOpen(true)}><Link2 size={16}/>{t('隧道管理','Tunnel manager')} ({count})</button>{open&&<TunnelManager hosts={hosts} close={()=>setOpen(false)}/>}</>;
+ return <><button data-tour="tunnels" className="secondary" disabled={disabled} onClick={()=>setOpen(true)}><Link2 size={16}/>{t('隧道管理','Tunnel manager')} ({count})</button>{open&&<TunnelManager hosts={hosts} close={()=>setOpen(false)}/>}</>;
 }
 
 export function TunnelManager({hosts,close}:{hosts:Host[];close:()=>void}){
