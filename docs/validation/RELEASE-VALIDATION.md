@@ -6,7 +6,7 @@ Validation date: 2026-11-03. These results describe this working tree and local 
 
 1. Update frontend/package.json, frontend/package-lock.json, desktop/package.json, desktop/package-lock.json, desktop/src-tauri/tauri.conf.json, desktop/src-tauri/Cargo.toml, and desktop/src-tauri/Cargo.lock together. Keep the backend /api/health version aligned. The application footer reads its version from the frontend package at build time.
 2. Push a version tag such as v0.1.0, or manually run **Desktop release** with that existing tag. The tag must point to the checked-out commit and match the desktop versions.
-3. The reusable desktop workflow builds Windows x64 by default; include_macos enables experimental Apple Silicon and Intel packages. Packaging runs the frozen Python runtime self-test, Rust tests, frontend tests, and WebKit checks. Missing installers fail artifact upload.
+3. The release workflow requires Windows x64 and experimental Apple Silicon and Intel packages. Packaging runs the frozen Python runtime self-test, Rust tests, frontend tests, and WebKit checks. Missing installers prevent draft creation.
 4. The release job requires signed artifacts for the selected platforms, writes latest.json and SHA256SUMS.txt, and creates a **draft** GitHub release. Only this job has contents: write; checkout does not persist credentials. Existing releases and their assets are preserved; the job skips creation when that tag already has a release.
 5. Before publishing, download and verify all packages, complete the installation checks below, and inspect the workflow logs. GitHub workflows have not been executed in this local session.
 

@@ -7,11 +7,6 @@ on:
         description: 'Existing version tag to build (for example v0.1.0)'
         required: true
         type: string
-      include_macos:
-        description: 'Also release experimental macOS packages (all builds must pass)'
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -48,7 +43,7 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ needs.validate.outputs.tag }}
-      include_macos: ${{ inputs.include_macos || false }}
+      include_macos: true
   release:
     needs: [validate, build]
     runs-on: ubuntu-latest
@@ -70,16 +65,7 @@ jobs:
       - name: Generate release notes, signed update feed and checksums
         env:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-          INCLUDE_MACOS: ${{ inputs.include_macos || false }}
         run: |
-          # Require every requested artifact before using partial-platform mode.
-          test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-windows-x86_64-setup.exe"
-          if [ "$INCLUDE_MACOS" = "true" ]; then
-            test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-aarch64.app.tar.gz"
-            test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-aarch64.dmg"
-            test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-x86_64.app.tar.gz"
-            test -s "release-assets/Infra-Workbench-${RELEASE_TAG#v}-darwin-x86_64.dmg"
-          fi
           notes="$RUNNER_TEMP/release-notes.md"
           awk -v version="${RELEASE_TAG#v}" '
             /^## / {
@@ -89,9 +75,8 @@ jobs:
             found { print }
             END { if (!found) exit 1 }
           ' CHANGELOG.md > "$notes"
-          flags=(--partial)
-          node desktop/release.mjs manifest release-assets "${RELEASE_TAG#v}" "$notes" "${flags[@]}"
-          node desktop/release.mjs checksums release-assets "${flags[@]}"
+          node desktop/release.mjs manifest release-assets "${RELEASE_TAG#v}" "$notes"
+          node desktop/release.mjs checksums release-assets
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}

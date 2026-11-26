@@ -27,7 +27,10 @@ export function verifyVersion(tag, root = path.resolve(import.meta.dirname, '..'
 
 const targets=['windows-x86_64','darwin-aarch64','darwin-x86_64'];
 function safeVersion(version){if(!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version))throw new Error('Invalid update version');return version}
-function assetName(version,target){return `Infra-Workbench-${safeVersion(version)}-${target}${target.startsWith('windows')?'-setup.exe':'.app.tar.gz'}`}
+// Keep Tauri platform keys in the feed and use macos in download filenames.
+function downloadTarget(target){return target.replace(/^darwin-/, 'macos-')}
+function assetName(version,target){return `Infra-Workbench-${safeVersion(version)}-${downloadTarget(target)}${target.startsWith('windows')?'-setup.exe':'.app.tar.gz'}`}
+function dmgName(version,target){return `Infra-Workbench-${safeVersion(version)}-${downloadTarget(target)}.dmg`}
 function configuredKey(){return JSON.parse(readFileSync(new URL('./src-tauri/tauri.conf.json',import.meta.url),'utf8')).plugins.updater.pubkey}
 function decode(value){if(typeof value!=='string'||!value.trim()||! /^[A-Za-z0-9+/=\r\n]+$/.test(value.trim()))throw new Error('Invalid signature encoding');return Buffer.from(value.trim(),'base64')}
 export function verifySignature(payload,signature,version,publicKey=configuredKey()){
@@ -52,7 +55,7 @@ function inventory(directory,{version,publicKey,requireAllPlatforms=true}={}){
     version??=record.version;safeVersion(version);if(record.version!==version)throw new Error('Mixed release versions');
     const current=identity();if(record.commit!==current.commit||record.build!==current.build)throw new Error('Collection provenance differs from current commit/build');
     const sourceId=JSON.stringify([record.commit,record.build]);if(source&&source!==sourceId)throw new Error('Mixed build provenance');source=sourceId;
-    const asset=assetName(version,record.target),required=[asset,asset+'.sig',...(record.target.startsWith('darwin')?[`Infra-Workbench-${version}-${record.target}.dmg`]:[])];
+    const asset=assetName(version,record.target),required=[asset,asset+'.sig',...(record.target.startsWith('darwin')?[dmgName(version,record.target)]:[])];
     if(JSON.stringify(Object.keys(record.files).sort())!==JSON.stringify(required.sort()))throw new Error('Invalid provenance inventory');
     for(const file of required){expected.add(file);if(!existsSync(path.join(directory,file))||!statSync(path.join(directory,file)).isFile()||!statSync(path.join(directory,file)).size||digest(path.join(directory,file))!==record.files[file])throw new Error(`Artifact integrity mismatch: ${file}`)}
     const signature=readFileSync(path.join(directory,asset+'.sig'),'utf8').trim();verifySignature(readFileSync(path.join(directory,asset)),signature,version,publicKey);platforms[record.target]={url:`https://github.com/addsubmuldiv/infra-workbench/releases/download/v${version}/${encodeURIComponent(asset)}`,signature};
@@ -73,7 +76,7 @@ export function collectArtifacts(bundle,destination,{version,platform=process.pl
   const signature=updater+'.sig';if(!existsSync(signature))throw new Error(`Missing signed updater artifact for ${target}`);
   verifySignature(readFileSync(updater),readFileSync(signature,'utf8'),version,publicKey);
   const name=assetName(version,target),copies=[[updater,name],[signature,name+'.sig']];
-  if(platform==='darwin')copies.push([one('dmg',n=>n.endsWith(`_${version}_${nativeArch}.dmg`)),`Infra-Workbench-${version}-${target}.dmg`]);
+  if(platform==='darwin')copies.push([one('dmg',n=>n.endsWith(`_${version}_${nativeArch}.dmg`)),dmgName(version,target)]);
   mkdirSync(path.dirname(path.resolve(destination)),{recursive:true});const stage=mkdtempSync(path.resolve(destination)+'.staging-');
   try{const files={};for(const [source,name] of copies){copyFileSync(source,path.join(stage,name));files[name]=digest(path.join(stage,name))}verifySignature(readFileSync(path.join(stage,name)),readFileSync(path.join(stage,name+'.sig'),'utf8'),version,publicKey);writeFileSync(path.join(stage,`provenance-${target}.json`),JSON.stringify({version,target,...identity(),files},null,2)+'\n');renameSync(stage,destination)}finally{rmSync(stage,{recursive:true,force:true})}
   return {target,name};

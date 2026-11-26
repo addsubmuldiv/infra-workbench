@@ -28,7 +28,7 @@
 
 生产私钥保存在仓库之外：`~/.codex/secrets/infra-workbench-updater/update.key`，并已配置为本仓库的 GitHub Actions Secret `TAURI_SIGNING_PRIVATE_KEY`。请安全备份，不要提交、截图或发送私钥。软件与仓库只包含公钥。丢失私钥会影响已安装客户端的后续更新；fork 项目应生成自己的密钥并修改更新地址。
 
-发布工作流在可信版本标签上使用加密 Secret 签名，生成各平台唯一命名的更新包、`.sig`、`latest.json` 和 `SHA256SUMS.txt`。PR 构建不读取生产签名密钥，只生成未签名测试安装包；这些产物不能进入更新清单。首次 Windows 引导发布可仅包含已构建的 Windows 平台，不会为未构建平台伪造下载地址。
+正式发布会同时构建 Windows x64、macOS Apple Silicon 和 macOS Intel，三个平台的产物均通过验证后才创建发布草稿。工作流在可信版本标签上使用加密 Secret 签名，生成各平台的更新包、`.sig`、`latest.json` 和 `SHA256SUMS.txt`。macOS 安装和更新文件名使用 `macos-aarch64` 或 `macos-x86_64`。PR 构建不读取生产签名密钥，只生成未签名测试安装包，这些产物不会进入更新清单。
 
 本地签名构建示例（在仓库根目录）：
 

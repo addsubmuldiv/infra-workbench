@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,readFileSync,mkdirSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,cpSync,mkdirSync,rmSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {collectArtifacts,createUpdateManifest,checksums,verifyVersion,verifySignature} from './release.mjs';
@@ -16,6 +16,33 @@ test('sole old version, wrong architecture and duplicate matching files fail clo
 test('real fixture signature binds payload, trusted version and publisher key',()=>{verifySignature(payload,signature,'0.1.2',publicKey);assert.throws(()=>verifySignature(payload,signature,'0.1.3',publicKey));assert.throws(()=>verifySignature(Buffer.from('fake'),signature,'0.1.2',publicKey));assert.throws(()=>verifySignature(payload,'c2ln','0.1.2',publicKey));assert.throws(()=>verifySignature(payload,signature,'0.1.2'));});
 test('collection refuses renamed old signed package and leaves destination absent',()=>temporary(root=>{const b=bundle(root);assert.throws(()=>collectArtifacts(b,path.join(root,'out'),{...options,version:'0.1.3'}));}));
 test('verified partial collection creates feed and exact checksums, rejects stale destination and tampering',()=>temporary(root=>{const b=bundle(root),out=path.join(root,'out');collectArtifacts(b,out,options);assert.throws(()=>collectArtifacts(b,out,options),/destination/i);const feed=createUpdateManifest(out,{...options,requireAllPlatforms:false});assert.deepEqual(Object.keys(feed.platforms),['windows-x86_64']);assert.throws(()=>createUpdateManifest(out,options),/Missing/);checksums(out,{...options,requireAllPlatforms:false});writeFileSync(path.join(out,'stale.exe'),'stale');assert.throws(()=>checksums(out,{...options,requireAllPlatforms:false}),/Unexpected/);rmSync(path.join(out,'stale.exe'));writeFileSync(path.join(out,'Infra-Workbench-0.1.2-windows-x86_64-setup.exe'),'tampered');assert.throws(()=>createUpdateManifest(out,{...options,requireAllPlatforms:false}));}));
+test('three-platform release uses macos download names with Tauri platform keys', () => temporary(root => {
+  const source = bundle(root);
+  const combined = path.join(root, 'combined');
+  collectArtifacts(source, combined, options);
+  mkdirSync(path.join(source, 'macos'));
+  mkdirSync(path.join(source, 'dmg'));
+  writeFileSync(path.join(source, 'macos', 'Infra Workbench.app.tar.gz'), payload);
+  writeFileSync(path.join(source, 'macos', 'Infra Workbench.app.tar.gz.sig'), signature);
+
+  for (const [arch, updateArch, bundleArch] of [['arm64', 'aarch64', 'aarch64'], ['x64', 'x86_64', 'x64']]) {
+    const mac = path.join(root, arch);
+    writeFileSync(path.join(source, 'dmg', `Infra Workbench_0.1.2_${bundleArch}.dmg`), payload);
+    const artifact = collectArtifacts(source, mac, {...options, platform: 'darwin', arch});
+    assert.equal(artifact.name, `Infra-Workbench-0.1.2-macos-${updateArch}.app.tar.gz`);
+    cpSync(mac, combined, {recursive: true});
+  }
+
+  const feed = createUpdateManifest(combined, options);
+  assert.deepEqual(Object.keys(feed.platforms).sort(), ['darwin-aarch64', 'darwin-x86_64', 'windows-x86_64']);
+  const files = checksums(combined, options);
+  for (const arch of ['aarch64', 'x86_64']) {
+    const name = `Infra-Workbench-0.1.2-macos-${arch}`;
+    assert.match(feed.platforms[`darwin-${arch}`].url, new RegExp(`/${name}\\.app\\.tar\\.gz$`));
+    assert.ok(files.includes(`${name}.dmg`));
+    assert.ok(files.includes(`${name}.app.tar.gz.sig`));
+  }
+}));
 test('current filename cannot hide an older signed version',()=>temporary(root=>{const b=bundle(root,'Infra Workbench_0.1.3_x64-setup.exe');assert.throws(()=>collectArtifacts(b,path.join(root,'out'),{...options,version:'0.1.3'}),/Signed version mismatch/)}));
 test('provenance cannot mix prior commits or builds',()=>temporary(root=>{const out=path.join(root,'out');collectArtifacts(bundle(root),out,options);const p=path.join(out,'provenance-windows-x86_64.json'),record=JSON.parse(readFileSync(p));record.commit='0'.repeat(40);writeFileSync(p,JSON.stringify(record));assert.throws(()=>createUpdateManifest(out,{...options,requireAllPlatforms:false}),/provenance/)}));
 test('signed trusted version comment cannot be edited',()=>{const lines=Buffer.from(signature.trim(),'base64').toString().replace('version:0.1.2','version:0.1.3');assert.throws(()=>verifySignature(payload,Buffer.from(lines).toString('base64'),'0.1.3',publicKey),/cryptographic/)});
