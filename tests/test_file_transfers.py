@@ -59,6 +59,12 @@ def test_api_upload_runs_background_transfer_and_never_overwrites(tmp_path):
             meta=dict(host_id='test',path=str(tmp_path),name='binary.bin',size=len(raw))
             assert (await client.post('/api/files/uploads',json=meta)).status_code==403
             assert (await client.post('/api/files/uploads',headers=headers,json=dict(meta,name='../bad'))).status_code==422
+            assert (await client.get('/api/files/capabilities')).json()['upload_limit'] is None
+            for kind in ('file','folder'):
+                large=await client.post('/api/files/uploads',headers=headers,json=dict(meta,kind=kind,size=3*1024**3))
+                assert large.status_code==200 and large.json()['total']==3*1024**3
+            for invalid in (-1,True,1.5):
+                assert (await client.post('/api/files/uploads',headers=headers,json=dict(meta,size=invalid))).status_code==422
             async def upload(data):
                 response=await client.post('/api/files/uploads',headers=headers,json=dict(meta,size=len(data)))
                 assert response.status_code==200,response.text
@@ -108,6 +114,18 @@ def test_download_progress_reports_remote_bytes_and_total():
         await receive_file(reader,target,on_progress=lambda received,total:events.append((received,total)))
         assert events[0]==(0,len(raw)) and events[-1]==(len(raw),len(raw))
         assert target.getvalue()==raw
+    asyncio.run(scenario())
+
+
+def test_unlimited_file_receiver_still_requires_the_declared_byte_count():
+    async def scenario():
+        total=3*1024**3
+        reader=asyncio.StreamReader()
+        reader.feed_data(b'IWB_PACKING\n'*2048+b'IWB_FILE:'+json.dumps(dict(ok=True,size=total)).encode()+b'\nshort')
+        reader.feed_eof();events=[]
+        with pytest.raises(ValueError,match='不完整'):
+            await receive_file(reader,io.BytesIO(),on_progress=lambda received,size:events.append((received,size)),max_bytes=None,folder=True)
+        assert events[0]==(0,total) and events[-1]==(5,total)
     asyncio.run(scenario())
 
 

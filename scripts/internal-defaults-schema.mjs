@@ -7,18 +7,6 @@ export const SCHEMA = {
     }
   },
   "files": {
-    "upload_max_bytes": {
-      "min": 1,
-      "max": 536870912,
-      "frontend": true,
-      "description": "单个文件上传上限，单位：字节；后台、客户端和远端接收探针共用。"
-    },
-    "folder_upload_max_bytes": {
-      "min": 1,
-      "max": 536870912,
-      "frontend": true,
-      "description": "文件夹上传包总大小上限，单位：字节；包含清单和文件内容。"
-    },
     "folder_upload_max_entries": {
       "min": 1,
       "max": 10000,
@@ -30,18 +18,6 @@ export const SCHEMA = {
       "max": 1048576,
       "frontend": true,
       "description": "文件夹清单的 UTF-8 大小上限，单位：字节。"
-    },
-    "download_max_bytes": {
-      "min": 1,
-      "max": 536870912,
-      "frontend": true,
-      "description": "普通文件下载上限，单位：字节；与日志下载分别维护。"
-    },
-    "folder_download_max_bytes": {
-      "min": 1,
-      "max": 536870912,
-      "frontend": true,
-      "description": "文件夹下载 ZIP 和源文件总量上限，单位：字节。"
     },
     "folder_download_max_entries": {
       "min": 1,
@@ -213,7 +189,7 @@ export const SCHEMA = {
       "min": 1,
       "max": 604800,
       "frontend": false,
-      "description": "上传发送与远端验证阶段预算，单位：秒。"
+      "description": "上传无进展超时，单位：秒。持续传输会重置计时。"
     }
   },
   "history": {
@@ -335,16 +311,11 @@ export const PROBES = {
     "COPY_LIMIT": "FILES_COPY_MAX_BYTES",
     "ENTRY_LIMIT": "FILES_COPY_MAX_ENTRIES"
   },
-  "backend/file_upload_probe.py": {
-    "MAX_UPLOAD": "FILES_UPLOAD_MAX_BYTES"
-  },
   "backend/folder_upload_probe.py": {
-    "MAX_UPLOAD": "FILES_FOLDER_UPLOAD_MAX_BYTES",
     "MAX_MANIFEST": "FILES_FOLDER_MANIFEST_MAX_BYTES",
     "MAX_ENTRIES": "FILES_FOLDER_UPLOAD_MAX_ENTRIES"
   },
   "backend/folder_download_probe.py": {
-    "MAX_SIZE": "FILES_FOLDER_DOWNLOAD_MAX_BYTES",
     "MAX_ENTRIES": "FILES_FOLDER_DOWNLOAD_MAX_ENTRIES"
   },
   "backend/log_reader.py": {
@@ -353,7 +324,6 @@ export const PROBES = {
     "MAX_LINE": "LOGS_LINE_MAX_BYTES"
   },
   "backend/log_download_probe.py": {
-    "MAX_DOWNLOAD": "LOGS_DOWNLOAD_MAX_BYTES",
-    "MAX_FILE_DOWNLOAD": "FILES_DOWNLOAD_MAX_BYTES"
+    "MAX_DOWNLOAD": "LOGS_DOWNLOAD_MAX_BYTES"
   }
 };

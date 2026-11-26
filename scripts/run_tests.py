@@ -53,7 +53,7 @@ GROUPS = {
     'files': group(
         'test_files test_files_search test_file_ops test_file_transfers test_folder_download '
         'test_folder_upload test_transfer_session_restore test_log_routes test_log_compare test_log_download',
-        'files file-browser file-editor file-transfers file-window folder-upload text-editor-actions '
+        'files file-browser file-editor file-transfers file-window folder-upload file-drop text-editor-actions '
         'logDownload precision-sync'),
     'assistant': group(
         'test_agent_permission_integration test_agent_permissions test_agent_capabilities test_agent_external_mcp test_agent_api test_agent_profiles test_agent_context test_agent_memory test_agent_chat '

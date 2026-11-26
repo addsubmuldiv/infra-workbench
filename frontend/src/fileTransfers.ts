@@ -1,7 +1,5 @@
-import {FILES_UPLOAD_MAX_BYTES,FILES_FOLDER_UPLOAD_MAX_BYTES} from './internalDefaults.ts';
-import {capacityError,formatBytes} from './internalPolicy.ts';
 import {toolText as tt} from './toolI18n.ts';
-export type TransferProgress={stage:'preparing'|'packing'|'receiving'|'sending'|'verifying'|'done'|'download_remote'|'download_browser';loaded:number;total:number|null};
+export type TransferProgress={stage:'preparing'|'packing'|'receiving'|'sending'|'verifying'|'done'|'download_remote'|'download_browser'|'handed_off';loaded:number;total:number|null};
 type UploadStatus={id:string;status:string;total:number;received:number;sent:number;error?:string;path?:string};
 const aborted=()=>new DOMException(tt("传输已取消"),'AbortError');
 async function jsonRequest(url:string,options:RequestInit={},fetcher:typeof fetch=fetch){
@@ -23,7 +21,7 @@ export function sendUpload(url:string,file:Blob,signal:AbortSignal,progress:(loa
     const xhr=xhrFactory();
     const abort=()=>xhr.abort();
     const finish=(error?:Error)=>{signal.removeEventListener('abort',abort);if(error)reject(error);else resolve()};
-    xhr.open('PUT',url);xhr.setRequestHeader('X-IWB','1');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.responseType='json';xhr.timeout=600000;
+    xhr.open('PUT',url);xhr.setRequestHeader('X-IWB','1');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.responseType='json';
     xhr.upload.onprogress=event=>progress(event.loaded);
     xhr.onload=()=>finish(xhr.status>=200&&xhr.status<300?undefined:new Error(xhr.response?.detail||tt("上传到本地服务失败")));
     xhr.onerror=()=>finish(new Error(tt("上传连接中断")));xhr.ontimeout=()=>finish(new Error(tt("上传超时")));xhr.onabort=()=>finish(aborted());
@@ -36,7 +34,6 @@ export async function uploadFile(host:string,directory:string,file:File,signal:A
 }
 export async function uploadPayload(host:string,directory:string,name:string,body:Blob,kind:'file'|'folder',signal:AbortSignal,progress:(value:TransferProgress)=>void,fetcher:typeof fetch=fetch,sender=sendUpload):Promise<string>{
   if(signal.aborted)throw aborted();
-  if(body.size>(kind==='folder'?FILES_FOLDER_UPLOAD_MAX_BYTES:FILES_UPLOAD_MAX_BYTES))throw new Error(capacityError(`上传内容不能超过 ${formatBytes(kind==='folder'?FILES_FOLDER_UPLOAD_MAX_BYTES:FILES_UPLOAD_MAX_BYTES)}`,`Upload must not exceed ${formatBytes(kind==='folder'?FILES_FOLDER_UPLOAD_MAX_BYTES:FILES_UPLOAD_MAX_BYTES)}`));
   const job:UploadStatus=await jsonRequest('/api/files/uploads',{method:'POST',body:JSON.stringify({host_id:host,path:directory,name,size:body.size,...(kind==='folder'?{kind}:{})}),signal},fetcher);
   const url='/api/files/uploads/'+job.id;
   try{
@@ -55,13 +52,24 @@ export async function uploadPayload(host:string,directory:string,name:string,bod
   }
 }
 
+export async function prepareFileDownload(host:string,path:string,id:string,folder:boolean,signal:AbortSignal,fetcher:typeof fetch=fetch){
+  const data=await jsonRequest(folder?'/api/files/download-folder':'/api/files/download',{
+    method:'POST',body:JSON.stringify({host_id:host,path,transfer_id:id,delivery:'browser'}),signal,
+  },fetcher);
+  const {ticket,filename,size,skipped}=data;
+  if(typeof ticket!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(ticket)||typeof filename!=='string'||!Number.isSafeInteger(size)||size<0){
+    throw new Error(tt("文件传输失败"));
+  }
+  return {url:'/api/files/downloads/'+encodeURIComponent(id)+'/content/'+ticket,filename:filename as string,size:size as number,skipped:Number(skipped)||0};
+}
+
 export async function watchDownload(id:string,signal:AbortSignal,progress:(value:TransferProgress)=>void,fetcher:typeof fetch=fetch){
   while(!signal.aborted){
     try{
       const state=await jsonRequest('/api/files/downloads/'+id,{signal},fetcher);
       if(['error','cancelled'].includes(state.status))return;
       progress({stage:'download_remote',loaded:state.received,total:state.total});
-      if(state.status==='remote_done')return;
+      if(state.status==='remote_done'||state.status==='ready')return;
     }catch{if(signal.aborted)return}
     await pause(signal);
   }

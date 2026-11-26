@@ -136,10 +136,10 @@ In the file window:
 - Browse the directory tree, enter a path and navigate, return home or up, refresh, and search filenames. Search can use a remote locate index with a find fallback; **实时搜索** skips the index.
 - Single-click to select; double-click a text file or press Enter to edit. Save with the button or `Ctrl+S`. Closing unsaved content offers save, discard, or cancel. Remote version conflicts are not silently overwritten.
 - Create files/directories, copy, cut, move, rename, copy paths, and paste into the destination. Existing targets are not overwritten.
-- Upload files or folders to the current directory, review progress through remote confirmation, and cancel when needed. Folder uploads preserve the tree; empty-directory support depends on the browser picker and is reported when unavailable. Existing same-name folders are not merged or overwritten.
+- Use the upload buttons to send files or folders to the current directory. Follow progress through remote confirmation and cancel when needed. You can also drop local files or folders onto a directory row or elsewhere in the file window. The drop hint shows the destination before you release. Folder uploads preserve the tree, including empty directories when the browser exposes them. Uploads require a new folder name at the destination.
 - Download individual files, or use the folder's three-dot menu → **下载文件夹** for a ZIP. Folder downloads skip symbolic links and special files and report skipped items.
 
-File tools use the SSH account without sudo. Text editing is limited to 1 MiB; one copy operation to 64 MiB / 1000 items. A file, folder content total, or generated ZIP is limited to 512 MiB; folder transfers also have limits of 10000 items and 64 directory levels. See [files in Chinese](FILES.md) for permission, validation, cancellation, and transfer details.
+File tools use the current SSH account. Uploads and downloads have no fixed size cap and require enough disk space for temporary and destination files. The text editor supports up to 1 MiB, a copy operation up to 64 MiB and 1000 items, and a folder transfer up to 10000 items and 64 directory levels. See the [file guide in Chinese](FILES.md) for transfer details.
 
 ## AI assistant and Skills
 
