@@ -56,6 +56,8 @@ const english:Record<string,string>={
   "最多同时打开 12 个终端": "Up to 12 terminals can be open at once",
   "无法创建持久会话": "Could not create persistent session",
   "当前 Shell 尚未提供目录信息。请回到空命令行按一次回车后重试": "The shell has not reported its directory. Press Enter at an empty prompt and try again",
+  "打开当前目录": "Open current directory",
+  "暂未获取当前目录。请在终端输入 pwd，再按住 Ctrl/⌘ 点击输出的路径。": "Current directory unavailable. Run pwd in the terminal, then Ctrl/⌘-click the path it prints.",
   "结束此持久会话？会话中的任务也会停止，此操作无法撤销。": "End this persistent session? Its tasks will stop. This cannot be undone.",
   "无法结束会话": "Could not end session",
   "关闭此 SSH 会话？前台任务可能随连接结束，建议先用 tmux 保留任务。": "Close this SSH session? Foreground tasks may stop. Use tmux first to preserve tasks.",

@@ -17,7 +17,7 @@ import TerminalCommands from './TerminalCommands';
 import {useAppConfirm} from '../../shared/AppConfirm';
 import {SearchAddon} from '@xterm/addon-search';
 import {terminalRenderer} from './terminalRenderer';
-import {Power,Sparkles,TextSelect,Search,ChevronsDown,ChevronDown,ChevronUp,Copy,CopyPlus,Maximize2,Minimize2,Plus,RefreshCw,ShieldCheck,Terminal,Trash2,X} from 'lucide-react';
+import {Power,Sparkles,TextSelect,Search,ChevronsDown,ChevronDown,ChevronUp,Copy,CopyPlus,FolderOpen,Maximize2,Minimize2,Plus,RefreshCw,ShieldCheck,Terminal,Trash2,X} from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import './terminal.css';
 import {directoryLinkProvider} from './terminalPaths';
@@ -41,7 +41,7 @@ const terminalApi = (host: Host, route: string) =>
 export type TerminalRequest={id:string;host:Host;cwd?:string};
 type Phase='connecting'|'running'|'closed'|'error';
 type Tab={id:string;host:Host;phase:Phase;generation:number;cwd?:string;session?:string};
-type Handle={insert:(text:string)=>boolean;capture:(source:TerminalAttachment['source'])=>TerminalAttachment|null;clear:()=>void;copy:()=>void;focus:()=>void;scrollToBottom:()=>void;search:()=>void;cwd:()=>string|undefined;reconnect:()=>void};
+type Handle={insert:(text:string)=>boolean;capture:(source:TerminalAttachment['source'])=>TerminalAttachment|null;clear:()=>void;copy:()=>void;focus:()=>void;scrollToBottom:()=>void;search:()=>void;cwd:()=>string|undefined;reportedDirectory:()=>string|undefined;reconnect:()=>void};
 const labels=():Record<Phase,string>=>({connecting:tt("正在连接"),running:tt("会话运行中"),closed:tt("连接已结束"),error:tt("连接失败")});
 // Windows clipboard-history injection can omit code on its synthetic Ctrl+V.
 const clipboardKey=(event:KeyboardEvent,key:'c'|'v')=>event.code==='Key'+key.toUpperCase()||(!event.code&&(event.key?.toLowerCase()===key||event.keyCode===key.toUpperCase().charCodeAt(0)));
@@ -70,8 +70,9 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
   const socketRef=useRef<WebSocket|null>(null),pasteRef=useRef<((text:string)=>void)|null>(null);
   const rendererRef=useRef<ReturnType<typeof terminalRenderer>|null>(null);
   const cwdRef=useRef<string|undefined>(tab.cwd),reconnectRef=useRef<(()=>void)|null>(null);
+  const reportedDirectory=useRef<string|undefined>(undefined);
   const directoryRef=useRef(onDirectory);directoryRef.current=onDirectory;
-  useImperativeHandle(ref,()=>({insert:text=>{const term=terminal.current;if(!term||!pasteRef.current||socketRef.current?.readyState!==WebSocket.OPEN)return false;if(/[\r\n]/.test(text)&&!term.modes.bracketedPasteMode)return false;pasteRef.current(text);term.focus();return true},capture:source=>terminal.current?captureTerminal(terminal.current,{host_id:tab.host.id,label:sshWindowLabel(tab.host),terminal_id:tab.id,session_id:tab.session,cwd:cwdRef.current},source):null,cwd:()=>cwdRef.current,reconnect:()=>reconnectRef.current?.(),search:()=>setSearchOpen(true),clear:()=>terminal.current?.clear(),focus:()=>terminal.current?.focus(),scrollToBottom:()=>terminal.current?.scrollToBottom(),copy:()=>{
+  useImperativeHandle(ref,()=>({insert:text=>{const term=terminal.current;if(!term||!pasteRef.current||socketRef.current?.readyState!==WebSocket.OPEN)return false;if(/[\r\n]/.test(text)&&!term.modes.bracketedPasteMode)return false;pasteRef.current(text);term.focus();return true},capture:source=>terminal.current?captureTerminal(terminal.current,{host_id:tab.host.id,label:sshWindowLabel(tab.host),terminal_id:tab.id,session_id:tab.session,cwd:cwdRef.current},source):null,cwd:()=>cwdRef.current,reportedDirectory:()=>reportedDirectory.current,reconnect:()=>reconnectRef.current?.(),search:()=>setSearchOpen(true),clear:()=>terminal.current?.clear(),focus:()=>terminal.current?.focus(),scrollToBottom:()=>terminal.current?.scrollToBottom(),copy:()=>{
     const text=terminal.current?.getSelection();if(text)navigator.clipboard.writeText(text).catch(()=>{});
   }}),[]);
   useEffect(()=>{
@@ -163,6 +164,7 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
     });
     const disconnected=(next:Phase)=>{
       connected=false;connecting=false;retryArmed=true;phase(next);
+      reportedDirectory.current=undefined;
       atPrompt.current=false;sudoRef.current=false;setSudoAvailable(false);updateSuggestion();
       setShellStatus(tt("连接已断开 · 按任意键重新连接"));
       if(!announced){announced=true;term.writeln(tt("\r\n\u001b[90m── SSH 会话已结束 ──\r\n按任意键重新连接\u001b[0m"))}
@@ -173,6 +175,7 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
       const retry=retryArmed||connected;
       const currentAttempt=++attempt;
       connecting=true;retryArmed=false;connected=false;failed=false;announced=false;remoteSize=null;
+      reportedDirectory.current=undefined;
       socketRef.current=null;previous?.close();
       atPrompt.current=false;commandLine.current=emptyCommandLine();sudoRef.current=false;setSudoAvailable(false);updateSuggestion();
       setShellStatus(retry?tt("正在重新连接…"):tt("正在连接…"));
@@ -201,8 +204,11 @@ export const TerminalView=forwardRef<Handle,{tab:Tab;active:boolean;font:number;
           if(message.type==='sudo'){sudoRef.current=!!message.available;setSudoAvailable(!!message.available);return}
           if(message.type==='workspace'){setWorkspace(message);history.current=message.settings?.history_enabled===false?[]:message.history||[];updateSuggestion();return}
           if(message.type==='shell'){
-            if(['prompt','start'].includes(message.kind)&&validDirectory(message.cwd))cwdRef.current=message.cwd;
-            if(message.kind==='unsupported')cwdRef.current=undefined;
+            if(['prompt','start'].includes(message.kind)){
+              reportedDirectory.current=validDirectory(message.cwd)?message.cwd:undefined;
+              if(reportedDirectory.current!==undefined)cwdRef.current=reportedDirectory.current;
+            }
+            if(message.kind==='unsupported')cwdRef.current=reportedDirectory.current=undefined;
             if(message.result)setLastResult(`${tt("上次命令 ")}${message.result.seconds}${tt(" 秒 · 退出码 ")}${message.result.status}`);
             atPrompt.current=message.kind==='prompt';commandLine.current=emptyCommandLine();updateSuggestion();
             setShellStatus(message.kind==='unsupported'?tt("普通终端 · 增强功能需要远端 Python 3 和 Bash 4.4+"):message.kind==='prompt'?tt("命令行就绪 · ")+message.cwd:tt("命令执行中"));return;
@@ -314,6 +320,13 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
     if(!validDirectory(cwd)){setHint(tt("当前 Shell 尚未提供目录信息。请回到空命令行按一次回车后重试"));return}
     if(current.session)void persistent(current.host,cwd);else add(current.host,cwd);
   };
+  const openCurrentDirectory=()=>{
+    if(current?.phase!=='running'||!onDirectory)return;
+    const path=handles.current[current.id]?.reportedDirectory();
+    if(path===undefined){setHint(tt('暂未获取当前目录。请在终端输入 pwd，再按住 Ctrl/⌘ 点击输出的路径。'));return}
+    setHint('');
+    onDirectory(current.host.id,path,current.host.ssh_account_id);
+  };
   const endPersistent=async()=>{
     if(!current?.session||!await confirm(tt("结束此持久会话？会话中的任务也会停止，此操作无法撤销。")))return;
     try{const response=await fetch(terminalApi(current.host,'terminal-sessions/'+current.session),{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail||tt("无法结束会话"));setTabs(old=>old.filter(t=>t.id!==current.id))}catch(error){setHint(error instanceof Error?error.message:tt("无法结束会话"))}
@@ -359,9 +372,11 @@ export function TerminalDock({request,hosts,onDirectory}:{request:TerminalReques
           {host.ssh_logins?.accounts.map(account=><option key={account.id} value={account.id}>{account.user||tt("使用 SSH 配置账号")}</option>)}
         </select> : null}
         <button disabled={!isAvailable(host)} onClick={()=>add(host)}><Terminal size={14}/><span>{host.target}<small>{host.user||tt("使用 SSH 配置账号")}</small></span><Plus size={14}/></button><button disabled={sessionBusy||!isAvailable(host)} onClick={()=>persistent(host)}>{tt("新建持久会话")}</button>{(savedSessions[loginKey(host)]||[]).map(session=><div key={session.id} className="terminal-saved-session"><button onClick={()=>add(host,undefined,session.id)}>{tt("恢复 ")}{session.id.slice(0,6)} · {new Date(session.created*1000).toLocaleString(dateLocale())}</button><button title={tt("结束远端任务并移除记录")} onClick={async()=>{if(!await confirm(tt("结束此持久会话及其中的任务？")))return;try{const response=await fetch(terminalApi(host,'terminal-sessions/'+session.id),{method:'DELETE',headers:{'X-IWB':'1'}});const value=await response.json();if(!response.ok)throw new Error(value.detail);setSavedSessions(old=>({...old,[loginKey(host)]:(old[loginKey(host)]||[]).filter(s=>s.id!==session.id)}))}catch(error){setHint(String(error))}}}>{tt("结束")}</button></div>)}</div>)}</div>}</div></div>
-      <div className="terminal-toolbar"><div><span className="terminal-path">{current?.host.user||'SSH'}<b>@</b>{current?.host.target}</span><span className={'terminal-phase '+current?.phase}><i className={'session-dot '+current?.phase}/>{current&&labels()[current.phase]}</span></div><div><TerminalDisplaySettings font={font} setFont={setFont}/>{current?.session&&<button onClick={endPersistent} aria-label={tt("结束会话")} title={tt("结束此持久会话及其中的任务")}><Power size={15}/></button>}<span className="terminal-divider"/><button className="terminal-duplicate" aria-label={tt("复制当前终端")} title={tt("在同一目录新建独立会话，沿用命令历史")} disabled={!current||current.phase==='connecting'||sessionBusy} onClick={duplicate}><CopyPlus size={14}/></button>{(['selection','screen'] as const).map(source=><button key={source} className="terminal-ai-action" aria-label={source==='selection'?tt('将选区附加到 AI 助手'):tt('将当前屏幕附加到 AI 助手')} title={source==='selection'?tt('将选中文字附加到 AI 草稿，预览后发送'):tt('将当前可见屏幕附加到 AI 草稿，预览后发送')} onClick={()=>{const value=handles.current[active]?.capture(source);if(!value?.content.trim()){setHint(tt('没有可附加的终端内容'));return}handoffTerminalContext(value);setHint(tt('已附加到 AI 草稿，请预览后发送'))}}>{source==='selection'?<TextSelect size={15}/>:<Sparkles size={15}/>}</button>)}<button aria-label={tt("复制终端所选内容")} title={tt("复制所选内容 · Ctrl/⌘+C")} onClick={()=>{handles.current[active]?.copy();setHint(tt("选中文字后 Ctrl/⌘+C 复制；Ctrl/⌘+V 粘贴"))}}><Copy size={14}/></button><button title={tt("查找输出 · Ctrl/⌘+F")} aria-label={tt("查找终端输出")} onClick={()=>handles.current[active]?.search()}><Search size={15}/></button><button aria-label={tt("清空终端显示")} title={tt("仅清空显示，不中断命令")} onClick={()=>handles.current[active]?.clear()}><Trash2 size={14}/></button><button aria-label={tt("回到底部")} title={tt("回到底部 · 查看最新输出")} onClick={()=>{handles.current[active]?.scrollToBottom()}}><ChevronsDown size={16}/></button><button aria-label={tt("重新连接当前终端")} title={current?.session?tt("重新接入持久会话"):tt("结束当前会话并重新连接")} onClick={async()=>{if(current&&(current.session||['closed','error'].includes(current.phase)||await confirm(tt("重新连接将结束当前 SSH 会话，是否继续？"))))handles.current[active]?.reconnect()}}><RefreshCw size={14}/></button></div></div>
+      <div className="terminal-toolbar"><div><span className="terminal-path">{current?.host.user||'SSH'}<b>@</b>{current?.host.target}</span><span className={'terminal-phase '+current?.phase}><i className={'session-dot '+current?.phase}/>{current&&labels()[current.phase]}</span></div><div>
+        {onDirectory&&<button type="button" className="terminal-open-directory" aria-label={tt("打开当前目录")} title={tt("打开当前目录")} disabled={current?.phase!=='running'} onClick={openCurrentDirectory}><FolderOpen size={16}/></button>}
+        <TerminalDisplaySettings font={font} setFont={setFont}/>{current?.session&&<button onClick={endPersistent} aria-label={tt("结束会话")} title={tt("结束此持久会话及其中的任务")}><Power size={15}/></button>}<span className="terminal-divider"/><button className="terminal-duplicate" aria-label={tt("复制当前终端")} title={tt("在同一目录新建独立会话，沿用命令历史")} disabled={!current||current.phase==='connecting'||sessionBusy} onClick={duplicate}><CopyPlus size={14}/></button>{(['selection','screen'] as const).map(source=><button key={source} className="terminal-ai-action" aria-label={source==='selection'?tt('将选区附加到 AI 助手'):tt('将当前屏幕附加到 AI 助手')} title={source==='selection'?tt('将选中文字附加到 AI 草稿，预览后发送'):tt('将当前可见屏幕附加到 AI 草稿，预览后发送')} onClick={()=>{const value=handles.current[active]?.capture(source);if(!value?.content.trim()){setHint(tt('没有可附加的终端内容'));return}handoffTerminalContext(value);setHint(tt('已附加到 AI 草稿，请预览后发送'))}}>{source==='selection'?<TextSelect size={15}/>:<Sparkles size={15}/>}</button>)}<button aria-label={tt("复制终端所选内容")} title={tt("复制所选内容 · Ctrl/⌘+C")} onClick={()=>{handles.current[active]?.copy();setHint(tt("选中文字后 Ctrl/⌘+C 复制；Ctrl/⌘+V 粘贴"))}}><Copy size={14}/></button><button title={tt("查找输出 · Ctrl/⌘+F")} aria-label={tt("查找终端输出")} onClick={()=>handles.current[active]?.search()}><Search size={15}/></button><button aria-label={tt("清空终端显示")} title={tt("仅清空显示，不中断命令")} onClick={()=>handles.current[active]?.clear()}><Trash2 size={14}/></button><button aria-label={tt("回到底部")} title={tt("回到底部 · 查看最新输出")} onClick={()=>{handles.current[active]?.scrollToBottom()}}><ChevronsDown size={16}/></button><button aria-label={tt("重新连接当前终端")} title={current?.session?tt("重新接入持久会话"):tt("结束当前会话并重新连接")} onClick={async()=>{if(current&&(current.session||['closed','error'].includes(current.phase)||await confirm(tt("重新连接将结束当前 SSH 会话，是否继续？"))))handles.current[active]?.reconnect()}}><RefreshCw size={14}/></button></div></div>
       <div className="terminal-viewport">{tabs.map(tab=><TerminalView key={tab.id} ref={handle=>{handles.current[tab.id]=handle}} tab={tab} active={tab.id===active&&!collapsed} font={font} onDirectory={onDirectory} onPhase={phase=>setTabs(old=>old.map(item=>item.id===tab.id?{...item,phase}:item))}/>)}</div>
-      <div className="terminal-statusbar"><span><ShieldCheck size={12}/>{current?.session?tt("tmux 持久会话 · 关闭标签仅断开显示"):tt("本机 SSH · 独立交互会话")}</span><span>{hint||tt("Ctrl/⌘+C 复制选中 · Ctrl/⌘+V 粘贴 · Ctrl/⌘+点击 pwd 路径打开目录")}</span><span>UTF-8 <i/>xterm-256color</span></div>
+      <div className="terminal-statusbar"><span><ShieldCheck size={12}/>{current?.session?tt("tmux 持久会话 · 关闭标签仅断开显示"):tt("本机 SSH · 独立交互会话")}</span><span className={hint?'terminal-hint':undefined} role="status">{hint||tt("Ctrl/⌘+C 复制选中 · Ctrl/⌘+V 粘贴 · Ctrl/⌘+点击 pwd 路径打开目录")}</span><span>UTF-8 <i/>xterm-256color</span></div>
     </div>
   </section>;
 }

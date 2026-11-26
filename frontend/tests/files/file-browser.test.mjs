@@ -10,6 +10,7 @@ import * as folderUploads from '../../src/features/files/folderUpload.ts';
 import * as fileTransfers from '../../src/features/files/fileTransfers.ts';
 import * as fileDrop from '../../src/features/files/fileDrop.ts';
 import * as ids from '../../src/shared/browserId.ts';
+import * as windowLayers from '../../src/workspace/windowLayers.ts';
 import * as sshLogins from '../../src/features/hosts/sshLogins.ts';
 import {setLocale} from '../../src/shared/i18n.ts';
 import {workspaceStorage} from '../../src/workspace/workspaceState.ts';
@@ -35,7 +36,7 @@ function harness(t,component='BrowserBody',fetchDownload,folderSupported=true,fo
   const source=ts.transpileModule(fs.readFileSync(new URL('../../src/features/files/FileBrowser.tsx',import.meta.url),'utf8')+'\nexport {BrowserBody};',
     {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText;
   function FileEditor(){}
-  new Function('require','exports',source)(name=>i18nMock(name)??((name==='../../shared/toolI18n'||name==='../../shared/toolI18n.ts')?toolTranslations:undefined)??(name==='react'?react:name==='../hosts/sshLogins'?sshLogins:name==='../../shared/browserId'?ids:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./folderUpload'?folderUploads:name==='./fileDrop'?fileDrop:name==='./fileTransfers'?{...fileTransfers,uploadFile:fileSender??fileTransfers.uploadFile,uploadPayload:folderSender??fileTransfers.uploadPayload}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key})),exports);
+  new Function('require','exports',source)(name=>i18nMock(name)??((name==='../../shared/toolI18n'||name==='../../shared/toolI18n.ts')?toolTranslations:undefined)??(name==='react'?react:name==='../hosts/sshLogins'?sshLogins:name==='../../workspace/windowLayers'?windowLayers:name==='../../shared/browserId'?ids:name==='./files'?files:name==='./logDownload'?{downloadOriginalLog}:name==='./folderUpload'?folderUploads:name==='./fileDrop'?fileDrop:name==='./fileTransfers'?{...fileTransfers,uploadFile:fileSender??fileTransfers.uploadFile,uploadPayload:folderSender??fileTransfers.uploadPayload}:name==='./fileWindow'?{fitFileWindow,moveFileWindow,resizeFileWindow}:name==='./FileEditor'?{FileEditor}:new Proxy({},{get:(_,key)=>key})),exports);
   const guard={current:null},zone={current:null},hosts=[{id:'A',target:'A'},{id:'B',target:'B'}];
   let props=component==='BrowserBody'?{host:hosts[0],onBusy(){},editorClose:guard,dropZone:zone}:{host:hosts[0],hosts,close(){},requestId:'first'};
   const render=updates=>{props={...props,...updates};slot=0;tree=exports[component](props);for(const effect of effects.splice(0))effect();return tree};
@@ -391,14 +392,19 @@ test('native folder chooser uploads empty directories and a closed window cannot
 });
 
 test('terminal path requests reopen a minimized file window and keep unsaved edits guarded',t=>{
-  const h=harness(t,'FileBrowser');h.render();let proceed;
+  const h=harness(t,'FileBrowser');const root=h.render();let proceed;
+  const doc={querySelectorAll:()=>[fileWindow,terminalWindow]};
+  const fileWindow={ownerDocument:doc,style:{}},terminalWindow={ownerDocument:doc,style:{}};
+  root.props.ref(fileWindow);windowLayers.registerFloatingWindow(terminalWindow);
   h.find(n=>n.type==='button'&&n.props['aria-label']==='最小化文件窗口').props.onClick();h.render();
   h.body().props.editorClose.current=after=>{proceed=after};
   h.render({host:h.hosts[0],requestId:'pwd-link',initialPath:'/data/训练 项目'});
   assert.equal(h.body().props.navigation.path,'~');
   assert.ok(h.find(n=>n.type==='button'&&n.props['aria-label']==='恢复文件窗口'));
+  assert.ok(+terminalWindow.style.zIndex>+fileWindow.style.zIndex);
   proceed();h.render();assert.equal(h.body().props.navigation.path,'/data/训练 项目');
   assert.ok(h.find(n=>n.type==='button'&&n.props['aria-label']==='最小化文件窗口'));
+  assert.ok(+fileWindow.style.zIndex>+terminalWindow.style.zIndex);
 });
 
 test('file browser edges resize the actual window and maximize restores its frame',t=>{

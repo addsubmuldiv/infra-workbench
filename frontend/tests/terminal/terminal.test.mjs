@@ -409,10 +409,10 @@ for(const alternate of [false,true])test(`reconnect gives a new PTY a clean orig
   assert.ok(!lines(buffer.baseY,term.rows).join('\n').includes('STALE-OUTPUT'));
 });
 
-function terminalNode(node,component){
+function terminalNode(node,component,id){
   if(!node||typeof node!=='object')return;
-  if(node.type===component)return node;
-  return (node.props?.children||[]).flat(Infinity).map(child=>terminalNode(child,component)).find(Boolean);
+  if(node.type===component&&(id===undefined||node.props.tab.id===id))return node;
+  return (node.props?.children||[]).flat(Infinity).map(child=>terminalNode(child,component,id)).find(Boolean);
 }
 function updatedTabs(h,initial){let tabs=initial;for(const update of h.updates.filter(value=>value.index===0))tabs=typeof update.value==='function'?update.value(tabs):update.value;return tabs}
 
@@ -426,6 +426,50 @@ test('duplicate opens an independent tab in the latest confirmed cwd and keeps t
 test('duplicate never guesses a home directory when the shell cwd is unavailable',t=>{
   const h=harness(t,{tabs:[liveTab],initialStates:{1:'tab'}});const tree=h.TerminalDock({request:null,hosts:[host]});terminalNode(tree,h.TerminalView).props.ref({cwd:()=>undefined});
   find(tree,'复制当前终端').props.onClick();assert.equal(updatedTabs(h,[liveTab]).length,1);assert.ok(h.updates.some(value=>value.index===7&&value.value.includes('目录')));
+});
+
+test('opening the current directory uses the selected tab, pinned account and latest cwd',t=>{
+  const first={...liveTab,host:{...host,ssh_account_id:'other-login'}};
+  const selected={...liveTab,id:'selected',host:{...host,ssh_account_id:'selected-login'},cwd:'/starting-path'};
+  const tabs=[first,selected],h=harness(t,{tabs,initialStates:{1:selected.id}}),opened=[];
+  const tree=h.TerminalDock({request:null,hosts:[host],onDirectory:(...args)=>opened.push(args)});
+  terminalNode(tree,h.TerminalView,first.id).props.ref({reportedDirectory:()=>'/other'});
+  let cwd='/current/中文 ; $(literal)';
+  terminalNode(tree,h.TerminalView,selected.id).props.ref({reportedDirectory:()=>cwd});
+  const button=find(tree,'打开当前目录');
+  assert.equal(button.props.disabled,false);button.props.onClick();
+  cwd='/new directory';button.props.onClick();
+  assert.deepEqual(opened,[[host.id,'/current/中文 ; $(literal)','selected-login'],[host.id,'/new directory','selected-login']]);
+  assert.deepEqual(updatedTabs(h,tabs),tabs);
+});
+
+test('opening the current directory does not guess a path',t=>{
+  const tab={...liveTab,cwd:'/starting-path'},h=harness(t,{tabs:[tab],initialStates:{1:tab.id}});
+  const onDirectory=()=>assert.fail('must not open an unconfirmed path');
+  const tree=h.TerminalDock({request:null,hosts:[host],onDirectory});
+  terminalNode(tree,h.TerminalView).props.ref({reportedDirectory:()=>undefined});
+  find(tree,'打开当前目录').props.onClick();
+  assert.ok(h.updates.some(value=>value.index===7&&value.value.includes('pwd')));
+});
+
+test('the current-directory button is disabled for a disconnected tab',t=>{
+  const tab={...liveTab,phase:'closed'},h=harness(t,{tabs:[tab],initialStates:{1:tab.id}});
+  const tree=h.TerminalDock({request:null,hosts:[host],onDirectory:()=>assert.fail('disconnected')});
+  const button=find(tree,'打开当前目录');assert.equal(button.props.disabled,true);button.props.onClick();
+});
+
+test('the shell must confirm the directory in each connection before it can be opened',async t=>{
+  const {socket,ref}=await view(t,undefined,'/requested');
+  assert.equal(ref.current.reportedDirectory(),undefined);
+  socket.message({type:'shell',kind:'prompt',cwd:'/first'});
+  assert.equal(ref.current.reportedDirectory(),'/first');
+  socket.message({type:'shell',kind:'prompt',cwd:'/second'});
+  assert.equal(ref.current.reportedDirectory(),'/second');
+  socket.message({type:'shell',kind:'unsupported',cwd:'/'});
+  assert.equal(ref.current.reportedDirectory(),undefined);
+  socket.message({type:'shell',kind:'prompt',cwd:'/second'});
+  ref.current.reconnect();
+  assert.equal(ref.current.reportedDirectory(),undefined);
 });
 
 test('duplicating tmux creates a separate persistent session in the same cwd',async t=>{

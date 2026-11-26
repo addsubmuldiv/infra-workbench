@@ -29,6 +29,8 @@ export function FileBrowser({host,hosts,close,requestId=host.id,initialPath,onTe
   const [navigation,setNavigation]=useState({host:host.id,id:requestId,path:initialPath??'~'});
   const [locked,setLocked]=useState(false);
   const [minimized,setMinimized]=useState(false);
+  const windowRef=useRef<HTMLDivElement|null>(null);
+  const bindWindow=useRef((element:HTMLDivElement|null)=>{windowRef.current=element;registerFloatingWindow(element)});
   const viewport=()=>({width:window.innerWidth,height:window.innerHeight});
   const [frame,setFrame]=useState(()=>fitFileWindow({x:(window.innerWidth-880)/2,y:40,width:880,height:Math.min(600,window.innerHeight-120)},viewport()));
   const [maximized,setMaximized]=useState(false);
@@ -93,13 +95,14 @@ export function FileBrowser({host,hosts,close,requestId=host.id,initialPath,onTe
     if(handledRequest.current===requestId||locked)return;
     handledRequest.current=requestId;
     const login = pinSSHLogin(host);
+    const show=()=>{setMinimized(false);registerFloatingWindow(windowRef.current)};
     if(login.id!==current.id||login.ssh_account_id!==current.ssh_account_id||initialPath)leave(()=>{
-      setCurrent(login);setNavigation({host:host.id,id:requestId,path:initialPath??'~'});setMinimized(false);
+      setCurrent(login);setNavigation({host:host.id,id:requestId,path:initialPath??'~'});show();
     });
-    else setMinimized(false);
+    else show();
   },[requestId,locked]);
   const dimensions=minimized?{left:frame.x,top:frame.y,width:'min(320px, calc(100vw - 16px))',height:56}:maximized?{left:8,top:8,width:window.innerWidth-16,height:window.innerHeight-16}:{left:frame.x,top:frame.y,width:frame.width,height:frame.height};
-  return <div className="file-workspace" data-floating-window="files" ref={registerFloatingWindow} onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow}><section role="dialog" aria-modal="false" aria-labelledby="file-title" className={'file-browser floating '+(minimized?'minimized':'')} style={dimensions} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture} {...dropHandlers}>
+  return <div className="file-workspace" data-floating-window="files" ref={bindWindow.current} onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow}><section role="dialog" aria-modal="false" aria-labelledby="file-title" className={'file-browser floating '+(minimized?'minimized':'')} style={dimensions} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture} {...dropHandlers}>
     <header className="file-header" onPointerDown={event=>startGesture(event,'move')}><div tabIndex={0} aria-label={tt("移动文件窗口，方向键调整位置")} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>moveFileWindow(old,...offset,viewport(),minimized))}}}><h2 id="file-title"><FolderOpen size={19}/>{tt("服务器文件")}{minimized&&<small>{sshWindowLabel(current)}</small>}</h2>{!minimized&&<p>{sshWindowLabel(current)}</p>}</div>{!minimized&&<select aria-label={tt("文件浏览目标机器")} value={current.id} disabled={locked} onChange={e=>{const next=hosts.find(item=>item.id===e.target.value);if(next)leave(()=>{setCurrent(pinSSHLogin(next));setNavigation({host:next.id,id:browserId(),path:'~'})})}}>{hosts.map(item=><option key={item.id} value={item.id}>{item.target}</option>)}</select>}<button data-window-action="minimize" className="icon-button" aria-label={minimized?tt("恢复文件窗口"):tt("最小化文件窗口")} title={minimized?tt("恢复文件窗口"):tt("最小化（保留目录和编辑状态）")} onClick={toggleMinimized}>{minimized?<PanelTopOpen size={18}/>:<Minus size={18}/>}</button>{!minimized&&<button data-window-action="maximize" className="icon-button" aria-label={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} title={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} onClick={()=>setMaximized(!maximized)}>{maximized?<Minimize2 size={17}/>:<Maximize2 size={17}/>}</button>}<button className="icon-button" aria-label={tt("关闭文件浏览")} title={tt("关闭文件窗口")} disabled={locked} onClick={()=>leave(close)}><X size={20}/></button></header>
     <div className="file-window-body" hidden={minimized}><BrowserBody key={current.id+'/'+(current.ssh_account_id??'')} host={current} onTerminal={path=>onTerminal?.(current.id,path,current.ssh_account_id)} navigation={navigation.host===current.id?navigation:undefined} onBusy={setLocked} editorClose={editorClose} dropZone={dropZone} dropDirectory={dropHint?.row&&dropHint.state==='ready'?dropHint.directory:undefined}/></div>
     {!minimized&&!maximized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'file-edge-resize edge-'+edge+(edge==='se'?' file-window-resize':'')} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?tt("调整文件窗口大小"):undefined} tabIndex={edge==='se'?0:undefined} onPointerDown={event=>startGesture(event,edge)} onKeyDown={event=>{const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>resizeFileWindow(old,'se',...offset,viewport()))}}}/>)}

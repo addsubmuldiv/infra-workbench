@@ -35,6 +35,8 @@ main>header{z-index:40}
 .terminal-tools-resize{position:absolute;bottom:0;right:0;width:22px;height:22px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 56%,var(--muted) 57%,var(--muted) 61%,transparent 62%,transparent 72%,var(--muted) 73%,var(--muted) 77%,transparent 78%);opacity:.7}.terminal-tools.minimized .terminal-tools-heading{height:56px;padding:10px}.terminal-tools.minimized .terminal-tools-window-actions button{padding:5px}
 @container(max-width:600px){.terminal-command-cards{grid-template-columns:1fr}.terminal-template-values{grid-template-columns:1fr}.terminal-tools-heading small{display:none}}
 .terminal-toolbar button.terminal-duplicate{display:grid;width:28px;padding:0;color:var(--accent)}.terminal-toolbar button.terminal-duplicate:disabled{opacity:.4;cursor:default}
+.terminal-toolbar button.terminal-open-directory{color:var(--accent)}.terminal-toolbar button.terminal-open-directory:disabled{opacity:.4;cursor:default;background:transparent}
+.terminal-statusbar>span.terminal-hint{display:block;white-space:normal;padding:4px 0}
 .terminal-dock.floating{z-index:70;min-width:0;min-height:0;container-type:inline-size}
 .terminal-dock.floating .terminal-topbar{cursor:move;touch-action:none;user-select:none}
 .terminal-dock.floating.dragging,.terminal-dock.floating.dragging *{user-select:none!important}
