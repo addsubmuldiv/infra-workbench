@@ -316,6 +316,8 @@ const messages:Record<string,string>={
   "本轮指定技能：": "Selected skills: ",
   "已读取技能：": "Skills read: ",
   "执行步骤": "Execution steps",
+  "本轮已结束，当前正在处理另一轮": "This turn has ended and another turn is running.",
+  "这段会话正在处理另一轮": "This conversation is processing another turn.",
   "执行中 ·": "Running ·",
   "步": "steps",
   "正在执行工具…": "Running tools…",

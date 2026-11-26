@@ -1,3 +1,55 @@
-.agent-permissions{margin:6px 0;font-size:12px}.agent-permissions summary{cursor:pointer}.agent-permissions>div{display:grid;gap:8px;padding:10px 0}.agent-permissions label{display:grid;gap:5px}.agent-permissions textarea,.agent-permissions select{width:100%;box-sizing:border-box;background:var(--panel);color:inherit;border:1px solid var(--line);border-radius:6px;padding:7px}.agent-permissions p{margin:0;line-height:1.6}.agent-approval{margin:10px 0;padding:12px;border:1px solid var(--line);border-radius:8px}.agent-approval pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.agent-approval-actions{display:flex;gap:7px;flex-wrap:wrap}.agent-approval [role=alert]{color:var(--danger)}
+.agent-approval{margin:10px 0;padding:12px;border:1px solid var(--line);border-radius:8px}.agent-approval pre{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}.agent-approval-actions{display:flex;gap:7px;flex-wrap:wrap}.agent-approval [role=alert]{color:var(--danger)}
 
-.agent-permissions-advanced{margin-top:4px}.agent-permissions-advanced[open]{display:grid;gap:8px}.agent-permissions-advanced summary{color:var(--muted)}.agent-approval>small{display:block;overflow-wrap:anywhere;margin:6px 0}
+.agent-approval>small{display:block;overflow-wrap:anywhere;margin:6px 0}
+
+.chat-composer-settings .chat-permission-trigger {
+  min-height:28px;
+  max-width:100%;
+  gap:6px;
+  padding:4px 8px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:var(--input);
+  color:var(--text);
+  font-size:11px;
+  white-space:nowrap;
+}
+.chat-permission-trigger>svg {flex:none;color:var(--muted)}
+.chat-permission-trigger.full>svg:first-child {color:var(--amber)}
+.chat-permission-trigger:hover,.chat-permission-trigger[aria-expanded="true"] {background:var(--hover)}
+.chat-permission-menu>button {align-items:flex-start}
+.chat-permission-menu>button small {display:block;margin-top:3px;color:var(--muted);font-size:11px;line-height:1.45}
+.chat-permission-menu>button[aria-disabled="true"] {cursor:default}
+.chat-permission-menu>button[aria-disabled="true"]:not([aria-checked="true"]) {color:var(--muted)}
+.chat-permission-menu>p {margin:0;padding:6px 12px;font-size:11px}
+.chat-permission-menu>.chat-menu-action {margin-top:4px;border-top:1px solid var(--line);border-radius:0 0 8px 8px}
+
+.agent-permissions-dialog {
+  width:min(460px,calc(100vw - 24px));
+  max-height:calc(100vh - 24px);
+  overflow:auto;
+  padding:20px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--panel);
+  color:var(--text);
+  box-shadow:0 12px 34px #0003;
+}
+.agent-permissions-dialog > :first-child {margin-top:0}
+.agent-permissions-dialog h2 {font-size:16px;margin-bottom:10px}
+.agent-permissions-dialog p,.agent-permissions-dialog small {color:var(--muted);line-height:1.6}
+.agent-permissions-dialog label {display:grid;gap:6px;margin:12px 0;font-size:12px}
+.agent-permissions-dialog textarea {
+  width:100%;
+  max-height:160px;
+  resize:vertical;
+  background:var(--input);
+  color:var(--text);
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:8px;
+  font:inherit;
+}
+.agent-permissions-dialog textarea:focus-visible {outline:2px solid var(--accent);outline-offset:1px}
+.agent-permissions-dialog pre {max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.agent-permissions-dialog footer {display:flex;justify-content:flex-end;margin-top:16px}

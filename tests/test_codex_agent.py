@@ -271,7 +271,14 @@ def test_native_runtime_root_completion_resume_and_permission_boundaries(monkeyp
                 for event in [
                     {'method':'item/agentMessage/delta','params':{'threadId':'child','delta':'private child'}},
                     {'method':'turn/completed','params':{'threadId':'child','turn':{'id':'child-turn','status':'completed'}}},
-                    ({'method':'item/agentMessage/delta','params':{'threadId':'root','delta':'root result'}} if text_reply else {'method':'item/completed','params':{'threadId':'root','item':{'id':'cmd','type':'commandExecution','command':'echo test','status':'completed'}}}),
+                    {'method':'item/agentMessage/delta','params':{'threadId':'root','turnId':'old','itemId':'old-message','delta':'previous reply'}},
+                    {'method':'item/completed','params':{'threadId':'root','turnId':'old','item':{'id':'old-tool','type':'commandExecution'}}},
+                    *([
+                        {'method':'item/agentMessage/delta','params':{'threadId':'root','turnId':'turn','itemId':'reply','delta':'root'}},
+                        {'method':'item/completed','params':{'threadId':'root','turnId':'turn','item':{'id':'reply','type':'agentMessage','text':'root result'}}},
+                        {'method':'item/agentMessage/delta','params':{'threadId':'root','turnId':'turn','itemId':'reply','delta':'late delta'}},
+                        {'method':'item/completed','params':{'threadId':'root','turnId':'turn','item':{'id':'another-reply','type':'agentMessage','text':'root result'}}},
+                    ] if text_reply else [{'method':'item/completed','params':{'threadId':'root','item':{'id':'cmd','type':'commandExecution','command':'echo test','status':'completed'}}}]),
                     {'method':'turn/completed','params':{'threadId':'root','turn':{'id':'turn','status':'completed'}}}]:await self.events.put(event)
                 return {'turn':{'id':'turn'}}
             raise AssertionError(method)
@@ -316,7 +323,8 @@ def test_native_runtime_root_completion_resume_and_permission_boundaries(monkeyp
                     extensions={'options':{**request['codex_options'],'cwd':cwd},
                                 'configuration_revision':native_config_revision(cwd),
                                 'permissions':{'local_roots':None,'remote_roots':remote_roots,'external_mcp_servers':None}})
-            assert chat['messages'][-1]['content']==('root result' if text_reply else 'Codex 本轮已结束，请查看工具执行记录。')
+            assert chat['messages'][-1]['content']==('root result\n\nroot result' if text_reply else 'Codex 本轮已结束，请查看工具执行记录。')
+            assert not any(item['id']=='old-tool' for item in chat['turns'][-1]['codex_items'])
             assert 'private-old-epoch' not in str(chat['messages'])
             assert chat['turns'][-2]['model_history_before']==[]
         assert [m for m,p in calls if m.startswith('thread/')]==['thread/start','thread/resume','thread/resume']

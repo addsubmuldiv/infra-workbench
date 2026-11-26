@@ -285,7 +285,7 @@ def test_cancel_during_tool_keeps_completed_work_and_does_not_replay_pending_cal
         model.replies = [tool_message('ssh_check', {'host_id': 'a', 'check': 'system'})]
         result = chat.begin(view['id'], ChatMessageRequest(content='检查'))
         await asyncio.wait_for(started.wait(), 5)
-        await chat.cancel(view['id'])
+        await chat.cancel(view['id'],result['active_run'])
         assert cancelled.is_set()
         assert chat.get(view['id'])['turns'][-1]['tools'][0]['status'] == 'cancelled'
         model.replies = [dict(message=dict(role='assistant', content='本轮重新开始'))]

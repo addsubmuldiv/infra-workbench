@@ -121,9 +121,38 @@ def test_cancel_immediately_and_shutdown_leave_no_permanently_busy_chat(tmp_path
     async def scenario():
         harness,model,tools=service(tmp_path);chat=harness.create()
         result=harness.begin(chat['id'],ChatMessageRequest(content='检查'))
-        cancelled=await harness.cancel(chat['id'])
+        cancelled=await harness.cancel(chat['id'],result['active_run'])
         assert cancelled['active_run'] is None and cancelled['turns'][-1]['status']=='cancelled'
         harness.store.db.close()
+    asyncio.run(scenario())
+
+
+def test_cancel_is_bound_to_the_run_even_when_the_next_turn_starts_during_cleanup(tmp_path,monkeypatch):
+    from fastapi import HTTPException
+
+    async def scenario():
+        harness,_,_=service(tmp_path)
+        chat_id=harness.create()['id']
+        entered=asyncio.Event()
+        async def run(*_args,**_kwargs):
+            entered.set()
+            await asyncio.Event().wait()
+        monkeypatch.setattr('backend.codex_agent.run_codex_agent',run)
+        first=harness.begin(chat_id,ChatMessageRequest(content='first',engine='codex'))['active_run']
+        await entered.wait()
+        later={}
+        harness.runs[first].add_done_callback(lambda _:later.update(harness.begin(chat_id,ChatMessageRequest(content='second',engine='codex'))))
+        snapshot=await harness.cancel(chat_id,first)
+        second=later['active_run']
+        assert snapshot['active_run']==second
+        assert not harness.runs[second].done()
+        with pytest.raises(HTTPException) as error:
+            await harness.cancel(chat_id,first)
+        assert error.value.status_code==409
+        assert harness.current(chat_id)['active_run']==second
+        await harness.close()
+        harness.store.db.close()
+
     asyncio.run(scenario())
 
 
@@ -309,7 +338,7 @@ def test_steering_serializes_sanitizes_and_rejects_stale_and_cancelled_runs(tmp_
         assert error.value.status_code==409 and len(chat['messages'])==2
         # A successful supplement belongs to the actual scoped model transcript,
         # so the next user turn captures it for safe future branching.
-        await harness.cancel(chat['id'])
+        await harness.cancel(chat['id'],'run')
         assert chat['id'] not in harness.controls
         with pytest.raises(HTTPException) as error:await harness.steer(chat['id'],SteerRequest(run_id='run',content='x'))
         assert error.value.status_code==409
