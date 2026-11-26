@@ -1,11 +1,15 @@
 """Per-host elevation of a fixed, read-only process metadata helper."""
 import hashlib
+import hmac
 import inspect
 import json
+import secrets
 import shlex
 from pathlib import Path
 
 from . import remote_probe
+from .agent_errors import AgentError
+from .ssh_accounts import default_account_id, ssh_credential_key
 
 HELPER = '/usr/local/libexec/infra-workbench-process-v1.py'
 PYTHON = '/usr/bin/python3'
@@ -134,9 +138,10 @@ print('IWB_INSTALL_OK')
 MESSAGES = {
     'disabled':'未启用 sudo 进程详情', 'ready':'sudo 已验证，可补齐进程详情',
     'password_required':'需要 sudo 密码，请在此机器的设置中输入',
+    'ssh_password_rejected':'SSH 密码未通过 sudo 验证，请输入独立的 sudo 密码',
     'denied':'sudo 验证失败或当前账号没有此命令的权限，请检查密码及服务器授权',
-    'missing':'需要勾选安装固定采集程序后再保存',
-    'version_mismatch':'采集程序需要更新，请勾选安装后再保存',
+    'missing':'进程详情采集尚未就绪，请验证 sudo',
+    'version_mismatch':'进程详情采集需要更新，请验证 sudo',
     'unsafe':'远端采集程序或目录的所有者、权限不符合要求',
     'identity_changed':'SSH 目标或账号已变化，请重新验证 sudo 设置',
     'error':'sudo 采集暂时失败，将在后续采集时重试；普通监控仍可使用',
@@ -145,23 +150,28 @@ MESSAGES = {
 
 
 class SudoService:
-    def __init__(self, ssh, vault):
+    def __init__(self, ssh, vault, ssh_password=None):
         self.ssh, self.vault = ssh, vault
         self.passwords, self.states = {}, {}
+        self.ssh_password = ssh_password
+        self.rejected_ssh_passwords = {}
+        self.fingerprint_key = secrets.token_bytes(32)
 
     def status(self, host, value):
-        self.states[host['id']] = value
+        self.states[ssh_credential_key(host)] = value
 
     def view(self, host):
-        status = self.states.get(host['id'], 'pending' if host.get('sudo_enabled') else 'disabled')
+        key = ssh_credential_key(host)
+        enabled = bool(host.get('sudo_enabled'))
+        status = self.states.get(key, 'pending') if enabled else 'disabled'
         credential_error = ''
         try:
-            saved = bool(self.vault.get(host['id']))
+            saved = bool(self.vault.get(key))
         except Exception:
             saved = None
             credential_error = '无法读取系统安全存储，请解锁后重试；已有密码未删除'
-        return dict(enabled=bool(host.get('sudo_enabled')), password_saved=saved,
-                    password_in_memory=host['id'] in self.passwords,
+        return dict(enabled=enabled, password_saved=saved,
+                    password_in_memory=key in self.passwords,
                     can_remember=getattr(self.vault, 'supported', True), credential_error=credential_error, status=status,
                     message=MESSAGES.get(status, MESSAGES['error']))
 
@@ -172,8 +182,32 @@ class SudoService:
         return hashlib.sha256(json.dumps({key:cfg.get(key) for key in fields},sort_keys=True).encode()).hexdigest()
 
     def password(self, host, identity):
-        credential = self.passwords.get(host['id']) or self.vault.get(host['id'])
+        key = ssh_credential_key(host)
+        credential = self.passwords.get(key) or self.vault.get(key)
         return credential.get('password') if credential and credential.get('identity')==identity else None
+
+    async def try_ssh_password(self, host, command, config):
+        if self.ssh_password is None:
+            return None
+        try:
+            password = self.ssh_password(host, config)
+        except AgentError:
+            return None
+        if not password or len(password)>512 or any(char in password for char in '\r\n\0'):
+            return None
+        key = ssh_credential_key(host)
+        fingerprint = hmac.digest(self.fingerprint_key, password.encode(), 'sha256')
+        attempt = self.identity(config), fingerprint
+        if self.rejected_ssh_passwords.get(key) == attempt:
+            self.status(host, 'ssh_password_rejected')
+            return None
+        result = await self.invoke(host, command(True), password, config)
+        if result is None and self.states.get(key) == 'denied':
+            self.rejected_ssh_passwords[key] = attempt
+            self.status(host, 'ssh_password_rejected')
+        elif result is not None:
+            self.rejected_ssh_passwords.pop(key, None)
+        return result
 
     async def run(self, host, command, source, config):
         if hasattr(self.ssh,'run_bound'):
@@ -218,32 +252,40 @@ class SudoService:
         return result
 
     async def configure(self, host, enabled, password=None, remember=False, install=False):
+        key = ssh_credential_key(host)
         if not enabled:
             if not remember:
-                self.vault.delete(host['id'])
+                self.vault.delete(key)
             host['sudo_enabled'] = False
-            self.passwords.pop(host['id'],None)
+            self.passwords.pop(key,None)
             self.status(host,'disabled')
             return self.view(host)
-        if password is not None and (not password or len(password)>512 or any(c in password for c in '\r\n\0')):
-            raise ValueError('sudo 密码不能为空、超过 512 个字符或包含换行符')
         config = await self.ssh.effective(host)
         identity = self.identity(config)
-        supplied = password is not None
-        password = password if supplied else self.password(host,identity)
+        if password is not None and (not password or len(password)>512 or any(c in password for c in '\r\n\0')):
+            raise ValueError('sudo 密码不能为空、超过 512 个字符或包含换行符')
+        if password is None:
+            password = self.password(host,identity)
+
+        async def verify(command):
+            output = await self.invoke(host, command(password is not None), password, config)
+            if output is None and password is None and self.states.get(key) == 'password_required':
+                output = await self.try_ssh_password(host, command, config)
+            return output
+
         state = await self.helper_state(host, config)
         if state!='ready':
             if state not in ('missing','version_mismatch') or not install:
                 self.status(host,state)
                 raise ValueError(MESSAGES[state])
-            output = await self.invoke(host,installation_command(password is not None),password,config)
+            output = await verify(installation_command)
             if output is None or 'IWB_INSTALL_OK' not in output:
                 raise ValueError(self.view(host)['message'])
             state = await self.helper_state(host, config)
             if state!='ready':
                 self.status(host,state)
                 raise ValueError(MESSAGES[state])
-        output = await self.invoke(host,helper_command(password=password is not None),password,config)
+        output = await verify(lambda use_password: helper_command(password=use_password))
         if output is None:
             raise ValueError(self.view(host)['message'])
         try:
@@ -254,23 +296,29 @@ class SudoService:
         if password is not None:
             credential = dict(identity=identity,password=password)
             if remember:
-                self.vault.put(host['id'],credential)
+                self.vault.put(key,credential)
             else:
-                self.vault.delete(host['id'])
-            self.passwords[host['id']] = credential
+                self.vault.delete(key)
+            self.passwords[key] = credential
         else:
-            saved = self.vault.get(host['id'])
+            saved = self.vault.get(key)
             if not remember or (saved and saved.get('identity')!=identity):
-                self.vault.delete(host['id'])
-            self.passwords.pop(host['id'],None)
-        host.update(sudo_enabled=True,sudo_identity=identity)
+                self.vault.delete(key)
+            self.passwords.pop(key,None)
+        host['sudo_enabled'] = True
+        host['sudo_identities'] = {**host.get('sudo_identities', {}), default_account_id(host): identity}
         self.status(host,'ready')
         return self.view(host)
 
+    def clear_credential(self, host):
+        key = ssh_credential_key(host)
+        self.vault.delete(key)
+        self.passwords.pop(key, None)
+        self.states.pop(key, None)
+        self.rejected_ssh_passwords.pop(key, None)
+
     async def forget(self, host):
-        self.vault.delete(host['id'])
-        self.passwords.pop(host['id'],None)
-        self.status(host,'pending' if host.get('sudo_enabled') else 'disabled')
+        self.clear_credential(host)
         return self.view(host)
 
     async def enrich(self, host, pids, cutoff):
@@ -279,18 +327,22 @@ class SudoService:
         try:
             config = await self.ssh.effective(host)
             identity = self.identity(config)
-            if identity!=host.get('sudo_identity'):
+            verified = host.get('sudo_identities', {}).get(default_account_id(host), host.get('sudo_identity'))
+            if identity!=verified:
                 self.status(host,'identity_changed')
                 return {}
-            if self.states.get(host['id'])=='denied':
+            key = ssh_credential_key(host)
+            if self.states.get(key)=='denied':
                 return {}  # Do not repeatedly retry a rejected password every poll.
 
-            async def authorized(command):
+            async def authorized(command, *, use_ssh_password=False):
                 out = await self.invoke(host, command(False), None, config)
-                if out is None and self.states.get(host['id'])=='password_required':
+                if out is None and self.states.get(key)=='password_required':
                     password = self.password(host, identity)
                     if password is not None:
                         out = await self.invoke(host, command(True), password, config)
+                    elif use_ssh_password:
+                        out = await self.try_ssh_password(host, command, config)
                 return out
 
             state = await self.helper_state(host, config)
@@ -298,7 +350,7 @@ class SudoService:
                 # Enabling this host already authorized installing its fixed
                 # helper. Maintain it after upgrades using the same bound
                 # identity and saved credential, including when no cards are busy.
-                output = await authorized(installation_command)
+                output = await authorized(installation_command, use_ssh_password=True)
                 if output is None:
                     return {}
                 if 'IWB_INSTALL_OK' not in output:
@@ -306,11 +358,12 @@ class SudoService:
                     return {}
                 state = await self.helper_state(host, config)
             if state!='ready':
-                self.status(host,state)
+                if state != 'missing' or self.states.get(key) != 'ssh_password_rejected':
+                    self.status(host,state)
                 return {}
             inspect_pids = bool(pids) and cutoff is not None
             out = await authorized(lambda password: helper_command(pids,cutoff,password)
-                                   if inspect_pids else helper_command(password=password))
+                                   if inspect_pids else helper_command(password=password), use_ssh_password=True)
             if out is None:
                 return {}
             details = self.decode(out).get('details',{})

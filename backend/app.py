@@ -85,6 +85,7 @@ class ConnectionRequest(BaseModel):
     password: SecretStr | None = None
     provision: bool = False
     remember_password: bool = False
+    auto_sudo: bool = False
     cluster_id: str | None = None
 
     @field_validator('target', 'user')
@@ -154,7 +155,7 @@ class SudoRequest(BaseModel):
     enabled: bool
     password: SecretStr | None = None
     remember: bool = False
-    install_helper: bool = False
+    install_helper: bool = True
 
 
 class SSHPasswordRequest(BaseModel):
@@ -182,7 +183,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
     ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else create_credential_store('InfraWorkbench/ssh/'))
-    sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store())
+    sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store(),
+                       ssh_passwords.password_for)
     refresh_interval = store.load('refresh_interval_seconds', MONITORING_REFRESH_INTERVAL_SECONDS)
     if type(refresh_interval) is int and refresh_interval == 60:
         refresh_interval = 30
@@ -225,12 +227,29 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         default_changed = default_account_id(old) != default_account_id(updated)
         lock = locks.setdefault(host_id, asyncio.Lock()) if default_changed else contextlib.nullcontext()
         async with lock:
+            if default_changed and updated.get('sudo_enabled') is not False:
+                account_id = default_account_id(updated)
+                identities = updated.get('sudo_identities', {})
+                if account_id not in identities:
+                    with contextlib.suppress(ValueError, OSError):
+                        config = await ssh.effective(updated)
+                        updated['sudo_identities'] = {**identities, account_id: sudo.identity(config)}
+                        updated['sudo_enabled'] = True
+            removed = set(item['id'] for item in account_records(old)) - set(item['id'] for item in account_records(updated))
+            for account_id in removed:
+                try:
+                    sudo.clear_credential(resolve_ssh_account(old, account_id))
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)) from None
+                if 'sudo_identities' in updated:
+                    updated['sudo_identities'] = {key: value for key, value in updated['sudo_identities'].items() if key != account_id}
             position = hosts.index(old)
             replacement = list(hosts)
             replacement[position] = updated
             store.save('hosts', replacement)
             hosts[position] = updated
             if default_changed:
+                sudo.status(updated, 'pending')
                 snapshots.pop(host_id, None)
                 probe.slow.pop(host_id, None)
                 probe.details.pop(host_id, None)
@@ -631,7 +650,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             else:
                 sections = section_views(snap, now, reservations.max_sample_gap)
                 public_host = {key: value for key, value in host.items()
-                               if key not in ('ssh_accounts', 'ssh_default_account_id', 'ssh_interactive_account_id')}
+                               if key not in ('ssh_accounts', 'ssh_default_account_id', 'ssh_interactive_account_id',
+                                              'sudo_identity', 'sudo_identities')}
                 items.append(dict(**public_host, ssh_logins=ssh_account_summary(host), collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
@@ -679,6 +699,17 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 # Preserve the successful connection; never echo the secret or claim it was saved.
                 result['message']+='；SSH 密码保存失败，请在机器的 SSH 密码设置中重试'
                 result['password_save_failed']=True
+        if body.auto_sudo and 'sudo_enabled' not in host:
+            # This login opted in to setting up the read-only sudo collector.
+            try:
+                if result.get('password_saved'):
+                    config = await ssh.effective(host)
+                    host.update(sudo_enabled=True, sudo_identities={default_account_id(host): sudo.identity(config)})
+                await sudo.configure(host, True, remember=True, install=True)
+            except ValueError:
+                pass  # Expected sudo validation failures already have a status.
+            except Exception:
+                sudo.status(host, 'error')
         store.save('hosts', hosts)
         if collect_now:await collect(host)
         return dict(**result, host_id=host['id'])
@@ -810,9 +841,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         await app.state.terminals.close_host(host_id)
         async with locks.setdefault(host_id, asyncio.Lock()):
             try:
-                await sudo.forget(host)
                 for account in account_records(host):
-                    ssh_passwords.forget(resolve_ssh_account(host, account['id']))
+                    login = resolve_ssh_account(host, account['id'])
+                    sudo.clear_credential(login)
+                    ssh_passwords.forget(login)
             except AgentError as exc:
                 raise HTTPException(400,exc.message) from None
             except ValueError as exc:
@@ -836,14 +868,21 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         resource_history.forget(host_id)
         return {'ok': True}
 
+    def sudo_host(host_id, ssh_account_id):
+        host = find(host_id)
+        if ssh_account_id is not None and ssh_account_id != default_account_id(host):
+            raise HTTPException(409, '机器默认 SSH 账号已改变，请重新打开 sudo 设置。')
+        return host
+
     @app.get('/api/hosts/{host_id}/sudo')
-    async def sudo_settings(host_id: str):
-        return sudo.view(find(host_id))
+    async def sudo_settings(host_id: str, ssh_account_id: str | None = None):
+        host = sudo_host(host_id, ssh_account_id)
+        return dict(sudo.view(host), ssh_password_saved=ssh_passwords.view(host)['password_saved'])
 
     @app.post('/api/hosts/{host_id}/sudo')
     @serialize_connections
-    async def save_sudo(host_id: str, body: SudoRequest):
-        host = find(host_id)
+    async def save_sudo(host_id: str, body: SudoRequest, ssh_account_id: str | None = None):
+        host = sudo_host(host_id, ssh_account_id)
         async with locks.setdefault(host_id, asyncio.Lock()):
             try:
                 result = await sudo.configure(host, body.enabled,
@@ -863,8 +902,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
 
     @app.delete('/api/hosts/{host_id}/sudo')
     @serialize_connections
-    async def forget_sudo(host_id: str):
-        host = find(host_id)
+    async def forget_sudo(host_id: str, ssh_account_id: str | None = None):
+        host = sudo_host(host_id, ssh_account_id)
         async with locks.setdefault(host_id, asyncio.Lock()):
             try:
                 result = await sudo.forget(host)

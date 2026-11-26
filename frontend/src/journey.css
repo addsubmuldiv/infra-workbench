@@ -20,7 +20,7 @@
 [data-theme="frieren"] .mobile-hosts{background:rgba(255,254,251,.62)}
 [data-theme="frieren"] .machine-heading{background:linear-gradient(100deg,#fcfdf82b,#f8f5fc33)}
 [data-theme="frieren"] .system-summary,[data-theme="frieren"] .machine-footer,
-[data-theme="frieren"] .device-table th,[data-theme="frieren"] .sudo-alert{background:#f5f5f02b}
+[data-theme="frieren"] .device-table th{background:#f5f5f02b}
 [data-theme="frieren"] .device-table tbody tr:hover{background:#f8fbf080}
 [data-theme="frieren"] .device-table td{color:#273d30}
 [data-theme="frieren"] .device-table .numeric,[data-theme="frieren"] .process-summary strong{font-weight:500}

@@ -254,22 +254,10 @@ header{background:var(--panel);border-color:var(--line);position:sticky;top:0;z-
 @media(max-width:800px){.sidebar{width:65px;padding:22px 9px}.sidebar .workspace,.sidebar-hosts,.sidebar-bottom{display:none}.sidebar nav{margin-top:30px}.sidebar nav button{font-size:0;padding:12px}.sidebar nav button svg{min-width:18px}.sidebar .nav-count{display:none}main{margin-left:65px;width:calc(100% - 65px)}.content{padding:22px 15px 0}header{padding:0 15px}.mobile-hosts{display:block;margin-bottom:20px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}.mobile-hosts>summary{display:flex;align-items:center;gap:7px;padding:12px;font-size:11px;cursor:pointer}.mobile-hosts>.host-picker{padding:12px;max-height:360px}.header-tools{gap:12px}.live{display:none}.stats>div:nth-child(-n+2){border-color:var(--line)}.stats>div:nth-child(2){border-right:0}.stats>div{padding:15px}.page-heading h1{font-size:23px}.page-heading p{font-size:10px;max-width:240px;line-height:1.8}.primary{padding:9px 11px}.finder-label{width:100%}.theme-options{right:-35px}.machine-name p{line-height:1.7}.system-summary strong{font-size:10px}.device-table td{height:40px;padding-top:7px;padding-bottom:7px}}
 .sudo-button{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
 .sudo-button.enabled{color:var(--accent);border-color:var(--accent)}
-.sudo-alert{display:flex;align-items:center;gap:9px;padding:10px 20px;font-size:12px;background:var(--panel2);color:var(--muted)}
-.sudo-alert span{flex:1}
-.sudo-modal{max-height:92vh;overflow:auto;width:min(580px,calc(100vw - 32px))}
+.sudo-modal{max-height:92vh;overflow:auto;width:min(460px,calc(100vw - 32px))}
 .sudo-modal .modal-header p{margin:8px 0 0}
-.sudo-option{display:flex;align-items:flex-start;gap:12px;padding:14px;border:1px solid var(--line);border-radius:8px;margin:16px 0}
-.sudo-option input{margin-top:3px;flex-shrink:0}
-.sudo-option strong{font-size:13px;font-weight:600}
-.sudo-option p{font-size:12px;line-height:1.7;color:var(--muted);margin:6px 0 0}
-.sudo-state{display:flex;gap:10px;align-items:center;padding:12px 0 16px;color:var(--muted)}
-.sudo-state strong{font-size:12px;font-weight:500}
-.sudo-state small{display:block;font-size:11px;margin-top:5px}
-.sudo-remember{margin-top:16px;font-size:12px}
-.sudo-hint{font-size:11px;line-height:1.7;margin:8px 0 16px}
-.sudo-modal .form-label small{display:block;position:static;float:none;margin:0;color:var(--muted)}
+.sudo-modal .modal-footer{justify-content:flex-end}
 .sudo-success{font-size:12px;line-height:1.7;color:var(--accent)}
-.sudo-forget:disabled{opacity:.4;cursor:default}
 
 /* Launcher buttons are visible before the lazy SSH workspace is loaded. */
 .ssh-open{display:flex;align-items:center;gap:7px;font-size:11px;background:var(--accent-bg);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);border-radius:6px;padding:7px 10px;white-space:nowrap}

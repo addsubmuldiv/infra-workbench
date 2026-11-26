@@ -1,4 +1,5 @@
 """Account metadata belongs to a machine; secrets and transports follow the login."""
+import hashlib
 import uuid
 
 from fastapi import HTTPException
@@ -19,6 +20,13 @@ def default_account_id(host):
 def ssh_account_key(host):
     account_id = default_account_id(host)
     return host['id'] if account_id == ORIGINAL_ACCOUNT else f"{host['id']}/{account_id}"
+
+
+def ssh_credential_key(host):
+    if default_account_id(host) == ORIGINAL_ACCOUNT:
+        return host['id']
+    # The platform credential stores require alphanumeric keys.
+    return hashlib.sha256(ssh_account_key(host).encode()).hexdigest()
 
 
 def _account_record(host):

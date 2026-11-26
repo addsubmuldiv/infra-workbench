@@ -26,7 +26,7 @@ class Remote:
         self.nopasswd = False
         self.installed = True
     async def effective(self, host):
-        return dict(hostname=host['target'], user='alice', port='22')
+        return dict(hostname=host['target'], user=host.get('user', 'alice'), port='22')
     async def run(self, host, command, source=None):
         self.calls.append((host['id'], command, source))
         if 'IWB_HELPER_VALIDATE' in command:
@@ -156,6 +156,51 @@ def test_per_host_password_and_forgetting_clear_persistent_and_memory():
     asyncio.run(scenario())
 
 
+def test_sudo_configuration_survives_switching_between_ssh_accounts():
+    async def scenario():
+        remote, vault = Remote(), Vault()
+        service = SudoService(remote, vault)
+        host = dict(id='one', target='one', user='alice')
+        await service.configure(host, True, 'test-sudo-password', True)
+        host.update(user='bob', ssh_default_account_id='second')
+        assert not service.view(host)['password_saved']
+        assert service.view(host)['status'] != 'ready'
+        assert await service.enrich(host, [4308], 1000) == {}
+        await service.configure(host, True, 'test-sudo-password', True)
+
+        service = SudoService(remote, vault)
+        assert (await service.enrich(host, [4308], 1000))['4308']['cwd'] == '/project'
+        await service.forget(host)
+        assert not service.view(host)['password_saved']
+
+        host.update(user='alice', ssh_default_account_id='original')
+        assert service.view(host)['password_saved']
+        assert (await service.enrich(host, [4308], 1000))['4308']['cwd'] == '/project'
+
+    asyncio.run(scenario())
+
+
+def test_saved_ssh_password_is_reused_without_storing_a_second_copy():
+    async def scenario():
+        remote, vault = Remote(), Vault()
+        sources = {'alice': 'wrong-ssh-password'}
+        service = SudoService(remote, vault, lambda host, config: sources[config['user']])
+        host = dict(id='one', target='one', sudo_enabled=True)
+        host['sudo_identity'] = service.identity(await remote.effective(host))
+        assert await service.enrich(host, [4308], 1000) == {}
+        assert service.view(host)['status'] == 'ssh_password_rejected'
+        assert await service.enrich(host, [4308], 1000) == {}
+        assert [call[2] for call in remote.calls if call[2]] == ['wrong-ssh-password\n']
+
+        sources['alice'] = 'test-sudo-password'
+        assert (await service.enrich(host, [4308], 1000))['4308']['cwd'] == '/project'
+        assert service.view(host)['status'] == 'ready'
+        await service.configure(host, True, remember=True)
+        assert not vault.values and not service.passwords
+
+    asyncio.run(scenario())
+
+
 def test_wrong_password_not_saved_and_disabled_never_executes_sudo():
     async def scenario():
         remote, vault = Remote(), Vault()
@@ -195,7 +240,7 @@ def test_helper_install_requires_explicit_request_and_contains_no_sudoers_change
         remote.installed=False
         svc=SudoService(remote,vault)
         host=dict(id='one',target='one')
-        with pytest.raises(ValueError,match='安装'):
+        with pytest.raises(ValueError,match='采集尚未就绪'):
             await svc.configure(host,True,'test-sudo-password',False,False)
         assert not any('IWB_HELPER_INSTALL' in command for _,command,_ in remote.calls)
         await svc.configure(host,True,'test-sudo-password',False,True)
@@ -338,7 +383,7 @@ def test_api_remember_remove_disable_and_privileged_failure_keep_monitoring(tmp_
                 return 0,'IWB_JSON:'+json.dumps(raw),''
             return await super().run(host,command,source)
     vault, remote = Vault(), MonitoringRemote()
-    app=create_app(tmp_path,start_poll=False,credential_store=vault)
+    app=create_app(tmp_path,start_poll=False,credential_store=vault,ssh_credential_store=Vault())
     host=dict(id='testmachine',target='one',auth='key')
     app.state.hosts.append(host)
     app.state.ssh.run, app.state.ssh.effective = remote.run, remote.effective
@@ -349,6 +394,10 @@ def test_api_remember_remove_disable_and_privileged_failure_keep_monitoring(tmp_
     url='/api/hosts/testmachine'
     with TestClient(app) as client:
         assert client.post(url+'/sudo',json={'enabled':True}).status_code==403
+        assert client.get(url+'/sudo',params={'ssh_account_id':'another'}).status_code==409
+        assert client.post(url+'/sudo',headers=headers,params={'ssh_account_id':'another'},
+                           json={'enabled':True,'password':'test-sudo-password'}).status_code==409
+        assert not remote.calls
         body=dict(enabled=True,password='test-sudo-password',remember=True)
         response=client.post(url+'/sudo',headers=headers,json=body)
         assert response.status_code==200 and response.json()['password_saved']
@@ -376,8 +425,61 @@ def test_api_remember_remove_disable_and_privileged_failure_keep_monitoring(tmp_
         bad=client.post(url+'/sudo',headers=headers,json=dict(enabled='invalid',password='private-value'))
         assert bad.status_code==422 and 'private-value' not in bad.text
         client.post(url+'/sudo',headers=headers,json=dict(enabled=True,password='test-sudo-password',remember=True))
+        app.state.hosts[0]['ssh_accounts'] = [dict(id='original'), dict(id='other', user='bob', auth='key')]
+        preferences = url+'/ssh-accounts/preferences'
+        client.put(preferences, headers=headers, json=dict(default_account_id='original', interactive_account_id='other')).raise_for_status()
+        assert client.get(url+'/sudo', params={'ssh_account_id':'original'}).json()['password_saved'] is True
+        client.put(preferences, headers=headers, json=dict(default_account_id='other', interactive_account_id='other')).raise_for_status()
+        assert client.get(url+'/sudo', params={'ssh_account_id':'original'}).status_code == 409
+        current = client.get(url+'/sudo', params={'ssh_account_id':'other'}).raise_for_status().json()
+        assert current['password_saved'] is False and current['status'] == 'pending'
+        client.put(preferences, headers=headers, json=dict(default_account_id='original', interactive_account_id='other')).raise_for_status()
+        assert client.get(url+'/sudo').json()['password_saved'] is True
         assert client.delete(url,headers=headers).status_code==200
         assert not vault.values
+
+
+@pytest.mark.parametrize('password,status', [
+    ('test-sudo-password', 'ready'),
+    ('ssh-only-password', 'ssh_password_rejected'),
+    (None, 'ready'),
+])
+def test_connection_attempts_optional_sudo_setup_without_a_second_input(tmp_path, password, status):
+    from fastapi.testclient import TestClient
+    from backend.app import create_app
+
+    ssh_vault, sudo_vault, remote = Vault(), Vault(), Remote()
+    remote.installed = False
+    remote.nopasswd = password is None
+    app = create_app(tmp_path, start_poll=False, credential_store=sudo_vault, ssh_credential_store=ssh_vault)
+    ssh = app.state.ssh
+
+    async def connect(host, password, provision):
+        ssh.verified_configs[host['id']] = await remote.effective(host)
+        return {'auth': 'key', 'message': 'connected'}
+
+    async def run_bound(host, command, source, config):
+        return await remote.run(host, command, source)
+
+    async def run(host, command, source=None):
+        if command.endswith('# IWB_MONITOR'):
+            result = dict(kind='GPU', metrics=dict(code=0, out='0, GPU-test, GPU, 1000, 300, 5, 30'),
+                          processes=dict(code=0, out=''), users=dict(code=0, out=''), ports=dict(code=0, out=''))
+            return 0, 'IWB_JSON:'+json.dumps(result), ''
+        return await remote.run(host, command, source)
+
+    ssh.connect, ssh.effective, ssh.effective_details = connect, remote.effective, remote.effective
+    ssh.run, ssh.run_bound = run, run_bound
+    with TestClient(app) as client:
+        connected = client.post('/api/connect', headers={'X-IWB':'1'}, json=dict(
+            target='one', user='alice', manual=True, password=password, remember_password=bool(password), auto_sudo=True,
+        )).raise_for_status().json()
+        host = client.get('/api/state').json()['hosts'][0]
+        assert bool(connected.get('password_saved')) == bool(password) == host['ssh_password']['password_saved']
+        assert host['snapshot']['status'] == 'online'
+        assert host['sudo']['status'] == status
+        assert remote.installed == (status == 'ready')
+        assert not sudo_vault.values
 
 
 @pytest.mark.skipif(os.name!='nt',reason='Windows Credential Manager integration')

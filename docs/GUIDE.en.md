@@ -83,11 +83,9 @@ Click a device or process to inspect user, PID, program, working directory, exec
 
 ### Optional sudo collection
 
-Click **sudo** beside a machine heading to enable elevated process-detail collection for that machine. Verify the password and, when prompted, install the fixed read-only collector. The account must already have sudo rights. Later samples attempt to fill information unavailable to the normal account.
+When you add a machine with a password, Workbench saves the verified SSH password and tries to set up read-only process inspection. It first tries passwordless sudo, then tries the saved password for the machine's default SSH account. The machine heading shows **sudo verified** after a successful check.
 
-Remembering a password is optional; otherwise it lasts only for the current backend run. Saved passwords can be removed. This setting does not turn the interactive terminal or file manager into root.
-
-![Per-machine sudo settings](images/sudo-settings-en.png)
+If the server requires a separate sudo password, click **sudo**, enter the password, and click **Save**. Workbench installs or updates the read-only collector when needed. SSH and sudo passwords are stored per account in the system credential store. Terminals and the file manager continue to use the selected SSH account.
 
 ## Readiness checks and monitoring
 

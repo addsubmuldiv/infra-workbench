@@ -300,11 +300,32 @@ test('demo prevents entering real SSH credentials while leaving resource browsin
  h.button('alpha SSH 账号').props.onClick();h.render();
  assert.equal(h.find(n=>n.type==='SSHAccountsDialog'),undefined);
  h.button('alpha sudo 设置').props.onClick();h.render();
- assert.equal(h.find(n=>n.type==='SudoModal'),undefined);
+ assert.equal(h.find(n=>n.type?.name==='SudoModal'),undefined);
  h.button('添加机器').props.onClick();h.render();
  assert.equal(h.find(n=>n.type==='AddMachine'),undefined);
  h.button('只看机器 beta').props.onClick();h.render();
  assert.ok(h.find(n=>n.props?.['aria-label']==='机器详情 beta'));
+});
+
+test('sudo settings show the verification state instead of treating enabled as verified',t=>{
+ const states=[
+  ['off',false,'disabled',false],
+  ['waiting',true,'pending',false],
+  ['password',true,'password_required',false],
+  ['denied',true,'denied',false],
+  ['verified',true,'ready',true],
+ ];
+ const items=states.map(([id,enabled,status])=>({...host(id,'NPU',1),sudo:{enabled,status,message:`sudo status ${status}`}}));
+ const h=harness(t,'#overview',[],items);h.render();
+
+ for(const [id,,,verified] of states){
+  const button=h.button(`${id} sudo 设置`);
+  assert.equal(h.text(button),verified?'sudo 已验证':'sudo');
+  assert.equal(button.props.className.split(' ').includes('enabled'),verified);
+ }
+ assert.equal(h.find(n=>n.props?.className==='sudo-alert'),undefined);
+ h.button('password sudo 设置').props.onClick();h.render();
+ assert.equal(h.find(n=>n.type?.name==='SudoModal').props.host.id,'password');
 });
 
 

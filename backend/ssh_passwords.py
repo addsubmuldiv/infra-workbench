@@ -5,7 +5,7 @@ import json
 import time
 
 from .agent_errors import AgentError
-from .ssh_accounts import ssh_account_key
+from .ssh_accounts import ssh_account_key, ssh_credential_key
 
 
 def connection_identity(config):
@@ -24,7 +24,7 @@ class SSHPasswords:
 
     def view(self,host):
         try:
-            saved=bool(self.vault.get(ssh_account_key(host)))
+            saved=bool(self.vault.get(ssh_credential_key(host)))
             return dict(password_saved=saved,can_remember=bool(getattr(self.vault,'supported',True)),error=None)
         except Exception:
             return dict(password_saved=None,can_remember=bool(getattr(self.vault,'supported',True)),error='无法读取系统 SSH 凭据存储')
@@ -42,7 +42,7 @@ class SSHPasswords:
         if verified_config and connection_identity(cfg)!=connection_identity(verified_config):
             raise AgentError('CREDENTIAL_IDENTITY_CHANGED','认证后 SSH 配置发生变化，请重新连接再保存。')
         try:
-            self.vault.put(ssh_account_key(host),dict(identity=connection_identity(cfg),password=password))
+            self.vault.put(ssh_credential_key(host),dict(identity=connection_identity(cfg),password=password))
         except Exception:
             raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','SSH 密码未能保存到系统凭据存储。') from None
         self.fallback_retry.pop(ssh_account_key(host), None)
@@ -56,7 +56,7 @@ class SSHPasswords:
 
     def password_for(self, host, cfg):
         try:
-            value=self.vault.get(ssh_account_key(host))
+            value=self.vault.get(ssh_credential_key(host))
         except Exception:
             raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','系统 SSH 凭据存储暂不可读。') from None
         if not value:
@@ -92,7 +92,7 @@ class SSHPasswords:
 
     def forget(self,host):
         try:
-            self.vault.delete(ssh_account_key(host))
+            self.vault.delete(ssh_credential_key(host))
         except Exception:
             raise AgentError('CREDENTIAL_STORE_UNAVAILABLE','无法删除系统中保存的 SSH 密码。') from None
         return self.view(host)
