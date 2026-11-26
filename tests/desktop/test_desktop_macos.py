@@ -112,6 +112,61 @@ def fake_rumps():
     return SimpleNamespace(App=App, MenuItem=MenuItem, Timer=Timer, quit_application=lambda: None)
 
 
+@pytest.mark.parametrize('initial_policy', [0, 1])
+def test_load_rumps_configures_accessory_policy_before_creating_menu(initial_policy, monkeypatch):
+    import backend.desktop_macos as desktop
+    calls = []
+    class Application:
+        policy = initial_policy
+        def setActivationPolicy_(self, policy):
+            calls.append(('policy', policy))
+            changed = self.policy != policy
+            self.policy = policy
+            return changed
+        def activationPolicy(self): return self.policy
+    application = Application()
+    rumps = fake_rumps()
+    appkit = SimpleNamespace(NSApplication=SimpleNamespace(sharedApplication=lambda: application),
+                              NSApplicationActivationPolicyAccessory=1)
+    original = desktop.importlib.import_module
+    def load(name):
+        if name in ('rumps', 'AppKit'):
+            calls.append(name)
+            return {'rumps': rumps, 'AppKit': appkit}[name]
+        return original(name)
+    monkeypatch.setattr(desktop.importlib, 'import_module', load)
+    assert desktop.load_rumps() is rumps
+    assert application.activationPolicy() == 1
+    assert calls == ['rumps', 'AppKit', ('policy', 1)]
+
+
+def test_rejected_accessory_policy_fails_before_starting_backend(tmp_path, monkeypatch, caplog):
+    import backend.desktop_macos as desktop
+    monkeypatch.setattr(desktop, 'DATA', tmp_path)
+    application = SimpleNamespace(setActivationPolicy_=lambda policy: False, activationPolicy=lambda: 0)
+    appkit = SimpleNamespace(NSApplication=SimpleNamespace(sharedApplication=lambda: application),
+                              NSApplicationActivationPolicyAccessory=1)
+    original = desktop.importlib.import_module
+    def load(name):
+        return {'rumps': fake_rumps(), 'AppKit': appkit}[name] if name in ('rumps', 'AppKit') else original(name)
+    monkeypatch.setattr(desktop.importlib, 'import_module', load)
+    result = desktop.main(['--no-browser'], platform='darwin', rumps_loader=desktop.load_rumps,
+                          service_factory=lambda: pytest.fail('backend must not start'))
+    assert result == 1 and 'Dock' in caplog.text
+    assert not (tmp_path/'macos-desktop.ready').exists()
+
+
+@pytest.mark.parametrize('platform', ['win32', 'linux'])
+def test_non_macos_entry_does_not_load_cocoa_or_start_backend(platform, tmp_path, monkeypatch):
+    import backend.desktop_macos as desktop
+    data = tmp_path/'unused'
+    monkeypatch.setattr(desktop, 'DATA', data)
+    def unexpected(): pytest.fail('non-macOS entry must not initialize Cocoa or services')
+    assert desktop.main(['--no-browser'], platform=platform, rumps_loader=unexpected,
+                        service_factory=unexpected, lock_factory=unexpected) == 1
+    assert not data.exists()
+
+
 def test_notification_queue_waits_for_main_thread_result_before_ack(tmp_path):
     from backend.desktop_macos import MainThreadNotifications
     from backend.desktop import deliver_events

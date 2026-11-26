@@ -409,7 +409,16 @@ class MenuBar:
 
 
 def load_rumps():
-    return importlib.import_module('rumps')
+    rumps = importlib.import_module('rumps')
+    appkit = importlib.import_module('AppKit')
+    application = appkit.NSApplication.sharedApplication()
+    # Only this menu-bar process becomes an accessory; the Tauri window keeps its Dock entry.
+    policy = appkit.NSApplicationActivationPolicyAccessory
+    application.setActivationPolicy_(policy)
+    if application.activationPolicy() != policy:
+        raise RuntimeError(tr('无法隐藏 macOS 菜单栏后台的 Dock 图标',
+                              'Cannot hide the macOS menu-bar background process from the Dock'))
+    return rumps
 
 
 def launch(rumps, service, *, data=DATA, root=ROOT, menu_class=MenuBar, clock=time.time,
