@@ -283,14 +283,23 @@ test('device overview closes on outside clicks and navigation but preserves clic
 });
 
 
-test('SSH accounts button highlights confirmed default credentials and updates when removed',t=>{
-  const items=hosts.map((host,index)=>({...host,ssh_password:{password_saved:[true,false,null][index],can_remember:true}}));
+test('SSH accounts button highlights available default key and password logins',t=>{
+  const logins={default_account_id:'original',interactive_account_id:null,accounts:[{id:'original',user:null}]};
+  const items=hosts.map((host,index)=>({...host,auth:index===0?'key':'password_session',
+    ssh_logins:logins,ssh_password:{password_saved:index===2,can_remember:true}}));
   const h=harness(t,'#overview',[],items);h.render();
   assert.ok(h.button('alpha SSH 账号').props.className.includes('enabled'));
+  assert.ok(h.button('beta SSH 账号').props.className.includes('enabled'));
+  assert.ok(h.button('offline SSH 账号').props.className.includes('enabled'));
+
+  items[0]={...items[0],auth:'password_session',snapshot:{...items[0].snapshot,status:'connecting',fresh:false},
+    ssh_logins:{...logins,default_account_id:'new-default',accounts:[...logins.accounts,{id:'new-default',user:'other'}]}};
+  items[1]={...items[1],snapshot:{...items[1].snapshot,status:'error',fresh:false}};
+  items[2]={...items[2],ssh_password:{...items[2].ssh_password,password_saved:false}};
+  h.render();
+  assert.ok(!h.button('alpha SSH 账号').props.className.includes('enabled'));
   assert.ok(!h.button('beta SSH 账号').props.className.includes('enabled'));
   assert.ok(!h.button('offline SSH 账号').props.className.includes('enabled'));
-  items[0]={...items[0],ssh_password:{...items[0].ssh_password,password_saved:false}};h.render();
-  assert.ok(!h.button('alpha SSH 账号').props.className.includes('enabled'));
   h.button('alpha SSH 账号').props.onClick();h.render();
   assert.ok(h.find(n=>n.type==='SSHAccountsDialog'));
 });
