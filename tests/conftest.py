@@ -36,7 +36,7 @@ def isolate_default_mac_app_vaults(monkeypatch):
 @pytest.fixture(autouse=True)
 def isolate_loopback_ssh_test_configuration(monkeypatch):
     """Controlled test servers must not read the developer's own SSH config."""
-    from backend.ssh import SSHService
+    from backend.ssh.ssh import SSHService
     original = SSHService.arguments
 
     def arguments(service, host):

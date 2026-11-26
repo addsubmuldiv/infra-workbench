@@ -1,0 +1,32 @@
+:root[data-theme="coast-sunset"] {
+  --sg-panel:color-mix(in srgb,var(--panel) 90%,transparent);
+  --sg-card:color-mix(in srgb,var(--panel) 88%,transparent);
+  --sg-sidebar:color-mix(in srgb,var(--sidebar) 94%,transparent);
+  --sg-glass-rim:#e7a89c33;
+}
+
+:root[data-theme="coast-sunset"] .shell>main {
+  background:
+    linear-gradient(100deg,#201527c9 12%,#20152775 52%,#20152722 87%) fixed,
+    url('../assets/coastal-sunset.webp') right center / cover fixed var(--bg);
+}
+
+:root[data-theme="coast-sunset"] .shell>main>header {
+  border-bottom:1px solid transparent;
+  border-image:linear-gradient(90deg,#b38ead40,#e7a89c73,#fabf8ba6) 1;
+}
+
+:root[data-theme="coast-sunset"] :is(.brand-icon,.primary) {
+  background:var(--sunset-gradient);
+  border-color:transparent;
+  color:var(--primary-text);
+}
+
+.theme-swatches[data-theme="coast-sunset"] i:last-child {
+  background:var(--sunset-gradient);
+}
+
+@media (forced-colors:active) {
+  :root[data-theme="coast-sunset"] .shell>main {background:Canvas}
+  :root[data-theme="coast-sunset"] .shell>main>header {border-image:none}
+}

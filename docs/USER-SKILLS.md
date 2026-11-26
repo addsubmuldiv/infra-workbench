@@ -40,22 +40,22 @@ metadata:
 
 ## 接入点
 
-- backend/skill_service.py：事务存储、版本、草稿、包校验与导入导出。
-- backend/skill_routes.py：/api/skills HTTP 接口，复用现有本机请求保护。
-- backend/mcp_skills.py：草稿与安装管理工具；兼容 read_skill.content。
-- backend/mcp_service.py：外部和内置共用服务，内置激活读取固定本轮快照。
-- backend/agent_runtime.py：每轮生成虚拟文件、移除旧技能文件、记录读取版本。
-- frontend/src/SkillsSettings.tsx：管理页面；AssistantChat.tsx：选择、记录和安装结果。
+- backend/assistant/skill_service.py：事务存储、版本、草稿、包校验与导入导出。
+- backend/assistant/skill_routes.py：/api/skills HTTP 接口，复用现有本机请求保护。
+- backend/mcp/mcp_skills.py：草稿与安装管理工具；兼容 read_skill.content。
+- backend/mcp/mcp_service.py：外部和内置共用服务，内置激活读取固定本轮快照。
+- backend/assistant/agent_runtime.py：每轮生成虚拟文件、移除旧技能文件、记录读取版本。
+- frontend/src/features/assistant/SkillsSettings.tsx：管理页面；AssistantChat.tsx：选择、记录和安装结果。
 
 list_skills/read_skill 在内置会话中读取本轮启用快照；list_managed_skills/inspect_skill 用于管理全部当前技能（包括停用和历史版本）。list_skill_drafts/get_skill_draft 用于继续草稿。这些管理读取不会把技能加入本轮激活快照。
 
 ## 验证
 
 ```powershell
-python -m pytest tests/test_user_skills.py tests/test_skill_integration.py tests/test_deepagents.py tests/test_agent_chat.py tests/test_unified_mcp.py tests/test_mcp.py -q
+python -m pytest tests/assistant/test_user_skills.py tests/assistant/test_skill_integration.py tests/assistant/test_deepagents.py tests/assistant/test_agent_chat.py tests/assistant/test_unified_mcp.py tests/mcp/test_mcp.py -q
 cd frontend
 npm test
 npm run build -- --manifest
 ```
 
-scripts/validate-user-skills.py 从现有 127.0.0.1:8765 读取模型设置，在独立 work/user-skills-live/data 中验证真实模型创建、校验、安装和下一轮读取。复用现有系统凭据机制，不复制机器、对话或打印密钥；会产生两轮模型调用费用。
+scripts/diagnostics/validate-user-skills.py 从现有 127.0.0.1:8765 读取模型设置，在独立 work/user-skills-live/data 中验证真实模型创建、校验、安装和下一轮读取。复用现有系统凭据机制，不复制机器、对话或打印密钥；会产生两轮模型调用费用。

@@ -189,6 +189,8 @@ function Test-PortAvailable { return $false }
         Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $fixture $file)
     }
     Copy-Item -Path (Join-Path $root 'backend\*.py') -Destination (Join-Path $fixture 'backend')
+    New-Item -ItemType Directory -Path (Join-Path $fixture 'backend\probes') -Force | Out-Null
+    Copy-Item -Path (Join-Path $root 'backend\probes\*.py') -Destination (Join-Path $fixture 'backend\probes')
     Set-Content -LiteralPath (Join-Path $fixture 'frontend\package.json') -Encoding ASCII -Value '{"version":"0.0.0-fixture"}'
     $index = Join-Path $fixture 'frontend\dist\index.html'
     $policy = [IO.File]::ReadAllText((Join-Path $fixture 'frontend\src\internalDefaults.ts')).Replace("`r`n", "`n")

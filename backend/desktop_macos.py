@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from backend.desktop import (DATA, URL, DesktopSettings, EventCursor, ServiceHost,
                              deliver_events, desktop_notification_events, get_api)
-from backend.interface_language import tr, current_locale, update_shared_language
+from backend.workspace.interface_language import tr, current_locale, update_shared_language
 
 NOTIFICATION_SCRIPT = '''on run argv
     display notification (item 2 of argv) with title (item 1 of argv)
@@ -343,7 +343,7 @@ class MenuBar:
             logging.exception('macOS test notification failed')
 
     def tick(self, _):
-        from backend.desktop_update import requested
+        from backend.desktop_host.desktop_update import requested
         if requested() or self.service.failed():
             self.quit()
             return
@@ -393,7 +393,7 @@ class MenuBar:
 
     def quit(self, _=None):
         self.close()
-        from backend.desktop_update import requested
+        from backend.desktop_host.desktop_update import requested
         if self.service.owned and not requested():
             from backend.launcher import shutdown_desktop
             shutdown_desktop(ROOT)
@@ -418,7 +418,7 @@ def launch(rumps, service, *, data=DATA, root=ROOT, menu_class=MenuBar, clock=ti
     receipt = receipt if receipt is not None else ReadyReceipt(data/'macos-desktop.ready', root)
     menu = None
     previous_signal = None
-    from backend.desktop_update import activate, deactivate
+    from backend.desktop_host.desktop_update import activate, deactivate
     update_control = None
     try:
         started_at = clock()

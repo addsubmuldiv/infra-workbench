@@ -29,12 +29,12 @@ def test_multiple_groups_deduplicate_and_unknown_groups_fail():
 
 
 def test_new_or_deleted_tests_require_inventory_update(tmp_path):
-    (tmp_path / 'tests').mkdir()
-    (tmp_path / 'tests/test_new.py').touch()
+    (tmp_path / 'tests/core').mkdir(parents=True)
+    (tmp_path / 'tests/core/test_new.py').touch()
     with pytest.raises(ValueError, match='Unassigned'):
         runner.validate(tmp_path, {})
     with pytest.raises(ValueError, match='Missing'):
-        runner.validate(tmp_path, {'sample': ['tests/test_new.py', 'tests/test_gone.py']})
+        runner.validate(tmp_path, {'sample': ['tests/core/test_new.py', 'tests/core/test_gone.py']})
 
 
 def test_execution_uses_isolated_data_and_stops_after_failure(monkeypatch):
@@ -63,7 +63,7 @@ def test_commands_keep_frontend_precheck_and_scope():
     assert commands[0][-2:] == ['scripts/generate-internal-defaults.mjs', '--check']
     assert commands[1][1] == '--test'
     assert all(path.startswith('frontend/tests/') for path in commands[1][2:])
-    assert not runner.commands(['tests/test_core.py'], 'frontend')
+    assert not runner.commands(['tests/core/test_core.py'], 'frontend')
 
 
 def test_cli_preview_does_not_execute_tests(monkeypatch, capsys):

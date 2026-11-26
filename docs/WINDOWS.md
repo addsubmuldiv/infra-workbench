@@ -86,4 +86,4 @@
 
 启动前使用 100ms 上限的本机 TCP 探测判断端口是否开始监听，端口存在后仍校验完整 HTTP 健康响应。这样避免 Windows 上不存在的服务每次花约两秒等待连接失败。模型框架在首次执行 AI 对话时加载，不阻塞资源总览首屏；第一次对话可能需要额外初始化时间。`data/launch.log` 记录界面打开前的等待耗时。
 
-隔离测试命令：`.venv\Scripts\python.exe scripts/benchmark-cold-start.py`。测试使用临时数据和临时端口，不停止当前后台；结果只代表后台 HTTP 就绪，不包含浏览器 / WebView 打开及远端首次采集。
+隔离测试命令：`.venv\Scripts\python.exe scripts/benchmarks/benchmark-cold-start.py`。测试使用临时数据和临时端口，不停止当前后台；结果只代表后台 HTTP 就绪，不包含浏览器 / WebView 打开及远端首次采集。

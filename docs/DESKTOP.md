@@ -2,7 +2,7 @@
 
 桌面端使用 Tauri，在独立窗口中加载同一套 React 页面。原来的浏览器入口继续保留；HTTP 和终端 WebSocket 仍连接 `http://127.0.0.1:8765/`，没有放宽同源检查。
 
-本次已完成的检查和待验收项见 [桌面版验证记录](DESKTOP-VALIDATION.md)。
+本次已完成的检查和待验收项见 [桌面版验证记录](validation/DESKTOP-VALIDATION.md)。
 
 桌面端会包含一个托盘/后台进程、一个桌面窗口进程和 WebView 子进程；Python 虚拟环境还可能显示启动转发进程。进程数量不等于独立的软件实例。关闭主窗口保持驻留；从托盘选择退出时，后台、浮窗、主窗口、独立终端和助手窗口一起退出。Windows 使用应用专属的退出信号直接通知驻留窗口，不依赖重新选择某个版本的可执行文件。后台停止监听或后台实例更换时，桌面端会退出旧窗口；HTTP 响应缓慢不会被当成后台退出。后台自身异常停止时，托盘也会退出并清理浮窗。
 
@@ -83,15 +83,15 @@ npm run build
 
 ## 性能验证
 
-优化后网页版与桌面版的启动、进程树内存和多终端持续输出对照见 [实测报告](DESKTOP-PERFORMANCE.md)。
+优化后网页版与桌面版的启动、进程树内存和多终端持续输出对照见 [实测报告](benchmarks/DESKTOP-PERFORMANCE.md)。
 
-后续共享前端优化、优化前后实测和跨平台检查见 [第二轮优化记录](PERFORMANCE-FOLLOWUP.md)。
+后续共享前端优化、优化前后实测和跨平台检查见 [第二轮优化记录](benchmarks/PERFORMANCE-FOLLOWUP.md)。
 
-`scripts/measure-ui.cjs` 是 Playwright CLI 测量脚本，拦截该测试浏览器的全部 API 请求，注入 48 台模拟机器、每台 8 个设备。测试不会修改后台配置。运行时请使用独立测试浏览器会话：
+`scripts/benchmarks/measure-ui.cjs` 是 Playwright CLI 测量脚本，拦截该测试浏览器的全部 API 请求，注入 48 台模拟机器、每台 8 个设备。测试不会修改后台配置。运行时请使用独立测试浏览器会话：
 
 ```sh
 npx --yes --package @playwright/cli playwright-cli -s=desktop-perf open http://127.0.0.1:8765/
-npx --yes --package @playwright/cli playwright-cli -s=desktop-perf --raw run-code --filename scripts/measure-ui.cjs
+npx --yes --package @playwright/cli playwright-cli -s=desktop-perf --raw run-code --filename scripts/benchmarks/measure-ui.cjs
 ```
 
 脚本测量静置刷新和往返拖动侧栏。应使用相同视口（1440×900）、数据和操作比较，不把浏览器模拟测试当成 WebView2 或 WKWebView 实测。
@@ -119,9 +119,9 @@ Windows 托盘启动后台时，最多等待 60 秒，以容纳首次导入依�
 
 状态同时使用颜色和符号：✓ 空闲、● 占用、? 未知、! 异常。没有进程且进程信息完整才判为空闲；过期数据或后台连接失败显示未知。浮窗按后台配置的 5/10/20/30 秒周期读取缓存状态；失败时逐步延长重试间隔，无持续动画，数据未变化时不重画。
 
-验证命令：`.venv\Scripts\python.exe -m pytest tests/test_floating_monitor.py -q`；真实 Tk 检查和短时资源测量：`.venv\Scripts\python.exe scripts/check-floating-monitor.py`。测量使用 4 台示例机器、32 张卡，不含后台服务开销，不代表长时间运行或大量机器下的占用。
+验证命令：`.venv\Scripts\python.exe -m pytest tests/desktop/test_floating_monitor.py -q`；真实 Tk 检查和短时资源测量：`.venv\Scripts\python.exe scripts/diagnostics/check-floating-monitor.py`。测量使用 4 台示例机器、32 张卡，不含后台服务开销，不代表长时间运行或大量机器下的占用。
 
-浮窗主视图使用 Canvas 绘制圆角外框、机器卡片、顶部汇总和双行设备格；没有加载浏览器。Windows 包装窗口明确设置 `WS_EX_TOOLWINDOW` 并清除 `WS_EX_APPWINDOW`，浮窗与设置窗口均不应在任务栏或 Alt+Tab 中占独立位置。圆角区域按原生窗口的物理像素尺寸设置，避免 DPI 缩放后切错边界。可运行 `scripts/check-floating-monitor.py` 检查原生样式和圆角区域；`scripts/preview-floating-monitor.py` 仅为截图验收提供带标题栏的临时宿主，不是产品启动入口。
+浮窗主视图使用 Canvas 绘制圆角外框、机器卡片、顶部汇总和双行设备格；没有加载浏览器。Windows 包装窗口明确设置 `WS_EX_TOOLWINDOW` 并清除 `WS_EX_APPWINDOW`，浮窗与设置窗口均不应在任务栏或 Alt+Tab 中占独立位置。圆角区域按原生窗口的物理像素尺寸设置，避免 DPI 缩放后切错边界。可运行 `scripts/diagnostics/check-floating-monitor.py` 检查原生样式和圆角区域；`scripts/diagnostics/preview-floating-monitor.py` 仅为截图验收提供带标题栏的临时宿主，不是产品启动入口。
 
 浮窗默认尺寸为 315×260 个 Tk 布局单位，支持在 220×190 至 520×480 范围内调整；根据宽高切换较窄的机器列表或设备总览，窗口高度决定可见机器数量，滚轮切换可见机器。8 卡与 16 卡保持相同的机器行高度；超过 16 个设备时明确提示进入详情查看全部。顶部「选择机器」可搜索、全选或勾选关注机器，应用后保存；机器卡片的「详情 ›」及悬停高亮提示可点击，单机页顶部「返回总览」或右侧返回箭头返回。底栏分页只绘制一次，避免页码与滚动提示重叠。
 

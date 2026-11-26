@@ -35,7 +35,7 @@ test('malformed probe marker aborts before any generated file changes',()=>tempo
  generateInternalDefaults(root);
  const py=path.join(root,'backend/internal_defaults.py'),before=readFileSync(py,'utf8');
  const config=parseConfig(source());config.files.text_edit_max_bytes=2048;writeFileSync(path.join(root,'config/internal-defaults.jsonc'),JSON.stringify(config));
- const probe=path.join(root,'backend/folder_upload_probe.py');writeFileSync(probe,readFileSync(probe,'utf8').replace('# END GENERATED INTERNAL DEFAULTS',''));
+ const probe=path.join(root,'backend/probes/folder_upload_probe.py');writeFileSync(probe,readFileSync(probe,'utf8').replace('# END GENERATED INTERNAL DEFAULTS',''));
  assert.throws(()=>generateInternalDefaults(root),/markers/);assert.equal(readFileSync(py,'utf8'),before);
 }));
 

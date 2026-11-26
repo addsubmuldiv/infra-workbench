@@ -1,4 +1,4 @@
-from ...internal_defaults import IMPORTS_SHEET_MAX_ROWS, IMPORTS_SHEET_MAX_COLUMNS, IMPORTS_WORKBOOK_MAX_BYTES, IMPORTS_MAX_ROWS, IMPORTS_ZIP_MAX_ENTRIES, IMPORTS_ZIP_MAX_EXPANDED_BYTES, format_bytes
+from backend.internal_defaults import IMPORTS_SHEET_MAX_ROWS, IMPORTS_SHEET_MAX_COLUMNS, IMPORTS_WORKBOOK_MAX_BYTES, IMPORTS_MAX_ROWS, IMPORTS_ZIP_MAX_ENTRIES, IMPORTS_ZIP_MAX_EXPANDED_BYTES, format_bytes
 """Bounded in-memory Excel parsing. Public rows never contain passwords."""
 import io
 import re

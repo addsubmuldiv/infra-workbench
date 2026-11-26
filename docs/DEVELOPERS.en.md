@@ -4,7 +4,7 @@
 
 Infra Workbench is a local server workbench for AI engineers. It manages Linux servers over SSH and brings GPU / Ascend NPU resources, terminals, files, training logs, and availability alerts into one interface. The built-in assistant and external agents can use these capabilities to carry out tasks with multiple steps.
 
-Contributions are welcome: fix a parsing bug, improve a Skill, add tests, refine the interface, or help with agent tool design and platform support. This guide helps you find the relevant code. See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup and the [user guide](GUIDE.en.md) for everyday use. The project uses the [MIT license](../LICENSE); third-party dependencies retain their own licenses.
+Contributions are welcome: fix a parsing bug, improve a Skill, add tests, refine the interface, or help with agent tool design and platform support. This guide helps you find the relevant code. See [the repository layout](../CONTRIBUTING.md#仓库目录) and [CONTRIBUTING.md](../CONTRIBUTING.md) for setup and the [user guide](GUIDE.en.md) for everyday use. The project uses the [MIT license](../LICENSE); third-party dependencies retain their own licenses.
 
 This document describes the current source and dependency manifests. Versions listed here are repository declarations, not claims about the latest upstream releases. Refer to the corresponding Release notes for the capabilities of a particular package.
 
@@ -59,14 +59,14 @@ Windows terminal paths use `pywinpty`. macOS menu-bar and credential integration
 
 ## 3. How Deep Agents is integrated
 
-Start with `run_deep_agent` and `create_deep_agent` in [`agent_runtime.py`](../backend/agent_runtime.py). The application supplies models, tools, skills, middleware, and restored state to the graph instead of maintaining a separate model/tool execution loop.
+Start with `run_deep_agent` and `create_deep_agent` in [`backend/assistant/agent_runtime.py`](../backend/assistant/agent_runtime.py). The application supplies models, tools, skills, middleware, and restored state to the graph instead of maintaining a separate model/tool execution loop.
 
 ### The path of a chat turn
 
 1. The chat layer receives the message and prepares the current model configuration, allowed host scope, and skill snapshot.
-2. `agent_runtime.py` restores framework state and constructs the Deep Agents graph.
-3. `WorkbenchChatModel` in `agent_langchain.py` converts LangChain messages and tool schemas into the existing model API format. Modules including `agent_api.py` handle underlying configuration and transport, using the Responses protocol.
-4. The model reads skills as needed and selects tools. Through in-process MCP SDK message streams, `mcp_client.py` performs real protocol initialization, discovery, and calls without making HTTP requests to the backend's own listening port.
+2. `backend/assistant/agent_runtime.py` restores framework state and constructs the Deep Agents graph.
+3. `WorkbenchChatModel` in `backend/assistant/agent_langchain.py` converts LangChain messages and tool schemas into the existing model API format. Modules including `backend/assistant/agent_api.py` handle underlying configuration and transport, using the Responses protocol.
+4. The model reads skills as needed and selects tools. Through in-process MCP SDK message streams, `backend/mcp/mcp_client.py` performs real protocol initialization, discovery, and calls without making HTTP requests to the backend's own listening port.
 5. The shared MCP dispatcher routes requests to business services, which validate parameters, host scope, and paths before accessing SQLite or SSH.
 6. Tool records and text deltas return to the UI, and framework state is saved with the conversation. Restoration handles unfinished tool messages so interrupted operations are not automatically replayed.
 
@@ -81,7 +81,7 @@ This describes the built-in model API engine. Local Codex, Claude Code, and Open
 | History compaction | Native summarization middleware, with summary state saved in the conversation | Visible chat history and the model's current context are different data; token counts are local estimates |
 | Large results | Business pagination and output budgets limit results first; the framework can offload large tool results to virtual files | Do not silently truncate and claim completeness. Preserve pagination, coverage, and operation identifiers |
 | Conversation recovery | In-memory checkpoints plus application persistence of `deep_state` | Live connections are not persisted; cancellation or restart does not imply remote side effects were rolled back |
-| Cross-conversation memory | `agent_memory.py` connects native memory middleware to restricted storage | Only the designated virtual memory file is available, isolated by model configuration and exact host scope. Never store credentials or treat historical host state as current fact |
+| Cross-conversation memory | `backend/assistant/agent_memory.py` connects native memory middleware to restricted storage | Only the designated virtual memory file is available, isolated by model configuration and exact host scope. Never store credentials or treat historical host state as current fact |
 | File tools | `StateBackend` and related backends provide virtual files; memory uses a restricted storage adapter | Virtual `read_file` and remote `read_server_file` have different paths and permissions |
 | Subagents and shell | General-purpose subagents are disabled; remote commands use shared business tools | Framework support for shell or file writes is not a reason to expose arbitrary local execution |
 | Prompt caching | A generic model adapter is used | Provider-specific caching is not guaranteed, and no cache savings ratio has been established |
@@ -99,13 +99,13 @@ For a new inspection workflow, start by writing a Skill using existing tools. Ad
 | Area | Start here |
 | --- | --- |
 | API and backend lifecycle | `backend/app.py`, `backend/desktop.py` |
-| Agent graph, model messages, and chat | `backend/agent_runtime.py`, `agent_langchain.py`, `agent_chat.py`, `agent_api.py` |
-| MCP capabilities and call bridge | `backend/mcp_service.py`, `mcp_operations.py`, `mcp_server.py`, `mcp_client.py`, `chat_tools.py` |
-| Resource queries and collection | `backend/agent_service.py`, `agent_query.py`, `polling.py`, `remote_probe.py`, `core.py` |
-| SSH, terminals, and tunnels | `backend/ssh.py`, `terminal.py`, `terminal_tmux.py`, `ssh_tunnels.py` |
-| Server files and logs | `backend/file_ops.py`, `file_routes.py`, `log_routes.py`, `log_compare.py` |
-| Persistence and preferences across windows | `backend/store.py`; read [WORKSPACE-STATE.md](WORKSPACE-STATE.md) first |
-| Workbench UI and localization | `frontend/src`, `frontend/src/i18n.ts` |
+| Agent graph, model messages, and chat | `backend/assistant/agent_runtime.py`, `backend/assistant/agent_langchain.py`, `backend/assistant/agent_chat.py`, `backend/assistant/agent_api.py` |
+| MCP capabilities and call bridge | `backend/mcp/mcp_service.py`, `backend/mcp/mcp_operations.py`, `backend/mcp/mcp_server.py`, `backend/mcp/mcp_client.py`, `backend/assistant/chat_tools.py` |
+| Resource queries and collection | `backend/mcp/agent_service.py`, `backend/monitoring/agent_query.py`, `backend/monitoring/polling.py`, `backend/probes/remote_probe.py`, `backend/monitoring/core.py` |
+| SSH, terminals, and tunnels | `backend/ssh/ssh.py`, `backend/terminal/terminal.py`, `backend/terminal/terminal_tmux.py`, `backend/ssh/ssh_tunnels.py` |
+| Server files and logs | `backend/probes/file_ops.py`, `backend/files/file_routes.py`, `backend/training_logs/log_routes.py`, `backend/training_logs/log_compare.py` |
+| Persistence and preferences across windows | `backend/storage/store.py`; read [WORKSPACE-STATE.md](WORKSPACE-STATE.md) first |
+| Workbench UI and localization | `frontend/src`, `frontend/src/shared/i18n.ts` |
 | Desktop shell and distribution | `desktop/src-tauri`, `desktop/run.mjs`, `desktop/release.mjs` |
 | Regression tests | `tests`, `frontend/tests` |
 

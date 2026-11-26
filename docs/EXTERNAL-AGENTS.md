@@ -16,6 +16,6 @@ MCP 令牌不会出现在命令参数、聊天记录或错误日志中。子进�
 
 OpenCode 最初未全局安装。为验证在忽略的 `work/opencode-runtime` 中安装了 **1.19.5**，实际验证 `run --format json`、`--pure` 支持及 `debug config` 合并配置隔离。一次 150 秒上限的真实合成工具请求没有返回文本或工具调用，按超时失败并清理；没有验证成功的模型响应、MCP 调用或续聊。不能把安装/配置检查当作账号及模型可用的证明。工作台不会把该临时测试安装当作全局可用程序。
 
-可重复运行 `.venv/Scripts/python.exe scripts/validate-external-agents.py claude`，或在配置好 OpenCode 后将末尾改为 `opencode`。结果写到忽略的 `work/<engine>-live-validation.json`，只含成功标志，不含凭据或会话 ID。脚本只提供合成 MCP，不连接 SSH；会产生少量对应服务的模型请求。
+可重复运行 `.venv/Scripts/python.exe scripts/diagnostics/validate-external-agents.py claude`，或在配置好 OpenCode 后将末尾改为 `opencode`。结果写到忽略的 `work/<engine>-live-validation.json`，只含成功标志，不含凭据或会话 ID。脚本只提供合成 MCP，不连接 SSH；会产生少量对应服务的模型请求。
 
 协议参考：[Claude 非交互 CLI](https://code.claude.com/docs/en/headless)、[OpenCode CLI](https://opencode.ai/docs/cli/)、[权限](https://opencode.ai/docs/permissions/)、[配置合并](https://opencode.ai/docs/config/)、[MCP](https://opencode.ai/docs/mcp-servers/)。后续版本如果更改参数或事件，适配器会报告失败，应重新验证后使用。

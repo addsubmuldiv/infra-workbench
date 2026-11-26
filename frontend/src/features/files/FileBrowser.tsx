@@ -1,0 +1,338 @@
+import * as D from '../../internalDefaults';
+import {capacityError,formatBytes} from '../../internalPolicy';
+import {useLocale,dateLocale,t} from '../../shared/i18n';
+import {toolText as tt} from '../../shared/toolI18n';
+import {browserId} from '../../shared/browserId';
+import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
+import {ArrowUp,Upload,Search,Terminal,ClipboardPaste,Copy,Scissors,FilePlus,FolderPlus,MoreHorizontal,ChevronDown,ChevronRight,Download,File,Folder,FolderOpen,Home,LoaderCircle,RefreshCw,Minus,PanelTopOpen,Maximize2,Minimize2,X} from 'lucide-react';
+import {listDirectory,fileOperation,searchFiles,type DirectoryPage,type RemoteEntry} from './files';
+import {downloadOriginalLog} from './logDownload';
+import './files.css';
+import {uploadFile,uploadPayload,prepareFileDownload,watchDownload,type TransferProgress} from './fileTransfers';
+import {FileEditor} from './FileEditor';
+import {folderFromFiles,readFolder,folderPayload,type FolderHandle,type FolderSelection} from './folderUpload';
+import {collectDrop,dragHasFiles,droppedFolder,overFileWindow,watchFileDrop,type DroppedItem} from './fileDrop';
+import {FileActionDialog,type FileAction} from './FileActionDialog';
+import {fitFileWindow,moveFileWindow,resizeFileWindow,type WindowFrame} from './fileWindow';
+import {activateFloatingWindow,registerFloatingWindow} from '../../workspace/windowLayers';
+import {pinSSHLogin, sshAccountFetch, sshWindowLabel, type SSHLoginHost} from '../hosts/sshLogins';
+
+type Host=SSHLoginHost;
+type DropZone={directory:string|undefined;state:'ready'|'busy'|'unsupported'|'unavailable';upload:(items:DroppedItem[],directory?:string)=>void;reportError:(message:string)=>void};
+type DropHint={state:DropZone['state']|'inaccessible';directory:string|undefined;row:boolean;count:number};
+const dropHintText=({state,directory,count}:DropHint)=>state!=='ready'
+  ?{busy:tt("有传输正在进行，完成后再拖放上传"),unsupported:tt("当前环境不支持上传"),unavailable:tt("目录尚未加载，暂时无法上传"),inaccessible:tt("无法访问此目录")}[state]
+  :count>1?tt("松开鼠标，上传 ")+count+tt(" 项到 ")+directory:tt("松开鼠标，上传到 ")+directory;
+const parentDirectory=(path:string)=>path.slice(0,path.lastIndexOf('/'))||'/';
+const size=(n:number|null)=>n==null?'—':n<1024?n+' B':n<1024**2?(n/1024).toFixed(1)+' KiB':n<1024**3?(n/1024**2).toFixed(1)+' MiB':(n/1024**3).toFixed(1)+' GiB';
+export function FileBrowser({host,hosts,close,requestId=host.id,initialPath,onTerminal}:{host:Host;hosts:Host[];close:()=>void;requestId?:string;initialPath?:string;onTerminal?:(hostId:string,path:string,accountId?:string)=>void}){
+  useLocale();
+  const [current,setCurrent]=useState(()=>pinSSHLogin(host));
+  const [navigation,setNavigation]=useState({host:host.id,id:requestId,path:initialPath??'~'});
+  const [locked,setLocked]=useState(false);
+  const [minimized,setMinimized]=useState(false);
+  const viewport=()=>({width:window.innerWidth,height:window.innerHeight});
+  const [frame,setFrame]=useState(()=>fitFileWindow({x:(window.innerWidth-880)/2,y:40,width:880,height:Math.min(600,window.innerHeight-120)},viewport()));
+  const [maximized,setMaximized]=useState(false);
+  const gesture=useRef<{pointer:number;kind:string;x:number;y:number;frame:WindowFrame}|null>(null);
+  useEffect(()=>{const resize=()=>setFrame(old=>fitFileWindow(old,viewport()));window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize)},[]);
+  const startGesture=(event:React.PointerEvent,kind:string)=>{
+    if(event.button!==0||gesture.current||maximized)return;
+    if(kind==='move'&&(event.target as HTMLElement).closest('button,select,input,a'))return;
+    event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
+    gesture.current={pointer:event.pointerId,kind,x:event.clientX,y:event.clientY,frame};
+  };
+  const moveGesture=(event:React.PointerEvent)=>{
+    const start=gesture.current;if(!start||start.pointer!==event.pointerId)return;
+    const dx=event.clientX-start.x,dy=event.clientY-start.y;
+    setFrame(start.kind==='move'?moveFileWindow(start.frame,dx,dy,viewport(),minimized):resizeFileWindow(start.frame,start.kind,dx,dy,viewport()));
+  };
+  const endGesture=(event:React.PointerEvent)=>{if(gesture.current?.pointer===event.pointerId)gesture.current=null};
+  const toggleMinimized=()=>{if(minimized)setFrame(old=>fitFileWindow(old,viewport()));setMinimized(!minimized)};
+  const editorClose=useRef<((after?:()=>void)=>void)|null>(null);
+  const dropZone=useRef<DropZone|null>(null);
+  const dropKey=useRef(''),[dropHint,setDropHint]=useState<DropHint|null>(null);
+  const endDrop=()=>{if(dropKey.current){dropKey.current='';setDropHint(null)}};
+  const dropTarget=(event:React.DragEvent)=>{
+    if(!dragHasFiles(event.dataTransfer)||!overFileWindow(event.currentTarget,event.target))return null;
+    const zone=dropZone.current;
+    const row=(event.target as Element).closest('[data-file-drop-directory]');
+    const rowDirectory=row?.getAttribute('data-file-drop-directory');
+    const state=zone?.state??'unavailable';
+    return {state:state==='ready'&&rowDirectory===''?'inaccessible' as const:state,
+      directory:rowDirectory??zone?.directory,row:!!row};
+  };
+  const showDrop=(event:React.DragEvent)=>{
+    const target=dropTarget(event);
+    if(!target){endDrop();return}
+    event.preventDefault();event.dataTransfer.dropEffect=target.state==='ready'?'copy':'none';
+    const count=Array.from(event.dataTransfer.items).filter(item=>item.kind==='file').length;
+    const key=JSON.stringify([target.state,target.directory,target.row,count]);
+    if(key===dropKey.current)return;
+    dropKey.current=key;setDropHint({...target,count});
+  };
+  const dropHandlers={
+    onDragEnter:showDrop,
+    onDragOver:showDrop,
+    onDragLeave:(event:React.DragEvent)=>{if(!overFileWindow(event.currentTarget,event.relatedTarget))endDrop()},
+    onDrop:(event:React.DragEvent)=>{
+      const target=dropTarget(event);
+      endDrop();if(!target)return;
+      event.preventDefault();
+      const zone=dropZone.current;
+      if(target.state!=='ready'||!zone)return;
+      let items:DroppedItem[];
+      try{items=collectDrop(event.dataTransfer)}catch{items=[]}
+      if(items.length)zone.upload(items,target.directory);
+      else zone.reportError(tt("无法读取拖入的项目，请重新拖放或使用上传按钮"));
+    },
+  };
+  // A file dropped anywhere else on the page must not make the browser open it; that also ends a hover which moved on.
+  useEffect(()=>watchFileDrop(window,{leave:endDrop}),[]);
+  const leave=(after:()=>void)=>{if(locked)return;if(editorClose.current)editorClose.current(after);else after()};
+  const handledRequest=useRef(requestId);
+  useEffect(()=>{
+    if(handledRequest.current===requestId||locked)return;
+    handledRequest.current=requestId;
+    const login = pinSSHLogin(host);
+    if(login.id!==current.id||login.ssh_account_id!==current.ssh_account_id||initialPath)leave(()=>{
+      setCurrent(login);setNavigation({host:host.id,id:requestId,path:initialPath??'~'});setMinimized(false);
+    });
+    else setMinimized(false);
+  },[requestId,locked]);
+  const dimensions=minimized?{left:frame.x,top:frame.y,width:'min(320px, calc(100vw - 16px))',height:56}:maximized?{left:8,top:8,width:window.innerWidth-16,height:window.innerHeight-16}:{left:frame.x,top:frame.y,width:frame.width,height:frame.height};
+  return <div className="file-workspace" data-floating-window="files" ref={registerFloatingWindow} onPointerDownCapture={activateFloatingWindow} onFocusCapture={activateFloatingWindow}><section role="dialog" aria-modal="false" aria-labelledby="file-title" className={'file-browser floating '+(minimized?'minimized':'')} style={dimensions} onPointerMove={moveGesture} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture} {...dropHandlers}>
+    <header className="file-header" onPointerDown={event=>startGesture(event,'move')}><div tabIndex={0} aria-label={tt("移动文件窗口，方向键调整位置")} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>moveFileWindow(old,...offset,viewport(),minimized))}}}><h2 id="file-title"><FolderOpen size={19}/>{tt("服务器文件")}{minimized&&<small>{sshWindowLabel(current)}</small>}</h2>{!minimized&&<p>{sshWindowLabel(current)}</p>}</div>{!minimized&&<select aria-label={tt("文件浏览目标机器")} value={current.id} disabled={locked} onChange={e=>{const next=hosts.find(item=>item.id===e.target.value);if(next)leave(()=>{setCurrent(pinSSHLogin(next));setNavigation({host:next.id,id:browserId(),path:'~'})})}}>{hosts.map(item=><option key={item.id} value={item.id}>{item.target}</option>)}</select>}<button data-window-action="minimize" className="icon-button" aria-label={minimized?tt("恢复文件窗口"):tt("最小化文件窗口")} title={minimized?tt("恢复文件窗口"):tt("最小化（保留目录和编辑状态）")} onClick={toggleMinimized}>{minimized?<PanelTopOpen size={18}/>:<Minus size={18}/>}</button>{!minimized&&<button data-window-action="maximize" className="icon-button" aria-label={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} title={maximized?tt("还原文件窗口"):tt("最大化文件窗口")} onClick={()=>setMaximized(!maximized)}>{maximized?<Minimize2 size={17}/>:<Maximize2 size={17}/>}</button>}<button className="icon-button" aria-label={tt("关闭文件浏览")} title={tt("关闭文件窗口")} disabled={locked} onClick={()=>leave(close)}><X size={20}/></button></header>
+    <div className="file-window-body" hidden={minimized}><BrowserBody key={current.id+'/'+(current.ssh_account_id??'')} host={current} onTerminal={path=>onTerminal?.(current.id,path,current.ssh_account_id)} navigation={navigation.host===current.id?navigation:undefined} onBusy={setLocked} editorClose={editorClose} dropZone={dropZone} dropDirectory={dropHint?.row&&dropHint.state==='ready'?dropHint.directory:undefined}/></div>
+    {!minimized&&!maximized&&['n','s','e','w','ne','nw','se','sw'].map(edge=><div key={edge} className={'file-edge-resize edge-'+edge+(edge==='se'?' file-window-resize':'')} role={edge==='se'?'separator':undefined} aria-label={edge==='se'?tt("调整文件窗口大小"):undefined} tabIndex={edge==='se'?0:undefined} onPointerDown={event=>startGesture(event,edge)} onKeyDown={event=>{const offsets:Record<string,[number,number]>={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]};const offset=offsets[event.key];if(offset){event.preventDefault();setFrame(old=>resizeFileWindow(old,'se',...offset,viewport()))}}}/>)}
+    {dropHint&&<div className={'file-drop'+(dropHint.row?' over-row':'')+(dropHint.state==='ready'?'':' refused')} aria-hidden="true"><Upload size={22}/><strong>{dropHintText(dropHint)}</strong></div>}
+  </section></div>;
+}
+function BrowserBody({host,onBusy,editorClose,navigation,onTerminal,dropZone,dropDirectory}:{host:Host;onTerminal?:(path:string)=>void;onBusy:(busy:boolean)=>void;editorClose:React.RefObject<((after?:()=>void)=>void)|null>;navigation?:{id:string;path:string};dropZone:React.RefObject<DropZone|null>;dropDirectory?:string}){
+  useLocale();
+  const fetchForAccount=useMemo(()=>sshAccountFetch(host.ssh_account_id),[host.ssh_account_id]);
+  const [root,setRoot]=useState<DirectoryPage|null>(null),[path,setPath]=useState('~');
+  const [pages,setPages]=useState<Record<string,DirectoryPage>>({}),[opened,setOpened]=useState<Set<string>>(new Set());
+  const [loading,setLoading]=useState<Set<string>>(new Set()),[errors,setErrors]=useState<Record<string,string>>({});
+  const [error,setError]=useState(''),[message,setMessage]=useState(''),[downloading,setDownloading]=useState('');
+  const [selected,setSelected]=useState<RemoteEntry|null>(null),[clipboard,setClipboard]=useState<{entry:RemoteEntry;op:'copy'|'move'}|null>(null);
+  const currentDirectory=selected?(selected.kind==='directory'?selected.path:parentDirectory(selected.path)):root?.path;
+  const [action,setAction]=useState<FileAction|null>(null),[operationBusy,setOperationBusy]=useState(false),[editorBusy,setEditorBusy]=useState(false),[editor,setEditor]=useState<string|null>(null);
+  const [supported,setSupported]=useState(false);
+  const [features,setFeatures]=useState({upload:false,search:false,cwd:false,progress:false,folder:false,folderUpload:false,browserDownload:false});
+  const [transfer,setTransfer]=useState<(TransferProgress&{id:string;name:string;direction:'upload'|'download'})|null>(null);
+  const transferFinished=transfer?.stage==='done'||transfer?.stage==='handed_off';
+  const [query,setQuery]=useState(''),[recursive,setRecursive]=useState(false),[realtime,setRealtime]=useState(false),[searchResult,setSearchResult]=useState<DirectoryPage|null>(null);
+  useEffect(()=>{if(!message)return;const timer=setTimeout(()=>setMessage(''),4000);return()=>clearTimeout(timer)},[message]);
+  useEffect(()=>{if(!transferFinished)return;const timer=setTimeout(()=>setTransfer(null),4000);return()=>clearTimeout(timer)},[transfer?.id,transferFinished]);
+  const uploadRequest=useRef<AbortController|null>(null),uploadInput=useRef<HTMLInputElement>(null),folderInput=useRef<HTMLInputElement>(null),directoryRef=useRef(currentDirectory);directoryRef.current=currentDirectory;
+  useEffect(()=>{let active=true;fetch('/api/files/capabilities').then(response=>response.ok?response.json():null).then(data=>{if(active){setSupported(data?.editing===true);setFeatures({upload:!!data?.upload,search:!!data?.search,cwd:!!data?.terminal_cwd,progress:!!data?.transfer_progress,folder:!!data?.folder_download,folderUpload:!!data?.folder_upload,browserDownload:data?.browser_download===true})}}).catch(()=>{});return()=>{active=false}},[]);
+  useEffect(()=>{onBusy(operationBusy||editorBusy);return()=>onBusy(false)},[operationBusy,editorBusy]);
+  const [menu,setMenu]=useState<{entry:RemoteEntry;x:number;y:number}|null>(null);
+  const mounted=useRef(true),epoch=useRef(0),rootPending=useRef(false),directoryLoads=useRef(new Map<string,symbol>());
+  const menuRef=useRef<HTMLDivElement>(null),downloadRequest=useRef<AbortController|null>(null);
+  const openRoot=async(value:string)=>{
+    const request=++epoch.current;rootPending.current=true;directoryLoads.current.clear();setLoading(new Set(['root']));setError('');setMenu(null);setSearchResult(null);setQuery('');
+    try{const data=await listDirectory(host.id,value,0,fetchForAccount);if(mounted.current&&request===epoch.current){setRoot(data);setSelected(null);setPath(data.path);setPages({[data.path]:data});setOpened(new Set([data.path]));setErrors({})}}
+    catch(e){if(mounted.current&&request===epoch.current)setError(e instanceof Error?e.message:String(e))}
+    finally{if(mounted.current&&request===epoch.current){rootPending.current=false;setLoading(new Set())}}
+  };
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;epoch.current++;downloadRequest.current?.abort();uploadRequest.current?.abort()}},[]);
+  useEffect(()=>{setEditor(null);void openRoot(navigation?.path??'~')},[navigation?.id]);
+  useEffect(()=>{
+    if(!menu)return;
+    const outside=(e:PointerEvent)=>{if(!menuRef.current?.contains(e.target as Node))setMenu(null)};
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape')setMenu(null)};
+    document.addEventListener('pointerdown',outside);document.addEventListener('keydown',key);
+    return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',key)};
+  },[menu]);
+  const load=async(directory:string,offset=0,refresh=false)=>{
+    if(!refresh&&directoryLoads.current.has(directory))return;
+    const request=Symbol();directoryLoads.current.set(directory,request);
+    const latest=()=>mounted.current&&directoryLoads.current.get(directory)===request;
+    setLoading(old=>new Set(old).add(directory));setErrors(old=>({...old,[directory]:''}));
+    try{const data=await listDirectory(host.id,directory,offset,fetchForAccount);if(!latest())return;
+      setPages(old=>({...old,[directory]:{...data,entries:offset?[...new Map([...(old[directory]?.entries||[]),...data.entries].map(item=>[item.path,item])).values()]:data.entries}}));
+    }catch(e){if(latest())setErrors(old=>({...old,[directory]:e instanceof Error?e.message:String(e)}))}
+    finally{if(latest()){directoryLoads.current.delete(directory);setLoading(old=>{const next=new Set(old);next.delete(directory);return next})}}
+  };
+  const toggle=(entry:RemoteEntry)=>{if(!entry.accessible)return;setMenu(null);setOpened(old=>{const next=new Set(old);if(next.has(entry.path))next.delete(entry.path);else next.add(entry.path);return next});if(!pages[entry.path])void load(entry.path)};
+  const selectEntry=(entry:RemoteEntry)=>{setSelected(entry);setPath(entry.kind==='directory'?entry.path:parentDirectory(entry.path))};
+  const download=async(entry:RemoteEntry)=>{
+    if(downloadRequest.current||uploadRequest.current)return;
+    const controller=new AbortController(),watcher=new AbortController(),id=browserId();downloadRequest.current=controller;
+    setMenu(null);setDownloading(entry.path);setError('');setMessage('');setTransfer({id,direction:'download',name:entry.name,stage:entry.kind==='directory'?'packing':'download_remote',loaded:0,total:entry.kind==='directory'?null:entry.size});
+    const folder=entry.kind==='directory';
+    const cancelRemote=()=>{if(features.progress||features.browserDownload)void fetch('/api/files/downloads/'+id,{method:'DELETE',headers:{'X-IWB':'1'}}).catch(()=>{})};
+    controller.signal.addEventListener('abort',cancelRemote,{once:true});
+    if(features.progress)void watchDownload(id,watcher.signal,value=>{if(mounted.current&&!controller.signal.aborted)setTransfer(old=>old?.id===id&&old.stage!=='download_browser'?{id,direction:'download',name:entry.name,...value,stage:entry.kind==='directory'&&value.total===null?'packing':value.stage}:old)}).catch(()=>{});
+    try{
+      const data=features.browserDownload
+        ?await prepareFileDownload(host.id,entry.path,id,folder,controller.signal,fetchForAccount)
+        :await downloadOriginalLog({host_id:host.id,path:entry.path,...(features.progress?{transfer_id:id}:{})},fetchForAccount,folder?'/api/files/download-folder':'/api/files/download',controller.signal,
+          (loaded,total)=>{if(mounted.current&&!controller.signal.aborted)setTransfer({id,direction:'download',name:entry.name,stage:'download_browser',loaded,total})})
+          .then(result=>({...result,size:result.blob.size}));
+      if(!mounted.current||controller.signal.aborted)return;
+      const native='url' in data,url=native?data.url:URL.createObjectURL(data.blob);
+      const link=document.createElement('a');link.href=url;link.download=data.filename;link.referrerPolicy='no-referrer';
+      document.body.appendChild(link);link.click();link.remove();if(!native)setTimeout(()=>URL.revokeObjectURL(url),60000);
+      setMessage(tt("已交给浏览器下载：")+data.filename+(data.skipped?tt("（已跳过 ")+data.skipped+tt(" 个符号链接或特殊文件）"):''));
+      setTransfer({id,direction:'download',name:entry.name,stage:native?'handed_off':'done',loaded:data.size,total:data.size});
+    }catch(e){if(mounted.current){setTransfer(null);if(controller.signal.aborted)setMessage(tt("下载已取消"));else setError((e instanceof Error?e.message:String(e)).replaceAll(tt("日志"),tt("文件")))}}
+    finally{watcher.abort();controller.signal.removeEventListener('abort',cancelRemote);if(downloadRequest.current===controller)downloadRequest.current=null;if(mounted.current)setDownloading('')}
+  };
+  // One upload step each, shared by the toolbar buttons and drag-and-drop so limits, progress and cancel rules stay identical.
+  const uploadProgress=(id:string,name:string,signal:AbortSignal,last:boolean)=>(value:TransferProgress)=>{
+    if(mounted.current&&!signal.aborted&&(last||value.stage!=='done'))setTransfer({id,direction:'upload',name,...value});
+  };
+  const sendFile=(directory:string,file:File,label:string,id:string,controller:AbortController,last=true)=>
+    uploadFile(host.id,directory,file,controller.signal,uploadProgress(id,label,controller.signal,last),fetchForAccount);
+  const sendFolder=(directory:string,selection:FolderSelection,label:string,id:string,controller:AbortController,last=true)=>
+    uploadPayload(host.id,directory,selection.name,folderPayload(selection),'folder',controller.signal,uploadProgress(id,label,controller.signal,last),fetchForAccount);
+  const folderMessage=(selection:FolderSelection)=>tt("已上传文件夹 ")+selection.name+'：'+selection.files.length+tt(" 个文件")+(selection.preservesEmpty?tt("，包含空目录"):tt("；兼容选择器不包含空目录"));
+  const upload=async(files:File[])=>{
+    if(!currentDirectory||!files.length||downloadRequest.current||uploadRequest.current)return;
+    const directory=currentDirectory,controller=new AbortController();uploadRequest.current=controller;setError('');setMessage('');
+    try{
+      for(let index=0;index<files.length;index++){
+        if(controller.signal.aborted)throw new DOMException(tt("上传已取消"),'AbortError');
+        await sendFile(directory,files[index],(files.length>1?'['+(index+1)+'/'+files.length+'] ':'')+files[index].name,browserId(),controller);
+      }
+      if(mounted.current){setMessage(tt("已上传 ")+files.length+tt(" 个文件到 ")+directory);if(directoryRef.current===directory)await openRoot(directory)}
+    }catch(e){if(mounted.current){setTransfer(null);if(controller.signal.aborted)setMessage(tt("已请求取消上传，请刷新目标目录确认结果"));else setError(e instanceof Error?e.message:String(e))}}
+    finally{if(uploadRequest.current===controller)uploadRequest.current=null}
+  };
+  const uploadDirectory=async(pick:(signal:AbortSignal)=>Promise<FolderSelection>)=>{
+    if(!features.folderUpload||!currentDirectory||downloadRequest.current||uploadRequest.current)return;
+    const directory=currentDirectory,controller=new AbortController(),id=browserId();uploadRequest.current=controller;
+    setError('');setMessage('');setTransfer({id,direction:'upload',name:tt("文件夹"),stage:'preparing',loaded:0,total:null});
+    try{
+      const selection=await pick(controller.signal);
+      if(controller.signal.aborted||!mounted.current)throw new DOMException(tt("上传已取消"),'AbortError');
+      await sendFolder(directory,selection,selection.name+'（'+selection.files.length+tt(" 个文件）"),id,controller);
+      if(mounted.current){setMessage(folderMessage(selection));if(directoryRef.current===directory)await openRoot(directory)}
+    }catch(e){if(mounted.current){setTransfer(null);if(controller.signal.aborted||(e instanceof DOMException&&e.name==='AbortError'))setMessage(tt("已取消文件夹上传；若刚好完成，请刷新目标目录确认"));else setError(e instanceof Error?e.message:String(e))}}
+    finally{if(uploadRequest.current===controller)uploadRequest.current=null}
+  };
+  // Files go first, then each dropped folder, all under one request so a single cancel stops whatever is left.
+  const canDrop=()=>!rootPending.current&&!loading.has('root');
+  const uploadDropped=async(items:DroppedItem[],directory=currentDirectory)=>{
+    const files=items.filter((item):item is Extract<DroppedItem,{kind:'file'}>=>item.kind==='file'),folders=items.filter((item):item is Extract<DroppedItem,{kind:'directory'}>=>item.kind==='directory');
+    if(!features.upload||!items.length||!directory||!canDrop()||downloadRequest.current||uploadRequest.current)return;
+    // Refuse the whole drop before anything leaves the browser.
+    if(folders.length&&!features.folderUpload){setError(tt("重启本地服务以启用文件夹上传"));return}
+    const controller=new AbortController(),queue=[...files,...folders],request=epoch.current;
+    let label='',completed=0;
+    uploadRequest.current=controller;setError('');setMessage('');
+    try{
+      for(let index=0;index<queue.length;index++){
+        if(controller.signal.aborted)throw controller.signal.reason;
+        const item=queue[index],id=browserId(),last=index===queue.length-1;
+        label=(queue.length>1?'['+(index+1)+'/'+queue.length+'] ':'')+item.name;
+        if(item.kind==='file'){
+          setTransfer({id,direction:'upload',name:label,stage:'receiving',loaded:0,total:item.file.size});
+          await sendFile(directory,item.file,label,id,controller,last);
+        }else{
+          setTransfer({id,direction:'upload',name:label,stage:'preparing',loaded:0,total:null});
+          const selection=await readFolder(droppedFolder(item.entry),controller.signal,entries=>{if(mounted.current&&!controller.signal.aborted)setTransfer(old=>old?.id===id&&old.stage==='preparing'?{...old,name:label+tt(" · 已读取 ")+entries+tt(" 项")}:old)});
+          await sendFolder(directory,selection,label+'（'+selection.files.length+tt(" 个文件）"),id,controller,last);
+        }
+        completed++;
+      }
+      if(mounted.current){
+        const parts=[files.length?t(`${files.length} 个文件`,`${files.length} ${files.length===1?'file':'files'}`):'',
+          folders.length?t(`${folders.length} 个文件夹`,`${folders.length} ${folders.length===1?'folder':'folders'}`):''].filter(Boolean);
+        setMessage(t(`已上传 ${parts.join('、')}到 ${directory}`,`Uploaded ${parts.join(' and ')} to ${directory}`));
+      }
+    }catch(e){
+      if(!mounted.current)return;
+      setTransfer(null);
+      const partial=completed?t(`已上传 ${completed}/${queue.length} 项到 ${directory}。`,`Uploaded ${completed}/${queue.length} items to ${directory}. `):'';
+      if(controller.signal.aborted)setMessage(partial+tt("已请求取消上传，请刷新目标目录确认结果"));
+      else setError(partial+label+tt("：")+(e instanceof Error?e.message:String(e)));
+    }finally{
+      if(uploadRequest.current===controller)uploadRequest.current=null;
+      if(completed&&mounted.current&&epoch.current===request&&!searchResult)void load(directory,0,true);
+    }
+  };
+  useLayoutEffect(()=>{
+    dropZone.current={directory:currentDirectory,get state(){
+      if(!currentDirectory||!canDrop())return 'unavailable';
+      if(!features.upload)return 'unsupported';
+      return downloadRequest.current||uploadRequest.current?'busy':'ready';
+    },upload:uploadDropped,reportError:setError};
+    return()=>{dropZone.current=null};
+  });
+  const chooseFolder=()=>{
+    const picker=(window as typeof window&{showDirectoryPicker?:(options:{mode:'read'})=>Promise<FolderHandle>}).showDirectoryPicker;
+    if(!picker){folderInput.current?.click();return}
+    void uploadDirectory(async signal=>{
+      const root=await picker.call(window,{mode:'read'});
+      return readFolder(root,signal,entries=>{if(mounted.current&&!signal.aborted)setTransfer(old=>old?.stage==='preparing'?{...old,name:root.name+tt(" · 已读取 ")+entries+tt(" 项")}:old)});
+    });
+  };
+  const cancelTransfer=()=>{downloadRequest.current?.abort();uploadRequest.current?.abort()};
+  const search=async()=>{
+    if(!currentDirectory)return;if(!query.trim()){await openRoot(currentDirectory);return}
+    const request=++epoch.current;rootPending.current=true;directoryLoads.current.clear();setLoading(new Set(['root']));setError('');setMenu(null);
+    try{const data=await searchFiles(host.id,currentDirectory,query,recursive,realtime,fetchForAccount);if(mounted.current&&request===epoch.current){setRoot(data);setSelected(null);setPath(data.path);setSearchResult(data);setPages({[data.path]:data});setOpened(new Set([data.path]));setErrors({})}}
+    catch(e){if(mounted.current&&request===epoch.current)setError(e instanceof Error?e.message:String(e))}
+    finally{if(mounted.current&&request===epoch.current){rootPending.current=false;setLoading(new Set())}}
+  };
+  const stage=(entry:RemoteEntry,op:'copy'|'move')=>{setClipboard({entry,op});setMenu(null);setMessage((op==='copy'?tt("已复制："):tt("已剪切："))+entry.name+tt("，请到目标目录点击粘贴。"))};
+  const paste=(directory:string)=>{if(clipboard){setMenu(null);setAction({op:clipboard.op,directory,source:clipboard.entry})}};
+  const copyPath=async(entry:RemoteEntry)=>{setMenu(null);try{await navigator.clipboard.writeText(entry.path);setMessage(tt("已复制路径"))}catch{setError(tt("无法写入系统剪贴板，请手动复制路径：")+entry.path)}};
+  const switchEditor=(path:string)=>{if(editor===path)return;const open=()=>setEditor(path);if(editorClose.current)editorClose.current(open);else open()};
+  const edit=(entry:RemoteEntry)=>{if(!supported){setError(tt("文本编辑需要重启本地服务后启用"));return}setMenu(null);switchEditor(entry.path)};
+  const perform=async(destination:string)=>{
+    if(!action)return;setOperationBusy(true);setError('');
+    try{const command=action.op==='create'||action.op==='mkdir'?{op:action.op,path:destination}:{op:action.op==='rename'?'move' as const:action.op,path:action.source!.path,destination};
+      await fileOperation(host.id,command,fetchForAccount);setMessage(tt("操作完成：")+destination);if(action.op==='move')setClipboard(null);setSelected(null);
+      const refreshDirectory=action.source?.kind==='directory'&&(action.op==='move'||action.op==='rename')&&currentDirectory===action.source.path?parentDirectory(action.source.path):currentDirectory;
+      if(refreshDirectory)await openRoot(refreshDirectory);if(action.op==='create')switchEditor(destination);
+    }finally{setOperationBusy(false)}
+  };
+  const context=(event:React.MouseEvent,entry:RemoteEntry)=>{if(!entry.accessible||entry.kind==='other')return;event.preventDefault();selectEntry(entry);setMenu({entry,x:Math.max(8,Math.min(event.clientX,window.innerWidth-210)),y:Math.max(8,Math.min(event.clientY,window.innerHeight-320))})};
+  const children=(directory:string,depth:number):React.ReactNode=>{
+    if(depth>40)return <p className="file-error">{tt("目录层级较深，请在路径栏直接打开该目录。")}</p>;
+    const page=pages[directory];return <>
+      {page?.entries.map(entry=><React.Fragment key={entry.path}><div className={'file-row'+(selected?.path===entry.path?' selected':'')+(dropDirectory===entry.path?' drop-target':'')} data-file-drop-directory={entry.kind==='directory'?(entry.accessible?entry.path:''):undefined} style={{paddingLeft:12+depth*20}} onContextMenu={e=>context(e,entry)}>
+        <button className="file-name" disabled={!entry.accessible} title={entry.kind==='file'?tt("单击选中，双击或按 Enter 打开编辑器"):opened.has(entry.path)?tt("收起目录"):tt("展开目录")} aria-expanded={entry.kind==='directory'?opened.has(entry.path):undefined} aria-label={(entry.kind==='directory'?tt("展开目录 "):tt("文件 "))+entry.path} onClick={()=>{selectEntry(entry);if(entry.kind==='directory')toggle(entry)}} onDoubleClick={()=>{if(entry.kind==='file')edit(entry)}} onKeyDown={event=>{if(event.key==='Enter'&&entry.kind==='file'){event.preventDefault();selectEntry(entry);edit(entry)}}}>
+          {entry.kind==='directory'?<>{opened.has(entry.path)?<ChevronDown size={14}/>:<ChevronRight size={14}/>}<Folder size={16}/></>:<><span className="file-indent"/><File size={15}/></>}<span title={entry.path}>{entry.relative??entry.name}{entry.symlink&&<small> ↗</small>}</span></button>
+        <span className="file-size">{entry.kind==='directory'?tt("目录"):size(entry.size)}</span><span className="file-date">{entry.modified?new Date(entry.modified*1000).toLocaleString(dateLocale(),{hour12:false}):'—'}</span>
+        {entry.kind==='file'&&<button className="icon-button" disabled={!!downloading||!entry.accessible} aria-label={tt("下载 ")+entry.path} title={tt("下载文件")} onClick={()=>download(entry)}><Download size={14}/></button>}
+        {entry.kind!=='other'&&<button className="icon-button" aria-label={tt("文件操作 ")+entry.path} title={tt("更多操作：")+entry.name} onClick={event=>context(event,entry)}><MoreHorizontal size={15}/></button>}
+      </div>{entry.kind==='directory' &&opened.has(entry.path)&&children(entry.path,depth+1)}</React.Fragment>)}
+      {loading.has(directory)&&<p className="file-inline" style={{paddingLeft:24+depth*20}}><LoaderCircle size={14} className="spin"/>{tt("正在读取目录…")}</p>}
+      {errors[directory]&&<p className="file-error" style={{paddingLeft:24+depth*20}}>{errors[directory]} <button className="text-button" onClick={()=>load(directory)}>{tt("重试")}</button></p>}
+      {page&&!page.entries.length&&!loading.has(directory)&&<p className="file-inline" style={{paddingLeft:24+depth*20}}>{searchResult?tt("没有匹配的文件"):tt("空目录")}</p>}
+      {page?.next_offset!=null&&<button className="text-button file-more" disabled={loading.has(directory)} style={{marginLeft:24+depth*20}} onClick={()=>load(directory,page.next_offset!)}>{tt("加载更多（已显示 ")}{page.entries.length} / {page.total}）</button>}
+    </>;
+  };
+  return <><form className="file-path" onSubmit={e=>{e.preventDefault();void openRoot(path)}}><button type="button" className="icon-button" aria-label={tt("打开主目录")} title={tt("返回主目录（~）")} onClick={()=>openRoot('~')}><Home size={16}/></button><button type="button" className="icon-button" aria-label={tt("打开上级目录")} title={tt("返回上一级目录")} disabled={!currentDirectory||currentDirectory==='/'} onClick={()=>{if(currentDirectory)openRoot(parentDirectory(currentDirectory))}}><ArrowUp size={16}/></button><input aria-label={tt("服务器目录路径")} value={path} onChange={e=>setPath(e.target.value)} placeholder={tt("~ 或 /data/训练目录")}/><button className="secondary" disabled={loading.has('root')}>{tt("前往")}</button><button type="button" className="icon-button" aria-label={tt("刷新文件目录")} title={tt("刷新当前目录")} disabled={!currentDirectory||loading.has('root')} onClick={()=>{if(currentDirectory)openRoot(currentDirectory)}}><RefreshCw size={16}/></button></form>
+    <form className="file-search" onSubmit={event=>{event.preventDefault();void search()}}><Search size={15}/><input aria-label={tt("文件名搜索")} placeholder={tt("输入文件名关键词")} value={query} onChange={event=>setQuery(event.target.value)}/><label><input type="checkbox" checked={recursive} onChange={event=>setRecursive(event.target.checked)}/>{tt("包含子目录")}</label><label><input type="checkbox" checked={realtime} onChange={event=>setRealtime(event.target.checked)}/>{tt("实时搜索（跳过索引）")}</label><button className="secondary" disabled={!features.search||!root||loading.has('root')}>{tt("搜索")}</button>{searchResult&&<button type="button" className="text-button" onClick={()=>root&&openRoot(root.path)}>{tt("清除搜索")}</button>}</form>
+    {searchResult&&<p className="file-inline">{tt("使用 ")}{searchResult.engine} {tt(" 找到 ")}{searchResult.entries.length} {tt(" 项，已检查 ")}{searchResult.scanned} {tt(" 项。")}{searchResult.indexed?tt("索引可能滞后，可勾选实时搜索检查新文件。"):tt("已实时查找。")}{searchResult.truncated?tt("达到时间、数量或层级限制，结果不完整，请缩小搜索范围。"):''}{searchResult.skipped?tt("有 ")+searchResult.skipped+tt(" 项无法读取。"):''}</p>}
+    {searchResult?.locate_available===false&&<details className="file-search-install"><summary>{tt("这台机器未检测到 locate / plocate，正在使用实时搜索。查看加速搜索的安装方法")}</summary><p>{tt("请在这台远程机器的终端中执行对应命令（需要 sudo 权限）。")}</p>{[
+      {label:'Ubuntu 22.04+ / Debian 12+',command:'sudo apt-get update && sudo apt-get install plocate && sudo updatedb'},
+      {label:'Fedora',command:'sudo dnf install plocate && sudo updatedb'},
+    ].map(item=><div key={item.label}><strong>{item.label}</strong><pre><code>{item.command}</code></pre><button type="button" className="text-button" onClick={()=>navigator.clipboard.writeText(item.command).then(()=>setMessage(tt("安装命令已复制，请在远程终端中执行"))).catch(()=>setError(tt("复制失败，请手动选择并复制命令")))}>{tt("复制 ")}{item.label} {tt(" 命令")}</button></div>)}<p>{tt("首次建立索引可能需要一些时间；完成后重新搜索即可自动使用。索引可能不包含所有目录，也可能滞后。其他系统请按发行版安装 locate 工具；如果已经安装，请检查 SSH 会话的 PATH。")}</p></details>}
+    <input type="file" multiple hidden ref={uploadInput} aria-label={tt("选择上传文件")} onChange={event=>{const files=Array.from(event.currentTarget.files||[]);event.currentTarget.value='';void upload(files)}}/>
+    <input type="file" multiple hidden {...{webkitdirectory:''}} ref={folderInput} aria-label={tt("上传文件夹选择器")} onChange={event=>{const files=Array.from(event.currentTarget.files||[]);event.currentTarget.value='';if(files.length)void uploadDirectory(async()=>folderFromFiles(files))}}/>
+    <div className="file-toolbar"><button className="secondary" title={currentDirectory} disabled={!features.upload||!currentDirectory||!!downloading||!!uploadRequest.current} onClick={()=>uploadInput.current?.click()}><Upload size={14}/>{tt("上传文件")}</button><button className="secondary" title={!features.folderUpload?tt("重启本地服务以启用文件夹上传"):tt("上传文件夹到 ")+currentDirectory} disabled={!features.folderUpload||!currentDirectory||!!downloading||!!uploadRequest.current} onClick={chooseFolder}><FolderPlus size={14}/>{tt("上传文件夹")}</button><button className="secondary" title={currentDirectory} disabled={!features.cwd||!currentDirectory} onClick={()=>{if(currentDirectory)onTerminal?.(currentDirectory)}}><Terminal size={14}/>{tt("在当前目录打开终端")}</button><button className="secondary" disabled={!supported||!currentDirectory||operationBusy} onClick={()=>setAction({op:'create',directory:currentDirectory!})}><FilePlus size={14}/>{tt("新建文件")}</button><button className="secondary" disabled={!supported||!currentDirectory||operationBusy} onClick={()=>setAction({op:'mkdir',directory:currentDirectory!})}><FolderPlus size={14}/>{tt("新建文件夹")}</button><button className="secondary" disabled={!supported||!selected||operationBusy} onClick={()=>stage(selected!,'copy')}><Copy size={14}/>{tt("复制")}</button><button className="secondary" disabled={!supported||!selected||operationBusy} onClick={()=>stage(selected!,'move')}><Scissors size={14}/>{tt("剪切")}</button><button className="secondary" disabled={!supported||!clipboard||!currentDirectory||operationBusy} onClick={()=>paste(currentDirectory!)}><ClipboardPaste size={14}/>{tt("粘贴到当前目录")}</button>{clipboard&&<span>{clipboard.op==='copy'?tt("复制"):tt("剪切")}：{clipboard.entry.name}<button className="text-button" onClick={()=>setClipboard(null)}>{tt("取消")}</button></span>}{!supported&&<span>{tt("编辑与文件操作需重启本地服务启用")}</span>}</div>
+    {transfer&&<div className="file-transfer" role="status"><div><strong>{transfer.direction==='upload'?tt("上传"):tt("下载")}：{transfer.name}</strong><span>{{preparing:tt("正在读取文件夹"),packing:tt("远端打包文件夹"),receiving:tt("浏览器 → 本地服务"),sending:tt("本地服务 → 远端机器"),verifying:tt("校验远端内容并发布"),download_remote:tt("从远端接收文件"),download_browser:tt("接收到浏览器"),handed_off:tt("由浏览器保存"),done:tt("传输完成")}[transfer.stage]}</span>{!transferFinished&&<button className="text-button" onClick={cancelTransfer}>{tt("取消传输")}</button>}</div><progress max={Math.max(1,transfer.total??1)} value={transfer.total===null?undefined:transferFinished?Math.max(1,transfer.total):transfer.loaded}/><small>{size(transfer.loaded)} / {transfer.total===null?tt("大小未知"):size(transfer.total)}{transferFinished?'':tt(" · 关闭窗口或切换机器会取消传输")}</small></div>}
+    {error&&<div role="alert" className="file-error">{error}</div>}{message&&<p role="status" className="file-inline">{message}</p>}
+    <div className="file-tree" role="region" aria-label={host.target+tt(" 目录树")} onScroll={()=>setMenu(null)}>{loading.has('root')?<p className="file-inline"><LoaderCircle size={16} className="spin"/>{tt("正在连接并读取目录…")}</p>:root&&<><div className="file-columns"><strong>{root.path}</strong><span>{tt("大小")}</span><span>{tt("修改时间")}</span></div>{children(root.path,0)}</>}</div>
+    <footer className="file-footer">{downloading?<><LoaderCircle size={13} className="spin"/>{tt("正在下载，请稍候…")}</>:capacityError(`使用当前 SSH 账号 · 文本编辑 ≤ ${formatBytes(D.FILES_TEXT_EDIT_MAX_BYTES)} · 复制 ≤ ${formatBytes(D.FILES_COPY_MAX_BYTES)} / ${D.FILES_COPY_MAX_ENTRIES} 项 · 文件夹上传 ≤ ${D.FILES_FOLDER_UPLOAD_MAX_ENTRIES} 项 · 文件夹下载 ≤ ${D.FILES_FOLDER_DOWNLOAD_MAX_ENTRIES} 项`,`Current SSH account · Text ≤ ${formatBytes(D.FILES_TEXT_EDIT_MAX_BYTES)} · Copy ≤ ${formatBytes(D.FILES_COPY_MAX_BYTES)} / ${D.FILES_COPY_MAX_ENTRIES} items · Folder upload ≤ ${D.FILES_FOLDER_UPLOAD_MAX_ENTRIES} items · Folder download ≤ ${D.FILES_FOLDER_DOWNLOAD_MAX_ENTRIES} items`)}</footer>
+    {menu&&<div className="file-context" ref={menuRef} role="menu" style={{left:menu.x,top:menu.y}}>
+      {menu.entry.kind==='file'&&<><button role="menuitem" disabled={!supported} onClick={()=>edit(menu.entry)}>{tt("打开并编辑")}</button><button role="menuitem" disabled={!!downloading} onClick={()=>download(menu.entry)}><Download size={15}/>{tt("下载文件")}</button></>}
+      {menu.entry.kind==='directory'&&<><button role="menuitem" onClick={()=>openRoot(menu.entry.path)}>{tt("进入目录")}</button><button role="menuitem" disabled={!features.folder||!!downloading||!!uploadRequest.current||!menu.entry.accessible||!!menu.entry.symlink} title={!features.folder?tt("重启本地服务以启用文件夹下载"):menu.entry.symlink?tt("请选择实际目录，不能打包符号链接目录"):tt("打包为 ZIP 下载（不压缩）")} onClick={()=>download(menu.entry)}><Download size={15}/>{tt("下载文件夹")}</button><button role="menuitem" disabled={!features.cwd} onClick={()=>{onTerminal?.(menu.entry.path);setMenu(null)}}>{tt("在此处打开终端")}</button><button role="menuitem" disabled={!supported||!clipboard} onClick={()=>paste(menu.entry.path)}>{tt("粘贴到此目录")}</button></>}
+      <button role="menuitem" disabled={!supported} onClick={()=>stage(menu.entry,'copy')}>{tt("复制")}</button><button role="menuitem" disabled={!supported} onClick={()=>stage(menu.entry,'move')}>{tt("剪切")}</button>
+      <button role="menuitem" disabled={!supported} onClick={()=>{setAction({op:'move',source:menu.entry,directory:root!.path});setMenu(null)}}>{tt("移动到…")}</button>
+      <button role="menuitem" disabled={!supported} onClick={()=>{setAction({op:'rename',source:menu.entry,directory:menu.entry.path.slice(0,menu.entry.path.lastIndexOf('/'))||'/'});setMenu(null)}}>{tt("重命名")}</button>
+      <button role="menuitem" onClick={()=>copyPath(menu.entry)}>{tt("复制路径")}</button>
+    </div>}
+    {action&&<FileActionDialog action={action} close={()=>setAction(null)} submit={perform}/>}
+    {editor&&<FileEditor key={editor} host={host.id} fetcher={fetchForAccount} path={editor} close={()=>setEditor(null)} saved={()=>{if(root)void load(root.path)}} changed={()=>{}} busyChanged={setEditorBusy} closeRequest={editorClose}/>}
+
+  </>;
+}

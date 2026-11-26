@@ -14,7 +14,7 @@
 - `POST /api/assistant/chats/{id}/messages`：开始一轮处理，随后读取会话获取进度。
 - `POST /api/assistant/chats/{id}/cancel`：取消本轮后续处理。
 
-修改和外部请求操作沿用本机页面的 `X-IWB` 与 Origin 校验，响应设置 `Cache-Control: no-store`。`backend/agent_api.py` 的文本适配器供后续内置功能复用；工具目录以实时 MCP tools/list 为准。
+修改和外部请求操作沿用本机页面的 `X-IWB` 与 Origin 校验，响应设置 `Cache-Control: no-store`。`backend/assistant/agent_api.py` 的文本适配器供后续内置功能复用；工具目录以实时 MCP tools/list 为准。
 
 协议参考：[OpenAI Responses](https://developers.openai.com/api/reference/resources/responses/methods/create)。
 

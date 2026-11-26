@@ -44,8 +44,8 @@
 
 涉及业务工具先读 [统一 MCP](UNIFIED-MCP.md)，涉及多窗口偏好读 [共享工作空间状态](WORKSPACE-STATE.md)。桌面打包和更新见 [桌面构建](DESKTOP.md) 与 [更新机制](UPDATES.md)。
 
-文件名含 `VALIDATION` 的文档记录了验证结果，`superpowers/specs/` 保留设计文档。
+验证记录见 [validation/](validation/)，历史性能报告和原始数据见 [benchmarks/](benchmarks/)，设计文档见 [designs/specs/](designs/specs/)。
 
 ## 设计草案
 
-- [远端共享采集服务](superpowers/specs/2026-11-07-shared-remote-collector-design.md)：首次连接自动部署、无 sudo 降级、多账号权限、请求合并与频率控制，以及迁移到系统级服务时停止重复采集。待评审，尚未实施。
+- [远端共享采集服务](designs/specs/2026-11-07-shared-remote-collector-design.md)：首次连接自动部署、无 sudo 降级、多账号权限、请求合并与频率控制，以及迁移到系统级服务时停止重复采集。待评审，尚未实施。

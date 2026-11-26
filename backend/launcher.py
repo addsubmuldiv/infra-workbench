@@ -11,7 +11,7 @@ from urllib.error import URLError
 from urllib.request import build_opener,ProxyHandler
 import webbrowser
 
-from .reminder_links import host_overview_link
+from .reservations.reminder_links import host_overview_link
 
 ROOT=Path(__file__).resolve().parents[1]
 URL='http://127.0.0.1:8765/'
@@ -139,7 +139,7 @@ def register_launch_routes(app,data,root=ROOT,set_floating=None):
         enabled = sys.platform == 'win32' and body.show_floating
         if sys.platform == 'win32':
             if set_floating is None:
-                from .floating_monitor import get_monitor_controller
+                from .desktop_host.floating_monitor import get_monitor_controller
                 control=get_monitor_controller().set_enabled
             else:control=set_floating
             control(enabled)
@@ -155,7 +155,7 @@ def register_launch_routes(app,data,root=ROOT,set_floating=None):
 def ensure_service(root=ROOT,timeout=90):
     opener=build_opener(ProxyHandler({}))
     def health():
-        from .local_service import loopback_listening
+        from .desktop_host.local_service import loopback_listening
         if not loopback_listening(port=urlsplit(URL).port or 80):return False
         try:
             with opener.open(URL+'api/health',timeout=2) as response:value=json.load(response)

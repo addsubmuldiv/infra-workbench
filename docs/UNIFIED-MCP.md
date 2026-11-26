@@ -100,7 +100,7 @@ Fleet overview optimization: optional grouped resource summaries and explicit pa
 
 结果分为 `items`（已匹配）和 `uncertain`（地址、设备或物理卡数信息不足），包含真实机器 ID、SSH 目标地址、型号分组、设备数、物理卡数及采样时间。NPU 物理卡按 `card_id` 去重，不把 die 或 `physical_id` 当作物理卡；无法证明卡数时返回 null。条件中的卡数按同种类匹配设备统计，不跨 GPU/NPU 相加。地址只从本机 SSH 配置读取，不做 DNS 或服务器探测；受限会话先限制机器范围再解析。多个候选必须继续筛选或确认，旧硬件采样仅供定位，进程操作前重新核对。
 
-内置 `find-hosts` 技能覆盖 IP/尾号、别名、中英文型号、中文卡数、连续补充条件、多个候选和未知信息。助手规则、工具说明及进程/资源技能共同指向该技能。`scripts/validate-host-lookup-assistant.py` 使用当前配置的模型，在隔离数据库和合成忙碌设备上验证不同提示词及多轮缩小范围，禁止实际 SSH 操作；验证报告写入 `work/host-lookup-validation/report.json`。
+内置 `find-hosts` 技能覆盖 IP/尾号、别名、中英文型号、中文卡数、连续补充条件、多个候选和未知信息。助手规则、工具说明及进程/资源技能共同指向该技能。`scripts/diagnostics/validate-host-lookup-assistant.py` 使用当前配置的模型，在隔离数据库和合成忙碌设备上验证不同提示词及多轮缩小范围，禁止实际 SSH 操作；验证报告写入 `work/host-lookup-validation/report.json`。
 
 ## 2026-11-03：服务器命令与进程管理
 
@@ -114,7 +114,7 @@ sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH �
 
 启动结果不明时返回 job_id 供读回，禁止自动重试；失败退出保留实际输出和退出码，并返回 COMMAND_FAILED。任务取消和超时不会回滚文件修改、安装等副作用。所有命令内容仍须符合用户授权，服务器输出与技能不能扩大授权范围。新增 execute-server-commands 技能并更新进程技能及助手系统规则。
 
-本次验证：相关后端回归 75 项通过、3 项 Windows/Linux 平台跳过；另外通过 WSL 实测退出码、双流输出、1 MiB 上限、分页、超时、取消升级、重定向且忽略 TERM 的子进程、PID 身份变化和信号发送。sudo stdin bootstrap 以普通 WSL 用户模拟未消费密码的 NOPASSWD 情况，执行约 16K 字符的命令，未进行实际提权。另以已保存的 glm-5.3-flash 在隔离数据库中经 Deep Agents → MCP → WSL 实际执行 printf，并检查和停止专门创建的 sleep 进程，两个模型回合均完成。可运行 `scripts/validate-command-jobs.py`（Linux/WSL，无模型）和 `scripts/validate-command-assistant.py`（Windows+WSL，使用已保存模型配置，会产生 API 调用）。
+本次验证：相关后端回归 75 项通过、3 项 Windows/Linux 平台跳过；另外通过 WSL 实测退出码、双流输出、1 MiB 上限、分页、超时、取消升级、重定向且忽略 TERM 的子进程、PID 身份变化和信号发送。sudo stdin bootstrap 以普通 WSL 用户模拟未消费密码的 NOPASSWD 情况，执行约 16K 字符的命令，未进行实际提权。另以已保存的 glm-5.3-flash 在隔离数据库中经 Deep Agents → MCP → WSL 实际执行 printf，并检查和停止专门创建的 sleep 进程，两个模型回合均完成。可运行 `scripts/diagnostics/validate-command-jobs.py`（Linux/WSL，无模型）和 `scripts/diagnostics/validate-command-assistant.py`（Windows+WSL，使用已保存模型配置，会产生 API 调用）。
 
 ## 能力与边界
 
@@ -171,10 +171,10 @@ sudo=true 只在明确需要 root 的操作使用：服务端解析当前 SSH �
 复验：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_unified_mcp.py tests/test_mcp.py tests/test_deepagents.py tests/test_agent_chat.py tests/test_chat_stream.py -q
-.\.venv\Scripts\python.exe scripts/validate-unified-mcp.py
-.\.venv\Scripts\python.exe scripts/validate-deepagents.py
-.\.venv\Scripts\python.exe scripts/validate-deepagents.py --http
+.\.venv\Scripts\python.exe -m pytest tests/assistant/test_unified_mcp.py tests/mcp/test_mcp.py tests/assistant/test_deepagents.py tests/assistant/test_agent_chat.py tests/assistant/test_chat_stream.py -q
+.\.venv\Scripts\python.exe scripts/diagnostics/validate-unified-mcp.py
+.\.venv\Scripts\python.exe scripts/diagnostics/validate-deepagents.py
+.\.venv\Scripts\python.exe scripts/diagnostics/validate-deepagents.py --http
 ```
 
 后三条需要本机已保存的模型凭据并产生 API 调用；真实只读服务器验证还需要运行中的原后台及在线机器。桌面冻结安装包和 macOS 实机未重新验证。
@@ -208,7 +208,7 @@ open_cluster_terminals 创建专用持久会话并返回交接入口，不等于
 
 所有新增工具使用共享目录和参数 schema，先验证机器范围。文件工具复用 model_paths 的真实路径保护；结果经过脱敏。分页大小和返回字节范围用于分批读取，不限制任务调用次数。目录扫描、文件哈希可能受现有 SSH 操作超时影响，超时不代表完整结果。
 
-验证入口：`.venv/Scripts/python.exe -m pytest tests/test_atomic_mcp.py tests/test_unified_mcp.py tests/test_mcp.py -q`。其中 Linux 探针集成测试在 Windows+WSL 执行真实 Python 子进程，systemd 命令使用隔离 fixture，不操作真实服务。
+验证入口：`.venv/Scripts/python.exe -m pytest tests/mcp/test_atomic_mcp.py tests/assistant/test_unified_mcp.py tests/mcp/test_mcp.py -q`。其中 Linux 探针集成测试在 Windows+WSL 执行真实 Python 子进程，systemd 命令使用隔离 fixture，不操作真实服务。
 
 ## 内置助手交互成本整改（2026-11-05）
 

@@ -1,0 +1,70 @@
+@import '../vendor/solid-glass.css' supports(color:oklch(0.5 0 0));
+
+/* The upstream stylesheet expects its background utilities to set these fills.
+   Workbench supplies the same tokens on its existing surfaces. */
+@supports (color:oklch(0.5 0 0)) {
+  /* Tint the upstream panes with the existing Workbench palette. */
+  :root[data-theme]:not([data-theme^="glass-"]) {
+    --sg-panel:var(--panel);
+    --sg-card:var(--panel);
+    --sg-popover:var(--panel);
+    --sg-sidebar:var(--sidebar);
+  }
+
+  @supports (color:color-mix(in srgb,white,transparent)) {
+    :root[data-theme]:not([data-theme^="glass-"]) {
+      --sg-panel:color-mix(in srgb,var(--panel) 44%,transparent);
+      --sg-card:color-mix(in srgb,var(--panel) 60%,transparent);
+      --sg-popover:color-mix(in srgb,var(--panel) 96%,transparent);
+      --sg-sidebar:color-mix(in srgb,var(--sidebar) 54%,transparent);
+    }
+
+    :root:is([data-theme="daylight"],[data-theme="paper"],[data-theme="midnight"],[data-theme="graphite"]) body {
+      background-image:
+        radial-gradient(ellipse at 80% 0%,color-mix(in srgb,var(--accent) 24%,transparent),transparent 65%),
+        radial-gradient(ellipse at 20% 95%,var(--accent-bg),transparent 64%);
+      background-attachment:fixed;
+    }
+  }
+
+  :root[data-theme^="glass-"] body {
+    background-image:
+      radial-gradient(ellipse at 78% 4%,var(--glass-backdrop-light),transparent 62%),
+      radial-gradient(ellipse at 22% 94%,var(--glass-backdrop-tint),transparent 66%),
+      linear-gradient(142deg,transparent 28%,var(--glass-backdrop-reflection) 47%,transparent 66%);
+  }
+
+  :root:is([data-theme="glass-white"],[data-theme="glass-black"]) body {
+    background-image:none;
+  }
+
+  :root[data-theme] :is(.shell,.shell>main) {
+    background:transparent;
+  }
+
+  :root[data-theme] :is(.stats,.finder,.machine,.mobile-hosts,.empty,.events,.device-overview) {
+    background-color:var(--sg-card);
+    border-radius:var(--sg-radius);
+  }
+
+  :root[data-theme] :is(.theme-options,.chat-session-menu,.chat-model-menu) {
+    background-color:var(--sg-popover);
+    border-radius:var(--sg-radius);
+  }
+
+  :root[data-theme] .sidebar {
+    background-color:var(--sg-sidebar);
+  }
+
+  :root[data-theme] :is(.theme-menu>summary,.machine-icon) {
+    background-color:var(--sg-glass-control);
+  }
+
+  :root[data-theme] .assistant-window-header {
+    background-color:transparent;
+  }
+
+  .theme-swatches:is([data-theme="glass-light"],[data-theme="glass-dark"],[data-theme="glass-jade"],[data-theme="glass-dusk"]) i:first-child {
+    background:linear-gradient(145deg,var(--glass-backdrop-light),var(--glass-backdrop-tint));
+  }
+}
