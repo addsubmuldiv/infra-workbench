@@ -345,7 +345,7 @@ class FloatingMonitor:
         return round(width*self.dpi_scale), round(height*self.dpi_scale)
 
     def canvas_font(self, points, bold=False):
-        # Pixel sizes keep Canvas text and geometry on the same live scale.
+        # Pixel sizes keep text and geometry on the same live scale.
         pixels = round(points * 96 / 72 * self.dpi_scale)
         return ('Microsoft YaHei UI', -pixels, 'bold' if bold else 'normal')
 
@@ -1087,9 +1087,16 @@ class FloatingMonitor:
             tip.configure(bg=self.palette['line'])
             body=self.tk.Frame(tip,bg=self.BG)
             body.pack(fill='both',expand=True,padx=1,pady=1)
-            self.label(body,f"{host_label(host)} · {device.get('display_id',device_id)} · {status}",fg=color,
-                       font=('Microsoft YaHei UI',9,'bold'),wraplength=round(300*self.dpi_scale),justify='left').pack(anchor='w',padx=12,pady=(10,5))
-            self.label(body,'\n'.join(line for line in lines if line),wraplength=round(480*self.dpi_scale),justify='left').pack(anchor='w',padx=12,pady=(0,10))
+            wrap_length = round(288 * self.dpi_scale)
+            horizontal_padding = round(8 * self.dpi_scale)
+            vertical_padding = round(6 * self.dpi_scale)
+            title = f"{host_label(host)} · {device.get('display_id',device_id)} · {status}"
+            self.label(body, title, fg=color, font=self.canvas_font(9, bold=True),
+                       wraplength=wrap_length, justify='left').pack(
+                           anchor='w', padx=horizontal_padding, pady=(vertical_padding, round(2 * self.dpi_scale)))
+            self.label(body, '\n'.join(line for line in lines if line), font=self.canvas_font(8),
+                       wraplength=wrap_length, justify='left').pack(
+                           anchor='w', padx=horizontal_padding, pady=(0, vertical_padding))
             tip.update_idletasks()
             left,top,width,height=self.desktop_bounds()
             px=x if x+tip.winfo_reqwidth()<=left+width else x-24-tip.winfo_reqwidth()

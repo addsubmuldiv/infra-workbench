@@ -85,6 +85,43 @@ def test_hover_process_details_preserve_paths_and_all_processes():
     assert 'None' not in '\n'.join(process_tooltip_lines([dict(pid=9, name='python')]))
 
 
+@pytest.mark.parametrize('scale, title_size, body_size', [(1.0, -12, -11), (1.5, -18, -16)])
+def test_device_tooltip_uses_compact_pixel_sizes(scale, title_size, body_size):
+    from unittest.mock import Mock
+
+    from backend.desktop_host.floating_monitor import FloatingMonitor
+
+    monitor = FloatingMonitor.__new__(FloatingMonitor)
+    monitor.root = Mock()
+    monitor.tk = Mock()
+    monitor.canvas = Mock()
+    monitor.stop = Mock()
+    monitor.stop.is_set.return_value = False
+    monitor._tooltip_after = monitor._tooltip_window = monitor.resize_drag = None
+    monitor.error = ''
+    monitor.dpi_scale = scale
+    monitor.desktop_bounds = lambda: (0, 0, 1920, 1080)
+    monitor.palette = {'line': '#000'}
+    monitor.BG = monitor.INK = '#000'
+    monitor.COLORS = {'busy': ('#000', '#fff', '●', 'Busy')}
+    path = '/opt/' + 'training_environment_' * 5 + '/bin/python'
+    device = dict(id='0', name='A100', processes=[dict(pid=123, executable=path)])
+    monitor.hosts = [dict(id='a', target='host', snapshot=dict(fresh=True, devices=[device]))]
+    tip = monitor.tk.Toplevel.return_value
+    tip.winfo_reqwidth.return_value = 300
+    tip.winfo_reqheight.return_value = 120
+
+    monitor.device_tooltip(SimpleNamespace(x_root=100, y_root=100), 'a', '0')
+    monitor.root.after.call_args.args[1]()
+
+    title, body = [call.kwargs for call in monitor.tk.Label.call_args_list]
+    assert title['font'][1:] == (title_size, 'bold')
+    assert body['font'][1:] == (body_size, 'normal')
+    assert title['wraplength'] == body['wraplength'] == round(288 * scale)
+    assert path in body['text']
+    tip.deiconify.assert_called_once()
+
+
 def test_unknown_is_never_idle():
     assert device_status({'processes': [], 'processes_known': True}, False) == 'unknown'
     assert device_status({'processes': [], 'processes_known': False}, True) == 'unknown'
