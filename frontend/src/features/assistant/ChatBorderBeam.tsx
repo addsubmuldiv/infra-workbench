@@ -1,7 +1,7 @@
 import { memo, useId, type CSSProperties } from 'react';
 
 const perimeter = 1000;
-const beamLength = perimeter * 0.6;
+const beamLength = perimeter * 0.7;
 const segmentLength = 10;
 const segmentCount = beamLength / segmentLength;
 const halfOverlap = 0.15;
@@ -31,10 +31,13 @@ export const ChatBorderBeam = memo(function ChatBorderBeam() {
     <svg className="chat-input-beam" aria-hidden="true" focusable="false">
       <defs>
         <filter id={glowId} colorInterpolationFilters="sRGB">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="nearGlow" />
-          <feGaussianBlur in="SourceGraphic" stdDeviation="10" />
-          <feComponentTransfer result="farGlow">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3.8" />
+          <feComponentTransfer result="nearGlow">
             <feFuncA type="linear" slope="1.8" />
+          </feComponentTransfer>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="13" />
+          <feComponentTransfer result="farGlow">
+            <feFuncA type="linear" slope="2.9" />
           </feComponentTransfer>
           <feMerge>
             <feMergeNode in="farGlow" />
