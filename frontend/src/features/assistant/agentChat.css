@@ -189,8 +189,59 @@
 
 .chat-composer { flex: none; width: min(100%, calc(var(--chat-content-width) + 2 * var(--chat-gutter))); margin-inline: auto; padding: 8px var(--chat-gutter) 11px; }
 :root[data-theme] .agent-chat .chat-composer { background: none; box-shadow: none; backdrop-filter: none; }
-.chat-input-box { border: 1px solid var(--line); border-radius: 11px; background: var(--input); }
-.chat-input-box:focus-within { border-color: var(--accent); }
+.chat-input-box {
+  --chat-input-radius: 15px;
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--chat-input-radius);
+  background: var(--input);
+}
+.chat-input-box:is(:focus-within, [data-generating]) { border-color: var(--accent); }
+.chat-input-beam { display: none; }
+@supports (offset-path: inset(0 round 1px)) and (mask-composite: exclude) {
+  .chat-input-beam {
+    position: absolute;
+    inset: -1px;
+    display: block;
+    border-radius: inherit;
+    pointer-events: none;
+    /* Spread the masked stroke so the glow follows the same rounded corners. */
+    filter: drop-shadow(0 0 2px var(--chat-beam-color))
+      drop-shadow(0 0 5px var(--chat-beam-color))
+      drop-shadow(0 0 8px var(--chat-beam-color));
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+  .chat-input-beam-ring {
+    position: absolute;
+    inset: 0;
+    padding: 2px;
+    border-radius: inherit;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+  .chat-input-beam-ring::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: clamp(170px, 55%, 320px);
+    height: 148px;
+    background: radial-gradient(ellipse closest-side,
+      var(--chat-beam-peak), var(--chat-beam-color) 22%, var(--chat-beam-tail) 62%, transparent);
+    offset-path: inset(0 round var(--chat-input-radius));
+    offset-distance: 16%;
+    offset-rotate: 0deg;
+    animation: chat-input-beam-lap 3.2s linear infinite paused;
+  }
+  .chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam { opacity: 1; }
+  .chat-input-box:is(:focus-within, [data-generating]) .chat-input-beam-ring::before { animation-play-state: running; }
+  @keyframes chat-input-beam-lap { to { offset-distance: -84%; } }
+  @media (prefers-reduced-motion: reduce) {
+    .chat-input-beam { transition: none; }
+    .chat-input-beam-ring::before { animation: none; }
+  }
+  @media (forced-colors: active) { .chat-input-beam { display: none; } }
+}
 .chat-input-box .skill-message-input > textarea {
   display: block;
   width: 100%;

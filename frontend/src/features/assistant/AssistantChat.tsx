@@ -402,7 +402,8 @@ export function AssistantChat({status,statusError,selectedHostIds,openSettings}:
         <span role="status">{modelWarning?ui(modelWarning):status?t('配置模型后即可发送。也可以切换到本机 CLI。','Configure a model or switch to a local CLI to send messages.'):t('正在读取模型配置…','Checking model configuration…')}</span>
         {(status||statusError)&&<button type="button" className="chat-text-action" onClick={openSettings}>{t('配置模型','Configure model')}<ArrowUpRight size={13} aria-hidden="true"/></button>}
       </div>}
-      <div className="chat-input-box">
+      <div className="chat-input-box" data-generating={running||busy==='send'||undefined}>
+        <span className="chat-input-beam" aria-hidden="true"><span className="chat-input-beam-ring"/></span>
         {!!attachments.length&&<div className="chat-attachments">{attachments.map((item,index)=><div className="chat-attachment" key={index}>
           <details><summary><Paperclip size={14} aria-hidden="true"/><span>{item.label}</span><ChevronDown size={13} aria-hidden="true"/></summary>
             <small>{item.host_id} · {t('标签','Tab')} {item.terminal_id} · {t('会话','Session')} {item.session_id||t('临时','Temporary')} · {item.cwd||t('目录未知','Unknown directory')} · {item.captured_at} · {item.source==='selection'?t('选区','Selection'):t('当前屏幕','Visible screen')}{item.truncated?t(' · 已截断',' · Truncated'):''}</small>
