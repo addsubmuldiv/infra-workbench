@@ -27,7 +27,7 @@ if(bridge){
     const root=document.getElementById('root');if(root)root.inert=frozen;
     if(!frozen)return;
     const overlay=document.createElement('div');overlay.id='desktop-update-freeze';overlay.className='desktop-update-freeze';overlay.setAttribute('role','status');
-    overlay.textContent=switching?t('正在检查窗口状态并准备切换版本…','Checking open windows and preparing to switch editions…'):t('正在准备安装更新，请完成桌面确认窗口中的操作…','Preparing the update. Complete the desktop confirmation prompt…');document.body.append(overlay);
+    overlay.textContent=switching?t('正在检查窗口状态并准备切换版本…','Checking open windows and preparing to switch editions…'):t('正在准备安装更新。安装完成后应用会自动重新打开。','Preparing the update. The app will reopen automatically after installation.');document.body.append(overlay);
   };
 }
 function useUpdates(){useLocale();return useSyncExternalStore(updater.subscribe,updater.getSnapshot)}
@@ -72,7 +72,7 @@ export function DesktopUpdates(){
       {status.notes&&<details open><summary>{t('版本说明','Release notes')}</summary><Suspense fallback={null}><ReleaseNotes>{status.notes}</ReleaseNotes></Suspense></details>}
       {status.error&&<p role="alert" className="connection-error">{errorText(status.error)}</p>}
       <div className="desktop-update-actions"><button disabled={busy} onClick={()=>void updater.run('check')}>{t('检查更新','Check for updates')}</button>{ready&&<button className="primary" disabled={busy} onClick={()=>void updater.run(downloaded?'install':'download')}>{downloaded?t('安装并重启…','Install and restart…'):t('下载更新','Download update')}</button>}</div>
-      <p className="subtle">{t('安装前会请求确认。请先保存修改并关闭活动终端；更新保留本地机器、凭据和设置。','You will be asked to confirm installation. Save changes and close active terminals first. Local machines, credentials and settings are preserved.')}</p>
+      <p className="subtle">{t('确认后，应用会在后台安装更新并自动重启。请先保存修改并关闭活动终端。','After confirmation, the app installs the update in the background and restarts automatically. Save changes and close active terminals first.')}</p>
     <a href={RELEASES_URL} target="_blank" rel="noreferrer">{t('官方发布页面','Official releases')}</a>
   </div></section>;
 }

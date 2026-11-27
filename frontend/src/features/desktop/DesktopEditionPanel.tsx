@@ -71,12 +71,17 @@ export function DesktopEditionPanel(){
     <div className="settings-card">
       <p>{installed?t('当前使用安装版','You are using the installed edition'):t('当前使用开发版（源码）','You are using the development edition (source checkout)')}</p>
       {status.switch_supported&&<>
-        {installed||status.switch_available
-          ?<button type="button" className="secondary" disabled={busy||!status.switch_available} onClick={()=>void switchEdition()}>
+        <div className="desktop-update-actions">
+          <button type="button" className="secondary" disabled={busy||!status.switch_available}
+            aria-describedby={status.switch_available?undefined:'desktop-edition-switch-help'} onClick={()=>void switchEdition()}>
             {busy?t('正在切换…','Switching…'):action}
           </button>
-          :<a href={RELEASES_URL+'/latest'} target="_blank" rel="noreferrer">{t('下载安装版','Download the installed edition')}</a>}
-        {installed&&!status.switch_available&&<p className="settings-help">{t('构建并启动一次开发版后，即可从这里切换。','Build and open the development edition once to switch to it here.')}</p>}
+        </div>
+        {!status.switch_available&&<p className="settings-help" id="desktop-edition-switch-help">
+          {installed?t('构建并启动一次开发版后，即可从这里切换。','Build and open the development edition once to switch to it here.'):
+            t('本机尚未安装正式版。首次安装完成后，可从这里切换。','The installed edition is missing. You can switch here after installing it.')}
+        </p>}
+        {!installed&&!status.switch_available&&<a href={RELEASES_URL+'/latest'} target="_blank" rel="noreferrer">{t('下载安装版','Download the installed edition')}</a>}
       </>}
       {error&&<p role="alert" className="connection-error">{error}</p>}
     </div>
