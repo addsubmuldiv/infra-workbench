@@ -197,51 +197,42 @@
   background: var(--input);
 }
 .chat-input-box:is(:focus-within, [data-generating]) { border-color: var(--accent); }
-.chat-input-beam { display: none; }
-@supports (offset-path: inset(0 round 1px)) and (mask-composite: exclude) {
-  .chat-input-beam {
-    position: absolute;
-    inset: -1px;
-    display: block;
-    border-radius: inherit;
-    pointer-events: none;
-    /* Spread the masked stroke so the glow follows the same rounded corners. */
-    filter: drop-shadow(0 0 2px var(--chat-beam-color))
-      drop-shadow(0 0 5px var(--chat-beam-color))
-      drop-shadow(0 0 8px var(--chat-beam-color));
-    opacity: 0;
-    transition: opacity 180ms ease;
-  }
-  .chat-input-beam-ring {
-    position: absolute;
-    inset: 0;
-    padding: 2px;
-    border-radius: inherit;
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite: exclude;
-  }
-  .chat-input-beam-ring::before {
-    content: "";
-    position: absolute;
-    inset: 0 auto auto 0;
-    width: clamp(170px, 55%, 320px);
-    height: 148px;
-    background: radial-gradient(ellipse closest-side,
-      var(--chat-beam-peak), var(--chat-beam-color) 22%, var(--chat-beam-tail) 62%, transparent);
-    offset-path: inset(0 round var(--chat-input-radius));
-    offset-distance: 16%;
-    offset-rotate: 0deg;
-    animation: chat-input-beam-lap 3.2s linear infinite paused;
-  }
-  .chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam { opacity: 1; }
-  .chat-input-box:is(:focus-within, [data-generating]) .chat-input-beam-ring::before { animation-play-state: running; }
-  @keyframes chat-input-beam-lap { to { offset-distance: -84%; } }
-  @media (prefers-reduced-motion: reduce) {
-    .chat-input-beam { transition: none; }
-    .chat-input-beam-ring::before { animation: none; }
-  }
-  @media (forced-colors: active) { .chat-input-beam { display: none; } }
+.chat-input-beam {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 0 2px var(--chat-beam-color))
+    drop-shadow(0 0 5px var(--chat-beam-color))
+    drop-shadow(0 0 8px var(--chat-beam-color));
+  opacity: 0;
+  transition: opacity 180ms ease;
 }
+.chat-input-beam > rect {
+  x: 1px;
+  y: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  rx: calc(var(--chat-input-radius) - 1px);
+  fill: none;
+  stroke: var(--chat-beam-color);
+  stroke-width: 2px;
+  stroke-dashoffset: var(--chat-beam-offset);
+  animation: chat-input-beam-lap 3.2s linear infinite paused;
+}
+@supports (color: color-mix(in srgb, white, black)) {
+  .chat-input-beam > rect { stroke: var(--chat-beam-segment-color); }
+}
+.chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam { opacity: 1; }
+.chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam > rect { animation-play-state: running; }
+@keyframes chat-input-beam-lap { to { stroke-dashoffset: calc(var(--chat-beam-offset) + 1000px); } }
+@media (prefers-reduced-motion: reduce) {
+  .chat-input-beam { transition: none; }
+  .chat-input-beam > rect { animation: none; }
+}
+@media (forced-colors: active) { .chat-input-beam { display: none; } }
 .chat-input-box .skill-message-input > textarea {
   display: block;
   width: 100%;

@@ -12,6 +12,7 @@ import {ContextUsageMeter} from './ContextUsageMeter';
 import {ChatSessionPicker} from './ChatSessionPicker';
 import {ChatModelPicker} from './ChatModelPicker';
 import {ChatMenuButton} from './ChatMenuButton';
+import {ChatBorderBeam} from './ChatBorderBeam';
 import {workspaceStorage} from '../../workspace/workspaceState';
 import {useWorkspaceValue} from '../../workspace/workspaceHooks';
 import React,{useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
@@ -403,7 +404,7 @@ export function AssistantChat({status,statusError,selectedHostIds,openSettings}:
         {(status||statusError)&&<button type="button" className="chat-text-action" onClick={openSettings}>{t('配置模型','Configure model')}<ArrowUpRight size={13} aria-hidden="true"/></button>}
       </div>}
       <div className="chat-input-box" data-generating={running||busy==='send'||undefined}>
-        <span className="chat-input-beam" aria-hidden="true"><span className="chat-input-beam-ring"/></span>
+        <ChatBorderBeam/>
         {!!attachments.length&&<div className="chat-attachments">{attachments.map((item,index)=><div className="chat-attachment" key={index}>
           <details><summary><Paperclip size={14} aria-hidden="true"/><span>{item.label}</span><ChevronDown size={13} aria-hidden="true"/></summary>
             <small>{item.host_id} · {t('标签','Tab')} {item.terminal_id} · {t('会话','Session')} {item.session_id||t('临时','Temporary')} · {item.cwd||t('目录未知','Unknown directory')} · {item.captured_at} · {item.source==='selection'?t('选区','Selection'):t('当前屏幕','Visible screen')}{item.truncated?t(' · 已截断',' · Truncated'):''}</small>
