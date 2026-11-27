@@ -1,7 +1,7 @@
 import { memo, type CSSProperties } from 'react';
 
 const perimeter = 1000;
-const beamLength = perimeter * 2 / 5;
+const beamLength = perimeter * 0.6;
 const segmentLength = 10;
 const segmentCount = beamLength / segmentLength;
 const halfOverlap = 0.15;
