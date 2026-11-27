@@ -3,16 +3,12 @@ import {useEffect,useId,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {ArrowDown,Check,Link2,LoaderCircle,Plus,Unplug,X} from 'lucide-react';
 import {t,useLocale} from '../../shared/i18n';
-import {useAppConfirm} from '../../shared/AppConfirm';
 import './sshTunnels.css';
 
-export type TunnelRule={id:string;name:string;direction:'remote'|'local';local_port:number;remote_port:number;auto_reconnect:boolean;auto_start:boolean;before_vscode:boolean;has_connected?:boolean;status:string;error:string;error_code:string|null;connected_at:number|null;next_retry_at:number|null};
+export type TunnelRule={id:string;name:string;direction:'remote'|'local';local_port:number;remote_port:number;auto_reconnect:boolean;auto_start:boolean;before_vscode:boolean;has_connected?:boolean;status:string;error:string;error_code:string|null;connected_at:number|null;next_retry_at:number|null;port_conflict?:PortConflict};
 type Host={id:string;target:string;auth?:string;ssh_tunnels?:TunnelRule[];ssh_password?:{password_saved:boolean|null}};
 type Draft=Pick<TunnelRule,'name'|'direction'|'local_port'|'remote_port'|'auto_reconnect'|'auto_start'|'before_vscode'>;
-type PortConflict={status:'free'|'unverified';port:number}|{
-  status:'occupied';port:number;confirmation:string;process:{pid:number;uid:number;name:string};addresses:string[];
-};
-type PortRelease={status:'released'|'connected';rule:TunnelRule}|{status:'changed'|'unverified'|'still_occupied'};
+export type PortConflict={confirmation:string;process:{pid:number;uid:number;name:string};addresses:string[]};
 const defaults=():Draft=>({name:t('Codex 代理','Codex proxy'),direction:'remote',local_port:7890,remote_port:18899,auto_reconnect:true,auto_start:false,before_vscode:false});
 const running=(status:string)=>['connecting','connected','reconnecting'].includes(status);
 export function tunnelStatusText(status:string){return status==='connected'?t('已连接','Connected'):status==='connecting'?t('正在连接','Connecting'):status==='reconnecting'?t('正在重连','Reconnecting'):status==='error'?t('连接失败','Connection failed'):t('未连接','Disconnected')}
@@ -37,7 +33,6 @@ export function SSHTunnelButton({host,disabled=false}:{host:Host;disabled?:boole
 
 export function SSHTunnelPanel({host,close,onRules,onStarted=close,initialRuleId}:{host:Host;close:()=>void;onRules:(rules:TunnelRule[])=>void;onStarted?:()=>void;initialRuleId?:string}){
   useLocale();
-  const {confirm,confirmation}=useAppConfirm();
   const dialog=useRef<HTMLDialogElement>(null),title=useId(),description=useId();
   const [rules,setRules]=useState<TunnelRule[]>(host.ssh_tunnels??[]),[selected,setSelected]=useState<string|null>(null);
   const [starting,setStarting]=useState<string|null>(null);
@@ -68,8 +63,6 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close,initialRuleId
     return()=>clearTimeout(timer);
   },[confirming,starting,rule?.connected_at]);
   const dirty=!!rule&&Object.keys(draft).some(key=>draft[key as keyof Draft]!==rule[key as keyof Draft]);
-  const canInspectPort=loaded&&!dirty&&rule?.direction==='remote'&&rule.error_code==='FORWARD_REJECTED'
-    &&(rule.status==='reconnecting'||rule.status==='error');
   const update=<K extends keyof Draft>(key:K,value:Draft[K])=>{setDraft(old=>({...old,[key]:value}));setProbe(null)};
   async function act(action:()=>Promise<void>,refresh=true){
     if(acting.current)return;acting.current=true;setBusy(true);setError('');
@@ -93,48 +86,6 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close,initialRuleId
       }
     },!connect);
   }
-  async function inspectPort(rule:TunnelRule){
-    await act(async()=>{
-      const endpoint=`/${encodeURIComponent(rule.id)}/port-conflict`;
-      const conflict:PortConflict=await tunnelRequest(host.id,endpoint,'POST');
-      if(!mounted.current)return;
-      if(conflict.status==='free'){
-        setError(t(`远端端口 ${conflict.port} 当前没有冲突监听。如果仍然连不上，请检查服务端的 SSH 转发权限。`,
-          `Remote port ${conflict.port} has no conflicting listener. If the tunnel still fails, check SSH forwarding permissions on the server.`));
-        return;
-      }
-      if(conflict.status!=='occupied'){
-        setError(t(`远端端口 ${conflict.port} 存在监听，但当前 SSH 账号无法核实并结束单个占用进程。`,
-          `Remote port ${conflict.port} has a listener, but this SSH account could not verify and terminate a single owner.`));
-        return;
-      }
-      const {pid,uid,name}=conflict.process;
-      const addresses=conflict.addresses.join(', ');
-      const accepted=await confirm(t(
-        `${host.target} 上的 ${name}（PID ${pid}，UID ${uid}）正在监听 ${addresses}。结束该进程可能会中断它的其他连接。确认发送 SIGTERM 并在端口释放后重连隧道？`,
-        `${name} (PID ${pid}, UID ${uid}) on ${host.target} is listening on ${addresses}. Ending this process may interrupt its other connections. Send SIGTERM and reconnect after the port is released?`));
-      if(!accepted||!mounted.current)return;
-      const result:PortRelease=await tunnelRequest(host.id,endpoint+'/release','POST',{confirmation:conflict.confirmation});
-      if(!mounted.current)return;
-      switch(result.status){
-        case 'released':
-        case 'connected': {
-          const updated=withRule(rules,result.rule);
-          setRules(updated);
-          onRules(updated);
-          break;
-        }
-        case 'changed':
-          setError(t('监听进程或隧道配置已变化，或确认已超时。请重新检查端口。','The listener or tunnel configuration changed, or confirmation expired. Check the port again.'));
-          break;
-        case 'still_occupied':
-          setError(t('已发送 SIGTERM，远端端口仍有监听。请重新检查端口。','SIGTERM was sent. The remote port still has a listener. Check the port again.'));
-          break;
-        case 'unverified':
-          setError(t('当前 SSH 账号无法结束该进程。请重新检查端口及 SSH 账号权限。','This SSH account could not terminate the process. Check the remote port and the account permissions.'));
-      }
-    });
-  }
   const route=draft.direction==='remote'?[t('远端','Remote'),draft.remote_port,t('本机','Local'),draft.local_port]:[t('本机','Local'),draft.local_port,t('远端','Remote'),draft.remote_port];
   const elapsed=rule?.connected_at?Math.max(0,Math.floor((now/1000-rule.connected_at)/60)):0;
   return createPortal(<dialog ref={dialog} className="ssh-tunnel-panel" aria-labelledby={title} aria-describedby={description} onCancel={e=>{e.preventDefault();close()}}>
@@ -150,7 +101,6 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close,initialRuleId
         <div className="tunnel-route"><span>{route[0]} <code>127.0.0.1:{route[1]}</code></span><ArrowDown size={17}/><span>{route[2]} <code>127.0.0.1:{route[3]}</code></span></div>
         <div className="tunnel-status" role="status"><i className={'tunnel-dot '+(rule?.status??'stopped')}/><strong>{tunnelStatusText(rule?.status??'stopped')}</strong>{rule?.status==='connected'&&<span>{t(`运行 ${elapsed} 分钟`,`Active for ${elapsed} min`)}</span>}{rule?.status==='reconnecting'&&rule.next_retry_at&&<span>{t(`${Math.max(0,Math.ceil(rule.next_retry_at-now/1000))} 秒后重试`,`Retry in ${Math.max(0,Math.ceil(rule.next_retry_at-now/1000))}s`)}</span>}</div>
         {rule?.error&&<p className="tunnel-error" role="alert">{tunnelError(rule.error_code,rule.error)}</p>}
-        {canInspectPort&&<button type="button" className="secondary" disabled={busy} onClick={()=>void inspectPort(rule)}>{t('检查远端端口占用','Check remote port conflict')}</button>}
         {probe&&<p className={'tunnel-probe '+(probe.reachable===false?'failed':'')} role="status">{probeText(probe.reachable)}</p>}
         {host.auth==='password_session'&&host.ssh_password?.password_saved!==true&&<p className="tunnel-note">{t('独立隧道需要保存 SSH 密码。请在机器的 SSH 密码设置中保存后再连接。','Independent tunnels need a saved SSH password. Save it in the machine SSH password settings before connecting.')}</p>}
         <fieldset className="tunnel-options" disabled={busy||active||!loaded}><label><input type="checkbox" checked={draft.auto_reconnect} onChange={e=>update('auto_reconnect',e.target.checked)}/>{t('断线自动重连','Reconnect after network failure')}</label><label><input type="checkbox" checked={draft.auto_start} onChange={e=>update('auto_start',e.target.checked)}/>{t('软件启动时连接','Connect on app startup')}</label><label><input type="checkbox" checked={draft.before_vscode} onChange={e=>update('before_vscode',e.target.checked)}/>{t('打开 VS Code 前连接此隧道','Connect before opening VS Code')}</label></fieldset>
@@ -161,12 +111,11 @@ export function SSHTunnelPanel({host,close,onRules,onStarted=close,initialRuleId
       {selected&&!active&&<button className="text-button tunnel-delete" disabled={busy} onClick={()=>void act(async()=>{await tunnelRequest(host.id,`/${selected}`,'DELETE');if(mounted.current)choose(null)})}>{t('删除此配置','Delete configuration')}</button>}
       <p id={description} className="tunnel-footnote">{t('监听与目标地址均设为 127.0.0.1。关闭窗口后隧道继续在托盘后台运行，退出后台时断开。','Listening and target addresses are set to 127.0.0.1. Tunnels keep running in the tray after closing the window and disconnect when the backend exits.')}</p>
     </div>
-    {confirmation}
   </dialog>,document.body);
 }
 
 function probeText(reachable:boolean|null){return reachable===true?t('目标 TCP 端口可达；尚未验证代理协议或外网访问。','Target TCP port is reachable; proxy protocol and internet access have not been tested.'):reachable===false?t('目标 TCP 端口不可达，请确认对应服务正在运行。','Target TCP port is unreachable. Check that the service is running.'):t('隧道已连接，请通过本机监听端口验证远端服务。','Tunnel is connected. Use the local listening port to verify the remote service.')}
 export function tunnelError(code:string|null,fallback:string){
-  const messages:Record<string,[string,string]>={AUTH_REQUIRED:['SSH 认证失败，请配置免密登录或保存 SSH 密码。','SSH authentication failed. Configure key login or save the SSH password.'],HOST_KEY:['SSH 主机密钥未通过校验，请先核对机器身份。','SSH host key verification failed. Verify the machine identity.'],FORWARD_REJECTED:['监听端口被占用或服务器拒绝转发，请检查端口和 SSH 转发权限。','The listening port is occupied or forwarding was rejected. Check the port and SSH forwarding permissions.'],CONNECTION_LOST:['SSH 网络连接中断或超时。','SSH network connection was lost or timed out.'],CONNECTION_FAILED:['无法建立隧道，请检查 SSH 配置、认证和转发权限。','Could not establish the tunnel. Check SSH configuration, authentication and forwarding permissions.'],SSH_PASSWORD_UNAVAILABLE:['未保存 SSH 密码，请先在机器的 SSH 密码设置中保存。','No SSH password saved. Save it in the machine SSH password settings.'],CREDENTIAL_IDENTITY_CHANGED:['SSH 目标、账号或路由已变化，请重新保存密码。','The SSH target, user or route changed. Save the password again.']};
+  const messages:Record<string,[string,string]>={AUTH_REQUIRED:['SSH 认证失败，请配置免密登录或保存 SSH 密码。','SSH authentication failed. Configure key login or save the SSH password.'],HOST_KEY:['SSH 主机密钥未通过校验，请先核对机器身份。','SSH host key verification failed. Verify the machine identity.'],FORWARD_REJECTED:['监听端口被占用或服务器拒绝转发，请检查端口和 SSH 转发权限。','The listening port is occupied or forwarding was rejected. Check the port and SSH forwarding permissions.'],CONNECTION_LOST:['SSH 连接中断或超时，请检查机器和跳板是否可达。','SSH disconnected or timed out. Check that the machine and any jump host are reachable.'],CONNECTION_FAILED:['无法建立隧道，请检查 SSH 配置、认证和转发权限。','Could not establish the tunnel. Check SSH configuration, authentication and forwarding permissions.'],SSH_PASSWORD_UNAVAILABLE:['未保存 SSH 密码，请先在机器的 SSH 密码设置中保存。','No SSH password saved. Save it in the machine SSH password settings.'],CREDENTIAL_IDENTITY_CHANGED:['SSH 目标、账号或路由已变化，请重新保存密码。','The SSH target, user or route changed. Save the password again.']};
   const message=code?messages[code]:null;return message?t(...message):fallback;
 }
