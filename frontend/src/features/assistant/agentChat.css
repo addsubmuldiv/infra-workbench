@@ -204,14 +204,11 @@
   height: calc(100% + 2px);
   overflow: visible;
   pointer-events: none;
-  filter: drop-shadow(0 0 2px var(--chat-beam-color))
-    drop-shadow(0 0 6px var(--chat-beam-color))
-    drop-shadow(0 0 11px var(--chat-beam-color));
   clip-path: inset(0 round var(--chat-input-radius));
   opacity: 0;
   transition: opacity 180ms ease;
 }
-.chat-input-beam > rect {
+.chat-input-beam rect {
   x: 1px;
   y: 1px;
   width: calc(100% - 2px);
@@ -222,15 +219,15 @@
   stroke-dashoffset: var(--chat-beam-offset);
   animation: chat-input-beam-lap 3.2s linear infinite paused;
 }
-@supports (color: color-mix(in srgb, white, black)) {
-  .chat-input-beam > rect { stroke: var(--chat-beam-segment-color); }
+@supports (color: color-mix(in oklab, white, black)) {
+  .chat-input-beam rect { stroke: var(--chat-beam-segment-color); }
 }
 .chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam { opacity: 1; }
-.chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam > rect { animation-play-state: running; }
+.chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam rect { animation-play-state: running; }
 @keyframes chat-input-beam-lap { to { stroke-dashoffset: calc(var(--chat-beam-offset) + 1000px); } }
 @media (prefers-reduced-motion: reduce) {
   .chat-input-beam { transition: none; }
-  .chat-input-beam > rect { animation: none; }
+  .chat-input-beam rect { animation: none; }
 }
 @media (forced-colors: active) { .chat-input-beam { display: none; } }
 .chat-input-box .skill-message-input > textarea {
