@@ -48,6 +48,81 @@ def signal_process(pid, start_ticks, uid, name):
         os.close(fd)
 
 
+def tunnel_listeners(port):
+    output = subprocess.check_output(
+        ['ss', '-H', '-ltnpe', 'sport', '=', ':'+str(port)],
+        text=True, stderr=subprocess.DEVNULL, timeout=3,
+    )
+    listeners = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) < 5 or fields[0] != 'LISTEN':
+            continue
+        address = fields[3]
+        if address.rsplit(':', 1)[0] not in ('127.0.0.1', '0.0.0.0', '*', '[::]', '[::ffff:127.0.0.1]'):
+            continue
+        if 'v6only:1' in fields:
+            continue
+        owners = sorted(set(int(pid) for pid in re.findall(r'pid=(\d+),fd=\d+', line)))
+        inode = re.search(r'\bino:(\d+)\b', line)
+        listeners.append(dict(address=address, owners=owners, inode=inode[1] if inode else None))
+    return sorted(listeners, key=lambda row: (row['address'], row['inode'] or ''))
+
+
+def tunnel_port_owner(port):
+    listeners = tunnel_listeners(port)
+    if not listeners:
+        return dict(status='free')
+    owners = {pid for row in listeners for pid in row['owners']}
+    if len(owners) != 1 or any(not row['owners'] or not row['inode'] for row in listeners):
+        return dict(status='unverified')
+    pid = owners.pop()
+    if pid <= 1 or not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
+        return dict(status='unverified')
+    try:
+        fd = os.pidfd_open(pid)
+        try:
+            signal.pidfd_send_signal(fd, 0)
+            info = process_identity(pid)
+            # Avoid displaying process arguments, which can contain credentials.
+            info.pop('command')
+            info.pop('state')
+            info['name'] = (Path('/proc') / str(pid) / 'comm').read_text(errors='replace').strip()[:80]
+            signal.pidfd_send_signal(fd, 0)
+        finally:
+            os.close(fd)
+    except OSError:
+        return dict(status='unverified')
+    boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    return dict(status='occupied', process=info, listeners=listeners, boot_id=boot_id)
+
+
+def release_tunnel_port(port, expected):
+    pid = expected['process']['pid']
+    if pid <= 1:
+        return dict(status='changed')
+    try:
+        fd = os.pidfd_open(pid)
+    except ProcessLookupError:
+        return dict(status='changed')
+    try:
+        if tunnel_port_owner(port) != expected:
+            return dict(status='changed')
+        signal.pidfd_send_signal(fd, signal.SIGTERM)
+    except ProcessLookupError:
+        return dict(status='changed')
+    except PermissionError:
+        return dict(status='unverified')
+    finally:
+        os.close(fd)
+    deadline = time.monotonic() + 3
+    while tunnel_listeners(port):
+        if time.monotonic() >= deadline:
+            return dict(status='still_occupied')
+        time.sleep(.1)
+    return dict(status='released')
+
+
 def write_state(folder, value):
     temporary = folder/'state.tmp'
     temporary.write_text(json.dumps(value), encoding='utf-8')
@@ -180,6 +255,10 @@ def command_main(request, source):
         return process_identity(request['pid'])
     if action == 'signal':
         return signal_process(request['pid'], request['start_ticks'], request['uid'], request['signal'])
+    if action == 'inspect_tunnel_port':
+        return tunnel_port_owner(request['port'])
+    if action == 'release_tunnel_port':
+        return release_tunnel_port(request['port'], request['owner'])
     folder = job_folder(request['job_id'], create=action == 'start')
     if action == 'start':
         write_state(folder, dict(status='starting', started_at=time.time(), stdout_bytes=0, stderr_bytes=0))

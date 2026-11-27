@@ -1,6 +1,7 @@
 """Persistent tunnel rules; live connections belong to the backend, never a UI."""
 import asyncio
 import errno
+import json
 import logging
 import sqlite3
 import time
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.common.agent_errors import AgentError
 from backend.workspace.interface_language import tr
 from backend.mcp.mcp_output import page
+from backend.paths import PROBES_DIR
 from .ssh_accounts import ssh_account_key
 from .ssh_passwords import connection_identity
 from .tunnel_transport import NativeTunnel, PasswordTunnel, SessionTunnel, TargetAuthenticationFailure, TunnelFailure
@@ -31,6 +33,11 @@ class TunnelRequest(BaseModel):
     auto_reconnect: bool = True
     auto_start: bool = False
     before_vscode: bool = False
+
+
+class ReleasePortRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    confirmation: str = Field(pattern=r'^[a-f0-9]{32}$')
 
 
 def classify(exc):
@@ -59,6 +66,7 @@ class SSHTunnels:
         for rule in self.rules:
             rule.setdefault('before_vscode', False)
         self.states, self.tasks, self.connections = {}, {}, {}
+        self.port_confirmations = {}
         self.history_write_failures = set()
         self.lock = asyncio.Lock()
         self.removing = set()
@@ -128,6 +136,7 @@ class SSHTunnels:
             values = request.model_dump()
             if any(rule[key] != values[key] for key in ('direction', 'local_port', 'remote_port')):
                 self.states.pop(rule_id, None)
+                self.port_confirmations.pop(rule_id, None)
             rule.update(values)
             self.save()
             return self.view(rule)
@@ -263,28 +272,38 @@ class SSHTunnels:
 
     async def start(self, host_id, rule_id, *, notify_result=False):
         async with self.lock:
-            rule = self.rule(host_id, rule_id)
-            task = self.tasks.get(rule_id)
-            if task and not task.done(): return self.view(rule)
-            # Enforce collisions inside our manager before contacting the server.
-            for other in self.rules:
-                other_task = self.tasks.get(other['id'])
-                if other['id'] == rule_id or not other_task or other_task.done(): continue
-                if rule['direction'] == other['direction'] == 'local' and rule['local_port'] == other['local_port']:
-                    failure = TunnelFailure('LOCAL_PORT_IN_USE', '本机监听端口已被其他隧道使用')
-                elif rule['direction'] == other['direction'] == 'remote' and rule['host_id'] == other['host_id'] and rule['remote_port'] == other['remote_port']:
-                    failure = TunnelFailure('REMOTE_PORT_IN_USE', '这台机器的远端监听端口已被其他隧道使用')
-                else:
-                    continue
-                self.state(rule_id, 'error', str(failure), failure.code)
-                self.record_event(rule, 'failed', failure=failure)
-                raise failure
-            self.state(rule_id, 'connecting')
-            self.tasks[rule_id] = asyncio.create_task(self._run(rule, notify_result))
+            return self._start(self.rule(host_id, rule_id), notify_result)
+
+    def check_port_collision(self, rule):
+        for other in self.rules:
+            task = self.tasks.get(other['id'])
+            if other['id'] == rule['id'] or not task or task.done():
+                continue
+            if rule['direction'] == other['direction'] == 'local' and rule['local_port'] == other['local_port']:
+                raise TunnelFailure('LOCAL_PORT_IN_USE', '本机监听端口已被其他隧道使用')
+            if (rule['direction'] == other['direction'] == 'remote' and rule['host_id'] == other['host_id']
+                    and rule['remote_port'] == other['remote_port']):
+                raise TunnelFailure('REMOTE_PORT_IN_USE', '这台机器的远端监听端口已被其他隧道使用')
+
+    def _start(self, rule, notify_result):
+        rule_id = rule['id']
+        task = self.tasks.get(rule_id)
+        if task and not task.done():
             return self.view(rule)
+        try:
+            self.check_port_collision(rule)
+        except TunnelFailure as failure:
+            self.state(rule_id, 'error', str(failure), failure.code)
+            self.record_event(rule, 'failed', failure=failure)
+            raise
+        self.port_confirmations.pop(rule_id, None)
+        self.state(rule_id, 'connecting')
+        self.tasks[rule_id] = asyncio.create_task(self._run(rule, notify_result))
+        return self.view(rule)
 
     async def _stop(self, rule, reason=None):
         rule_id = rule['id']
+        self.port_confirmations.pop(rule_id, None)
         was_connected = rule_id in self.connections
         task = self.tasks.pop(rule_id, None)
         if task:
@@ -332,6 +351,81 @@ class SSHTunnels:
                 if not isinstance(error, Error):
                     raise
             return dict(reachable=False, message='目标 TCP 端口不可达，请确认对应服务正在运行')
+
+    def rejected_remote_rule(self, host_id, rule_id):
+        rule = self.rule(host_id, rule_id)
+        state = self.view(rule)
+        if (rule['direction'] != 'remote' or state['error_code'] != 'FORWARD_REJECTED'
+                or state['status'] not in ('reconnecting', 'error')):
+            raise ValueError(tr('当前隧道没有远端监听错误，请刷新状态后再试。',
+                                'This tunnel has no remote listening error. Refresh its status and try again.'))
+        return rule
+
+    async def port_operation(self, host, config, request):
+        source = (PROBES_DIR/'command_probe.py').read_text(encoding='utf-8')
+        source += f'\nprint("IWB_PORT:" + json.dumps(command_main({request!r}, "")))\n'
+        try:
+            code, out, _ = await self.ssh.run_bound(host, 'python3 -', source, config)
+            if code == 255 and request['action'] == 'inspect_tunnel_port':
+                await self.passwords.restore_session(host, fallback=True)
+                session = self.ssh.sessions.get(ssh_account_key(host))
+                if session and not session.is_closed():
+                    code, out, _ = await self.ssh.run_bound(host, 'python3 -', source, config)
+            if code == 0:
+                line = next(line for line in reversed(out.splitlines()) if line.startswith('IWB_PORT:'))
+                return json.loads(line.removeprefix('IWB_PORT:'))
+        except (StopIteration, ValueError, OSError, TimeoutError, AgentError):
+            pass
+        except Exception as error:
+            from asyncssh import Error
+            if not isinstance(error, Error):
+                raise
+        if request['action'] == 'release_tunnel_port':
+            raise ValueError(tr('未能确认结束进程的结果，请重新检查远端端口。',
+                                'Could not confirm the termination result. Check the remote port again.'))
+        raise ValueError(tr('无法检查远端监听。请检查 SSH 连接，并确认服务器有 Python 3 和 ss。',
+                            'Could not inspect remote listeners. Check the SSH connection and verify that Python 3 and ss are installed.'))
+
+    async def inspect_remote_port(self, host_id, rule_id):
+        port = self.rejected_remote_rule(host_id, rule_id)['remote_port']
+        host = self.host(host_id)
+        await self.passwords.restore_session(host)
+        config = await self.ssh.effective(host)
+        owner = await self.port_operation(host, config, dict(action='inspect_tunnel_port', port=port))
+        async with self.lock:
+            rule = self.rejected_remote_rule(host_id, rule_id)
+            if rule['remote_port'] != port or self.host(host_id) is not host:
+                raise ValueError(tr('隧道配置已变化，请重新检查端口。', 'The tunnel configuration changed. Check the port again.'))
+            self.port_confirmations.pop(rule_id, None)
+            if owner['status'] != 'occupied':
+                return dict(status=owner['status'], port=port)
+            confirmation = uuid.uuid4().hex
+            self.port_confirmations[rule_id] = (confirmation, time.monotonic()+120, port, connection_identity(config), owner)
+            return dict(status='occupied', port=port, confirmation=confirmation,
+                        process=owner['process'], addresses=[row['address'] for row in owner['listeners']])
+
+    async def release_remote_port(self, host_id, rule_id, confirmation):
+        async with self.lock:
+            rule = self.rejected_remote_rule(host_id, rule_id)
+            pending = self.port_confirmations.get(rule_id)
+            if not pending or pending[0] != confirmation:
+                return dict(status='changed')
+            self.port_confirmations.pop(rule_id)
+            _, expires, port, identity, owner = pending
+            if time.monotonic() >= expires or rule['remote_port'] != port:
+                return dict(status='changed')
+            self.check_port_collision(rule)
+            host = self.host(host_id)
+            config = await self.ssh.effective(host)
+            if connection_identity(config) != identity:
+                return dict(status='changed')
+            result = await self.port_operation(host, config, dict(action='release_tunnel_port', port=port, owner=owner))
+            if self.view(rule)['status'] == 'connected':
+                return dict(status='connected', rule=self.view(rule))
+            if result['status'] != 'released':
+                return result
+            await self._stop(rule)
+            return dict(status='released', rule=self._start(rule, notify_result=True))
 
     async def startup(self):
         for rule in list(self.rules):
@@ -406,3 +500,11 @@ def register_ssh_tunnels(app, store, ssh, hosts, passwords, *, on_result):
     @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/probe')
     async def probe_tunnel(host_id: str, rule_id: str):
         return await invoke(manager.probe, host_id, rule_id)
+
+    @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict')
+    async def inspect_port_conflict(host_id: str, rule_id: str):
+        return await invoke(manager.inspect_remote_port, host_id, rule_id)
+
+    @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict/release')
+    async def release_port_conflict(host_id: str, rule_id: str, body: ReleasePortRequest):
+        return await invoke(manager.release_remote_port, host_id, rule_id, body.confirmation)

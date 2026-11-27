@@ -17,6 +17,96 @@ def test_validation():
             TunnelRequest(**(dict(name='Proxy', local_port=7890, remote_port=18899) | fields))
 
 
+def test_remote_port_recovery_requires_a_scoped_confirmation_and_reconnects(tmp_path, monkeypatch):
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from backend.app import create_app
+    from backend.ssh.tunnel_transport import TunnelFailure
+
+    app = create_app(tmp_path, start_poll=False)
+    app.state.hosts.extend([dict(id='a', target='a', auth='key'), dict(id='b', target='b', auth='key')])
+    manager = app.state.ssh_tunnels
+    manager.retry_delays = (60,)
+    owner = dict(status='occupied', process=dict(pid=42, uid=1000, name='sshd', start_ticks='123'),
+                 boot_id='test', listeners=[dict(address='127.0.0.1:18899', owners=[42], inode='8')])
+    occupied, replace_listener = True, False
+    releases = []
+
+    class Transport:
+        async def wait_closed(self):
+            await asyncio.Future()
+
+        async def close(self):
+            pass
+
+    async def open_transport(host, rule):
+        if occupied:
+            raise TunnelFailure('FORWARD_REJECTED', 'test port conflict')
+        return Transport()
+
+    async def effective(host):
+        return dict(hostname=host['target'], port='22', user='test')
+
+    async def run_bound(host, command, source, config):
+        nonlocal occupied
+        assert host['id'] == 'a' and command == 'python3 -' and config['hostname'] == 'a'
+        if "'action': 'release_tunnel_port'" in source:
+            assert repr(owner) in source
+            releases.append(host['id'])
+            if replace_listener:
+                result = dict(status='changed')
+            else:
+                occupied = False
+                result = dict(status='released')
+        else:
+            assert "'action': 'inspect_tunnel_port', 'port': 18899" in source
+            result = owner
+        return 0, 'IWB_PORT:'+json.dumps(result), ''
+
+    monkeypatch.setattr(manager, 'open_transport', open_transport)
+    monkeypatch.setattr(manager.ssh, 'effective', effective)
+    monkeypatch.setattr(manager.ssh, 'run_bound', run_bound)
+    with TestClient(app, headers={'X-IWB': '1'}) as client:
+        base = '/api/hosts/a/tunnels'
+        rule = client.post(base, json=dict(name='Proxy', local_port=7890, remote_port=18899)).json()
+        tunnel = f"{base}/{rule['id']}"
+        conflict = tunnel+'/port-conflict'
+        release = conflict+'/release'
+        assert client.post(conflict).status_code == 400
+        client.post(tunnel+'/start').raise_for_status()
+
+        def wait_for(status):
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if client.get(base).json()[0]['status'] == status:
+                    return
+                time.sleep(.01)
+            pytest.fail(f'Tunnel did not reach {status}')
+
+        wait_for('reconnecting')
+        assert client.post(release, json=dict(confirmation='0'*32)).json() == dict(status='changed')
+        inspection = client.post(conflict).json()
+        assert inspection['process']['pid'] == 42
+        confirmed = dict(confirmation=inspection['confirmation'])
+        assert client.post(release.replace('/a/', '/b/'), json=confirmed).status_code == 400
+        assert releases == []
+
+        replace_listener = True
+        assert client.post(release, json=confirmed).json() == dict(status='changed')
+        assert client.post(release, json=confirmed).json() == dict(status='changed')
+        assert releases == ['a']
+        assert client.get(base).json()[0]['status'] == 'reconnecting'
+
+        replace_listener = False
+        confirmed = dict(confirmation=client.post(conflict).json()['confirmation'])
+        recovered = client.post(release, json=confirmed).json()
+        assert recovered['status'] == 'released'
+        wait_for('connected')
+        assert releases == ['a', 'a']
+
+
 def test_roundtrips_ownership_and_cleanup(tmp_path):
     class Server(asyncssh.SSHServer):
         def begin_auth(self, username): return False
