@@ -27,6 +27,7 @@ from .ssh.ssh_tunnels import register_ssh_tunnels
 from .ssh.vscode import register_vscode
 from .ssh.ssh_config_export import register_ssh_config_export
 from .ssh.ssh import SSHService
+from .ssh.host_addresses import SSHHostAddresses
 from .monitoring.probe_cache import ProbeCache
 from .monitoring.polling import FleetSchedule
 from .workspace.state_changes import StateChanges
@@ -184,6 +185,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     data = Path(data or os.environ.get('IWB_DATA', str(ROOT/'data')))
     store = Store(data/'workbench.db')
     ssh = SSHService(data)
+    ssh_addresses = SSHHostAddresses(ssh, state_changes.publish)
     ssh_passwords = SSHPasswords(ssh, ssh_credential_store if ssh_credential_store is not None else create_credential_store('InfraWorkbench/ssh/'))
     sudo = SudoService(ssh, credential_store if credential_store is not None else create_credential_store(),
                        ssh_passwords.password_for)
@@ -521,6 +523,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             await asyncio.gather(*collect_tasks.values(),return_exceptions=True)
             await app.state.ssh_tunnels.close()
             await app.state.port_forwarding.close()
+            await ssh_addresses.close()
             await ssh.close()
             resource_stats.close()
             store.db.close()
@@ -656,8 +659,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 sections = section_views(snap, now, reservations.max_sample_gap)
                 public_host = {key: value for key, value in host.items()
                                if key not in ('ssh_accounts', 'ssh_default_account_id', 'ssh_interactive_account_id',
-                                              'sudo_identity', 'sudo_identities')}
-                items.append(dict(**public_host, ssh_logins=ssh_account_summary(host), collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
+                                              'sudo_identity', 'sudo_identities', 'ssh_hostname')}
+                items.append(dict(**public_host, ssh_hostname=ssh_addresses.get(host), ssh_logins=ssh_account_summary(host), collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})
@@ -864,6 +867,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         rules[:] = [r for r in rules if r['host_id'] != host_id]
         reservations.remove_host(host_id)
         ssh.close_machine_sessions(host_id)
+        ssh_addresses.discard(host_id)
         probe.slow.pop(host_id, None)
         probe.details.pop(host_id, None)
         probe.stats.pop(host_id, None)

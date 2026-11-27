@@ -40,6 +40,33 @@ def test_alias_lookup_keeps_targets_and_duplicate_candidates():
     assert resolve_host(hosts,'a')['id']=='a'
 
 
+def test_state_exposes_configured_hostnames_without_reconnecting(tmp_path, monkeypatch):
+    app = create_app(tmp_path, start_poll=False)
+    app.state.hosts.extend([
+        dict(id='jump-target', target='worker-via-jump', manual=False),
+        dict(id='direct', target='192.0.2.9', manual=True),
+        dict(id='missing', target='missing-alias', manual=False),
+    ])
+    calls = []
+
+    async def effective(host):
+        calls.append(host['id'])
+        if host['id'] == 'missing':
+            raise ValueError('bad config')
+        return {'hostname': '192.0.2.17', 'proxyjump': 'jump-box'}
+
+    monkeypatch.setattr(app.state.ssh, 'effective', effective)
+    with TestClient(app) as client:
+        cursor = client.get('/api/state/changes').json()
+        client.get('/api/state')
+        assert client.get('/api/state/changes', params=cursor).json()['revision'] > cursor['revision']
+        hosts = client.get('/api/state').json()['hosts']
+        assert [host['ssh_hostname'] for host in hosts] == ['192.0.2.17', '192.0.2.9', None]
+        assert hosts[0]['target'] == 'worker-via-jump'
+        assert sorted(calls) == ['jump-target', 'missing']
+        assert 'ssh_hostname' not in client.get('/api/state', headers={'X-IWB-MCP': '1'}).json()['hosts'][0]
+
+
 def test_mcp_alias_lookup_respects_scope(tmp_path):
     async def run():
         app=fixture_app(tmp_path)

@@ -95,6 +95,14 @@ test('overview remains global when selecting a different machine or clearing the
   h.button('清空').props.onClick();h.render();assert.deepEqual(h.metrics(),['2/ 3','14个设备','2台机器','0条']);assert.equal(h.finderCount(),'2');
 });
 
+test('single-machine details show the configured SSH address after the login method',t=>{
+  const h=harness(t,'#overview',[],[{...hosts[0],ssh_hostname:'192.0.2.17'}]);
+  h.render();
+  h.button('只看机器 alpha').props.onClick();h.render();
+  const heading=h.find(n=>n.props?.className==='machine-name');
+  assert.match(h.text(heading),/SSH 免密连接 · SSH 地址 192\.0\.2\.17/);
+});
+
 test('bulk deletion uses checked machines even when the sidebar category hides them',t=>{
   const h=harness(t);h.render();
   h.button('清空').props.onClick();h.render();

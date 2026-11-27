@@ -10,6 +10,7 @@
   .shell[data-sidebar-wide="true"]>.sidebar .host-picker-row>button>span:nth-child(2){display:flex;align-items:center;gap:12px}
   .shell[data-sidebar-wide="true"]>.sidebar .host-picker-row strong{flex:1;min-width:0}
   .shell[data-sidebar-wide="true"]>.sidebar .host-picker-row small{margin-top:0;flex-shrink:0;white-space:nowrap}
+  .shell[data-sidebar-wide="true"]>.sidebar .host-picker-row .host-row-address{flex-shrink:1}
   .shell[data-sidebar-wide="true"]>.sidebar .host-usage{flex-wrap:nowrap;gap:8px}
 }
 @media(max-width:800px){.sidebar-resizer{display:none}}
@@ -58,6 +59,12 @@
 }
 
 .sidebar-hosts{container:sidebar-hosts / inline-size}
+
+@media (max-height:820px){
+  @container sidebar-hosts (width > 268px){
+    .cluster-picker .host-picker-row>.host-row-main .host-row-address{display:block}
+  }
+}
 
 /* The separator changes the sidebar width without changing the viewport. */
 @container sidebar-hosts (max-width: 268px){

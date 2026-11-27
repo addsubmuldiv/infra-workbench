@@ -1,5 +1,5 @@
 export type Cluster={id:string;name:string;revision:number;host_ids:string[]};
-export type ClusterHost={id:string;target:string;alias?:string;user:string|null;snapshot:{fresh:boolean;status:string;devices:{kind:string}[]}};
+export type ClusterHost={id:string;target:string;alias?:string;ssh_hostname?:string|null;user:string|null;snapshot:{fresh:boolean;status:string;devices:{kind:string}[]}};
 export type BatchItem={id:string;host_id:string;name:string;status:string;error?:string;exit_code?:number|null;updated?:number};
 export type ClusterBatch={id:string;batch_id?:string;cluster_id:string;cluster_name?:string;status:string;paused?:boolean;command?:string;cwd?:string;sudo?:boolean;timeout_seconds?:number;concurrency?:number;items:BatchItem[]};
 export async function clusterApi(path:string,method='GET',body?:unknown){

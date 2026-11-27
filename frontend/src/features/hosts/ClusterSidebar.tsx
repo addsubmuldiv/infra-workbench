@@ -42,7 +42,7 @@ function hostStatus({fresh,status}:ClusterHost['snapshot']){
   default:return status;
  }
 }
-export function ClusterSidebar<T extends ClusterHost>({hosts,selected,select,search,setSearch,category,setCategory,copyName,remove,command,terminal,history,reserve,resources}:{hosts:T[];selected:string[]|null;select:(ids:string[]|null,direct?:boolean)=>void;search:string;setSearch:(s:string)=>void;category:HostCategory;setCategory:(s:HostCategory)=>void;copyName:(name:string)=>void;remove:(h:T)=>void;command:(c:Cluster)=>void;terminal:(c:Cluster)=>void;history:()=>void;reserve?:(c:Cluster)=>void;resources?:(c:Cluster)=>void}){
+export function ClusterSidebar<T extends ClusterHost>({hosts,selected,select,search,setSearch,category,setCategory,showHostAddresses,copyName,remove,command,terminal,history,reserve,resources}:{hosts:T[];selected:string[]|null;select:(ids:string[]|null,direct?:boolean)=>void;search:string;setSearch:(s:string)=>void;category:HostCategory;setCategory:(s:HostCategory)=>void;showHostAddresses:boolean;copyName:(name:string)=>void;remove:(h:T)=>void;command:(c:Cluster)=>void;terminal:(c:Cluster)=>void;history:()=>void;reserve?:(c:Cluster)=>void;resources?:(c:Cluster)=>void}){
  const items=useRef<HTMLDivElement>(null);
  useLocale();const [clusters,setClusters]=useState<Cluster[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[edit,setEdit]=useState<{kind:'create'|'rename'|'members'|'delete';cluster?:Cluster}|null>(null),[name,setName]=useState(''),[members,setMembers]=useState<string[]>([]),[move,setMove]=useState('');
  const [collapsed,setCollapsed]=useState<Record<string,boolean>>(()=>{try{return JSON.parse(workspaceStorage?.getItem('cluster-collapse')||'{}')}catch{return {}}});
@@ -67,17 +67,19 @@ export function ClusterSidebar<T extends ClusterHost>({hosts,selected,select,sea
  {!collapsed[g.id]&&!g.matching.length&&<p className="cluster-empty">{g.all.length?t('没有符合当前筛选条件的机器。','No machines match the current filters.'):t('此集群暂无机器。','This cluster has no machines.')}</p>}
  {!collapsed[g.id]&&g.matching.map(h=>{
   const name=h.alias||h.target;
+  const address=h.ssh_hostname??h.target;
+  const showAddress=showHostAddresses&&address!==name;
   const copyLabel=t(`复制机器名称 ${name}`,`Copy machine name ${name}`);
   const status=hostStatus(h.snapshot);
   const hasDeviceSample=h.snapshot.fresh||h.snapshot.devices.length>0;
   const details=hasDeviceSample?`${h.snapshot.devices.length} ${t('设备','devices')} · ${status}`:status;
-  const title=[name,name!==h.target?h.target:null,details].filter(Boolean).join('\n');
+  const title=[name,showAddress?address:null,details].filter(Boolean).join('\n');
   const usage=deviceUsage(h.snapshot as unknown as Parameters<typeof deviceUsage>[0]);
   return <div key={h.id} className={'host-picker-row '+(chosen.has(h.id)?'selected':'')}>
    <input type="checkbox" aria-label={t('显示机器 ','Show machine ')+h.target} checked={chosen.has(h.id)} onChange={()=>toggle([h.id])}/>
    <button className="host-row-main" title={title} aria-label={t('只看机器 ','Show only machine ')+h.target} onClick={()=>select([h.id],true)}>
     <span className={'host-dot '+(h.snapshot.fresh?'online':'')}/>
-    <span><strong>{name}</strong>{h.alias&&<small className="host-row-address">{h.target}</small>}
+    <span><strong>{name}</strong>{showAddress&&<small className="host-row-address">{address}</small>}
      <small className="host-row-status" data-fresh={h.snapshot.fresh}>{hasDeviceSample&&<span className="host-row-device-count">{h.snapshot.devices.length} {t('设备','devices')} · </span>}{status}</small>
      {hasDeviceSample&&<small className="host-usage"><span className="occupied">{t('占用 ','In use ')}<b>{usage.occupied}</b></span><span className="idle">{t('空闲 ','Idle ')}<b>{usage.idle}</b></span>{usage.unknown>0&&<span>{t('未知 ','Unknown ')}<b>{usage.unknown}</b></span>}{usage.abnormal>0&&<span className="abnormal">{t('异常 ','Abnormal ')}<b>{usage.abnormal}</b></span>}</small>}
     </span>

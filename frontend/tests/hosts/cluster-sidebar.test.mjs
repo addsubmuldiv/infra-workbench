@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import ts from 'typescript';
 import {clusterGroups,selectionState} from '../../src/features/hosts/clusterApi.ts';
 import {HOST_CATEGORIES,filterHosts} from '../../src/features/hosts/hostList.ts';
-function harness(category='全部',alias){
+function harness(category='全部',alias,ssh_hostname,showHostAddresses=true,target='machine'){
  const values=[];let cursor=0;
  const react={createElement:(type,props,...children)=>({type,props:{...props,children}}),useEffect(){},useRef:current=>({current}),useState:initial=>{const i=cursor++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],next=>{values[i]=typeof next==='function'?next(values[i]):next}]}};
  const source=fs.readFileSync(new URL('../../src/features/hosts/ClusterSidebar.tsx',import.meta.url),'utf8');
@@ -12,7 +12,7 @@ function harness(category='全部',alias){
  const exports={};
  new Function('require','exports',js)(name=>({'react':react,'react-dom':{},'../../shared/i18n':{t:zh=>zh,useLocale(){}},'../../shared/OverlayScrollbar':{OverlayScrollbar:'OverlayScrollbar'},'./hostList':{HOST_CATEGORIES,filterHosts},'./clusterApi':{clusterGroups,selectionState},'../monitoring/hostUsage':{deviceUsage:()=>({occupied:0,idle:0,unknown:0,abnormal:0})},'../onboarding/demoBootstrap':{isDemo:true},'../../workspace/workspaceState':{workspaceStorage:{getItem:()=>null,setItem(){}}}}[name]??{}),exports);
  let selectionCalls=0;const copied=[];
- const props={hosts:[{id:'a',target:'machine',alias,snapshot:{fresh:false,status:'offline',devices:[]}}],selected:null,category,search:'',select(){selectionCalls++},copyName:name=>copied.push(name),setSearch:s=>{props.search=s},setCategory:c=>{props.category=c}};
+ const props={hosts:[{id:'a',target,alias,ssh_hostname,snapshot:{fresh:false,status:'offline',devices:[]}}],selected:null,category,search:'',showHostAddresses,select(){selectionCalls++},copyName:name=>copied.push(name),setSearch:s=>{props.search=s},setCategory:c=>{props.category=c}};
  const render=()=>{cursor=0;return exports.ClusterSidebar(props)};
  return {render,copied,get selectionCalls(){return selectionCalls}};
 }
@@ -45,6 +45,16 @@ test('machine details stay available when the compact layout truncates the name'
  assert.ok(!nodes(machine).some(n=>n.props.className==='host-usage'));
  machine.props.onClick();
  assert.equal(h.selectionCalls,1);
+});
+test('the list shows the configured SSH address for an imported alias and honors the display preference',()=>{
+ const address='192.0.2.17';
+ for(const [alias,visible] of [[undefined,true],['Training host',true],[undefined,false]]){
+  const machine=nodes(harness('全部',alias,address,visible).render()).find(n=>n.props.className==='host-row-main');
+  assert.equal(nodes(machine).find(n=>n.props.className==='host-row-address')?.props.children[0],visible?address:undefined);
+  assert.equal(machine.props.title.includes(address),visible);
+ }
+ const direct=nodes(harness('全部',undefined,address,true,address).render());
+ assert.ok(!direct.some(n=>n.props.className==='host-row-address'));
 });
 test('group name toggles members without changing machine selection',()=>{
  const h=harness();let tree=h.render();

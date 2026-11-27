@@ -119,6 +119,7 @@ header{background:var(--panel);border-color:var(--line);position:sticky;top:0;z-
 .machine-heading{padding:16px 18px;gap:10px;flex-wrap:wrap}
 .machine-name h3{font-size:13px;color:var(--text)}
 .machine-name p{color:var(--muted);font-size:10px}
+.machine-ssh-address{overflow-wrap:anywhere}
 .machine-icon{background:var(--panel2);border-color:var(--line);color:var(--muted);width:34px;height:34px}
 .badge{background:var(--panel2);border-color:var(--line);color:var(--muted)}
 .badge.green{color:var(--green);background:var(--accent-bg);border-color:transparent}

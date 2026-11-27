@@ -74,6 +74,12 @@
 .cluster-picker .host-row-main:focus-visible {
   outline-offset: -2px;
 }
+.cluster-picker .host-row-address {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cluster-picker .host-picker-row > :is(.host-copy-button, .host-remove-button) {
   flex: 0 0 24px;
   width: 24px;

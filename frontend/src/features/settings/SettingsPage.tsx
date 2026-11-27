@@ -26,7 +26,7 @@ function readNavigation():Navigation{
   return defaults;
 }
 
-export default function SettingsPage(){
+export default function SettingsPage({showHostAddresses,onShowHostAddressesChange}:{showHostAddresses:boolean;onShowHostAddressesChange:(show:boolean)=>void}){
   useLocale();
   const [navigation,setNavigation]=useState(()=>location.hash===modelSettingsHash
     ?{...readNavigation(),category:'ai' as const,ai:'models' as const}:readNavigation());
@@ -34,7 +34,7 @@ export default function SettingsPage(){
   // Keep visited forms mounted so switching categories preserves unsaved edits.
   const [visited,setVisited]=useState(()=>new Set<string>([activePanel]));
   const categories=[
-    {id:'general',Icon:SlidersHorizontal,label:t('通用','General'),description:t('语言、启动方式与桌面浮窗。','Language, launch preferences and desktop monitor.')},
+    {id:'general',Icon:SlidersHorizontal,label:t('通用','General'),description:t('语言、机器列表、启动方式与桌面浮窗。','Language, machine list, launch preferences and desktop monitor.')},
     {id:'ai',Icon:Sparkles,label:t('AI 助手','AI assistant'),description:t('配置模型连接与助手技能。','Configure model connections and assistant skills.')},
     {id:'integrations',Icon:Plug,label:t('集成服务','Integrations'),description:t('连接 MCP 服务与邮件通知。','Connect MCP services and email notifications.')},
     {id:'about',Icon:Info,label:t('关于与帮助','About and help'),description:t('应用信息与使用指引。','App information and getting started.')},
@@ -55,7 +55,12 @@ export default function SettingsPage(){
     return()=>{window.removeEventListener('iwb:show-update-settings',showUpdates);window.removeEventListener('hashchange',showModels)};
   },[]);
   const panels:Record<string,()=>ReactNode>={
-    general:()=> <><LanguageSettings/><LaunchSettingsPage/></>,
+    general:()=> <><LanguageSettings/><section className="settings-page" aria-labelledby="settings-host-list-heading">
+      <div className="settings-card">
+        <h2 id="settings-host-list-heading">{t('机器列表','Machine list')}</h2>
+        <label className="checkbox-label settings-host-addresses"><input type="checkbox" checked={showHostAddresses} onChange={event=>onShowHostAddressesChange(event.target.checked)}/>{t('在列表中显示 SSH 地址','Show SSH addresses in the list')}</label>
+      </div>
+    </section><LaunchSettingsPage/></>,
     models:()=> <AgentSettingsPage/>,skills:()=> <SkillsSettings/>,
     mcp:()=> <MCPSettings/>,mail:()=> <MailSettingsPage/>,
     about:()=> <><DesktopUpdates/><section className="settings-card settings-help-card"><h2>{t('帮助与演示','Help and demo')}</h2><p className="settings-help"><button type="button" className="secondary" onClick={()=>window.dispatchEvent(new Event('iwb:replay-getting-started'))}>{t('重播新手引导','Replay getting-started guide')}</button></p><p className="settings-help"><a href="?demo=1">{t('体验演示与新手引导（无需服务器）','Try the demo and guided tour (no server required)')}</a></p></section></>,

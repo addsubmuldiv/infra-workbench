@@ -18,12 +18,21 @@ function harness(t,saved,hash=''){
   const exports={};const components={};
   new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='react/jsx-runtime'?{jsx:(type,props,key)=>({type,key,props}),jsxs:(type,props,key)=>({type,key,props})}:name==='lucide-react'?{}:name==='../../workspace/navigation'?{modelSettingsHash}:components[name]??={}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(nodes)];
-  const render=()=>{slot=0;tree=exports.default()};
+  let showHostAddresses=true;
+  const render=()=>{slot=0;tree=exports.default({showHostAddresses,onShowHostAddressesChange:value=>{showHostAddresses=value}})};
   const all=()=>nodes(tree);
   const click=label=>{const button=all().find(n=>n.type==='button'&&nodes(n).some(child=>child.props?.children===label)||n.type==='button'&&n.props.children===label);assert.ok(button,label);button.props.onClick();render()};
   render();
-  return{all,click,stored:()=>JSON.parse(stored),panels:()=>all().filter(n=>n.props?.className==='settings-category-panel')};
+  return{all,click,render,stored:()=>JSON.parse(stored),panels:()=>all().filter(n=>n.props?.className==='settings-category-panel')};
 }
+
+test('general settings can hide addresses in the machine list',t=>{
+  const h=harness(t,null);
+  const addressToggle=()=>h.all().find(n=>n.type==='input'&&n.props.type==='checkbox');
+  assert.equal(addressToggle().props.checked,true);
+  addressToggle().props.onChange({target:{checked:false}});h.render();
+  assert.equal(addressToggle().props.checked,false);
+});
 
 test('categories and inner tabs retain visited forms and remember navigation',t=>{
   const h=harness(t,null);
