@@ -1,4 +1,5 @@
 """Startup readiness and failure reporting without launching a real tray."""
+import sys
 from types import SimpleNamespace
 from urllib.error import URLError
 import re
@@ -15,8 +16,7 @@ def fake_host(monkeypatch, *, ready_after=None, failure=None):
         def __init__(self, target, **kwargs):
             self.target=target
         def start(self):
-            if failure:
-                self.target()
+            self.target()
         def is_alive(self):
             return failure is None
         def join(self,timeout):
@@ -45,6 +45,28 @@ def test_cold_start_taking_more_than_ten_seconds_is_allowed(monkeypatch):
     host.ensure()
     assert server.started and not server.should_exit
     assert clock[0]>=12
+
+
+def test_frozen_tray_registers_update_control_before_serving_requests(monkeypatch,tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.desktop_host import desktop_update
+
+    _,server,_=fake_host(monkeypatch,ready_after=.1)
+    monkeypatch.setattr(sys,'frozen',True,raising=False)
+    app=FastAPI()
+    desktop_update.register_routes(app)
+    client=TestClient(app)
+    first_response=[]
+    server.run=lambda:first_response.append(client.get('/api/desktop/update-capability').json())
+    host=desktop.ServiceHost(update_data=tmp_path)
+    try:
+        host.ensure()
+        assert first_response==[{'supported':True}]
+    finally:
+        host.stop()
+    assert not (tmp_path/'desktop-update-control.json').exists()
+    assert client.get('/api/desktop/update-capability').json()=={'supported':False}
 
 
 @pytest.mark.parametrize('failure',[SystemExit(3),RuntimeError('startup import failed')])

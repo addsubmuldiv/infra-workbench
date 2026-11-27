@@ -31,8 +31,15 @@ export function createDesktopUpdater(bridge:UpdateBridge|null,guard:()=>boolean=
     if(statusPending)return statusPending;
     statusPending=Promise.resolve().then(async()=>{
       const value=await bridge('desktop_update_status');
-      capability=value.supported&&(capability===true||await backendSupportsUpdates());
-      publish(capability?value:{...initial,current_version:value.current_version});
+      if(!value.supported){
+        capability=false;
+        publish({...initial,current_version:value.current_version});
+      }else if(capability===true||await backendSupportsUpdates()){
+        capability=true;
+        publish(value);
+      }else{
+        publish({...initial,supported:true,current_version:value.current_version,phase:'error',error:'update_backend_unavailable'});
+      }
     }).catch(fail).finally(()=>{statusPending=null});
     return statusPending;
   };

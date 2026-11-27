@@ -30,6 +30,7 @@ export function DesktopVersion(){
   return useSyncExternalStore(updater.subscribe,readVersion);
 }
 function errorText(error:string){
+  if(error==='update_backend_unavailable')return t('本机后台暂时无法提供更新服务。请重新检查，或前往官方发布页面。','The local service cannot provide updates right now. Check again or visit the official releases page.');
   if(error==='restart_blocked')return t('请先保存未完成的修改并关闭活动终端，再安装更新。','Save pending changes and close active terminals before installing.');
   if(error==='update_shutdown_busy')return t('后台仍有操作正在进行。请等助手任务、远程命令或导入结束后，再点击安装。','The background service is still busy. Wait for assistant tasks, remote commands, or imports to finish, then install again.');
   if(error==='update_shutdown_terminals')return t('请关闭所有工作台窗口中的活动终端，再点击安装。','Close active terminals in all workbench windows, then install again.');
@@ -53,7 +54,7 @@ export function DesktopUpdateNotification({openSettings}:{openSettings:()=>void}
 }
 export function DesktopUpdates(){
   const status=useUpdates();
-  if(!status.supported)return null;
+  if(!status.supported&&!(bridge&&status.phase==='error'))return null;
   const busy=['checking','downloading','installing'].includes(status.phase);
   const ready=!!status.available_version;
   const downloaded=status.phase==='downloaded';

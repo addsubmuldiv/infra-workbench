@@ -16,20 +16,28 @@ test('unsupported debug/platform status never invokes check or install',async()=
  const calls=[];const updater=createDesktopUpdater(async command=>{calls.push(command);return {...snapshot(),supported:false}});
  updater.start();await updater.run('check');await updater.run('install');assert.deepEqual(calls,['desktop_update_status']);assert.equal(updater.getSnapshot().supported,false);
 });
-test('a signed desktop shell connected to a source backend exposes its version without checking updates',async()=>{
+test('a signed desktop shell can retry when the backend update capability is not ready',async()=>{
  const calls=[];
+ let backendReady=false;
  const updater=createDesktopUpdater(async command=>{
   calls.push(command);
   return snapshot(command.endsWith('status')?'idle':'available');
- },()=>true,async()=>false);
+ },()=>true,async()=>backendReady);
  assert.equal(updater.getSnapshot().supported,false);
  updater.start();
  await updater.run('check');
- await updater.run('download');
  assert.deepEqual(calls,['desktop_update_status']);
- assert.equal(updater.getSnapshot().supported,false);
+ assert.equal(updater.getSnapshot().supported,true);
+ assert.equal(updater.getSnapshot().error,'update_backend_unavailable');
  assert.equal(updater.getSnapshot().current_version,'0.1.0');
  assert.equal(updater.getSnapshot().available_version,null);
+ await updater.run('install');
+ assert.deepEqual(calls,['desktop_update_status','desktop_update_status']);
+ backendReady=true;
+ await updater.run('check');
+ assert.deepEqual(calls,['desktop_update_status','desktop_update_status','desktop_update_status','desktop_update_check']);
+ assert.equal(updater.getSnapshot().phase,'available');
+ assert.equal(updater.getSnapshot().error,null);
 });
 test('older desktop unknown commands disable all updater actions',async()=>{
  const calls=[];const updater=createDesktopUpdater(async command=>{calls.push(command);throw Error('Command desktop_update_status not found')});

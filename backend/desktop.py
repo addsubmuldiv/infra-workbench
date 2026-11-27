@@ -229,8 +229,10 @@ class Startup:
 
 
 class ServiceHost:
-    def __init__(self, *, allow_existing=False):
+    def __init__(self, *, allow_existing=False, update_data=None):
         self.allow_existing=allow_existing
+        self.update_data=update_data
+        self.update_control=None
         self.server=None
         self.thread=None
         self.owned=False
@@ -260,11 +262,16 @@ class ServiceHost:
         self.server=uvicorn.Server(uvicorn.Config('backend.app:app',host='127.0.0.1',port=8765,
                                                 access_log=False,log_config=None,log_level='error'))
         self.startup_failure=None
-        self.thread=threading.Thread(target=self._run_server,name='iwb-server',daemon=True)
+        if self.update_data is not None:
+            # The first page can probe for updates as soon as Uvicorn listens.
+            from backend.desktop_host.desktop_update import activate
+            self.update_control=activate(self.update_data,owned=True)
+        thread=threading.Thread(target=self._run_server,name='iwb-server',daemon=True)
         self.owned=True
         started=time.monotonic()
         logging.info('Backend startup beginning timeout=%ss',BACKEND_STARTUP_TIMEOUT)
-        self.thread.start()
+        thread.start()
+        self.thread=thread
         deadline=started+BACKEND_STARTUP_TIMEOUT
         while time.monotonic()<deadline:
             if self.server.started and self.thread.is_alive():
@@ -284,9 +291,15 @@ class ServiceHost:
         raise RuntimeError(reason+tr('；详细原因见 data/desktop.log。未停止其他后台。', '; See data/desktop.log for details. No other backend was stopped.'))
 
     def stop(self):
-        if self.owned and self.server:
-            self.server.should_exit=True
-            self.thread.join(timeout=20)
+        try:
+            if self.owned and self.thread:
+                self.server.should_exit=True
+                self.thread.join(timeout=20)
+        finally:
+            if self.update_control is not None:
+                from backend.desktop_host.desktop_update import deactivate
+                deactivate(self.update_control)
+                self.update_control=None
 
     def failed(self):
         return bool(self.owned and self.server and self.thread and
@@ -531,9 +544,7 @@ def main(argv=None):
     mutex=kernel.CreateMutexW(None,False,'Local\\InfraWorkbenchDesktop8765')
     if not mutex: raise ctypes.WinError(ctypes.get_last_error())
     duplicate=ctypes.get_last_error()==183
-    service=ServiceHost()
-    from backend.desktop_host.desktop_update import activate, deactivate
-    update_control=None
+    service=ServiceHost(update_data=DATA)
     try:
         logging.info('Desktop launch pid=%s duplicate=%s',os.getpid(),duplicate)
         if duplicate:
@@ -541,7 +552,6 @@ def main(argv=None):
             return
         started_at=time.time()
         service.ensure()
-        update_control=activate(DATA,owned=service.owned)
         run_tray(service,DesktopSettings(DATA/'desktop.json'),Startup(),not args.no_browser,started_at=started_at)
     except Exception as exc:
         logging.exception('Desktop startup failed')
@@ -550,7 +560,6 @@ def main(argv=None):
     finally:
         logging.info('Desktop exiting pid=%s',os.getpid())
         service.stop()
-        deactivate(update_control)
         kernel.CloseHandle(mutex)
 
 
