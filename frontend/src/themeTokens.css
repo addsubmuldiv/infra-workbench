@@ -5,6 +5,7 @@
   --green:#16815c;--amber:#9b6b24;--warning-bg:#fff5e3;--danger:#c55048;--danger-bg:#fff0eb;
   --input:#ffffff;--hover:#edf3f8;--shadow:0 10px 36px #26394b15;--brand:#183a48;
   --term-bg:#fcfdff;--term-fg:#304158;--term-selection:#cde6ed;
+  --chat-beam-peak:#7beee2;--chat-beam-color:#0db7ae;--chat-beam-tail:#4087de;
   --native-glass-rim:#ffffff;
 }
 [data-theme="paper"]{
@@ -13,6 +14,7 @@
   --green:#56824f;--amber:#a06d28;--warning-bg:#fff1d5;--danger:#b55244;--danger-bg:#fae9df;
   --input:#fffdf9;--hover:#f1ebdf;--shadow:0 10px 36px #57452b16;--brand:#675039;
   --term-bg:#fffcf6;--term-fg:#4c453d;--term-selection:#e6d8b8;
+  --chat-beam-peak:#ffde99;--chat-beam-color:#e2a238;--chat-beam-tail:#b86b35;
   --native-glass-rim:#ffffff;
 }
 [data-theme="midnight"]{
@@ -21,6 +23,7 @@
   --green:#79d9ae;--amber:#e8bc80;--warning-bg:#3f3529;--danger:#ee9c95;--danger-bg:#482f32;
   --input:#142131;--hover:#263a4e;--shadow:0 10px 36px #0004;--brand:#a9d7dc;
   --term-bg:#101c29;--term-fg:#d7e4f2;--term-selection:#36576b;
+  --chat-beam-peak:#b9ffe8;--chat-beam-color:#53dab5;--chat-beam-tail:#4a7cff;
   --native-glass-rim:#425574;
   --primary-text:var(--bg);
 }
@@ -30,6 +33,7 @@
   --green:#9acda9;--amber:#e3bc86;--warning-bg:#43382d;--danger:#edaaa7;--danger-bg:#483134;
   --input:#24242a;--hover:#39363f;--shadow:0 10px 36px #0004;--brand:#dfd3fc;
   --term-bg:#202027;--term-fg:#e4dfef;--term-selection:#514268;
+  --chat-beam-peak:#f5ddff;--chat-beam-color:#bb8eff;--chat-beam-tail:#e971cc;
   --native-glass-rim:#514c64;
   --primary-text:var(--bg);
 }
@@ -40,6 +44,7 @@
   --green:#8bdbc9;--amber:#f3cc95;--warning-bg:#453339;--danger:#f2a4ad;--danger-bg:#482e3e;
   --input:#261b2d;--hover:#3e2e46;--shadow:0 12px 32px #130b1980;--brand:#fabf8b;
   --term-bg:#1b1222;--term-fg:#fcf2f6;--term-selection:#57415d;
+  --chat-beam-peak:#ffe3b2;--chat-beam-color:#ff9a77;--chat-beam-tail:#ef6098;
   --native-glass-rim:#705976;
   --primary-text:var(--bg);
   --sunset-gradient:linear-gradient(115deg,#b38ead,#cb97ab 32%,#e7a89c 58%,#faac87 80%,#fabf8b);
@@ -53,6 +58,7 @@
   --green:#42765c;--amber:#956a2c;--warning-bg:#faf0dd;--danger:#b25759;--danger-bg:#faeeee;
   --input:#fffefb;--hover:#edf1e7;--shadow:0 12px 38px #56674617;--brand:#52694a;
   --term-bg:#fcfdf8;--term-fg:#424c43;--term-selection:#d7e4cf;
+  --chat-beam-peak:#f5e5a1;--chat-beam-color:#8db75a;--chat-beam-tail:#568963;
   --native-glass-rim:#ffffff;
 }
 [data-theme="glass-light"],[data-theme="glass-jade"],[data-theme="glass-white"]{
@@ -90,22 +96,26 @@
 
 /* Workbench backdrops behind the original Solid Glass material. */
 [data-theme="glass-light"] {
+  --chat-beam-peak:#baeeff;--chat-beam-color:#638af1;--chat-beam-tail:#a16ad9;
   --glass-backdrop-light:#a8caff;
   --glass-backdrop-tint:#c4b0eb;
   --glass-backdrop-reflection:#f8fcff;
 }
 [data-theme="glass-dark"] {
+  --chat-beam-peak:#bcd9ff;--chat-beam-color:#7994ff;--chat-beam-tail:#685df6;
   --glass-backdrop-light:#294576;
   --glass-backdrop-tint:#42355c;
   --glass-backdrop-reflection:#5c739d;
 }
 [data-theme="glass-jade"] {
+  --chat-beam-peak:#c9ffe0;--chat-beam-color:#3cb790;--chat-beam-tail:#c49a49;
   --glass-backdrop-light:#a1dbc8;
   --glass-backdrop-tint:#e7d3a8;
   --glass-backdrop-reflection:#fbfff2;
   --native-bg:#e1eae5;--native-panel:#ecf3ef;--native-panel2:#e4ede7;
 }
 [data-theme="glass-dusk"] {
+  --chat-beam-peak:#ffd3f3;--chat-beam-color:#da7bd3;--chat-beam-tail:#9967eb;
   --glass-backdrop-light:#604679;
   --glass-backdrop-tint:#673650;
   --glass-backdrop-reflection:#865977;
@@ -113,10 +123,12 @@
   --native-glass-rim:#56475d;
 }
 [data-theme="glass-white"] {
+  --chat-beam-peak:#e2f3ff;--chat-beam-color:#7ca9c9;--chat-beam-tail:#6f81a1;
   --bg:#ffffff;
   --native-bg:#ffffff;
 }
 [data-theme="glass-black"] {
+  --chat-beam-peak:#ffffff;--chat-beam-color:#c4d0de;--chat-beam-tail:#71829d;
   --bg:#000000;
   --native-bg:#000000;
 }

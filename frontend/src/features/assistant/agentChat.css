@@ -189,8 +189,47 @@
 
 .chat-composer { flex: none; width: min(100%, calc(var(--chat-content-width) + 2 * var(--chat-gutter))); margin-inline: auto; padding: 8px var(--chat-gutter) 11px; }
 :root[data-theme] .agent-chat .chat-composer { background: none; box-shadow: none; backdrop-filter: none; }
-.chat-input-box { border: 1px solid var(--line); border-radius: 11px; background: var(--input); }
-.chat-input-box:focus-within { border-color: var(--accent); }
+.chat-input-box {
+  --chat-input-radius: 15px;
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--chat-input-radius);
+  background: var(--input);
+}
+.chat-input-box:is(:focus-within, [data-generating]) { border-color: var(--accent); }
+.chat-input-beam {
+  position: absolute;
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  overflow: visible;
+  pointer-events: none;
+  clip-path: inset(0 round var(--chat-input-radius));
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.chat-input-beam rect {
+  x: 1px;
+  y: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  rx: calc(var(--chat-input-radius) - 1px);
+  fill: none;
+  stroke: var(--chat-beam-color);
+  stroke-dashoffset: var(--chat-beam-offset);
+  animation: chat-input-beam-lap 3.2s linear infinite paused;
+}
+@supports (color: color-mix(in oklab, white, black)) {
+  .chat-input-beam rect { stroke: var(--chat-beam-segment-color); }
+}
+.chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam { opacity: 1; }
+.chat-input-box:is(:focus-within, [data-generating]) > .chat-input-beam rect { animation-play-state: running; }
+@keyframes chat-input-beam-lap { to { stroke-dashoffset: calc(var(--chat-beam-offset) + 1000px); } }
+@media (prefers-reduced-motion: reduce) {
+  .chat-input-beam { transition: none; }
+  .chat-input-beam rect { animation: none; }
+}
+@media (forced-colors: active) { .chat-input-beam { display: none; } }
 .chat-input-box .skill-message-input > textarea {
   display: block;
   width: 100%;
