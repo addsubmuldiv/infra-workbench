@@ -1,6 +1,7 @@
 import {MONITORING_REFRESH_INTERVAL_SECONDS,UI_NOTICE_DURATION_MS} from './internalDefaults.ts';
 import {RefreshIntervalPicker} from './features/monitoring/RefreshIntervalPicker';
 import {TunnelManagerButton} from './features/hosts/TunnelManager';
+import {TunnelPortConflictPrompt} from './features/hosts/TunnelPortConflictPrompt';
 import {HostAliasDialog} from './features/hosts/HostAliasDialog';
 import {GroupReservations,type GroupDraft} from './features/reservations/GroupReservations';
 import {ResourceHistory} from './features/monitoring/ResourceHistory';
@@ -469,6 +470,7 @@ function App(){
     if(deviceOverview&&event.target instanceof Element&&!event.target.closest('#device-overview,[aria-controls="device-overview"]'))setDeviceOverview(false);
   }}>
     {header}
+    {!isDemo&&<TunnelPortConflictPrompt hosts={state.hosts} notice={setNotice}/>}
     <aside className="sidebar">
       <div className="nav-label">{ui("工作台")}</div><nav>{[["overview",ui("算力总览"),LayoutGrid],["reservations",tr("资源预约","Resource alerts"),CalendarClock],["history",tr("资源历史","Resource history"),History],["precision",ui("精度对比"),ChartLine],["settings",ui("设置"),Settings]].map(([key,label,Icon])=><button key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&pendingReservations>0&&<span className="nav-count">{pendingReservations}</span>}</button>)}</nav>
       <div className="sidebar-hosts" data-tour="hosts">{hostList}</div>

@@ -28,11 +28,11 @@ def test_remote_port_recovery_requires_a_scoped_confirmation_and_reconnects(tmp_
     app = create_app(tmp_path, start_poll=False)
     app.state.hosts.extend([dict(id='a', target='a', auth='key'), dict(id='b', target='b', auth='key')])
     manager = app.state.ssh_tunnels
-    manager.retry_delays = (60,)
+    manager.retry_delays = (.05, 60)
     owner = dict(status='occupied', process=dict(pid=42, uid=1000, name='sshd', start_ticks='123'),
                  boot_id='test', listeners=[dict(address='127.0.0.1:18899', owners=[42], inode='8')])
     occupied, replace_listener = True, False
-    releases = []
+    releases, inspections, attempts = [], [], []
 
     class Transport:
         async def wait_closed(self):
@@ -42,6 +42,9 @@ def test_remote_port_recovery_requires_a_scoped_confirmation_and_reconnects(tmp_
             pass
 
     async def open_transport(host, rule):
+        if host['id'] == 'b':
+            raise TunnelFailure('CONNECTION_LOST', 'fixture SSH unreachable', True)
+        attempts.append(rule['id'])
         if occupied:
             raise TunnelFailure('FORWARD_REJECTED', 'test port conflict')
         return Transport()
@@ -62,6 +65,7 @@ def test_remote_port_recovery_requires_a_scoped_confirmation_and_reconnects(tmp_
                 result = dict(status='released')
         else:
             assert "'action': 'inspect_tunnel_port', 'port': 18899" in source
+            inspections.append(host['id'])
             result = owner
         return 0, 'IWB_PORT:'+json.dumps(result), ''
 
@@ -74,25 +78,44 @@ def test_remote_port_recovery_requires_a_scoped_confirmation_and_reconnects(tmp_
         tunnel = f"{base}/{rule['id']}"
         conflict = tunnel+'/port-conflict'
         release = conflict+'/release'
-        assert client.post(conflict).status_code == 400
-        client.post(tunnel+'/start').raise_for_status()
+        offline = client.post('/api/hosts/b/tunnels',
+                              json=dict(name='Offline', local_port=7890, remote_port=18899)).json()
 
-        def wait_for(status):
+        def wait_for(read):
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline:
-                if client.get(base).json()[0]['status'] == status:
-                    return
+                if result := read():
+                    return result
                 time.sleep(.01)
-            pytest.fail(f'Tunnel did not reach {status}')
+            pytest.fail('Tunnel state did not update')
 
-        wait_for('reconnecting')
-        assert client.post(release, json=dict(confirmation='0'*32)).json() == dict(status='changed')
-        inspection = client.post(conflict).json()
+        def prompt():
+            hosts = client.get('/api/state').json()['hosts']
+            return next(host for host in hosts if host['id'] == 'a')['ssh_tunnels'][0].get('port_conflict')
+
+        def reconnect():
+            client.post(tunnel+'/stop').raise_for_status()
+            client.post(tunnel+'/start').raise_for_status()
+            return dict(confirmation=wait_for(prompt)['confirmation'])
+
+        client.post(f"/api/hosts/b/tunnels/{offline['id']}/start").raise_for_status()
+        wait_for(lambda: client.get('/api/hosts/b/tunnels').json()[0]['error_code'] == 'CONNECTION_LOST')
+        assert inspections == []
+        client.post(tunnel+'/start').raise_for_status()
+        inspection = wait_for(prompt)
         assert inspection['process']['pid'] == 42
         confirmed = dict(confirmation=inspection['confirmation'])
+        assert client.post(release, json=dict(confirmation='0'*32)).json() == dict(status='changed')
+        assert 'port_conflict' not in client.get(base+'/status').json()['items'][0]
+        assert 'port_conflict' not in client.get('/api/state', headers={'X-IWB': ''}).json()['hosts'][0]['ssh_tunnels'][0]
         assert client.post(release.replace('/a/', '/b/'), json=confirmed).status_code == 400
-        assert releases == []
+        client.post(conflict+'/dismiss', json=confirmed).raise_for_status()
+        wait_for(lambda: len(attempts) >= 2)
+        assert prompt() is None
+        assert client.post(release, json=confirmed).json() == dict(status='changed')
+        assert releases == [] and inspections == ['a']
 
+        confirmed = reconnect()
         replace_listener = True
         assert client.post(release, json=confirmed).json() == dict(status='changed')
         assert client.post(release, json=confirmed).json() == dict(status='changed')
@@ -100,10 +123,11 @@ def test_remote_port_recovery_requires_a_scoped_confirmation_and_reconnects(tmp_
         assert client.get(base).json()[0]['status'] == 'reconnecting'
 
         replace_listener = False
-        confirmed = dict(confirmation=client.post(conflict).json()['confirmation'])
+        confirmed = reconnect()
         recovered = client.post(release, json=confirmed).json()
         assert recovered['status'] == 'released'
-        wait_for('connected')
+        wait_for(lambda: client.get(base).json()[0]['status'] == 'connected')
+        assert prompt() is None
         assert releases == ['a', 'a']
 
 

@@ -660,7 +660,8 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 public_host = {key: value for key, value in host.items()
                                if key not in ('ssh_accounts', 'ssh_default_account_id', 'ssh_interactive_account_id',
                                               'sudo_identity', 'sudo_identities', 'ssh_hostname')}
-                items.append(dict(**public_host, ssh_hostname=ssh_addresses.get(host), ssh_logins=ssh_account_summary(host), collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=app.state.ssh_tunnels.list(host['id']), snapshot=dict(snap, fresh=fresh, sections=sections)))
+                tunnels = app.state.ssh_tunnels.list(host['id'], include_port_conflict=request.headers.get('x-iwb') == '1')
+                items.append(dict(**public_host, ssh_hostname=ssh_addresses.get(host), ssh_logins=ssh_account_summary(host), collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=tunnels, snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
         for rule in rules:
             snap = snapshots.get(rule['host_id'], {})

@@ -35,7 +35,7 @@ class TunnelRequest(BaseModel):
     before_vscode: bool = False
 
 
-class ReleasePortRequest(BaseModel):
+class PortConflictDecision(BaseModel):
     model_config = ConfigDict(extra='forbid')
     confirmation: str = Field(pattern=r'^[a-f0-9]{32}$')
 
@@ -66,6 +66,7 @@ class SSHTunnels:
         for rule in self.rules:
             rule.setdefault('before_vscode', False)
         self.states, self.tasks, self.connections = {}, {}, {}
+        self.port_checks = {}
         self.port_confirmations = {}
         self.history_write_failures = set()
         self.lock = asyncio.Lock()
@@ -84,13 +85,22 @@ class SSHTunnels:
         if rule is None: raise ValueError('隧道不存在或不属于这台机器')
         return rule
 
-    def view(self, rule):
-        return dict(rule, **self.states.get(rule['id'], dict(status='stopped', error='', error_code=None,
-                    connected_at=None, next_retry_at=None)))
+    def view(self, rule, *, include_port_conflict=False):
+        rule_id = rule['id']
+        state = self.states.get(rule_id, dict(status='stopped', error='', error_code=None,
+                                              connected_at=None, next_retry_at=None))
+        result = dict(rule, **state)
+        pending = self.port_confirmations.get(rule_id)
+        if include_port_conflict and pending and state['error_code'] == 'FORWARD_REJECTED':
+            confirmation, _, owner = pending
+            result['port_conflict'] = dict(confirmation=confirmation, process=owner['process'],
+                                           addresses=[row['address'] for row in owner['listeners']])
+        return result
 
-    def list(self, host_id):
+    def list(self, host_id, *, include_port_conflict=False):
         self.host(host_id)
-        return [self.view(r) for r in self.rules if r['host_id'] == host_id]
+        return [self.view(r, include_port_conflict=include_port_conflict)
+                for r in self.rules if r['host_id'] == host_id]
 
     def query(self, host_id, section, offset, limit):
         if section == 'history':
@@ -136,7 +146,7 @@ class SSHTunnels:
             values = request.model_dump()
             if any(rule[key] != values[key] for key in ('direction', 'local_port', 'remote_port')):
                 self.states.pop(rule_id, None)
-                self.port_confirmations.pop(rule_id, None)
+                self._clear_port_conflict(rule_id)
             rule.update(values)
             self.save()
             return self.view(rule)
@@ -202,6 +212,17 @@ class SSHTunnels:
         if self.on_result:
             self.on_result()
 
+    def _remove_port_confirmation(self, rule_id):
+        if self.port_confirmations.pop(rule_id, None) and self.on_result:
+            self.on_result()
+
+    def _clear_port_conflict(self, rule_id):
+        check = self.port_checks.pop(rule_id, None)
+        if check and not check.done():
+            check.cancel()
+        self._remove_port_confirmation(rule_id)
+        return check
+
     async def _run(self, rule, notify_result):
         rule_id, attempts = rule['id'], 0
         forward_retries = 0
@@ -214,6 +235,7 @@ class SSHTunnels:
                 self.connections[rule_id] = transport
                 connected_at = time.time()
                 self.state(rule_id, 'connected', connected_at=connected_at)
+                self._clear_port_conflict(rule_id)
                 if not rule.get('has_connected'):
                     rule['has_connected'] = True
                     try:
@@ -241,8 +263,12 @@ class SSHTunnels:
                 if transport: await transport.close()
             # After a network loss, the server may still be holding the old
             # remote listener. SSH reports that the same way as policy denial.
-            retry_forward = (rule['direction'] == 'remote' and failure.code == 'FORWARD_REJECTED'
-                             and forward_retries < len(self.retry_delays))
+            remote_forward_rejected = rule['direction'] == 'remote' and failure.code == 'FORWARD_REJECTED'
+            retry_forward = remote_forward_rejected and forward_retries < len(self.retry_delays)
+            if not remote_forward_rejected:
+                self._clear_port_conflict(rule_id)
+            elif rule_id not in self.port_checks:
+                self.port_checks[rule_id] = asyncio.create_task(self._check_remote_port(rule))
             will_retry = rule['auto_reconnect'] and (failure.retry or retry_forward)
             signature = (failure.code, str(failure))
             if not transport and (not will_retry or signature != last_retry_failure):
@@ -296,19 +322,21 @@ class SSHTunnels:
             self.state(rule_id, 'error', str(failure), failure.code)
             self.record_event(rule, 'failed', failure=failure)
             raise
-        self.port_confirmations.pop(rule_id, None)
+        self._clear_port_conflict(rule_id)
         self.state(rule_id, 'connecting')
         self.tasks[rule_id] = asyncio.create_task(self._run(rule, notify_result))
         return self.view(rule)
 
     async def _stop(self, rule, reason=None):
         rule_id = rule['id']
-        self.port_confirmations.pop(rule_id, None)
+        check = self._clear_port_conflict(rule_id)
         was_connected = rule_id in self.connections
         task = self.tasks.pop(rule_id, None)
         if task:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        if check:
+            await asyncio.gather(check, return_exceptions=True)
         self.state(rule_id, 'stopped')
         if was_connected and reason:
             self.record_event(rule, 'disconnected', reason=reason)
@@ -383,26 +411,35 @@ class SSHTunnels:
         if request['action'] == 'release_tunnel_port':
             raise ValueError(tr('未能确认结束进程的结果，请重新检查远端端口。',
                                 'Could not confirm the termination result. Check the remote port again.'))
-        raise ValueError(tr('无法检查远端监听。请检查 SSH 连接，并确认服务器有 Python 3 和 ss。',
-                            'Could not inspect remote listeners. Check the SSH connection and verify that Python 3 and ss are installed.'))
+        return dict(status='unknown')
 
-    async def inspect_remote_port(self, host_id, rule_id):
-        port = self.rejected_remote_rule(host_id, rule_id)['remote_port']
-        host = self.host(host_id)
-        await self.passwords.restore_session(host)
-        config = await self.ssh.effective(host)
-        owner = await self.port_operation(host, config, dict(action='inspect_tunnel_port', port=port))
+    async def _check_remote_port(self, rule):
+        from asyncssh import Error
+
+        host_id, rule_id, port = rule['host_id'], rule['id'], rule['remote_port']
+        try:
+            host = self.host(host_id)
+            await self.passwords.restore_session(host)
+            config = await self.ssh.effective(host)
+            owner = await self.port_operation(host, config, dict(action='inspect_tunnel_port', port=port))
+            self.rejected_remote_rule(host_id, rule_id)
+        except (ValueError, OSError, AgentError, Error):
+            return
+        if (self.port_checks.get(rule_id) is not asyncio.current_task()
+                or rule['remote_port'] != port or self.host(host_id) is not host):
+            return
+        if owner['status'] == 'occupied':
+            self.port_confirmations[rule_id] = (uuid.uuid4().hex, connection_identity(config), owner)
+            if self.on_result:
+                self.on_result()
+
+    async def dismiss_remote_port(self, host_id, rule_id, confirmation):
         async with self.lock:
-            rule = self.rejected_remote_rule(host_id, rule_id)
-            if rule['remote_port'] != port or self.host(host_id) is not host:
-                raise ValueError(tr('隧道配置已变化，请重新检查端口。', 'The tunnel configuration changed. Check the port again.'))
-            self.port_confirmations.pop(rule_id, None)
-            if owner['status'] != 'occupied':
-                return dict(status=owner['status'], port=port)
-            confirmation = uuid.uuid4().hex
-            self.port_confirmations[rule_id] = (confirmation, time.monotonic()+120, port, connection_identity(config), owner)
-            return dict(status='occupied', port=port, confirmation=confirmation,
-                        process=owner['process'], addresses=[row['address'] for row in owner['listeners']])
+            self.rule(host_id, rule_id)
+            pending = self.port_confirmations.get(rule_id)
+            if pending and pending[0] == confirmation:
+                self._remove_port_confirmation(rule_id)
+            return {'ok': True}
 
     async def release_remote_port(self, host_id, rule_id, confirmation):
         async with self.lock:
@@ -410,14 +447,13 @@ class SSHTunnels:
             pending = self.port_confirmations.get(rule_id)
             if not pending or pending[0] != confirmation:
                 return dict(status='changed')
-            self.port_confirmations.pop(rule_id)
-            _, expires, port, identity, owner = pending
-            if time.monotonic() >= expires or rule['remote_port'] != port:
-                return dict(status='changed')
+            self._remove_port_confirmation(rule_id)
+            _, identity, owner = pending
+            port = rule['remote_port']
             self.check_port_collision(rule)
             host = self.host(host_id)
             config = await self.ssh.effective(host)
-            if connection_identity(config) != identity:
+            if connection_identity(config) != identity or self.view(rule)['error_code'] != 'FORWARD_REJECTED':
                 return dict(status='changed')
             result = await self.port_operation(host, config, dict(action='release_tunnel_port', port=port, owner=owner))
             if self.view(rule)['status'] == 'connected':
@@ -501,10 +537,10 @@ def register_ssh_tunnels(app, store, ssh, hosts, passwords, *, on_result):
     async def probe_tunnel(host_id: str, rule_id: str):
         return await invoke(manager.probe, host_id, rule_id)
 
-    @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict')
-    async def inspect_port_conflict(host_id: str, rule_id: str):
-        return await invoke(manager.inspect_remote_port, host_id, rule_id)
+    @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict/dismiss')
+    async def dismiss_port_conflict(host_id: str, rule_id: str, body: PortConflictDecision):
+        return await invoke(manager.dismiss_remote_port, host_id, rule_id, body.confirmation)
 
     @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict/release')
-    async def release_port_conflict(host_id: str, rule_id: str, body: ReleasePortRequest):
+    async def release_port_conflict(host_id: str, rule_id: str, body: PortConflictDecision):
         return await invoke(manager.release_remote_port, host_id, rule_id, body.confirmation)

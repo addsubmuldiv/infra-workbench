@@ -47,12 +47,22 @@ def test_real_forward_and_cleanup(tmp_path):
     asyncio.run(run())
 
 def test_native_failure_never_reports_active_and_is_cleaned(tmp_path, monkeypatch):
+    import socket
+
     async def run():
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+
         class Process:
             returncode=None
             def __init__(self):
                 self.stderr=asyncio.StreamReader()
-                self.stderr.feed_data(b'debug1: Local forwarding listening on 127.0.0.1 port 45678.\nbind [127.0.0.1]:45678: Address already in use\nCould not request local forwarding.\n')
+                self.stderr.feed_data(
+                    (f'debug1: Local forwarding listening on 127.0.0.1 port {port}.\n'
+                     f'bind [127.0.0.1]:{port}: Address already in use\n'
+                     'Could not request local forwarding.\n').encode()
+                )
                 self.stderr.feed_eof()
                 self.terminated=False
             def terminate(self):self.terminated=True;self.returncode=255
@@ -64,7 +74,7 @@ def test_native_failure_never_reports_active_and_is_cleaned(tmp_path, monkeypatc
         async def details(host):return {'hostname':'remote','user':'test','port':'22','proxyjump':'jumpalias','localforward':['0.0.0.0:1234 remote:80']}
         ssh.effective_details=details;ssh.destination=lambda host:'remotealias'
         store=Store(tmp_path/'native.db');manager=PortForwarding(store,ssh,[{'id':'a'}])
-        rule=manager.create('a',ForwardRequest(name='native',remote_port=80,local_port=45678))
+        rule=manager.create('a',ForwardRequest(name='native',remote_port=80,local_port=port))
         try:
             with pytest.raises(ValueError):await manager.start('a',rule['id'])
             assert process.terminated
