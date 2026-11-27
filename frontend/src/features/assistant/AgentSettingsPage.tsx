@@ -9,6 +9,8 @@ import {agentDirty,agentPayload,agentRequest,defaultAgentConfig,protocolNames,ty
 import '../settings/settings.css';
 import './agentSettings.css';
 
+import {useEditionSwitchGuard} from '../desktop/useEditionSwitchGuard';
+
 export function AgentSettingsPage(){
   const [form,setForm]=useState<AgentConfig>(defaultAgentConfig);
   const [saved,setSaved]=useState<AgentView|null>(null),[key,setKey]=useState(''),[remember,setRemember]=useState(true);
@@ -28,6 +30,7 @@ export function AgentSettingsPage(){
     return()=>{alive=false};
   },[]);
   const dirty=agentDirty(form,saved,key,remember);
+  useEditionSwitchGuard(pending==='save'||!!saved&&dirty);
   useEffect(()=>{
     let alive=true;
     const refresh=()=>{void agentRequest<AgentView>().then(value=>{

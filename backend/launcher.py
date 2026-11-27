@@ -75,7 +75,7 @@ def find_desktop(root=ROOT):
     return None
 
 
-def dispatch_interface(mode,desktop,open_browser=webbrowser.open,spawn=subprocess.Popen,*,host_id=None):
+def dispatch_interface(mode,desktop,open_browser=webbrowser.open,spawn=subprocess.Popen,*,host_id=None,source_root=None):
     if mode=='browser':
         destination = URL + host_overview_link(host_id) if host_id else URL
         if open_browser(destination) is False:raise RuntimeError('无法打开默认浏览器')
@@ -83,7 +83,10 @@ def dispatch_interface(mode,desktop,open_browser=webbrowser.open,spawn=subproces
         args = [str(desktop), '--show-desktop']
         if host_id:
             args.extend(['--host', host_id])
-        spawn(args)
+        if source_root is None:
+            spawn(args)
+        else:
+            spawn(args,env={**os.environ,'IWB_SOURCE_ROOT':str(source_root)})
     else:raise RuntimeError('未找到桌面窗口程序，请先安装桌面版本，或在设置中选择浏览器启动。')
 
 
@@ -114,7 +117,8 @@ def shutdown_desktop(root=ROOT):
 
 def open_preferred_interface(data=None,root=ROOT,*,host_id=None):
     data=Path(data) if data is not None else Path(os.environ.get('IWB_DATA',str(Path(root)/'data')))
-    dispatch_interface(LaunchSettings(data).mode,find_desktop(root),open_browser=webbrowser.open,host_id=host_id)
+    source_root=root if sys.platform=='win32' and not getattr(sys,'frozen',False) else None
+    dispatch_interface(LaunchSettings(data).mode,find_desktop(root),open_browser=webbrowser.open,host_id=host_id,source_root=source_root)
 
 
 def register_launch_routes(app,data,root=ROOT,set_floating=None):

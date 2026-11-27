@@ -5,6 +5,8 @@ import {Check,Mail,RefreshCw,Send,ShieldCheck,Trash2} from 'lucide-react';
 import {defaultMailConfig,mailRequest,mailStatusText,recipientList,type MailConfig,type MailView,type MailResult} from './mailSettings';
 import '../settings/settings.css';
 
+import {useEditionSwitchGuard} from '../desktop/useEditionSwitchGuard';
+
 export function MailSettingsPage(){
   const [form,setForm]=useState<MailConfig>(defaultMailConfig),[recipients,setRecipients]=useState('');
   const [saved,setSaved]=useState<MailView|null>(null),[password,setPassword]=useState(''),[remember,setRemember]=useState(true);
@@ -13,6 +15,7 @@ export function MailSettingsPage(){
   useEffect(()=>{let alive=true;mailRequest<MailView>().then(value=>{if(alive)apply(value)}).catch(e=>{if(alive)setError(e.message)}).finally(()=>{if(alive)setLoading('')});return()=>{alive=false}},[]);
   const normalized={...form,host:form.host.trim(),username:form.username.trim(),sender:form.sender.trim(),recipients:recipientList(recipients)};
   const dirty=!saved||Object.keys(defaultMailConfig).some(key=>JSON.stringify(normalized[key as keyof MailConfig])!==JSON.stringify(saved[key as keyof MailConfig]))||!!password||(saved.has_password&&remember!==saved.password_saved);
+  useEditionSwitchGuard(loading==='save'||!!saved&&dirty);
   const change=<K extends keyof MailConfig>(key:K,value:MailConfig[K])=>setForm(old=>({...old,[key]:value}));
   const act=async(key:string,action:()=>Promise<void>)=>{setLoading(key);setError('');setMessage('');try{await action()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading('');setPassword('')}};
   const save=(event:React.FormEvent)=>{event.preventDefault();void act('save',async()=>{const value=await mailRequest<MailView>('','PUT',{...normalized,password:password||null,remember});apply(value);setMessage(ui("邮件设置已保存。可以发送测试邮件检查收件。"))})};

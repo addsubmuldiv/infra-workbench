@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-desktop-edition"
+description = "Read the desktop edition and switch to another locally detected edition from the main window."
+commands.allow = ["desktop_edition_status", "desktop_switch_edition"]

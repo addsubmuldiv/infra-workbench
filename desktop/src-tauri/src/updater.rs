@@ -12,21 +12,41 @@ pub struct Status {
     supported: bool, current_version: String, phase: String, available_version: Option<String>,
     notes: Option<String>, downloaded_bytes: u64, total_bytes: Option<u64>, last_checked: Option<u64>, error: Option<String>,
 }
-struct Inner { status: Status, update: Option<Update>, bytes: Option<Vec<u8>>, safety: HashMap<String, Option<bool>> }
+struct Inner { status: Status, update: Option<Update>, bytes: Option<Vec<u8>>, safety: HashMap<String, Option<bool>>, switching: bool }
 pub struct UpdaterState(Mutex<Inner>);
 impl Default for UpdaterState {
     fn default() -> Self {
         let supported = cfg!(all(windows, feature = "signed-updater", not(debug_assertions)))
             && super::runtime_source_root().is_none()
             && std::env::current_exe().is_ok_and(|exe| exe.with_file_name("iwb-runtime.exe").is_file());
-        Self(Mutex::new(Inner { status: Status { supported, current_version: env!("CARGO_PKG_VERSION").into(), phase: "idle".into(), available_version: None, notes: None, downloaded_bytes: 0, total_bytes: None, last_checked: None, error: None }, update: None, bytes: None, safety: HashMap::new() }))
+        Self(Mutex::new(Inner { status: Status { supported, current_version: env!("CARGO_PKG_VERSION").into(), phase: "idle".into(), available_version: None, notes: None, downloaded_bytes: 0, total_bytes: None, last_checked: None, error: None }, update: None, bytes: None, safety: HashMap::new(), switching: false }))
     }
 }
-pub fn installing(app: &tauri::AppHandle) -> bool { app.state::<UpdaterState>().0.lock().unwrap().status.phase == "installing" }
+pub fn installing(app: &tauri::AppHandle) -> bool {
+    let state = app.state::<UpdaterState>();
+    let inner = state.0.lock().unwrap();
+    inner.switching || inner.status.phase == "installing"
+}
+#[cfg(windows)]
+pub(crate) fn begin_switch(app: &tauri::AppHandle) -> Result<(), String> {
+    let _gate = WINDOW_GATE.lock().unwrap();
+    let state = app.state::<UpdaterState>();
+    let mut inner = state.0.lock().unwrap();
+    if inner.switching || matches!(inner.status.phase.as_str(), "checking" | "downloading" | "installing") {
+        return Err("desktop_switch_busy".into());
+    }
+    inner.switching = true;
+    Ok(())
+}
+#[cfg(windows)]
+pub(crate) fn cancel_switch(app: &tauri::AppHandle) {
+    release_views(app);
+    app.state::<UpdaterState>().0.lock().unwrap().switching = false;
+}
 fn allowed(label: &str, url: &reqwest::Url) -> bool {
     label == "main" && infra_workbench_desktop::is_service_url(url) && !url.query_pairs().any(|(k,v)| k == "tool" || (k == "demo" && v == "1"))
 }
-fn guard(window: &WebviewWindow) -> Result<(),String> {
+pub(crate) fn guard(window: &WebviewWindow) -> Result<(),String> {
     if allowed(window.label(), &window.url().map_err(|e|e.to_string())?) { Ok(()) } else { Err("仅主工作台可更新桌面应用".into()) }
 }
 fn snapshot(app: &tauri::AppHandle) -> Status { app.state::<UpdaterState>().0.lock().unwrap().status.clone() }
@@ -34,6 +54,7 @@ fn fail(app: &tauri::AppHandle, message: String) -> Status {
     let state=app.state::<UpdaterState>(); let mut inner=state.0.lock().unwrap(); inner.status.phase=if inner.update.is_some() && inner.bytes.is_some() {"downloaded"} else {"error"}.into(); inner.status.error=Some(message); inner.status.clone()
 }
 fn begin_inner(inner: &mut Inner, phase: &str) -> Result<(),String> {
+    if inner.switching { return Err("desktop_switch_busy".into()); }
     if !inner.status.supported { return Err("此运行方式不支持自动安装更新，请使用正式安装版".into()); }
     if matches!(inner.status.phase.as_str(), "checking"|"downloading"|"installing") { return Err("更新操作正在进行".into()); }
     match phase {
@@ -95,40 +116,40 @@ fn release_views(app: &tauri::AppHandle) {
     for window in app.webview_windows().values() { let _=window.eval("window.__IWB_DESKTOP_UPDATE_SAFETY__?.(false)"); }
     app.state::<UpdaterState>().0.lock().unwrap().safety.clear();
 }
-fn safe_views(app: &tauri::AppHandle) -> Result<(),String> {
+pub(crate) fn safe_views(app: &tauri::AppHandle, switching: bool) -> Result<(),String> {
     let nonce=uuid::Uuid::new_v4().to_string(); let windows=app.webview_windows();
     { let state=app.state::<UpdaterState>(); let mut inner=state.0.lock().unwrap(); inner.safety.clear();
         for label in windows.keys() { inner.safety.insert(format!("{label}:{nonce}"),None); }
     }
     for window in windows.values() {
-        let script=format!(r#"(async()=>{{let safe=false;try{{let hook=window.__IWB_DESKTOP_UPDATE_SAFETY__;let result=hook?await hook(true):null;safe=result?.safe===true;}}catch{{}}await window.__TAURI_INTERNALS__.invoke('desktop_update_safety_response',{{nonce:{},safe}});}})()"#,serde_json::to_string(&nonce).unwrap());
+        let script=format!(r#"(async()=>{{let safe=false;try{{let hook=window.__IWB_DESKTOP_UPDATE_SAFETY__;let result=hook?await hook(true,{switching}):null;safe=result?.safe===true;}}catch{{}}await window.__TAURI_INTERNALS__.invoke('desktop_update_safety_response',{{nonce:{},safe}});}})()"#,serde_json::to_string(&nonce).unwrap());
         window.eval(script).map_err(|e|e.to_string())?;
     }
     let deadline=Instant::now()+Duration::from_secs(8);
     loop {
         { let state=app.state::<UpdaterState>(); let inner=state.0.lock().unwrap();
-            if inner.safety.values().any(|v|*v==Some(false)) { return Err("请先保存所有窗口的文件、关闭活动终端并等待工作区写入完成".into()); }
+            if inner.safety.values().any(|v|*v==Some(false)) {
+                return Err(if switching {"desktop_switch_unsaved"} else {"请先保存所有窗口的文件、关闭活动终端并等待工作区写入完成"}.into());
+            }
             if inner.safety.values().all(|v|*v==Some(true)) { return Ok(()); }
         }
-        if Instant::now()>=deadline { return Err("部分窗口未确认安全状态，已取消安装。请关闭这些窗口后重试".into()); }
+        if Instant::now()>=deadline { return Err(if switching {"desktop_switch_window_unresponsive"} else {"部分窗口未确认安全状态，已取消安装。请关闭这些窗口后重试"}.into()); }
         std::thread::sleep(Duration::from_millis(50));
     }
 }
 #[derive(Deserialize, PartialEq)]
-struct Receipt { token: String, instance: String, pid: u32, executable: PathBuf }
-fn data_dir() -> Result<PathBuf,String> {
-    std::env::var_os("IWB_DATA").map(PathBuf::from).or_else(||dirs::data_local_dir().map(|p|p.join("InfraWorkbench"))).ok_or("找不到用户数据目录".into())
-}
+struct Receipt { token: String, instance: String, pid: u32, executable: PathBuf, source_root: Option<PathBuf> }
 #[cfg(windows)]
 struct OwnedProcess(*mut std::ffi::c_void);
 // Windows process handles have no thread affinity; ownership still closes exactly once.
 #[cfg(windows)] unsafe impl Send for OwnedProcess {}
 #[cfg(windows)]
 impl OwnedProcess {
-    fn open(pid: u32, expected: &std::path::Path) -> Result<Self,String> {
+    fn open(pid: u32, expected: &std::path::Path, allow_force: bool) -> Result<Self,String> {
         #[link(name="kernel32")] extern "system" { fn OpenProcess(access:u32,inherit:i32,pid:u32)->*mut std::ffi::c_void; fn QueryFullProcessImageNameW(process:*mut std::ffi::c_void,flags:u32,name:*mut u16,size:*mut u32)->i32; }
         const PROCESS_TERMINATE: u32 = 0x0001;
-        let handle=unsafe{OpenProcess(0x00100000|0x1000|PROCESS_TERMINATE,0,pid)};
+        let access = 0x00100000 | 0x1000 | if allow_force { PROCESS_TERMINATE } else { 0 };
+        let handle=unsafe{OpenProcess(access,0,pid)};
         if handle.is_null() { return Err("无法核实后台进程身份，未停止任何进程".into()); }
         let process=Self(handle); let mut name=vec![0u16;32768]; let mut size=name.len() as u32;
         if unsafe{QueryFullProcessImageNameW(handle,0,name.as_mut_ptr(),&mut size)}==0 { return Err("无法核实后台程序路径".into()); }
@@ -149,10 +170,10 @@ impl OwnedProcess {
     }
 }
 #[cfg(windows)] impl Drop for OwnedProcess { fn drop(&mut self) { #[link(name="kernel32")] extern "system" { fn CloseHandle(handle:*mut std::ffi::c_void)->i32; } unsafe{CloseHandle(self.0);}; } }
-fn port_closed() -> bool {
+pub(crate) fn port_closed() -> bool {
     std::net::TcpStream::connect_timeout(&"127.0.0.1:8765".parse().unwrap(),Duration::from_millis(200)).is_err()
 }
-fn recover_runtime() -> Result<(),String> {
+pub(crate) fn recover_runtime() -> Result<(),String> {
     let client=reqwest::blocking::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(2)).build().map_err(|e|e.to_string())?;
     if !port_closed() { return Err("服务端口已被使用，未重复启动后台".into()); }
     super::start_runtime()?;
@@ -197,17 +218,31 @@ fn force_stop_runtime(process: &OwnedProcess, path: &std::path::Path, receipt: &
     }
     Err("update_force_timeout".into())
 }
-fn stop_owned_runtime(english: bool) -> Result<(),String> {
-    let path=data_dir()?.join("desktop-update-control.json");
-    let receipt:Receipt=serde_json::from_slice(&std::fs::read(&path).map_err(|_|"后台不是本安装版管理的服务，请手动停止并使用安装包更新")?).map_err(|_|"后台更新凭据无效".to_string())?;
-    let expected=std::env::current_exe().map_err(|e|e.to_string())?.parent().ok_or("无法确定安装目录")?.join(if cfg!(windows){"iwb-runtime.exe"}else{"iwb-runtime"});
-    if expected.canonicalize().is_err() || expected.canonicalize().ok()!=receipt.executable.canonicalize().ok() || receipt.token.len()<32 || receipt.instance.is_empty() {return Err("后台不属于当前安装目录，未停止任何进程".into());}
-    #[cfg(windows)] let process=OwnedProcess::open(receipt.pid,&expected)?;
+pub(crate) fn stop_owned_runtime(english: Option<bool>) -> Result<(),String> {
+    let switching = english.is_none();
+    let source = if switching { super::runtime_source_root() } else { None };
+    let path=super::runtime_data_directory(source.as_deref()).ok_or("update_shutdown_identity")?.join("desktop-update-control.json");
+    let receipt: Receipt = std::fs::read(&path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .ok_or("update_shutdown_identity")?;
+    let expected = if let Some(source) = source {
+        if !same_path(&source, receipt.source_root.as_deref()) { return Err("update_shutdown_identity".into()); }
+        receipt.executable.clone()
+    } else {
+        let executable = std::env::current_exe().map_err(|_| "update_shutdown_identity")?;
+        let expected = executable.with_file_name(if cfg!(windows) {"iwb-runtime.exe"} else {"iwb-runtime"});
+        if receipt.source_root.is_some() || !same_path(&expected, Some(&receipt.executable)) {
+            return Err("update_shutdown_identity".into());
+        }
+        expected
+    };
+    if receipt.token.len()<32 || receipt.instance.is_empty() { return Err("update_shutdown_identity".into()); }
+    #[cfg(windows)] let process=OwnedProcess::open(receipt.pid,&expected,!switching).map_err(|_|"update_shutdown_identity")?;
     #[cfg(not(windows))] return Err("当前平台暂不支持安全停止后台，请使用安装包更新".into());
     #[cfg(windows)] {
         let client=reqwest::blocking::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(5)).build().map_err(|e|e.to_string())?;
+        let action = if switching { "switch-shutdown" } else { "update-shutdown" };
         let shutdown = client
-            .post(format!("{}api/desktop/update-shutdown", infra_workbench_desktop::SERVICE_URL))
+            .post(format!("{}api/desktop/{action}", infra_workbench_desktop::SERVICE_URL))
             .bearer_auth(&receipt.token)
             .header("X-IWB", "1")
             .json(&serde_json::json!({"instance": receipt.instance, "executable": receipt.executable}));
@@ -231,6 +266,7 @@ fn stop_owned_runtime(english: bool) -> Result<(),String> {
                 _ => "update_shutdown_failed",
             };
             if reason != "update_shutdown_busy" || Instant::now() >= retry_deadline {
+                let Some(english) = english else { return Err(reason.into()); };
                 let explanation = match (reason, english) {
                     ("update_shutdown_busy", true) => "The background service still has operations in progress.",
                     ("update_shutdown_busy", false) => "后台仍有操作正在进行。",
@@ -253,18 +289,22 @@ fn stop_owned_runtime(english: bool) -> Result<(),String> {
             if !path.exists() && process.exited() && closed {return Ok(());}
             if Instant::now()>=deadline {
                 if process.exited() && closed {
+                    if switching {
+                        let _ = recover_runtime();
+                        return Err("desktop_switch_shutdown_timeout".into());
+                    }
                     return match recover_runtime() {
                         Ok(())=>Err("后台已退出，但更新凭据未正常清理；已取消安装并恢复后台".into()),
                         Err(error)=>Err(format!("已取消安装；后台恢复失败：{error}")),
                     };
                 }
-                let explanation = if english {
+                let explanation = if english.unwrap_or(false) {
                     "The background service did not exit within 60 seconds."
                 } else {
                     "后台在 60 秒内未退出。"
                 };
                 let mut force_error = None;
-                if !process.exited() && confirm_force_stop(explanation, english) {
+                if !process.exited() && english.is_some_and(|english| confirm_force_stop(explanation, english)) {
                     match force_stop_runtime(&process, &path, &receipt) {
                         Ok(()) => return Ok(()),
                         Err(error) => force_error = Some(error),
@@ -284,11 +324,14 @@ fn stop_owned_runtime(english: bool) -> Result<(),String> {
                         std::thread::sleep(Duration::from_millis(500));
                     }
                 });
-                return Err(force_error.unwrap_or_else(|| "后台在 60 秒内未完全退出，已取消安装。若原后台随后退出，会在三分钟内尝试恢复，请稍后重新打开应用".into()));
+                return Err(force_error.unwrap_or_else(|| if switching {"desktop_switch_shutdown_timeout"} else {"后台在 60 秒内未完全退出，已取消安装。若原后台随后退出，会在三分钟内尝试恢复，请稍后重新打开应用"}.into()));
             }
             std::thread::sleep(Duration::from_millis(100));
         }
     }
+}
+fn same_path(expected: &std::path::Path, actual: Option<&std::path::Path>) -> bool {
+    expected.canonicalize().ok().is_some_and(|expected| actual.and_then(|path| path.canonicalize().ok()) == Some(expected))
 }
 #[tauri::command]
 pub async fn desktop_update_install(window: WebviewWindow, english: Option<bool>) -> Result<Status,String> {
@@ -300,8 +343,8 @@ pub async fn desktop_update_install(window: WebviewWindow, english: Option<bool>
     let result=tauri::async_runtime::spawn_blocking(move || -> Result<(),String> {
         let confirmed=rfd::MessageDialog::new().set_title("安装桌面更新").set_description(format!("即将安装桌面版本 {}。更新将关闭所有工作台窗口并重启应用。请先保存文件、关闭终端并等待写入完成。是否继续？",update.version)).set_buttons(rfd::MessageButtons::YesNo).show();
         if confirmed!=rfd::MessageDialogResult::Yes {return Err("已取消安装".into());}
-        safe_views(&worker)?;
-        stop_owned_runtime(english.unwrap_or(false))?;
+        safe_views(&worker, false)?;
+        stop_owned_runtime(Some(english.unwrap_or(false)))?;
         if let Err(error)=update.install(bytes) {
             return match recover_runtime() {
                 Ok(())=>Err(format!("安装失败，后台已恢复：{error}")),

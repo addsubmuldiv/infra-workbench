@@ -16,6 +16,7 @@
     "allow-desktop-ready",
     "allow-quick-window-action",
     "allow-open-quick-tool",
-    "allow-desktop-updater"
+    "allow-desktop-updater",
+    "allow-desktop-edition"
   ]
 }

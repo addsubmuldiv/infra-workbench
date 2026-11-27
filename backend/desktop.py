@@ -229,9 +229,10 @@ class Startup:
 
 
 class ServiceHost:
-    def __init__(self, *, allow_existing=False, update_data=None):
+    def __init__(self, *, allow_existing=False, update_data=None, source_root=None):
         self.allow_existing=allow_existing
         self.update_data=update_data
+        self.source_root=source_root
         self.update_control=None
         self.server=None
         self.thread=None
@@ -265,7 +266,12 @@ class ServiceHost:
         if self.update_data is not None:
             # The first page can probe for updates as soon as Uvicorn listens.
             from backend.desktop_host.desktop_update import activate
-            self.update_control=activate(self.update_data,owned=True)
+            try:
+                self.update_control=activate(self.update_data,owned=True,source_root=self.source_root)
+            except OSError:
+                if self.source_root is None:
+                    raise
+                logging.exception('Could not create protected desktop switch control')
         thread=threading.Thread(target=self._run_server,name='iwb-server',daemon=True)
         self.owned=True
         started=time.monotonic()
@@ -544,7 +550,8 @@ def main(argv=None):
     mutex=kernel.CreateMutexW(None,False,'Local\\InfraWorkbenchDesktop8765')
     if not mutex: raise ctypes.WinError(ctypes.get_last_error())
     duplicate=ctypes.get_last_error()==183
-    service=ServiceHost(update_data=DATA)
+    source_root=None if getattr(sys,'frozen',False) else ROOT
+    service=ServiceHost(update_data=DATA,source_root=source_root)
     try:
         logging.info('Desktop launch pid=%s duplicate=%s',os.getpid(),duplicate)
         if duplicate:

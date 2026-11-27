@@ -27,6 +27,7 @@ rfd = "0.15"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Foundation"] }
+winreg = "0.56"
 
 [dev-dependencies]
 base64 = "0.22"

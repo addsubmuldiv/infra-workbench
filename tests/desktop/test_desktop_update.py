@@ -17,6 +17,36 @@ def test_update_shutdown_requires_owned_frozen_runtime(tmp_path, monkeypatch):
     client = TestClient(app)
     assert client.get('/api/desktop/update-capability').json() == {'supported': False}
     assert client.post('/api/desktop/update-shutdown', headers={'X-IWB': '1'}).status_code == 404
+    assert client.post('/api/desktop/switch-shutdown', headers={'X-IWB': '1'}).status_code == 404
+
+
+def test_source_tray_can_switch_only_after_authenticated_terminal_check(tmp_path, monkeypatch):
+    from backend.desktop_host import desktop_update as update
+    monkeypatch.delattr(sys, 'frozen', raising=False)
+    assert update.activate(tmp_path, owned=False, source_root=tmp_path) is None
+    control = update.activate(tmp_path, owned=True, source_root=tmp_path)
+    try:
+        app = FastAPI()
+        update.register_routes(app)
+        client = TestClient(app)
+        assert client.get('/api/desktop/update-capability').json() == {'supported': False}
+        value = control.value
+        assert value['source_root'] == str(tmp_path.resolve())
+        body = {key: value[key] for key in ('instance', 'executable')}
+        headers = {'X-IWB': '1', 'Authorization': 'Bearer '+value['token']}
+        switch = '/api/desktop/switch-shutdown'
+        assert client.post('/api/desktop/update-shutdown', headers=headers, json=body).status_code == 404
+        assert client.post(switch, headers={'X-IWB': '1'}, json=body).status_code == 403
+        assert client.post(switch, headers=headers, json={**body, 'instance': 'other'}).status_code == 409
+        app.state.terminals = SimpleNamespace(active={'session': {}})
+        assert client.post(switch, headers=headers, json=body).status_code == 409
+        assert not update.requested()
+        app.state.terminals.active.clear()
+        assert client.post(switch, headers=headers, json=body).status_code == 200
+        assert update.requested()
+        assert client.get('/api/desktop/update-capability').status_code == 503
+    finally:
+        update.deactivate(control)
 
 
 def test_update_auth_identity_and_owned_receipt_cleanup(tmp_path, monkeypatch):

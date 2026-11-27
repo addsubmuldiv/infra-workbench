@@ -3,6 +3,7 @@ import {t,useLocale} from '../../shared/i18n';
 import {isDemo} from '../onboarding/demoBootstrap';
 import {workspaceStorage} from '../../workspace/workspaceState';
 import {canRestartForUpdate,createDesktopUpdater,nativeUpdateBridge,RELEASES_URL} from './desktopUpdates';
+import {canSwitchEdition} from './useEditionSwitchGuard';
 import './desktopUpdates.css';
 declare const __IWB_VERSION__:string;
 const currentVersion=typeof __IWB_VERSION__==='undefined'?'':__IWB_VERSION__;
@@ -15,13 +16,18 @@ const updater=createDesktopUpdater(bridge,()=>canRestartForUpdate(window,()=>wor
 });
 const ReleaseNotes=lazy(()=>import('./ReleaseNotes'));
 if(bridge){
-  const target=window as unknown as {__IWB_DESKTOP_UPDATE_SAFETY__?:(freeze:boolean)=>{safe:boolean;reason?:string};__IWB_DESKTOP_UPDATE_FREEZE__?:(frozen:boolean)=>void};
-  target.__IWB_DESKTOP_UPDATE_SAFETY__=freeze=>{target.__IWB_DESKTOP_UPDATE_FREEZE__?.(freeze);return {safe:canRestartForUpdate(window,()=>workspaceStorage.hasUnsaved()),reason:t('请先保存修改并关闭活动终端。','Save changes and close active terminals first.')}};
-  target.__IWB_DESKTOP_UPDATE_FREEZE__=frozen=>{
+  const target=window as unknown as {__IWB_DESKTOP_UPDATE_SAFETY__?:(freeze:boolean,switching?:boolean)=>{safe:boolean};__IWB_DESKTOP_UPDATE_FREEZE__?:(frozen:boolean,switching?:boolean)=>void};
+  target.__IWB_DESKTOP_UPDATE_SAFETY__=(freeze,switching)=>{
+    target.__IWB_DESKTOP_UPDATE_FREEZE__?.(freeze,switching);
+    const guard=switching?canSwitchEdition:canRestartForUpdate;
+    return {safe:guard(window,()=>workspaceStorage.hasUnsaved())};
+  };
+  target.__IWB_DESKTOP_UPDATE_FREEZE__=(frozen,switching)=>{
     document.getElementById('desktop-update-freeze')?.remove();
     const root=document.getElementById('root');if(root)root.inert=frozen;
     if(!frozen)return;
-    const overlay=document.createElement('div');overlay.id='desktop-update-freeze';overlay.className='desktop-update-freeze';overlay.setAttribute('role','status');overlay.textContent=t('正在准备安装更新，请完成桌面确认窗口中的操作…','Preparing the update. Complete the desktop confirmation prompt…');document.body.append(overlay);
+    const overlay=document.createElement('div');overlay.id='desktop-update-freeze';overlay.className='desktop-update-freeze';overlay.setAttribute('role','status');
+    overlay.textContent=switching?t('正在检查窗口状态并准备切换版本…','Checking open windows and preparing to switch editions…'):t('正在准备安装更新，请完成桌面确认窗口中的操作…','Preparing the update. Complete the desktop confirmation prompt…');document.body.append(overlay);
   };
 }
 function useUpdates(){useLocale();return useSyncExternalStore(updater.subscribe,updater.getSnapshot)}

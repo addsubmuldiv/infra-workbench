@@ -1,4 +1,4 @@
-"""Native updater capability owned exclusively by this frozen tray process."""
+"""Authenticated shutdown control for the tray that owns the local service."""
 import json
 import os
 from pathlib import Path
@@ -60,10 +60,14 @@ def _protect(path):
 
 
 class Control:
-    def __init__(self, data):
+    def __init__(self, data, source_root=None):
         self.path = Path(data)/'desktop-update-control.json'
         self.value = dict(token=secrets.token_hex(32), instance=secrets.token_hex(32),
                           pid=os.getpid(), executable=str(Path(sys.executable).resolve()))
+        if source_root is not None:
+            # A venv's Windows redirector starts the base Python image.
+            self.value['executable'] = str(Path(sys._base_executable).resolve())
+            self.value['source_root'] = str(Path(source_root).resolve())
 
     def write(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,13 +90,13 @@ class Control:
             pass
 
 
-def activate(data, *, owned):
+def activate(data, *, owned, source_root=None):
     global _control
-    if not owned or not getattr(sys, 'frozen', False):
+    if not owned or (not getattr(sys, 'frozen', False) and source_root is None):
         return None
     if _control is not None:
         raise RuntimeError('Update control already active')
-    control = Control(data)
+    control = Control(data, source_root)
     control.write()
     _requested.clear()
     _control = control
@@ -127,9 +131,9 @@ class UpdateDrainMiddleware:
         if kind not in ('http', 'websocket'):
             return await self.app(scope, receive, send)
         path = scope.get('path', '')
-        exempt = kind == 'http' and (path == '/api/desktop/update-shutdown' or
+        exempt = kind == 'http' and (path in ('/api/desktop/update-shutdown', '/api/desktop/switch-shutdown') or
                    (path == '/api/health' and scope.get('method') == 'GET'))
-        enabled = _control is not None and bool(getattr(sys, 'frozen', False))
+        enabled = _control is not None
         if not enabled or exempt:
             return await self.app(scope, receive, send)
         if requested():
@@ -170,10 +174,11 @@ def register_routes(app):
         return JSONResponse({'supported': _control is not None and bool(getattr(sys, 'frozen', False))},
                             headers={'Cache-Control': 'no-store'})
 
+    @app.post('/api/desktop/switch-shutdown', include_in_schema=False)
     @app.post('/api/desktop/update-shutdown', include_in_schema=False)
     async def shutdown(request: Request):
         control = _control
-        if control is None or not getattr(sys, 'frozen', False):
+        if control is None or (request.url.path.endswith('/update-shutdown') and not getattr(sys, 'frozen', False)):
             raise HTTPException(404, 'Desktop update control unavailable')
         authorization = request.headers.get('authorization', '')
         expected = 'Bearer '+control.value['token']

@@ -4,6 +4,7 @@ import React,{useEffect,useState} from 'react';
 import {Globe,Monitor,PanelsTopLeft,Check} from 'lucide-react';
 import '../settings/settings.css';
 import './launchSettings.css';
+import {useEditionSwitchGuard} from './useEditionSwitchGuard';
 
 type LaunchView={mode:'browser'|'desktop';show_floating:boolean;desktop_available:boolean;floating_available?:boolean};
 async function request(method='GET',body?:unknown):Promise<LaunchView>{
@@ -15,6 +16,7 @@ async function request(method='GET',body?:unknown):Promise<LaunchView>{
 export function LaunchSettingsPage(){
   const [saved,setSaved]=useState<LaunchView|null>(null),[mode,setMode]=useState<LaunchView['mode']>('browser'),[floating,setFloating]=useState(true);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+  useEditionSwitchGuard(busy||!!saved&&(saved.mode!==mode||saved.show_floating!==floating));
   useEffect(()=>{let active=true;request().then(value=>{if(active){setSaved(value);setMode(value.mode);setFloating(value.show_floating)}}).catch(error=>{if(active)setError(error.message)});return()=>{active=false}},[]);
   async function save(event:React.FormEvent){
     event.preventDefault();setBusy(true);setError('');setMessage('');

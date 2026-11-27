@@ -8,6 +8,7 @@ mod lifecycle;
 mod quick_window;
 mod startup_theme;
 mod updater;
+mod edition;
 use window_fade::restore_window;
 
 #[derive(Default)]
@@ -383,6 +384,11 @@ fn activate_main(app: &tauri::AppHandle, focus: bool, desktop_selected: bool, fr
 }
 
 fn main() {
+    #[cfg(windows)]
+    {
+        if edition::run_handoff() { return; }
+        edition::remember_checkout();
+    }
     tauri::Builder::default()
         .manage(updater::UpdaterState::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -398,7 +404,7 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::default()
             .with_filter(|label|label=="main")
             .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE | tauri_plugin_window_state::StateFlags::POSITION | tauri_plugin_window_state::StateFlags::MAXIMIZED).build())
-        .invoke_handler(tauri::generate_handler![updater::desktop_update_status, updater::desktop_update_check, updater::desktop_update_download, updater::desktop_update_install, updater::desktop_update_safety_response, close_desktop, main_window_action, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
+        .invoke_handler(tauri::generate_handler![updater::desktop_update_status, updater::desktop_update_check, updater::desktop_update_download, updater::desktop_update_install, updater::desktop_update_safety_response, edition::desktop_edition_status, edition::desktop_switch_edition, close_desktop, main_window_action, desktop_ready, quick_window::quick_window_action, quick_window::open_quick_tool])
         .setup(|app| {
             let args = std::env::args().collect::<Vec<_>>();
             if args.iter().any(|arg|arg=="--quit-desktop") { app.handle().exit(0);return Ok(()); }
