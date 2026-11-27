@@ -205,8 +205,9 @@
   overflow: visible;
   pointer-events: none;
   filter: drop-shadow(0 0 2px var(--chat-beam-color))
-    drop-shadow(0 0 5px var(--chat-beam-color))
-    drop-shadow(0 0 8px var(--chat-beam-color));
+    drop-shadow(0 0 6px var(--chat-beam-color))
+    drop-shadow(0 0 11px var(--chat-beam-color));
+  clip-path: inset(0 round var(--chat-input-radius));
   opacity: 0;
   transition: opacity 180ms ease;
 }
@@ -218,7 +219,6 @@
   rx: calc(var(--chat-input-radius) - 1px);
   fill: none;
   stroke: var(--chat-beam-color);
-  stroke-width: 2px;
   stroke-dashoffset: var(--chat-beam-offset);
   animation: chat-input-beam-lap 3.2s linear infinite paused;
 }
