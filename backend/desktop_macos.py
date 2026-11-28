@@ -297,8 +297,8 @@ class MenuBar:
         self.dispatcher = MainThreadNotifications(self.notifier)
         self.stop, self.ui_started, self.healthy, self.exit_requested = (threading.Event() for _ in range(4))
         self.worker = None
-        self.app = rumps.App('Infra Workbench', title='IW', icon=str(ROOT/'backend'/'assets'/'workbench.png'),
-                             template=False, quit_button=None)
+        self.app = rumps.App('Infra Workbench', icon=str(ROOT/'backend'/'assets'/'workbench-menubar.png'),
+                             template=True, quit_button=None)
         self.localized_items = []
         self.locale = current_locale()
         def item(zh, en, callback):
