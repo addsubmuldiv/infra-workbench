@@ -74,11 +74,15 @@ def tunnel_port_owner(port):
     if not listeners:
         return dict(status='free')
     owners = {pid for row in listeners for pid in row['owners']}
-    if len(owners) != 1 or any(not row['owners'] or not row['inode'] for row in listeners):
-        return dict(status='unverified')
+    if any(not row['owners'] for row in listeners):
+        return dict(status='unverified', reason='owner_hidden', listeners=listeners)
+    if len(owners) != 1 or any(not row['inode'] for row in listeners):
+        return dict(status='unverified', reason='ambiguous_owner', listeners=listeners)
     pid = owners.pop()
-    if pid <= 1 or not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
-        return dict(status='unverified')
+    if pid <= 1:
+        return dict(status='unverified', reason='ambiguous_owner', listeners=listeners)
+    if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
+        return dict(status='unverified', reason='signal_unavailable', listeners=listeners)
     try:
         fd = os.pidfd_open(pid)
         try:
@@ -91,8 +95,10 @@ def tunnel_port_owner(port):
             signal.pidfd_send_signal(fd, 0)
         finally:
             os.close(fd)
+    except PermissionError:
+        return dict(status='unverified', reason='permission_denied', listeners=listeners)
     except OSError:
-        return dict(status='unverified')
+        return dict(status='unverified', reason='signal_unavailable', listeners=listeners)
     boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
     return dict(status='occupied', process=info, listeners=listeners, boot_id=boot_id)
 

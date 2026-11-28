@@ -18,7 +18,7 @@
 2. 本机端口填写本机代理正在监听的 TCP 端口，例如 `7890`；远端端口填写给远端程序使用的端口，例如 `18899`。
 3. 点击“保存并连接”。后台接受请求后会关闭弹窗，首次连上或最终失败时会在通知中心留下消息，并按现有设置发送桌面或浏览器通知。连接成功后，远端程序可访问 `127.0.0.1:18899`，流量经 SSH 转发到本机 `127.0.0.1:7890`。
 4. 远端程序仍需配置对应的代理协议与地址。工作台不修改 Codex、VS Code 或远端环境变量。
-5. 移除 VS Code SSH 配置中重复的 `RemoteForward`。连接或重连遇到远端转发错误时，工作台会自动检查监听进程。确认有进程占用端口且当前 SSH 账号有权限结束它时，弹窗会让你选择保留该进程或发送 SIGTERM。确认端口释放后，工作台会用原配置重连。
+5. 移除 VS Code SSH 配置中重复的 `RemoteForward`。连接或重连遇到远端转发错误时，工作台会自动检查监听。普通 SSH 会话看不到进程时，会尝试复用当前 SSH 账号已验证的 sudo 设置。查到可以结束的单个进程后，弹窗会让你选择保留它或发送 SIGTERM。仍缺少权限时，弹窗会提示验证 sudo 并重新检查。确认端口释放后，工作台会用原配置重连。
 
 “本机访问远端（服务）”则将本机监听端口转发到远端目标端口，可用于访问远端服务。已有的“服务”面板保持原有行为。
 
@@ -67,6 +67,6 @@ After the backend accepts a manual connection request, the dialog closes. The fi
 
 Connections belong to the backend and continue when panels or VS Code close. Quit the backend to disconnect. Optional network reconnect and app-start connection are configured per rule. With reconnect enabled, a rejected remote forward is retried up to four times, with delays of 2, 5, 10, and 30 seconds, to give an old SSH session time to release the port. Unexpected tunnel disconnects are recorded in the notification center and use your desktop or browser notification settings. Authentication, host-key, and local binding errors require manual correction. Password-based hosts can use a saved SSH password or reuse an authenticated SSH session for the default account when applicable. Target-port checks test TCP reachability only.
 
-When a remote forward fails, Workbench checks for a listener. If the SSH account can identify and stop the listener, Workbench asks whether to keep it or send SIGTERM. After the port is released, Workbench reconnects with the saved configuration.
+When a remote forward fails, Workbench checks for a listener. If the owner is hidden, Workbench tries the current SSH account's verified sudo configuration. Once Workbench can identify and stop a single owner, it asks whether to keep the process or send SIGTERM. If it still lacks access, the dialog offers to verify sudo and check again. After the port is released, Workbench reconnects with the saved configuration.
 
 The client requests loopback listening, but the SSH server controls the final bind address. Server configurations such as `GatewayPorts yes` can override it. No server configuration is changed automatically.

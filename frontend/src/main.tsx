@@ -151,6 +151,7 @@ function App(){
     history.replaceState(history.state,'',url);
   }
   const [sudoHost,setSudoHost]=useState<Host|null>(null);
+  const sudoTunnel=useRef<string|null>(null);
   const [sshAccountsHost,setSSHAccountsHost]=useState<Host|null>(null);
   const [sshAccountChoice,setSSHAccountChoice]=useState<{host:Host;tool:'terminal'|'files'}|null>(null);
   const [removalHosts,setRemovalHosts]=useState<Host[]>([]);
@@ -470,7 +471,10 @@ function App(){
     if(deviceOverview&&event.target instanceof Element&&!event.target.closest('#device-overview,[aria-controls="device-overview"]'))setDeviceOverview(false);
   }}>
     {header}
-    {!isDemo&&<TunnelPortConflictPrompt hosts={state.hosts} notice={setNotice}/>}
+    {!isDemo&&!sudoHost&&<TunnelPortConflictPrompt hosts={state.hosts} notice={setNotice} configureSudo={(hostId,ruleId)=>{
+      const host=state.hosts.find(item=>item.id===hostId);
+      if(host){sudoTunnel.current=ruleId;setSudoHost(host)}
+    }}/>}
     <aside className="sidebar">
       <div className="nav-label">{ui("工作台")}</div><nav>{[["overview",ui("算力总览"),LayoutGrid],["reservations",tr("资源预约","Resource alerts"),CalendarClock],["history",tr("资源历史","Resource history"),History],["precision",ui("精度对比"),ChartLine],["settings",ui("设置"),Settings]].map(([key,label,Icon])=><button key={String(key)} title={String(label)} aria-label={String(label)} className={page===key?'active':''} aria-current={page===key?'page':undefined} onClick={()=>navigate(String(key) as Page)}><Icon size={18}/>{String(label)}{key==='reservations'&&pendingReservations>0&&<span className="nav-count">{pendingReservations}</span>}</button>)}</nav>
       <div className="sidebar-hosts" data-tour="hosts">{hostList}</div>
@@ -593,7 +597,15 @@ function App(){
       }}
     />}
     {removalHosts.length>0&&<RemoveHostDialog hosts={removalHosts} close={()=>setRemovalHosts([])} remove={removeHost}/>}
-    {sudoHost&&<SudoModal key={sudoHost.id} host={sudoHost} close={()=>setSudoHost(null)} updated={async()=>{await load()}} notify={setNotice}/>}
+    {sudoHost&&<SudoModal key={sudoHost.id} host={sudoHost}
+      close={()=>{sudoTunnel.current=null;setSudoHost(null)}}
+      updated={async()=>{
+        if(sudoTunnel.current){
+          const path=`/hosts/${encodeURIComponent(sudoHost.id)}/tunnels/${encodeURIComponent(sudoTunnel.current)}/port-conflict/recheck`;
+          await api(path,'POST');
+        }
+        await load();
+      }} notify={setNotice}/>}
     {detail&&<DeviceDrawerFrame onClose={()=>{setDetail(null);setCheck(null)}}><section className="drawer" role="dialog" aria-label={ui("设备详情")} onClick={e=>e.stopPropagation()}><div className="drawer-heading"><div className="eyebrow">DEVICE INSPECTOR</div><button className="icon-button" aria-label={ui("关闭设备详情")} onClick={()=>{setDetail(null);setCheck(null)}}><X size={20}/></button></div><h2>{detailHost?.target}</h2><p className="subtle">{detailDevice?.kind} {detailDevice?displayId(detailDevice):''} · {detailDevice?.name}{detailDevice?.physical_id!=null&&tr(` · 卡 ${detailDevice.card_id} / 芯片 ${detailDevice.chip_id}`,` · Card ${detailDevice.card_id} / chip ${detailDevice.chip_id}`)}</p>{detailDevice&&<><div className="detail-metrics"><div>{ui("剩余显存")}<strong>{gib(detailDevice.memory_free)} <small>GiB</small></strong></div><div>{ui("计算利用率")}<strong>{detailDevice.utilization??'—'}<small>%</small></strong></div></div><h3>{ui("计算进程 ")}<Badge>{detailDevice.processes.length}</Badge></h3>{!detailDevice.processes_known?<div className="error-banner">{ui("进程信息无法完整读取，不能确认空闲。")}</div>:detailDevice.processes.length===0?<p className="subtle">{ui("采集工具未报告可见计算进程。")}</p>:detailDevice.processes.map(p=><React.Fragment key={p.pid}>{p.details_collected_at&&<p className="subtle">{tr("进程详情采样：","Process details sampled: ")}{clock(p.details_collected_at)}</p>}<ProcessDetails process={p} onCopy={text=>navigator.clipboard.writeText(text).then(()=>setNotice(ui("已复制"))).catch(()=>setNotice(ui("复制失败，可手动选择文本复制")))}/></React.Fragment>)}<button className="secondary wide" onClick={()=>toggle(detail.host,detail.device)}><Check size={15}/>{(selected[detail.host]||[]).includes(detail.device)?ui("取消选择此设备"):ui("选择此设备")}</button></>}{check&&<div className={'check-result '+(check.status==='PASS'?'pass':'')}><h3><ShieldCheck size={18}/>{ui("检查结果：")}{check.status}</h3>{check.reasons.map((r,i)=><p key={i}>{r}</p>)}</div>}<div className="drawer-note">{ui("数据来自最近一次采集。进程不可见时会明确标记，检查结果不构成资源预留。")}</div></section></DeviceDrawerFrame>}
     {!isDemo&&<FirstRunGuide ready={state.server_time>0} hasHosts={state.hosts.length>0} onAddMachine={()=>setAdding(true)}/>}
     {isDemo&&<DemoGuide onStepChange={showDemoStep} onReset={()=>{location.hash='overview';location.reload()}} onFinishTraining={()=>{demoRuntime!.finishTraining();void load()}}/>}

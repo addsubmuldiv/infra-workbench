@@ -16,6 +16,17 @@ PYTHON = '/usr/bin/python3'
 PROTOCOL = 'iwb-process-v1'
 
 
+def sudo_error_lines(stderr):
+    return [line.strip().lower() for line in stderr.splitlines() if line.strip().lower().startswith('sudo:')]
+
+
+def sudo_needs_password(lines):
+    return any(any(marker in line for marker in (
+        'a password is required', 'a terminal is required',
+        'no tty present', 'must have a tty',
+    )) for line in lines)
+
+
 def validate_request(args):
     if len(args)<3 or len(args)>4098 or args[0]!='--inspect':
         raise ValueError('invalid request')
@@ -186,7 +197,7 @@ class SudoService:
         credential = self.passwords.get(key) or self.vault.get(key)
         return credential.get('password') if credential and credential.get('identity')==identity else None
 
-    async def try_ssh_password(self, host, command, config):
+    def _ssh_password_attempt(self, host, config):
         if self.ssh_password is None:
             return None
         try:
@@ -195,9 +206,21 @@ class SudoService:
             return None
         if not password or len(password)>512 or any(char in password for char in '\r\n\0'):
             return None
-        key = ssh_credential_key(host)
         fingerprint = hmac.digest(self.fingerprint_key, password.encode(), 'sha256')
-        attempt = self.identity(config), fingerprint
+        return password, (self.identity(config), fingerprint)
+
+    def ssh_password_for_command(self, host, config):
+        candidate = self._ssh_password_attempt(host, config)
+        if candidate and self.rejected_ssh_passwords.get(ssh_credential_key(host)) != candidate[1]:
+            return candidate[0]
+        return None
+
+    async def try_ssh_password(self, host, command, config):
+        candidate = self._ssh_password_attempt(host, config)
+        if candidate is None:
+            return None
+        password, attempt = candidate
+        key = ssh_credential_key(host)
         if self.rejected_ssh_passwords.get(key) == attempt:
             self.status(host, 'ssh_password_rejected')
             return None
@@ -228,19 +251,14 @@ class SudoService:
             # SSH, PAM infrastructure and helper failures are not evidence of
             # rejected credentials. Only explicit sudo authentication/policy
             # refusals may latch denied and stop future password attempts.
-            lines = [line.strip().lower() for line in err.splitlines()
-                     if line.strip().lower().startswith('sudo:')]
+            lines = sudo_error_lines(err)
             rejected = any(any(marker in line for marker in (
                 'incorrect password', 'authentication failure',
                 'not in the sudoers', 'not allowed to execute',
                 'may not run sudo', 'is not allowed to run sudo',
             )) for line in lines)
-            needs_password = any(any(marker in line for marker in (
-                'a password is required', 'a terminal is required',
-                'no tty present', 'must have a tty',
-            )) for line in lines)
             status = ('error' if code == 255 else 'denied' if rejected else
-                      'password_required' if password is None and needs_password else 'error')
+                      'password_required' if password is None and sudo_needs_password(lines) else 'error')
             self.status(host,status)
             return None
         return out

@@ -8,7 +8,8 @@ import './sshTunnels.css';
 export type TunnelRule={id:string;name:string;direction:'remote'|'local';local_port:number;remote_port:number;auto_reconnect:boolean;auto_start:boolean;before_vscode:boolean;has_connected?:boolean;status:string;error:string;error_code:string|null;connected_at:number|null;next_retry_at:number|null;port_conflict?:PortConflict};
 type Host={id:string;target:string;auth?:string;ssh_tunnels?:TunnelRule[];ssh_password?:{password_saved:boolean|null}};
 type Draft=Pick<TunnelRule,'name'|'direction'|'local_port'|'remote_port'|'auto_reconnect'|'auto_start'|'before_vscode'>;
-export type PortConflict={confirmation:string;process:{pid:number;uid:number;name:string};addresses:string[]};
+export type PortConflict={confirmation:string;process:{pid:number;uid:number;name:string}|null;addresses:string[];
+  reason:'owner_hidden'|'ambiguous_owner'|'permission_denied'|'signal_unavailable'|null};
 const defaults=():Draft=>({name:t('Codex 代理','Codex proxy'),direction:'remote',local_port:7890,remote_port:18899,auto_reconnect:true,auto_start:false,before_vscode:false});
 const running=(status:string)=>['connecting','connected','reconnecting'].includes(status);
 export function tunnelStatusText(status:string){return status==='connected'?t('已连接','Connected'):status==='connecting'?t('正在连接','Connecting'):status==='reconnecting'?t('正在重连','Reconnecting'):status==='error'?t('连接失败','Connection failed'):t('未连接','Disconnected')}

@@ -5,7 +5,9 @@ import {tunnelRequest,type TunnelRule} from './SSHTunnelPanel';
 
 type Host={id:string;target:string;alias?:string;ssh_tunnels?:TunnelRule[]};
 
-export function TunnelPortConflictPrompt({hosts,notice}:{hosts:Host[];notice:(message:string)=>void}){
+export function TunnelPortConflictPrompt({hosts,notice,configureSudo}:{
+  hosts:Host[];notice:(message:string)=>void;configureSudo:(hostId:string,ruleId:string)=>void;
+}){
   useLocale();
   const handled=useRef(new Set<string>());
   const [submitting,setSubmitting]=useState(false);
@@ -18,14 +20,16 @@ export function TunnelPortConflictPrompt({hosts,notice}:{hosts:Host[];notice:(me
       const {confirmation,process,addresses}=conflict;
       const machine=host.alias?`${host.alias} (${host.target})`:host.target;
       const listeners=addresses.join(', ');
+      const canConfigure=!process&&conflict.reason!=='ambiguous_owner';
       async function decide(accepted:boolean){
         if(handled.current.has(confirmation))return;
         handled.current.add(confirmation);
         setSubmitting(true);
         try{
-          const decision=accepted?'release':'dismiss';
+          const decision=accepted&&process?'release':'dismiss';
           const path=`/${encodeURIComponent(rule.id)}/port-conflict/${decision}`;
           const result=await tunnelRequest(host.id,path,'POST',{confirmation});
+          if(accepted&&canConfigure)configureSudo(host.id,rule.id);
           switch(result.status){
             case 'changed':
               notice(t('远端监听进程或隧道配置已变化。请重新连接隧道。',
@@ -44,6 +48,19 @@ export function TunnelPortConflictPrompt({hosts,notice}:{hosts:Host[];notice:(me
           setSubmitting(false);
         }
       }
+      if(!process)return <AppConfirm key={confirmation}
+        heading={t('远端端口被占用','Remote port is in use')}
+        message={canConfigure?t(
+          `${machine} 上的 ${listeners} 正在监听。当前 SSH 会话无法核实占用进程。验证该机器的 sudo 权限后，Workbench 会重新检查，再请你确认是否结束进程。`,
+          `${listeners} is listening on ${machine}. This SSH session could not verify the owner. Verify sudo access for this machine so Workbench can check again and ask before stopping the process.`
+        ):t(
+          `${machine} 上的 ${listeners} 正在监听，但无法核实单个占用进程。请让服务器管理员检查这条监听。`,
+          `${listeners} is listening on ${machine}, but Workbench could not verify a single owner. Ask the server administrator to check the listener.`
+        )}
+        confirmLabel={t('配置 sudo 并重新检查','Configure sudo and check again')}
+        cancelLabel={t('关闭','Close')}
+        hideConfirm={!canConfigure}
+        finish={accepted=>void decide(accepted)}/>;
       return <AppConfirm key={confirmation}
         heading={t('远端端口被占用','Remote port is in use')}
         message={t(

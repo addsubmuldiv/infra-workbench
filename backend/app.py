@@ -539,7 +539,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
     register_desktop_notification_routes(app, store)
     register_terminal_routes(app,hosts,ssh,store,sudo)
     register_port_forwarding(app,store,ssh,hosts)
-    register_ssh_tunnels(app,store,ssh,hosts,ssh_passwords,on_result=state_changes.publish)
+    register_ssh_tunnels(app,store,ssh,hosts,ssh_passwords,sudo=sudo,on_result=state_changes.publish)
     register_ssh_config_export(app)
     register_vscode(app)
     app.state.agent_service = AgentService(hosts,snapshots,ssh,ssh_passwords,collect)

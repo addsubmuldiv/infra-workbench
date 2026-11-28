@@ -131,6 +131,118 @@ def test_remote_port_recovery_requires_a_scoped_confirmation_and_reconnects(tmp_
         assert releases == ['a', 'a']
 
 
+@pytest.mark.parametrize('sudo_password_saved', [True, False])
+def test_hidden_port_owner_prompts_and_rechecks_with_configured_sudo(tmp_path, monkeypatch, sudo_password_saved):
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from backend.app import create_app
+    from backend.ssh.tunnel_transport import TunnelFailure
+
+    app = create_app(tmp_path, start_poll=False)
+    host = dict(id='fixture-port-owner', target='a', auth='key')
+    app.state.hosts.append(host)
+    manager = app.state.ssh_tunnels
+    manager.retry_delays = (60,)
+    config = dict(hostname='a', user='test', port='22')
+    hidden = dict(status='unverified', reason='owner_hidden',
+                  listeners=[dict(address='127.0.0.1:18899', owners=[], inode='9')])
+    visible = dict(status='occupied', process=dict(pid=51, uid=1000, name='sshd', start_ticks='72'),
+                   boot_id='test', listeners=[dict(address='127.0.0.1:18899', owners=[51], inode='9')])
+    operations = []
+    sudo_command_allowed = True
+
+    async def open_transport(host, rule):
+        raise TunnelFailure('FORWARD_REJECTED', 'fixture port conflict')
+
+    async def effective(host):
+        return config
+
+    async def run_bound(host, command, source, config):
+        if command == 'python3 -':
+            assert "'action': 'inspect_tunnel_port'" in source
+            operations.append('inspect')
+            result = hidden
+        else:
+            if command.startswith('LC_ALL=C /usr/bin/sudo -n '):
+                assert not sudo_password_saved
+                assert source.startswith('\nIWB_SCRIPT_START\n')
+                operations.append('sudo requires authentication')
+                return 1, '', 'sudo: a password is required'
+            assert command.startswith('LC_ALL=C /usr/bin/sudo -S -k ') and '/usr/bin/python3 -I' in command
+            assert 'fixture-password' not in command
+            assert source.startswith('fixture-password\n\nIWB_SCRIPT_START\n')
+            if not sudo_command_allowed:
+                return 1, '', 'sudo: user is not allowed to execute this command'
+            if "'action': 'release_tunnel_port'" in source:
+                assert repr(visible) in source
+                operations.append('release with sudo')
+                result = dict(status='still_occupied')
+            else:
+                operations.append('inspect with sudo')
+                result = visible
+        return 0, 'IWB_PORT:'+json.dumps(result), ''
+
+    monkeypatch.setattr(manager, 'open_transport', open_transport)
+    monkeypatch.setattr(manager.ssh, 'effective', effective)
+    monkeypatch.setattr(manager.ssh, 'run_bound', run_bound)
+    monkeypatch.setattr(manager.sudo, 'password',
+                        lambda host, identity: 'fixture-password' if sudo_password_saved else None)
+    monkeypatch.setattr(manager.sudo, 'ssh_password',
+                        lambda host, config: pytest.fail('Unused SSH password lookup') if sudo_password_saved
+                        else 'fixture-password')
+
+    with TestClient(app, headers={'X-IWB': '1'}) as client:
+        base = f"/api/hosts/{host['id']}/tunnels"
+        rule = client.post(base, json=dict(name='Proxy', local_port=7890, remote_port=18899)).json()
+        tunnel = f"{base}/{rule['id']}"
+        endpoint = tunnel+'/port-conflict'
+        client.post(tunnel+'/start').raise_for_status()
+
+        def wait_for_conflict(reason):
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                rule = client.get('/api/state').json()['hosts'][0]['ssh_tunnels'][0]
+                conflict = rule.get('port_conflict')
+                if conflict and conflict['reason'] == reason:
+                    return conflict
+                time.sleep(.01)
+            pytest.fail('Expected port conflict was not shown')
+
+        first = wait_for_conflict('owner_hidden')
+        assert first['process'] is None
+        assert first['addresses'] == ['127.0.0.1:18899']
+        assert client.post(endpoint+'/release', json=dict(confirmation=first['confirmation'])).json()['status'] == 'changed'
+        assert operations == ['inspect']
+        client.post(endpoint+'/dismiss', json=dict(confirmation=first['confirmation'])).raise_for_status()
+
+        host.update(sudo_enabled=True, sudo_identities={'original': manager.sudo.identity(config)})
+        client.post(endpoint+'/recheck').raise_for_status()
+        confirmed = wait_for_conflict(None)
+        assert confirmed['process']['pid'] == 51
+        checks = ['inspect', 'inspect']
+        if not sudo_password_saved:
+            checks.append('sudo requires authentication')
+        assert operations == [*checks, 'inspect with sudo']
+        assert client.post(endpoint+'/release', json=dict(confirmation=confirmed['confirmation'])).json()['status'] == 'still_occupied'
+        assert operations[-1] == 'release with sudo'
+
+        client.post(tunnel+'/stop').raise_for_status()
+        client.post(tunnel+'/start').raise_for_status()
+        automatic = wait_for_conflict(None)
+        assert automatic['process']['pid'] == 51
+        assert operations[-1] == 'inspect with sudo'
+        assert operations.count('release with sudo') == 1
+
+        manager.sudo.status(host, 'ready')
+        sudo_command_allowed = False
+        client.post(tunnel+'/stop').raise_for_status()
+        client.post(tunnel+'/start').raise_for_status()
+        assert wait_for_conflict('owner_hidden')['process'] is None
+        assert manager.sudo.view(host)['status'] == 'ready'
+
+
 def test_roundtrips_ownership_and_cleanup(tmp_path):
     class Server(asyncssh.SSHServer):
         def begin_auth(self, username): return False

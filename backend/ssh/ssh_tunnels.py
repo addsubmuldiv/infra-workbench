@@ -3,6 +3,7 @@ import asyncio
 import errno
 import json
 import logging
+import shlex
 import sqlite3
 import time
 import uuid
@@ -15,8 +16,9 @@ from backend.common.agent_errors import AgentError
 from backend.workspace.interface_language import tr
 from backend.mcp.mcp_output import page
 from backend.paths import PROBES_DIR
-from .ssh_accounts import ssh_account_key
+from .ssh_accounts import default_account_id, ssh_account_key
 from .ssh_passwords import connection_identity
+from .sudo import sudo_error_lines, sudo_needs_password
 from .tunnel_transport import NativeTunnel, PasswordTunnel, SessionTunnel, TargetAuthenticationFailure, TunnelFailure
 
 HISTORY_LIMIT = 100
@@ -40,6 +42,15 @@ class PortConflictDecision(BaseModel):
     confirmation: str = Field(pattern=r'^[a-f0-9]{32}$')
 
 
+def sudo_port_probe(source, password):
+    options = "-S -k -p ''" if password else '-n'
+    # Password and source stay on stdin. A passwordless sudo policy may leave
+    # the password unread, so the bootstrap starts at the explicit marker.
+    bootstrap = "import sys; exec(sys.stdin.read().replace('\\r\\n', '\\n').split('\\nIWB_SCRIPT_START\\n', 1)[1])"
+    return ('LC_ALL=C /usr/bin/sudo '+options+' -- /usr/bin/python3 -I -c '+shlex.quote(bootstrap),
+            (password+'\n' if password else '')+'\nIWB_SCRIPT_START\n'+source)
+
+
 def classify(exc):
     if isinstance(exc, TunnelFailure): return exc
     if isinstance(exc, AgentError): return TunnelFailure(exc.code, exc.message)
@@ -59,9 +70,10 @@ def classify(exc):
 class SSHTunnels:
     retry_delays = (2, 5, 10, 30)
 
-    def __init__(self, store, ssh, hosts, passwords, *, on_result=None):
+    def __init__(self, store, ssh, hosts, passwords, *, sudo=None, on_result=None):
         self.store, self.ssh, self.hosts, self.passwords = store, ssh, hosts, passwords
         self.on_result = on_result
+        self.sudo = sudo
         self.rules = store.load('ssh_tunnels', [])
         for rule in self.rules:
             rule.setdefault('before_vscode', False)
@@ -92,8 +104,9 @@ class SSHTunnels:
         result = dict(rule, **state)
         pending = self.port_confirmations.get(rule_id)
         if include_port_conflict and pending and state['error_code'] == 'FORWARD_REJECTED':
-            confirmation, _, owner = pending
-            result['port_conflict'] = dict(confirmation=confirmation, process=owner['process'],
+            confirmation, _, owner, _ = pending
+            result['port_conflict'] = dict(confirmation=confirmation, process=owner.get('process'),
+                                           reason=owner.get('reason'),
                                            addresses=[row['address'] for row in owner['listeners']])
         return result
 
@@ -389,16 +402,32 @@ class SSHTunnels:
                                 'This tunnel has no remote listening error. Refresh its status and try again.'))
         return rule
 
-    async def port_operation(self, host, config, request):
+    async def port_operation(self, host, config, request, *, elevated=False):
+        releasing = request['action'] == 'release_tunnel_port'
+        if elevated:
+            identity = self.sudo.identity(config)
+            verified = host.get('sudo_identities', {}).get(default_account_id(host), host.get('sudo_identity'))
+            if not host.get('sudo_enabled') or identity != verified:
+                return dict(status='unverified' if releasing else 'unknown')
         source = (PROBES_DIR/'command_probe.py').read_text(encoding='utf-8')
         source += f'\nprint("IWB_PORT:" + json.dumps(command_main({request!r}, "")))\n'
         try:
-            code, out, _ = await self.ssh.run_bound(host, 'python3 -', source, config)
-            if code == 255 and request['action'] == 'inspect_tunnel_port':
-                await self.passwords.restore_session(host, fallback=True)
-                session = self.ssh.sessions.get(ssh_account_key(host))
-                if session and not session.is_closed():
-                    code, out, _ = await self.ssh.run_bound(host, 'python3 -', source, config)
+            if elevated:
+                password = self.sudo.password(host, identity)
+                command, script = sudo_port_probe(source, password)
+                code, out, err = await self.ssh.run_bound(host, command, script, config)
+                if code == 1 and password is None and sudo_needs_password(sudo_error_lines(err)):
+                    password = self.sudo.ssh_password_for_command(host, config)
+                    if password:
+                        command, script = sudo_port_probe(source, password)
+                        code, out, _ = await self.ssh.run_bound(host, command, script, config)
+            else:
+                code, out, _ = await self.ssh.run_bound(host, 'python3 -', source, config)
+                if code == 255 and not releasing:
+                    await self.passwords.restore_session(host, fallback=True)
+                    session = self.ssh.sessions.get(ssh_account_key(host))
+                    if session and not session.is_closed():
+                        code, out, _ = await self.ssh.run_bound(host, 'python3 -', source, config)
             if code == 0:
                 line = next(line for line in reversed(out.splitlines()) if line.startswith('IWB_PORT:'))
                 return json.loads(line.removeprefix('IWB_PORT:'))
@@ -408,7 +437,7 @@ class SSHTunnels:
             from asyncssh import Error
             if not isinstance(error, Error):
                 raise
-        if request['action'] == 'release_tunnel_port':
+        if releasing:
             raise ValueError(tr('未能确认结束进程的结果，请重新检查远端端口。',
                                 'Could not confirm the termination result. Check the remote port again.'))
         return dict(status='unknown')
@@ -421,15 +450,25 @@ class SSHTunnels:
             host = self.host(host_id)
             await self.passwords.restore_session(host)
             config = await self.ssh.effective(host)
-            owner = await self.port_operation(host, config, dict(action='inspect_tunnel_port', port=port))
+            request = dict(action='inspect_tunnel_port', port=port)
+            owner = await self.port_operation(host, config, request)
+            elevated = False
+            if (self.sudo and host.get('sudo_enabled') and owner.get('reason') in
+                    ('owner_hidden', 'permission_denied', 'signal_unavailable')):
+                candidate = await self.port_operation(host, config, request, elevated=True)
+                if candidate['status'] != 'unknown':
+                    elevated = True
+                    owner = candidate
             self.rejected_remote_rule(host_id, rule_id)
         except (ValueError, OSError, AgentError, Error):
             return
         if (self.port_checks.get(rule_id) is not asyncio.current_task()
                 or rule['remote_port'] != port or self.host(host_id) is not host):
             return
-        if owner['status'] == 'occupied':
-            self.port_confirmations[rule_id] = (uuid.uuid4().hex, connection_identity(config), owner)
+        if owner['status'] in ('occupied', 'unverified'):
+            if elevated and owner['status'] == 'unverified':
+                owner['reason'] = 'ambiguous_owner'
+            self.port_confirmations[rule_id] = (uuid.uuid4().hex, connection_identity(config), owner, elevated)
             if self.on_result:
                 self.on_result()
 
@@ -441,21 +480,33 @@ class SSHTunnels:
                 self._remove_port_confirmation(rule_id)
             return {'ok': True}
 
+    async def recheck_remote_port(self, host_id, rule_id):
+        async with self.lock:
+            rule = self.rule(host_id, rule_id)
+            if self.view(rule)['error_code'] != 'FORWARD_REJECTED' or rule['direction'] != 'remote':
+                return {'ok': True}
+            check = self.port_checks.get(rule_id)
+            if not check or check.done():
+                self._clear_port_conflict(rule_id)
+                self.port_checks[rule_id] = asyncio.create_task(self._check_remote_port(rule))
+            return {'ok': True}
+
     async def release_remote_port(self, host_id, rule_id, confirmation):
         async with self.lock:
             rule = self.rejected_remote_rule(host_id, rule_id)
             pending = self.port_confirmations.get(rule_id)
-            if not pending or pending[0] != confirmation:
+            if not pending or pending[0] != confirmation or pending[2]['status'] != 'occupied':
                 return dict(status='changed')
             self._remove_port_confirmation(rule_id)
-            _, identity, owner = pending
+            _, identity, owner, elevated = pending
             port = rule['remote_port']
             self.check_port_collision(rule)
             host = self.host(host_id)
             config = await self.ssh.effective(host)
             if connection_identity(config) != identity or self.view(rule)['error_code'] != 'FORWARD_REJECTED':
                 return dict(status='changed')
-            result = await self.port_operation(host, config, dict(action='release_tunnel_port', port=port, owner=owner))
+            result = await self.port_operation(host, config, dict(action='release_tunnel_port', port=port, owner=owner),
+                                               elevated=elevated)
             if self.view(rule)['status'] == 'connected':
                 return dict(status='connected', rule=self.view(rule))
             if result['status'] != 'released':
@@ -492,8 +543,8 @@ class SSHTunnels:
                     await self._stop(rule, reason='backend_shutdown')
 
 
-def register_ssh_tunnels(app, store, ssh, hosts, passwords, *, on_result):
-    manager = app.state.ssh_tunnels = SSHTunnels(store, ssh, hosts, passwords, on_result=on_result)
+def register_ssh_tunnels(app, store, ssh, hosts, passwords, *, sudo, on_result):
+    manager = app.state.ssh_tunnels = SSHTunnels(store, ssh, hosts, passwords, sudo=sudo, on_result=on_result)
 
     async def invoke(action, *args, **kwargs):
         try: return await action(*args, **kwargs)
@@ -540,6 +591,10 @@ def register_ssh_tunnels(app, store, ssh, hosts, passwords, *, on_result):
     @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict/dismiss')
     async def dismiss_port_conflict(host_id: str, rule_id: str, body: PortConflictDecision):
         return await invoke(manager.dismiss_remote_port, host_id, rule_id, body.confirmation)
+
+    @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict/recheck')
+    async def recheck_port_conflict(host_id: str, rule_id: str):
+        return await invoke(manager.recheck_remote_port, host_id, rule_id)
 
     @app.post('/api/hosts/{host_id}/tunnels/{rule_id}/port-conflict/release')
     async def release_port_conflict(host_id: str, rule_id: str, body: PortConflictDecision):
