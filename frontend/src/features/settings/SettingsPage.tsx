@@ -16,6 +16,7 @@ const storageKey='iwb.settings.navigation';
 const categoryIds=['general','ai','integrations','about'] as const;
 type Category=typeof categoryIds[number];
 type Navigation={category:Category;ai:'models'|'skills';integrations:'mcp'|'mail'};
+export type WallBroadcastSettings={enabled:boolean;listening:number;connecting:number;retrying:number};
 function readNavigation():Navigation{
   const defaults:Navigation={category:'general',ai:'models',integrations:'mcp'};
   try{const saved=JSON.parse(localStorage.getItem(storageKey)||'null');
@@ -27,7 +28,13 @@ function readNavigation():Navigation{
   return defaults;
 }
 
-export default function SettingsPage({showHostAddresses,onShowHostAddressesChange}:{showHostAddresses:boolean;onShowHostAddressesChange:(show:boolean)=>void}){
+export default function SettingsPage({showHostAddresses,onShowHostAddressesChange,wallBroadcastSettings,wallBroadcastPending,onWallBroadcastChange}:{
+  showHostAddresses:boolean;
+  onShowHostAddressesChange:(show:boolean)=>void;
+  wallBroadcastSettings?:WallBroadcastSettings;
+  wallBroadcastPending:boolean;
+  onWallBroadcastChange:(enabled:boolean)=>void;
+}){
   useLocale();
   const [navigation,setNavigation]=useState(()=>location.hash===modelSettingsHash
     ?{...readNavigation(),category:'ai' as const,ai:'models' as const}:readNavigation());
@@ -35,7 +42,7 @@ export default function SettingsPage({showHostAddresses,onShowHostAddressesChang
   // Keep visited forms mounted so switching categories preserves unsaved edits.
   const [visited,setVisited]=useState(()=>new Set<string>([activePanel]));
   const categories=[
-    {id:'general',Icon:SlidersHorizontal,label:t('通用','General'),description:t('语言、机器列表、启动方式与桌面浮窗。','Language, machine list, launch preferences and desktop monitor.')},
+    {id:'general',Icon:SlidersHorizontal,label:t('通用','General'),description:t('语言、机器列表、广播弹窗、启动方式与桌面浮窗。','Language, machine list, broadcast popups, launch preferences and desktop monitor.')},
     {id:'ai',Icon:Sparkles,label:t('AI 助手','AI assistant'),description:t('配置模型连接与助手技能。','Configure model connections and assistant skills.')},
     {id:'integrations',Icon:Plug,label:t('集成服务','Integrations'),description:t('连接 MCP 服务与邮件通知。','Connect MCP services and email notifications.')},
     {id:'about',Icon:Info,label:t('关于与帮助','About and help'),description:t('应用信息与使用指引。','App information and getting started.')},
@@ -61,7 +68,19 @@ export default function SettingsPage({showHostAddresses,onShowHostAddressesChang
         <h2 id="settings-host-list-heading">{t('机器列表','Machine list')}</h2>
         <label className="checkbox-label settings-host-addresses"><input type="checkbox" checked={showHostAddresses} onChange={event=>onShowHostAddressesChange(event.target.checked)}/>{t('在列表中显示 SSH 地址','Show SSH addresses in the list')}</label>
       </div>
-    </section><LaunchSettingsPage/></>,
+    </section>{wallBroadcastSettings&&<section className="settings-page" aria-labelledby="settings-wall-broadcast-heading">
+      <div className="settings-card">
+        <h2 id="settings-wall-broadcast-heading">{t('机器广播','Machine broadcasts')}</h2>
+        <label className="checkbox-label settings-wall-broadcast-toggle"><input type="checkbox" checked={wallBroadcastSettings.enabled} disabled={wallBroadcastPending}
+          onChange={event=>onWallBroadcastChange(event.target.checked)}/>{t('收到 wall 广播时弹窗','Show a popup for incoming wall broadcasts')}</label>
+        <p>{t('开启后，工作台会在后台监听所有已添加机器的广播。','When enabled, Workbench listens for broadcasts from all added machines in the background.')}</p>
+        {wallBroadcastSettings.enabled&&<p role="status">{[
+          wallBroadcastSettings.listening>0&&t(`${wallBroadcastSettings.listening} 台监听中`,`${wallBroadcastSettings.listening} listening`),
+          wallBroadcastSettings.connecting>0&&t(`${wallBroadcastSettings.connecting} 台正在连接`,`${wallBroadcastSettings.connecting} connecting`),
+          wallBroadcastSettings.retrying>0&&t(`${wallBroadcastSettings.retrying} 台正在重连`,`${wallBroadcastSettings.retrying} reconnecting`),
+        ].filter(Boolean).join(' · ')||t('还没有添加机器。','No machines have been added yet.')}</p>}
+      </div>
+    </section>}<LaunchSettingsPage/></>,
     models:()=> <AgentSettingsPage/>,skills:()=> <SkillsSettings/>,
     mcp:()=> <MCPSettings/>,mail:()=> <MailSettingsPage/>,
     about:()=> <><DesktopEditionPanel/><DesktopUpdates/><section className="settings-card settings-help-card"><h2>{t('帮助与演示','Help and demo')}</h2><p className="settings-help"><button type="button" className="secondary" onClick={()=>window.dispatchEvent(new Event('iwb:replay-getting-started'))}>{t('重播新手引导','Replay getting-started guide')}</button></p><p className="settings-help"><a href="?demo=1">{t('体验演示与新手引导（无需服务器）','Try the demo and guided tour (no server required)')}</a></p></section></>,

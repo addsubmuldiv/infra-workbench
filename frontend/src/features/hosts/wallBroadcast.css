@@ -1,0 +1,66 @@
+.wall-broadcast-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.wall-broadcast-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.wall-broadcast-heading > svg {
+  color: var(--accent);
+  flex: none;
+}
+
+.wall-broadcast-details {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  overflow-wrap: anywhere;
+}
+
+.wall-broadcast-details dt,
+.wall-broadcast-target {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wall-broadcast-details dd {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.wall-broadcast-details strong {
+  font-size: 16px;
+}
+
+.wall-broadcast-message {
+  max-height: 45vh;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  font: inherit;
+  line-height: 1.65;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.wall-broadcast-dialog .modal-footer {
+  justify-content: flex-end;
+}

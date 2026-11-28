@@ -14,7 +14,7 @@ from pathlib import Path
 from backend.paths import PROBES_DIR
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,7 @@ from .ssh.ssh_tunnels import register_ssh_tunnels
 from .ssh.vscode import register_vscode
 from .ssh.ssh_config_export import register_ssh_config_export
 from .ssh.ssh import SSHService
+from .ssh.wall_broadcasts import WallBroadcasts
 from .ssh.host_addresses import SSHHostAddresses
 from .monitoring.probe_cache import ProbeCache
 from .monitoring.polling import FleetSchedule
@@ -67,6 +68,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class CollectionSettings(BaseModel):
     paused: bool = Field(strict=True)
+
+
+class WallBroadcastSettings(BaseModel):
+    enabled: bool = Field(strict=True)
 
 
 class RefreshSettings(BaseModel):
@@ -197,6 +202,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         refresh_interval = MONITORING_REFRESH_INTERVAL_SECONDS
     refresh_changed = asyncio.Event()
     hosts = store.load('hosts', [])
+    wall = WallBroadcasts(hosts, ssh, state_changes.publish, enabled=store.load('wall_broadcast_enabled', True) is True)
     rules = store.load('rules', [])
     mail = MailService(store, email_credential_store if email_credential_store is not None else create_credential_store('InfraWorkbench/mail/'))
     agent_api = AgentAPIService(store, agent_credential_store if agent_credential_store is not None else create_credential_store('InfraWorkbench/agent/'))
@@ -466,6 +472,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             task = asyncio.create_task(poll()) if start_poll else None
             mail_task = asyncio.create_task(mail.run()) if start_poll else None
             terminal_task=asyncio.create_task(app.state.terminals.watch_persistent(hosts)) if start_poll else None
+            wall_task = asyncio.create_task(wall.watch()) if start_poll else None
             async def expire_group_reservations():
                 while True:
                     try:
@@ -507,6 +514,10 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             if terminal_task:
                 terminal_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):await terminal_task
+            if wall_task:
+                wall_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wall_task
             if mail_task:
                 mail_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -644,8 +655,9 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
         return JSONResponse(await state_changes.wait(revision, instance), headers={'Cache-Control': 'no-store'})
 
     @app.get('/api/state')
-    async def state(request: Request):
+    async def state(request: Request, response: Response):
         now = time.time()
+        workbench = request.headers.get('x-iwb') == '1' and request.headers.get('x-iwb-mcp') != '1'
         items = []
         for host in hosts:
             snap = snapshots.get(host['id'], dict(status='connecting', devices=[], collected_at=None))
@@ -659,7 +671,7 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
                 sections = section_views(snap, now, reservations.max_sample_gap)
                 public_host = {key: value for key, value in host.items()
                                if key not in ('ssh_accounts', 'ssh_default_account_id', 'ssh_interactive_account_id',
-                                              'sudo_identity', 'sudo_identities', 'ssh_hostname')}
+                                              'sudo_identity', 'sudo_identities', 'ssh_hostname', 'wall_broadcast_enabled')}
                 tunnels = app.state.ssh_tunnels.list(host['id'], include_port_conflict=request.headers.get('x-iwb') == '1')
                 items.append(dict(**public_host, ssh_hostname=ssh_addresses.get(host), ssh_logins=ssh_account_summary(host), collection=dict(collection_metrics.get(host['id'], {}), paused=host['id'] in paused_collections), sudo=sudo.view(host), ssh_password=ssh_passwords.view(host), ssh_tunnels=tunnels, snapshot=dict(snap, fresh=fresh, sections=sections)))
         visible_rules = []
@@ -669,7 +681,24 @@ def create_app(data=None, start_poll=True, credential_store=None, frontend_dist=
             fresh = snap.get('status') == 'online' and now-(snap.get('collected_at') or 0) <= reservations.max_sample_gap
             status = ('active' if all(i in device_ids for i in rule['devices']) else 'needs_selection') if fresh else 'pending'
             visible_rules.append(dict(rule, status=status))
-        return dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, group_reservations=app.state.group_reservations.list()['items'], reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
+        result = dict(refresh_interval_seconds=refresh_interval, hosts=items, rules=visible_rules, group_reservations=app.state.group_reservations.list()['items'], reservations=reservations.view(now), reservation_modes=['fixed', 'count'], events=store.events(), server_time=now)
+        if workbench:
+            result['wall_broadcasts'] = list(wall.pending)
+            result['wall_broadcast_settings'] = wall.settings()
+            response.headers['Cache-Control'] = 'no-store'
+        return result
+
+    @app.put('/api/settings/wall-broadcast')
+    async def set_wall_broadcast(body: WallBroadcastSettings):
+        if wall.enabled != body.enabled:
+            store.save('wall_broadcast_enabled', body.enabled)
+            wall.configure(body.enabled)
+        return wall.settings()
+
+    @app.delete('/api/wall-broadcasts/{event_id}')
+    async def acknowledge_wall_broadcast(event_id: str):
+        wall.acknowledge(event_id)
+        return {'acknowledged': True}
 
     async def connect_machine(body: ConnectionRequest,collect_now=True,expected_identity=None,accept_new_host_keys=False):
         if body.remember_password and not body.password:

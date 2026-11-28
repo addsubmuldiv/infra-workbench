@@ -67,6 +67,8 @@ import {SSHAccountsDialog} from './features/hosts/SSHAccountsDialog';
 import {SSHAccountPicker} from './features/hosts/SSHAccountPicker';
 import {pinSSHLogin, sshAccountUrl, type SSHLoginHost} from './features/hosts/sshLogins';
 import {RemoveHostDialog} from './features/hosts/RemoveHostDialog';
+import {WallBroadcastDialog,type WallBroadcast} from './features/hosts/WallBroadcastDialog';
+import type {WallBroadcastSettings} from './features/settings/SettingsPage';
 import {deviceUsage} from './features/monitoring/hostUsage';
 import {HOST_CATEGORIES,filterHosts,type HostCategory} from './features/hosts/hostList';
 
@@ -82,7 +84,7 @@ type SudoSettings = {enabled:boolean;password_saved:boolean|null;credential_erro
 type Host = SSHLoginHost & {collection?:Collection; alias?:string; ssh_hostname?:string|null; user:string|null; port:number|null; manual:boolean; auth:string; sudo?:SudoSettings; ssh_tunnels?:TunnelRule[]; ssh_password?:{password_saved:boolean|null;can_remember:boolean;error?:string|null}; snapshot:{status:string; fresh:boolean; collected_at:number|null; error?:string; error_stage?:string; sections?:Record<string,{fresh:boolean;collected_at:number|null}>; system?:SystemMetrics|null; devices:Device[]}};
 type Rule = {id:string; host_id:string; devices:string[]; minimum_gib:number; port:number; status?:string};
 type Event = {id:number; created:number; host:string; message:string; notify?:boolean; url?:string};
-type State = {refresh_interval_seconds?:number;hosts:Host[]; rules:Rule[]; reservations:Reservation[]; reservation_modes?:string[];group_reservations?:{id:string;status:string;candidate_host_ids:string[]}[]; events:Event[]; server_time:number};
+type State = {refresh_interval_seconds?:number;hosts:Host[]; rules:Rule[]; reservations:Reservation[]; reservation_modes?:string[];group_reservations?:{id:string;status:string;candidate_host_ids:string[]}[]; events:Event[]; wall_broadcasts?:WallBroadcast[];wall_broadcast_settings?:WallBroadcastSettings; server_time:number};
 const gib=(n:number|null|undefined)=>n==null?'—':(n/1024**3).toFixed(1);
 const clock=(n:number)=>new Date(n*1000).toLocaleTimeString(dateLocale(),{hour12:false});
 const displayId=(d:Device|undefined)=>d?.display_id??d?.id??ui("已失效");
@@ -133,6 +135,7 @@ function App(){
   const locale=useLocale();
   const [aliasHost,setAliasHost]=useState<Host|null>(null);
   const [state,setState]=useState<State>({hosts:[],rules:[],reservations:[],events:[],server_time:0});
+  const broadcast=isDemo?undefined:state.wall_broadcasts?.[0];
   const [reservationDraft,setReservationDraft]=useState<ReservationDraft|null>(null);
   const [groupDraft,setGroupDraft]=useState<GroupDraft|null>(null);
   const [historyHostIds,setHistoryHostIds]=useState<string[]|undefined>(undefined);
@@ -363,6 +366,22 @@ function App(){
   };
 
   const act=async(key:string,fn:()=>Promise<unknown>)=>{setBusy(key);try{await fn();await load()}catch(e){setNotice(e instanceof Error?e.message:String(e))}finally{setBusy('')}};
+  const setWallBroadcastEnabled=(enabled:boolean)=>act('wall-broadcast',async()=>{
+    const settings:WallBroadcastSettings=await api('/settings/wall-broadcast','PUT',{enabled});
+    const pending=stateRequest.current;
+    pending?.abort();
+    setState(old=>({...old,wall_broadcast_settings:settings,wall_broadcasts:enabled?old.wall_broadcasts:[]}));
+    if(pending)await load();
+  });
+  const acknowledgeBroadcast=async(id:string)=>{
+    await api('/wall-broadcasts/'+encodeURIComponent(id),'DELETE');
+    // A snapshot requested before the acknowledgement could still contain it.
+    const pending=stateRequest.current;
+    pending?.abort();
+    setState(old=>({...old,wall_broadcasts:old.wall_broadcasts?.filter(event=>event.id!==id)}));
+    if(pending)await load();
+    void load();
+  };
   const toggleNotifications=async()=>{
     if(isDemo){setNotice(tr("演示提醒仅显示在页面内，不申请系统通知权限。","Demo alerts appear only in this page. System notifications are disabled."));return}
     if(!('Notification'in window)){setNotice(ui("此浏览器不支持系统通知，事件仍显示在页面中。"));return}
@@ -565,7 +584,7 @@ function App(){
       </section>}/>})}
       <div className="footnote"><CircleHelp size={14}/>{ui("低利用率不代表空闲。筛选结果反映资源指标，不代表资源授权或预留。")}</div>
     </div></div>}
-    {page==='settings'&&(isDemo?<div data-tour-panel="settings"><LanguageSettings/><DemoSettings/></div>:<RenderBoundary fallback={<RenderFailure title={tr("设置暂时无法打开","Settings could not open")}/>}><React.Suspense fallback={<p role="status">{ui("正在加载设置…")}</p>}><SettingsPage showHostAddresses={showHostAddresses} onShowHostAddressesChange={setShowHostAddresses}/></React.Suspense></RenderBoundary>)}
+    {page==='settings'&&(isDemo?<div data-tour-panel="settings"><LanguageSettings/><DemoSettings/></div>:<RenderBoundary fallback={<RenderFailure title={tr("设置暂时无法打开","Settings could not open")}/>}><React.Suspense fallback={<p role="status">{ui("正在加载设置…")}</p>}><SettingsPage showHostAddresses={showHostAddresses} onShowHostAddressesChange={setShowHostAddresses} wallBroadcastSettings={state.wall_broadcast_settings} wallBroadcastPending={busy==='wall-broadcast'} onWallBroadcastChange={setWallBroadcastEnabled}/></React.Suspense></RenderBoundary>)}
 
     {page==='history'&&<ResourceHistory hosts={state.hosts} initialHostIds={historyHostIds}/>}
     {page==='reservations'&&<GroupReservations hosts={state.hosts} draft={groupDraft} onDraft={setGroupDraft} refreshKey={isDemo?state.events.length:undefined}/>}
@@ -609,6 +628,7 @@ function App(){
     {detail&&<DeviceDrawerFrame onClose={()=>{setDetail(null);setCheck(null)}}><section className="drawer" role="dialog" aria-label={ui("设备详情")} onClick={e=>e.stopPropagation()}><div className="drawer-heading"><div className="eyebrow">DEVICE INSPECTOR</div><button className="icon-button" aria-label={ui("关闭设备详情")} onClick={()=>{setDetail(null);setCheck(null)}}><X size={20}/></button></div><h2>{detailHost?.target}</h2><p className="subtle">{detailDevice?.kind} {detailDevice?displayId(detailDevice):''} · {detailDevice?.name}{detailDevice?.physical_id!=null&&tr(` · 卡 ${detailDevice.card_id} / 芯片 ${detailDevice.chip_id}`,` · Card ${detailDevice.card_id} / chip ${detailDevice.chip_id}`)}</p>{detailDevice&&<><div className="detail-metrics"><div>{ui("剩余显存")}<strong>{gib(detailDevice.memory_free)} <small>GiB</small></strong></div><div>{ui("计算利用率")}<strong>{detailDevice.utilization??'—'}<small>%</small></strong></div></div><h3>{ui("计算进程 ")}<Badge>{detailDevice.processes.length}</Badge></h3>{!detailDevice.processes_known?<div className="error-banner">{ui("进程信息无法完整读取，不能确认空闲。")}</div>:detailDevice.processes.length===0?<p className="subtle">{ui("采集工具未报告可见计算进程。")}</p>:detailDevice.processes.map(p=><React.Fragment key={p.pid}>{p.details_collected_at&&<p className="subtle">{tr("进程详情采样：","Process details sampled: ")}{clock(p.details_collected_at)}</p>}<ProcessDetails process={p} onCopy={text=>navigator.clipboard.writeText(text).then(()=>setNotice(ui("已复制"))).catch(()=>setNotice(ui("复制失败，可手动选择文本复制")))}/></React.Fragment>)}<button className="secondary wide" onClick={()=>toggle(detail.host,detail.device)}><Check size={15}/>{(selected[detail.host]||[]).includes(detail.device)?ui("取消选择此设备"):ui("选择此设备")}</button></>}{check&&<div className={'check-result '+(check.status==='PASS'?'pass':'')}><h3><ShieldCheck size={18}/>{ui("检查结果：")}{check.status}</h3>{check.reasons.map((r,i)=><p key={i}>{r}</p>)}</div>}<div className="drawer-note">{ui("数据来自最近一次采集。进程不可见时会明确标记，检查结果不构成资源预留。")}</div></section></DeviceDrawerFrame>}
     {!isDemo&&<FirstRunGuide ready={state.server_time>0} hasHosts={state.hosts.length>0} onAddMachine={()=>setAdding(true)}/>}
     {isDemo&&<DemoGuide onStepChange={showDemoStep} onReset={()=>{location.hash='overview';location.reload()}} onFinishTraining={()=>{demoRuntime!.finishTraining();void load()}}/>}
+    {broadcast&&<WallBroadcastDialog key={broadcast.id} broadcast={broadcast} onAcknowledge={()=>acknowledgeBroadcast(broadcast.id)}/>}
   </WorkspaceLayout>;
 }
 

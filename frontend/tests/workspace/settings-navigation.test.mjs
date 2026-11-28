@@ -5,7 +5,7 @@ import ts from 'typescript';
 import {i18nMock} from '../i18n-mock.mjs';
 import {modelSettingsHash} from '../../src/workspace/navigation.ts';
 
-function harness(t,saved,hash=''){
+function harness(t,saved,hash='',settings){
   let slot=0,tree;const values=[];let stored=saved;
   const previous=globalThis.localStorage;
   const previousLocation=globalThis.location;
@@ -19,7 +19,7 @@ function harness(t,saved,hash=''){
   new Function('require','exports',js)(name=>i18nMock(name)??(name==='react'?react:name==='react/jsx-runtime'?{jsx:(type,props,key)=>({type,key,props}),jsxs:(type,props,key)=>({type,key,props})}:name==='lucide-react'?{}:name==='../../workspace/navigation'?{modelSettingsHash}:components[name]??={}),exports);
   const nodes=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(nodes)];
   let showHostAddresses=true;
-  const render=()=>{slot=0;tree=exports.default({showHostAddresses,onShowHostAddressesChange:value=>{showHostAddresses=value}})};
+  const render=()=>{slot=0;tree=exports.default({showHostAddresses,onShowHostAddressesChange:value=>{showHostAddresses=value},...settings})};
   const all=()=>nodes(tree);
   const click=label=>{const button=all().find(n=>n.type==='button'&&nodes(n).some(child=>child.props?.children===label)||n.type==='button'&&n.props.children===label);assert.ok(button,label);button.props.onClick();render()};
   render();
@@ -32,6 +32,21 @@ test('general settings can hide addresses in the machine list',t=>{
   assert.equal(addressToggle().props.checked,true);
   addressToggle().props.onChange({target:{checked:false}});h.render();
   assert.equal(addressToggle().props.checked,false);
+});
+
+test('general settings show one wall popup toggle and aggregate listener status',t=>{
+  const changes=[];
+  const h=harness(t,null,'',{
+    wallBroadcastSettings:{enabled:true,listening:2,connecting:0,retrying:1},
+    onWallBroadcastChange:enabled=>changes.push(enabled),
+  });
+  const controls=h.all().filter(node=>node.props?.className==='checkbox-label settings-wall-broadcast-toggle');
+  assert.equal(controls.length,1);
+  const toggle=controls[0].props.children[0];
+  assert.equal(toggle.props.checked,true);
+  toggle.props.onChange({target:{checked:false}});
+  assert.deepEqual(changes,[false]);
+  assert.equal(h.all().find(node=>node.props?.role==='status').props.children,'2 台监听中 · 1 台正在重连');
 });
 
 test('categories and inner tabs retain visited forms and remember navigation',t=>{

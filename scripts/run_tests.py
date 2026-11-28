@@ -43,7 +43,7 @@ GROUPS = {
         'reservations/reservations reservations/reservation-panel reservations/groupReservations reservations/mailSettings reservations/notifications reservations/notification-center'),
     'ssh': group(
         'ssh/test_ssh_password_routes ssh/test_ssh_proxy ssh/test_ssh_timeouts ssh/test_ssh_tunnels '
-        'ssh/test_port_forwarding ssh/test_jump_platforms ssh/test_connection_info ssh/test_vscode ssh/test_ssh_config_export',
+        'ssh/test_port_forwarding ssh/test_jump_platforms ssh/test_connection_info ssh/test_vscode ssh/test_ssh_config_export ssh/test_wall_broadcasts',
         'ssh/ssh-password ssh/tunnel-manager ssh/vscode'),
     'terminal': group(
         'terminal/test_terminal terminal/test_terminal_posix terminal/test_terminal_workspace terminal/test_terminal_completions terminal/test_command_tools',
