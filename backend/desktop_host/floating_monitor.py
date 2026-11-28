@@ -576,7 +576,8 @@ class FloatingMonitor:
             return next((key for key in ('accent-bg','accent','text','panel2','panel','muted') if self.palette[key]==color),default)
         bg_role,fg_role=role(bg,'panel'),role(fg,'text')
         outer_role=role(parent.cget('background'),'panel')
-        font=tkfont.Font(root=self.root,family='Microsoft YaHei UI',size=9)
+        family,size,weight=kw.pop('font',('Microsoft YaHei UI',9,'normal'))
+        font=tkfont.Font(root=self.root,family=family,size=size,weight=weight)
         width=max(round(50*self.dpi_scale),font.measure(text)+round(20*self.dpi_scale))
         height=font.metrics('linespace')+round(12*self.dpi_scale)
         button=self.tk.Button(parent,text=text,command=command,compound='center',relief='flat',overrelief='flat',
@@ -1107,12 +1108,14 @@ class FloatingMonitor:
             tip.after_idle(lambda:style_native_window(tip,10) if tip.winfo_exists() else None)
         self._tooltip_after=self.root.after(350,show)
 
-    def position_dialog(self, window):
+    def position_dialog(self, window, *, size=None):
         from backend.desktop_host.floating_position import dialog_position,monitor_work_area
         import re
         window.update_idletasks()
-        match=re.match(r'(\d+)x(\d+)',window.geometry())
-        width,height=map(int,match.groups()) if match else (window.winfo_reqwidth(),window.winfo_reqheight())
+        if size is None:
+            match=re.match(r'(\d+)x(\d+)',window.geometry())
+            size=tuple(map(int,match.groups())) if match else (window.winfo_reqwidth(),window.winfo_reqheight())
+        width,height=size
         left,top,right,bottom=monitor_work_area(self.root)
         width=min(max(width,window.winfo_reqwidth() if width<=1 else width),right-left)
         height=min(max(height,window.winfo_reqheight() if height<=1 else height),bottom-top)
@@ -1128,6 +1131,14 @@ class FloatingMonitor:
             self.machine_window.deiconify()
             self.machine_window.lift()
             return
+        scale = self.dpi_scale
+
+        def px(value):
+            return round(value * scale)
+
+        width = px(340)
+        inset = px(16)
+        font = self.canvas_font(9)
         win = self.tk.Toplevel(self.root)
         self.machine_window = win
         win.withdraw()
@@ -1137,13 +1148,11 @@ class FloatingMonitor:
         win.attributes('-toolwindow', True)
         win.attributes('-topmost', True)
         win.configure(bg=self.BG)
-        win.geometry(f'{round(350*self.dpi_scale)}x{round(420*self.dpi_scale)}')
-        win.minsize(round(320*self.dpi_scale),round(300*self.dpi_scale))
-        header=self.tk.Frame(win,bg=self.palette['panel2'],height=42)
+        header=self.tk.Frame(win,bg=self.palette['panel2'])
         header.pack(fill='x')
-        title=self.label(header,tr('选择关注的机器', 'Select favorite machines'),bg=self.palette['panel2'],font=('Microsoft YaHei UI',11,'bold'))
-        title.pack(side='left',padx=16,pady=12)
-        self.button(header,'×',win.destroy,bg=self.palette['panel2']).pack(side='right',padx=10)
+        title=self.label(header,tr('选择关注的机器', 'Select favorite machines'),bg=self.palette['panel2'],font=self.canvas_font(10,bold=True))
+        title.pack(side='left',padx=inset,pady=px(8))
+        self.button(header,'×',win.destroy,bg=self.palette['panel2'],font=font).pack(side='right',padx=px(8))
         origin=[None]
         def begin(event):origin[0]=(event.x_root-win.winfo_x(),event.y_root-win.winfo_y())
         def drag(event):
@@ -1151,22 +1160,22 @@ class FloatingMonitor:
         for widget in (header,title):
             widget.bind('<ButtonPress-1>',begin)
             widget.bind('<B1-Motion>',drag)
-        self.label(win, tr('只在浮窗中显示勾选的机器，不影响工作台。', 'Only selected machines appear in the monitor. Workbench is unaffected.'), fg=self.MUTED).pack(anchor='w',padx=16,pady=(12,0))
+        self.label(win, tr('只在浮窗中显示勾选的机器，不影响工作台。', 'Selection applies only to the floating monitor.'),
+                   fg=self.MUTED,font=font,wraplength=width-2*inset-px(4),justify='left').pack(anchor='w',padx=inset,pady=(px(8),0))
         from backend.desktop_host.floating_picker import MachinePickerList,rounded_search
         query = self.tk.StringVar()
         search_box,search=rounded_search(win,self,query)
-        search_box.pack(fill='x',padx=16,pady=10)
+        search_box.pack(fill='x',padx=inset,pady=px(8))
         controls = self.tk.Frame(win,bg=self.BG)
-        controls.pack(fill='x',padx=16)
+        controls.pack(fill='x',padx=inset)
         favorites = self.settings.values['favorites']
         self.machine_choices = {h['id']:self.tk.BooleanVar(value=not favorites or h['id'] in favorites) for h in self.hosts}
         count = self.tk.StringVar()
-        self.label(controls,'').pack(side='left')
-        self.tk.Label(controls,textvariable=count,bg=self.BG,fg=self.MUTED).pack(side='right')
+        self.tk.Label(controls,textvariable=count,bg=self.BG,fg=self.MUTED,font=font).pack(side='right')
         footer = self.tk.Frame(win,bg=self.BG)
-        footer.pack(side='bottom',fill='x',padx=16,pady=(8,12))
+        footer.pack(side='bottom',fill='x',padx=inset,pady=(px(4),px(10)))
         area = self.tk.Frame(win,bg=self.BG)
-        area.pack(fill='both',expand=True,padx=16,pady=8)
+        area.pack(fill='both',expand=True,padx=inset,pady=px(6))
         def apply():
             selected=[ident for ident,value in self.machine_choices.items() if value.get()]
             if not selected: return
@@ -1174,9 +1183,9 @@ class FloatingMonitor:
             self.save(favorites=selected)
             self.render(force=True)
             win.destroy()
-        apply_button=self.button(footer,tr('确定', 'OK'),apply,bg='#e6f4ef',fg='#157e73')
+        apply_button=self.button(footer,tr('确定', 'OK'),apply,bg='#e6f4ef',fg='#157e73',font=font)
         apply_button.pack(side='right')
-        self.button(footer,tr('取消', 'Cancel'),win.destroy).pack(side='right',padx=8)
+        self.button(footer,tr('取消', 'Cancel'),win.destroy,font=font).pack(side='right',padx=px(8))
         def update(*args):
             number=sum(value.get() for value in self.machine_choices.values())
             count.set(tr(f'已选 {number} / {len(self.machine_choices)}', f'Selected {number} / {len(self.machine_choices)}'))
@@ -1185,16 +1194,17 @@ class FloatingMonitor:
             for variable in self.machine_choices.values():variable.set(value)
             update()
         win.language_update = update
-        self.button(controls,tr('全选', 'Select all'),lambda:select_all(True)).pack(side='left')
-        self.button(controls,tr('清空', 'Clear'),lambda:select_all(False)).pack(side='left')
+        self.button(controls,tr('全选', 'Select all'),lambda:select_all(True),font=font).pack(side='left')
+        self.button(controls,tr('清空', 'Clear'),lambda:select_all(False),font=font).pack(side='left')
         self.machine_list=MachinePickerList(area,self,query,update)
         self.machine_list.pack(fill='both',expand=True)
         win.bind('<MouseWheel>',self.machine_list.wheel)
         update()
         win.bind('<Return>',lambda event:apply())
         win.bind('<Escape>',lambda event:win.destroy())
-        win.bind('<Map>',lambda event:win.after_idle(lambda:style_native_window(win,18)) if event.widget==win else None)
-        self.position_dialog(win)
+        win.bind('<Map>',lambda event:win.after_idle(lambda:style_native_window(win,px(12))) if event.widget==win else None)
+        win.update_idletasks()
+        self.position_dialog(win, size=(width, win.winfo_reqheight()))
         win.deiconify()
         search.focus_set()
 

@@ -122,6 +122,42 @@ def test_device_tooltip_uses_compact_pixel_sizes(scale, title_size, body_size):
     tip.deiconify.assert_called_once()
 
 
+@pytest.mark.parametrize('scale, host_count, expected_height', [(1.0, 0, 48), (1.0, 2, 96), (1.5, 10, 360)])
+def test_machine_picker_uses_monitor_scale_for_fonts_and_list_viewport(
+    monkeypatch, scale, host_count, expected_height
+):
+    from unittest.mock import Mock
+
+    from backend.desktop_host import floating_picker
+    from backend.desktop_host.floating_monitor import FloatingMonitor
+
+    monitor = FloatingMonitor.__new__(FloatingMonitor)
+    monitor.root = Mock()
+    monitor.dpi_scale = scale
+    monitor.BG = '#222222'
+    monitor.machine_choices = {str(index): Mock() for index in range(host_count)}
+    monkeypatch.setattr(floating_picker.tk.Frame, '__init__', lambda *args, **kwargs: None)
+    monkeypatch.setattr(floating_picker.MachinePickerList, 'after_idle', Mock())
+    canvas = Mock()
+    entry = Mock()
+    label = Mock()
+    font = Mock()
+    monkeypatch.setattr(floating_picker.tk, 'Canvas', canvas)
+    monkeypatch.setattr(floating_picker.tk, 'Entry', entry)
+    monkeypatch.setattr(floating_picker.tk, 'Label', label)
+    monkeypatch.setattr(floating_picker.tkfont, 'Font', font)
+    query = Mock()
+
+    floating_picker.MachinePickerList(Mock(), monitor, query, Mock())
+    assert canvas.call_args_list[0].kwargs['height'] == expected_height
+    assert [tuple(call.kwargs[key] for key in ('family', 'size', 'weight')) for call in font.call_args_list] == [
+        monitor.canvas_font(9, bold=True), monitor.canvas_font(8),
+    ]
+
+    floating_picker.rounded_search(Mock(), monitor, query)
+    assert entry.call_args.kwargs['font'] == label.call_args.kwargs['font'] == monitor.canvas_font(9)
+
+
 def test_unknown_is_never_idle():
     assert device_status({'processes': [], 'processes_known': True}, False) == 'unknown'
     assert device_status({'processes': [], 'processes_known': False}, True) == 'unknown'

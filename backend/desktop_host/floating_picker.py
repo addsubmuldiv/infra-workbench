@@ -1,6 +1,6 @@
 """Native, rounded picker rows and slim scrollbar, matching the floating monitor."""
 from backend.hosts.host_alias import host_label, matches_name
-from backend.workspace.interface_language import tr, current_locale
+from backend.workspace.interface_language import tr
 import tkinter as tk
 from tkinter import font as tkfont
 from PIL import ImageTk
@@ -12,9 +12,12 @@ class MachinePickerList(tk.Frame):
         super().__init__(master,bg=monitor.BG)
         self.monitor,self.search_var,self.on_change=monitor,search_var,on_change
         self.scale=monitor.dpi_scale
-        self.canvas=tk.Canvas(self,bg=monitor.BG,highlightthickness=0,bd=0,yscrollincrement=round(48*self.scale))
+        self.row_stride = round(48 * self.scale)
+        visible_rows = max(1, min(5, len(monitor.machine_choices)))
+        self.canvas=tk.Canvas(self,bg=monitor.BG,highlightthickness=0,bd=0,
+                              height=visible_rows*self.row_stride,yscrollincrement=self.row_stride)
         self.scrollbar=tk.Canvas(self,width=round(10*self.scale),bg=monitor.BG,highlightthickness=0,bd=0,cursor='hand2')
-        self.scrollbar.pack(side='right',fill='y',padx=(5,0))
+        self.scrollbar.pack(side='right',fill='y',padx=(round(5*self.scale),0))
         self.canvas.pack(side='left',fill='both',expand=True)
         self.canvas.configure(yscrollcommand=self.set_scroll)
         self.canvas.bind('<Configure>',lambda event:self.schedule())
@@ -30,8 +33,10 @@ class MachinePickerList(tk.Frame):
         self._thumb=(0,1)
         self._scroll_origin=None
         self.filtered_ids=[]
-        self.font=tkfont.Font(root=monitor.root,family='Microsoft YaHei UI',size=9,weight='bold')
-        self.small_font=tkfont.Font(root=monitor.root,family='Microsoft YaHei UI',size=8)
+        family,size,weight=monitor.canvas_font(9,bold=True)
+        self.font=tkfont.Font(root=monitor.root,family=family,size=size,weight=weight)
+        family,size,weight=monitor.canvas_font(8)
+        self.small_font=tkfont.Font(root=monitor.root,family=family,size=size,weight=weight)
         search_var.trace_add('write',self.filter_changed)
         for variable in monitor.machine_choices.values():variable.trace_add('write',self.changed)
         self.schedule()
@@ -76,7 +81,7 @@ class MachinePickerList(tk.Frame):
         term=self.search_var.get().strip()
         hosts=[h for h in self.monitor.hosts if matches_name(h,term)]
         self.filtered_ids=[h['id'] for h in hosts]
-        stride=round(48*s)
+        stride=self.row_stride
         height=round(42*s)
         for index,host in enumerate(hosts):
             y=index*stride
@@ -108,7 +113,7 @@ class MachinePickerList(tk.Frame):
             c.tag_bind(tag,'<Button-1>',toggle)
             c.tag_bind(tag,'<Enter>',hover)
             c.tag_bind(tag,'<Leave>',leave)
-        if not hosts:c.create_text(12,20,text=tr('没有匹配的机器', 'No matching machines'),anchor='w',fill=p['muted'],font=self.small_font)
+        if not hosts:c.create_text(round(12*s),round(20*s),text=tr('没有匹配的机器', 'No matching machines'),anchor='w',fill=p['muted'],font=self.small_font)
         c.configure(scrollregion=(0,0,width,max(1,len(hosts)*stride)))
         self._commands=list(set(c._tclCommands or [])-commands_before)
         self.set_scroll(*c.yview())
@@ -146,9 +151,10 @@ class MachinePickerList(tk.Frame):
 
 def rounded_search(master,monitor,variable):
     canvas=tk.Canvas(master,bg=monitor.BG,height=round(34*monitor.dpi_scale),highlightthickness=0,bd=0)
-    entry=tk.Entry(canvas,textvariable=variable,bd=0,relief='flat',highlightthickness=0,font=('Microsoft YaHei UI',9))
+    font=monitor.canvas_font(9)
+    entry=tk.Entry(canvas,textvariable=variable,bd=0,relief='flat',highlightthickness=0,font=font)
     entry_id=canvas.create_window(12*monitor.dpi_scale,17*monitor.dpi_scale,window=entry,anchor='w')
-    placeholder=tk.Label(canvas,text=tr('搜索机器…', 'Search machines…'),font=('Microsoft YaHei UI',9),cursor='xterm')
+    placeholder=tk.Label(canvas,text=tr('搜索机器…', 'Search machines…'),font=font,cursor='xterm')
     placeholder_id=canvas.create_window(12*monitor.dpi_scale,17*monitor.dpi_scale,window=placeholder,anchor='w')
     def hint(*args):
         canvas.itemconfigure(placeholder_id,state='hidden' if variable.get() or entry.focus_get() is entry else 'normal')
