@@ -25,9 +25,14 @@ function harness(t,component='BrowserBody',fetchDownload,folderSupported=true,fo
   react.useLayoutEffect=react.useEffect;
   const old={window:globalThis.window,document:globalThis.document,fetch:globalThis.fetch};
   Object.assign(globalThis,{window:{innerWidth:1200,innerHeight:800,
-      addEventListener(type,fn){listeners.set(type,[...(listeners.get(type)??[]),fn])},removeEventListener(type,fn){listeners.set(type,(listeners.get(type)??[]).filter(f=>f!==fn))}},
+      addEventListener(type,fn){listeners.set(type,[...(listeners.get(type)??[]),fn])},removeEventListener(type,fn){listeners.set(type,(listeners.get(type)??[]).filter(f=>f!==fn))},
+      dispatchEvent(event){for(const listener of listeners.get(event.type)??[])listener(event);return !event.defaultPrevented}},
     document:{addEventListener(){},removeEventListener(){}},
-    fetch:async(url,options)=>url==='/api/files/capabilities'?{ok:true,json:async()=>({editing:true,terminal_cwd:true,upload:uploadSupported,search:true,folder_download:folderSupported,folder_upload:folderSupported})}:fetchDownload(url,options)});
+    fetch:async(url,options)=>{
+      if(url==='/api/workspace-state')return {ok:true,json:async()=>({revision:0,values:JSON.parse(options.body).values})};
+      if(url==='/api/files/capabilities')return {ok:true,json:async()=>({editing:true,terminal_cwd:true,upload:uploadSupported,search:true,folder_download:folderSupported,folder_upload:folderSupported})};
+      return fetchDownload(url,options);
+    }});
   t.after(()=>{cleanups.splice(0).forEach(fn=>fn?.());Object.assign(globalThis,old)});
   const entries=['A','B'].map(name=>({name:name+'.txt',path:'/tmp/'+name+'.txt',kind:'file',accessible:true,size:1,modified:1}));
   entries.push({name:'code',path:'/tmp/code',kind:'directory',accessible:true,size:null,modified:1});
@@ -436,6 +441,7 @@ test('drop results and errors read as English under the English interface',{time
   try{setLocale('en');
     const h=harness(t,'BrowserBody',undefined,true,async(host,directory,name)=>'/tmp/code/'+name,
       async(host,directory,file)=>{if(file.name==='b.txt')throw new Error('Disk full');return '/tmp/code/'+file.name});
+    await workspaceStorage.flush();
     await openCode(h);
     await h.zone.current.upload(dropped());h.render();
     assert.equal(feedback(h).join(''),'Uploaded 1 file and 1 folder to /tmp/code');
