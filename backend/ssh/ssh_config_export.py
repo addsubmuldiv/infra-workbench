@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 from tempfile import NamedTemporaryFile
 
 from fastapi import HTTPException
@@ -24,6 +25,7 @@ DIRECTIVES = (
 KEYS = tuple(name.lower() for name in DIRECTIVES)
 HOST_ALIAS = re.compile(r'[\w][\w.-]{0,199}')
 VSCODE_CONFIG_TIMEOUT = 5
+MACOS_SYSTEM_CONFIG = Path('/etc/ssh/ssh_config') if sys.platform == 'darwin' else None
 LOGGER = logging.getLogger(__name__)
 
 
@@ -149,10 +151,19 @@ class SSHConfigExport:
         with NamedTemporaryFile(dir=config.parent, prefix='.iwb-ssh-', delete=False) as file:
             candidate = Path(file.name)
         try:
-            candidate.write_bytes((original + newline + newline if original else b'') + block)
+            content = (original + newline + newline if original else b'') + block
+            validation = content
+            if for_vscode and self.config is None and MACOS_SYSTEM_CONFIG and MACOS_SYSTEM_CONFIG.is_file():
+                # ssh -F skips the system config. Match the normal macOS lookup,
+                # including defaults like SendEnv, when checking the new alias.
+                validation += newline + b'Host *' + newline
+                validation += f'    Include "{MACOS_SYSTEM_CONFIG}"'.encode('utf-8') + newline
+            candidate.write_bytes(validation)
             current = await self.ssh.config_details(['-F', str(candidate)], alias)
             if not connection_matches(details, current, for_vscode=for_vscode):
                 raise SSHConfigExportError('SSH_CONFIG_SHADOWED')
+            if validation != content:
+                candidate.write_bytes(content)
             if (config.read_bytes() if config.exists() else None) != original:
                 raise SSHConfigExportError('SSH_CONFIG_CHANGED')
             if original is not None and os.name != 'nt':

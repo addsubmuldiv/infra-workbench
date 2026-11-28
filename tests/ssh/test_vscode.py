@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 import shutil
 from types import SimpleNamespace
 
@@ -168,17 +169,38 @@ def test_prepare_collision_retains_expected_target_for_explicit_skip(tmp_path):
 
 
 @pytest.mark.skipif(not shutil.which('ssh'), reason='OpenSSH required')
-def test_connect_prepares_vscode_key_and_existing_hosts_get_it_on_open(tmp_path):
+@pytest.mark.parametrize('system_defaults', [False, True])
+def test_connect_prepares_vscode_key_and_existing_hosts_get_it_on_open(tmp_path, monkeypatch, system_defaults):
     from fastapi.testclient import TestClient
     from backend.app import create_app
+    from backend.ssh import ssh_config_export
 
     app = create_app(tmp_path / 'data', start_poll=False)
     ssh = app.state.ssh
-    config = tmp_path / 'ssh' / 'config'
+    config = tmp_path / '.ssh' / 'config'
     config.parent.mkdir()
     original = b'Host jump fixture\n    HostName 192.0.2.11\n'
     config.write_bytes(original)
-    app.state.ssh_config_export.config = config
+    if system_defaults:
+        system_config = tmp_path / 'ssh_config'
+        system_config.write_text('Host *\n    SendEnv LANG LC_*\n', encoding='utf-8')
+        default_config = tmp_path / 'combined_config'
+        resolve = ssh.config_details
+
+        async def config_details(options, target):
+            # Model OpenSSH's automatic system lookup with isolated config files.
+            if '-F' not in options:
+                default_config.write_text(
+                    f'Include "{config}"\nHost *\n    Include "{system_config}"\n', encoding='utf-8',
+                )
+                options = ['-F', str(default_config), *options]
+            return await resolve(options, target)
+
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        monkeypatch.setattr(ssh_config_export, 'MACOS_SYSTEM_CONFIG', system_config)
+        monkeypatch.setattr(ssh, 'config_details', config_details)
+    else:
+        app.state.ssh_config_export.config = config
     key_path = tmp_path / 'key with spaces'
     key_path.touch()
 
@@ -207,6 +229,7 @@ def test_connect_prepares_vscode_key_and_existing_hosts_get_it_on_open(tmp_path)
         host_id = result.json()['host_id']
         added = config.read_bytes()
         assert added.startswith(original) and b'Host iwb-vscode-' in added
+        assert b'Include' not in added
 
         # This also models a host added by an older Workbench version.
         config.write_bytes(original)
@@ -219,10 +242,13 @@ def test_connect_prepares_vscode_key_and_existing_hosts_get_it_on_open(tmp_path)
         assert config.read_bytes() == added
         alias = calls[-1][-1].removeprefix('ssh-remote+')
         assert alias.startswith('iwb-vscode-')
-        details = client.portal.call(ssh.config_details, ['-F', str(config)], alias)
+        options = [] if system_defaults else ['-F', str(config)]
+        details = client.portal.call(ssh.config_details, options, alias)
         assert (details['hostname'], details['user'], details['port']) == ('192.0.2.10', 'tester', '2222')
         assert details['identityfile'] == [str(key_path)]
         assert details['identitiesonly'] == 'yes'
+        if system_defaults:
+            assert details['sendenv'] == ['LANG', 'LC_*']
         assert client.post(path + '/open', headers=headers, json={}).json() == {'launched': True}
         assert calls[-1][-1] == 'ssh-remote+' + alias
         assert config.read_bytes() == added
